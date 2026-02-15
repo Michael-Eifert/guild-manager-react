@@ -1,0 +1,92 @@
+:root {
+  --wow-dark: #151515;
+  --q-poor: #9d9d9d;
+  --q-common: #ffffff;
+  --q-uncommon: #1eff00;
+  --q-rare: #0070dd;
+  --q-epic: #a335ee;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+body {
+  margin: 0;
+  min-width: 320px;
+  min-height: 100vh;
+  background-color: var(--wow-dark);
+  color: #e2e2e2;
+  font-family: "Lato", sans-serif;
+  -webkit-tap-highlight-color: transparent;
+  overflow-x: hidden;
+}
+
+#root {
+  width: 100%;
+}
+
+.fantasy-font {
+  font-family: "Cinzel", serif;
+  color: #ffd100;
+  text-shadow: 1px 1px 2px #000;
+}
+
+.btn-recruit {
+  background: linear-gradient(180deg, #8c5f1f 0%, #5f3c10 100%);
+}
+
+.btn-quest {
+  background: linear-gradient(180deg, #21466c 0%, #112a42 100%);
+}
+
+@keyframes levelUp {
+  0% {
+    box-shadow: 0 0 5px #ffd100;
+    transform: scale(1);
+  }
+
+  50% {
+    box-shadow: 0 0 25px #ffd100;
+    transform: scale(1.05);
+  }
+
+  100% {
+    box-shadow: 0 0 0 transparent;
+    transform: scale(1);
+  }
+}
+
+.animate-levelup {
+  animation: levelUp 0.8s ease-out;
+  border-color: #ffd100 !important;
+}
+
+@media (min-width: 768px) {
+  ::-webkit-scrollbar {
+    width: 8px;
+    height: 8px;
+  }
+
+  ::-webkit-scrollbar-track {
+    background: #1a1a1a;
+  }
+
+  ::-webkit-scrollbar-thumb {
+    background: #444;
+    border-radius: 4px;
+  }
+
+  ::-webkit-scrollbar-thumb:hover {
+    background: #666;
+  }
+}
+
+.no-scrollbar::-webkit-scrollbar {
+  display: none;
+}
+
+.no-scrollbar {
+  -ms-overflow-style: none;
+  scrollbar-width: none;
+}
