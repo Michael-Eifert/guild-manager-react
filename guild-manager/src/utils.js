@@ -5,7 +5,27 @@ import {
   DB_NAMES,
   DB_LASTNAMES,
   PROF_PAIRS,
+  DEFAULT_PROF_PAIR,
 } from "./constants";
+
+const ARMOR_HIERARCHY = ["Mail", "Leather", "Cloth"];
+const WOW_ICON_BASE_URL = "https://wow.zamimg.com/images/wow/icons/large";
+const SLOT_FALLBACK_ICONS = {
+  head: "inv_helmet_03",
+  chest: "inv_chest_chain_05",
+  legs: "inv_pants_03",
+  feet: "inv_boots_09",
+  hands: "inv_gauntlets_04",
+  mainHand: "inv_sword_04",
+};
+const STAT_LABELS = {
+  strength: "Str",
+  agility: "Agi",
+  stamina: "Sta",
+  intellect: "Int",
+  spirit: "Spi",
+  armor: "Armor",
+};
 
 export const createId = () =>
   typeof crypto !== "undefined" && crypto.randomUUID
@@ -28,6 +48,33 @@ export const getQualityClass = (q) =>
       : q === 1
         ? "text-white"
         : "text-gray-400";
+export const getQualityLabel = (quality) =>
+  quality === 1
+    ? "Common item"
+    : quality === 2
+      ? "Uncommon item"
+      : quality === 3
+        ? "Rare item"
+        : "Poor item";
+export const getWowIconUrl = (iconCode) =>
+  `${WOW_ICON_BASE_URL}/${String(iconCode || "inv_misc_questionmark").toLowerCase()}.jpg`;
+export const getItemIconUrl = (item, slotName) => {
+  if (item?.icon) return item.icon;
+  const fallbackCode =
+    SLOT_FALLBACK_ICONS[slotName || item?.slot] || "inv_misc_questionmark";
+  return getWowIconUrl(fallbackCode);
+};
+export const formatItemStats = (stats) => {
+  if (!stats || typeof stats !== "object") return "";
+  return Object.entries(stats)
+    .filter(([, value]) => typeof value === "number" && value !== 0)
+    .map(([stat, value]) => {
+      const label = STAT_LABELS[stat] || stat;
+      const needsSign = stat !== "armor";
+      return `${needsSign && value > 0 ? "+" : ""}${value} ${label}`;
+    })
+    .join(" • ");
+};
 export const getReqExp = (l) => {
   if (l >= CONFIG.LEVEL_CAP) return 999999;
   if (typeof CONFIG.XP_TABLE[l] === "number") return CONFIG.XP_TABLE[l];
@@ -61,9 +108,21 @@ export const getNextTierLevel = (level) => {
   return "Max";
 };
 
+export const getClassArmorTypes = (charClass) => {
+  const classInfo = DB_CLASSES[charClass];
+  if (!classInfo) return [];
+  const rawArmorTypes = classInfo.armorTypes || classInfo.proficiencies || [];
+  return ARMOR_HIERARCHY.filter((armorType) =>
+    rawArmorTypes.includes(armorType),
+  );
+};
+
+export const getClassArmorText = (charClass) =>
+  getClassArmorTypes(charClass).join(", ");
+
 export const getStarterGear = (charClass) => {
-  const profs = DB_CLASSES[charClass].proficiencies;
-  const armor = profs[0];
+  const armorTypes = getClassArmorTypes(charClass);
+  const armor = armorTypes[0] || "Cloth";
   const gear = {
     head: null,
     chest: null,
@@ -104,7 +163,7 @@ export const generateCharacter = () => {
   const allowedRoles = DB_CLASSES[charClass].allowedRoles;
   const role = allowedRoles[Math.floor(Math.random() * allowedRoles.length)];
 
-  const starterProfs = PROF_PAIRS[charClass] || ["Mining", "Herbalism"];
+  const starterProfs = PROF_PAIRS[charClass] || DEFAULT_PROF_PAIR;
   const professions = starterProfs.map((p) => ({ name: p, skill: 1 }));
 
   return {

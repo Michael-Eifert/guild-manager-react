@@ -1,5 +1,12 @@
 :root {
   --wow-dark: #151515;
+  --wow-deeper: #0f0f12;
+  --wow-panel: #1b1815;
+  --wow-panel-soft: #24201c;
+  --wow-gold: #d4a64a;
+  --wow-gold-dim: #7d5e23;
+  --wow-bronze: #8d6230;
+  --wow-azure: #2a5f8e;
   --q-poor: #9d9d9d;
   --q-common: #ffffff;
   --q-uncommon: #1eff00;
@@ -15,7 +22,23 @@ body {
   margin: 0;
   min-width: 320px;
   min-height: 100vh;
-  background-color: var(--wow-dark);
+  background:
+    radial-gradient(
+      1200px 700px at 15% -10%,
+      rgb(170 120 44 / 24%),
+      transparent 60%
+    ),
+    radial-gradient(
+      900px 520px at 92% 10%,
+      rgb(48 105 156 / 20%),
+      transparent 55%
+    ),
+    linear-gradient(
+      180deg,
+      var(--wow-deeper) 0%,
+      #171411 48%,
+      #100f12 100%
+    );
   color: #e2e2e2;
   font-family: "Lato", sans-serif;
   -webkit-tap-highlight-color: transparent;
@@ -28,16 +51,115 @@ body {
 
 .fantasy-font {
   font-family: "Cinzel", serif;
-  color: #ffd100;
-  text-shadow: 1px 1px 2px #000;
+  color: var(--wow-gold);
+  letter-spacing: 0.02em;
+  text-shadow:
+    0 1px 0 #000,
+    0 0 16px rgb(212 166 74 / 25%);
 }
 
 .btn-recruit {
-  background: linear-gradient(180deg, #8c5f1f 0%, #5f3c10 100%);
+  background:
+    linear-gradient(180deg, #a5762f 0%, #6e471a 55%, #4a2f10 100%);
+  border-color: #9f722e !important;
+  box-shadow:
+    0 0 0 1px rgb(255 214 132 / 12%) inset,
+    0 10px 20px rgb(0 0 0 / 35%);
 }
 
 .btn-quest {
-  background: linear-gradient(180deg, #21466c 0%, #112a42 100%);
+  background:
+    linear-gradient(180deg, #2f6a9d 0%, #204d74 52%, #152f49 100%);
+  border-color: #2c5a85 !important;
+  box-shadow:
+    0 0 0 1px rgb(143 196 236 / 16%) inset,
+    0 10px 20px rgb(0 0 0 / 35%);
+}
+
+.wow-shell {
+  position: relative;
+  background: linear-gradient(
+    180deg,
+    rgb(26 23 20 / 85%) 0%,
+    rgb(20 18 16 / 88%) 100%
+  );
+  border: 1px solid #5a4524;
+  border-radius: 14px;
+  box-shadow:
+    0 0 0 1px rgb(188 142 66 / 20%) inset,
+    0 20px 45px rgb(0 0 0 / 55%);
+}
+
+.wow-shell::before {
+  content: "";
+  position: absolute;
+  inset: 0;
+  border-radius: 14px;
+  pointer-events: none;
+  background:
+    linear-gradient(
+      180deg,
+      rgb(212 166 74 / 12%) 0%,
+      transparent 14%,
+      transparent 86%,
+      rgb(212 166 74 / 7%) 100%
+    );
+}
+
+.wow-header {
+  border-color: #62491f !important;
+  background: linear-gradient(
+    180deg,
+    rgb(48 40 28 / 58%) 0%,
+    rgb(32 27 22 / 24%) 100%
+  );
+}
+
+.wow-header-title {
+  color: #edd5a1;
+  text-shadow:
+    0 1px 0 #000,
+    0 0 14px rgb(212 166 74 / 24%);
+}
+
+.wow-command {
+  background:
+    linear-gradient(180deg, #3d352e 0%, #2e2823 52%, #25211d 100%) !important;
+  border-color: #645236 !important;
+  color: #d7c4a1;
+  box-shadow:
+    0 0 0 1px rgb(228 196 145 / 10%) inset,
+    0 8px 14px rgb(0 0 0 / 25%);
+}
+
+.wow-command:hover {
+  background:
+    linear-gradient(180deg, #484038 0%, #342e29 52%, #28241f 100%) !important;
+  color: #f0dbb5;
+}
+
+.wow-card {
+  background: linear-gradient(
+    180deg,
+    rgb(40 35 31 / 92%) 0%,
+    rgb(31 27 24 / 92%) 100%
+  ) !important;
+  border-color: #5b4a33 !important;
+  box-shadow:
+    0 0 0 1px rgb(201 166 109 / 8%) inset,
+    0 10px 18px rgb(0 0 0 / 28%);
+}
+
+.wow-modal-panel {
+  background: linear-gradient(
+    180deg,
+    rgb(36 31 27 / 96%) 0%,
+    rgb(24 22 20 / 96%) 100%
+  ) !important;
+  border-color: #6e5228 !important;
+  box-shadow:
+    0 0 0 1px rgb(209 166 97 / 20%) inset,
+    0 24px 48px rgb(0 0 0 / 56%) !important;
 }
 
 @keyframes levelUp {
