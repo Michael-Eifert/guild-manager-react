@@ -24,12 +24,32 @@ import {
   getClassArmorTypes,
 } from "./utils";
 import CharacterCard from "./components/CharacterCard";
+import ToastNotifications from "./components/ToastNotifications";
 import DetailModal from "./components/modals/DetailModal";
 import LootTableModal from "./components/modals/LootTableModal";
 import GuildLogModal from "./components/modals/GuildLogModal";
 import DebugModal from "./components/modals/DebugModal";
 import WorldMapModal from "./components/modals/WorldMapModal";
+import GuildTalentsModal from "./components/modals/GuildTalentsModal";
 import BaseModal from "./components/modals/BaseModal";
+import {
+  GUILD_POINT_LABEL,
+  createInitialGuildProgress,
+  normalizeGuildProgress,
+  getGuildDerivedStats,
+  applyLevelMilestones,
+  applyDungeonClearMilestones,
+  applyDungeonWipeMilestone,
+  upgradeGuildTalent,
+} from "./guildProgression";
+import {
+  DEFAULT_GAME_SPEED,
+  clampGameSpeed,
+  getNextGameSpeed,
+  formatGameSpeedLabel,
+  normalizeProgressionState,
+  advanceGameTime,
+} from "./progression";
 
 const apiKey = import.meta.env.VITE_GEMINI_API_KEY || "";
 const callGemini = async (prompt, isJson = false) => {
@@ -59,16 +79,85 @@ const callGemini = async (prompt, isJson = false) => {
 };
 
 const SESSION_FORMAT = "guild-manager-session";
-const SESSION_VERSION = 1;
+const SESSION_VERSION = 3;
 const FAILED_MISSION_EXP_FACTOR = 0.2;
 const DUNGEON_STEP_COUNT = 4;
+const DUNGEON_BONUS_UNCOMMON_DROP_CHANCE = 0.1;
 const DUNGEON_STEP_LABELS = ["Boss 1", "Boss 2", "Boss 3", "Endboss"];
+const GUILD_ACTIVITY_MODES = ["Leveling", "Professions", "Auto"];
+const DEFAULT_DUNGEON_LOOT_TABLE = {
+  boss: [
+    { quality: 2, chance: 80 },
+    { quality: 3, chance: 20 },
+  ],
+  endboss: [
+    { quality: 3, chance: 80 },
+    { quality: 2, chance: 20 },
+  ],
+};
 
-const getDungeonStepQuality = (stepIndex) => {
-  if (stepIndex === DUNGEON_STEP_COUNT - 1) {
-    return Math.random() < 0.8 ? 3 : 2;
+const getDungeonStepLootWeights = (mission, stepIndex) => {
+  const table =
+    mission && typeof mission.dungeonLootTable === "object"
+      ? mission.dungeonLootTable
+      : {};
+  const stepOverrides = Array.isArray(table.steps) ? table.steps : [];
+  const explicitStepWeights = stepOverrides[stepIndex];
+  if (Array.isArray(explicitStepWeights) && explicitStepWeights.length > 0) {
+    return explicitStepWeights;
   }
-  return Math.random() < 0.2 ? 3 : 2;
+
+  const isEndboss = stepIndex === DUNGEON_STEP_COUNT - 1;
+  const configuredWeights = isEndboss ? table.endboss : table.boss;
+  if (Array.isArray(configuredWeights) && configuredWeights.length > 0) {
+    return configuredWeights;
+  }
+
+  return isEndboss
+    ? DEFAULT_DUNGEON_LOOT_TABLE.endboss
+    : DEFAULT_DUNGEON_LOOT_TABLE.boss;
+};
+
+const normalizeLootWeights = (weights) =>
+  (Array.isArray(weights) ? weights : [])
+    .map((entry) => ({
+      quality: Number(entry?.quality),
+      chance: Number(entry?.chance),
+    }))
+    .filter(
+      (entry) =>
+        Number.isFinite(entry.quality) &&
+        entry.quality > 0 &&
+        Number.isFinite(entry.chance) &&
+        entry.chance > 0,
+    );
+
+const rollQualityFromWeights = (weights, fallbackQuality = 2) => {
+  const normalized = normalizeLootWeights(weights);
+  if (normalized.length === 0) return fallbackQuality;
+
+  const totalChance = normalized.reduce((sum, entry) => sum + entry.chance, 0);
+  if (totalChance <= 0) return fallbackQuality;
+
+  let roll = Math.random() * totalChance;
+  for (const entry of normalized) {
+    roll -= entry.chance;
+    if (roll <= 0) return entry.quality;
+  }
+
+  return normalized[normalized.length - 1]?.quality || fallbackQuality;
+};
+
+const getDungeonStepQualityPriority = (mission, stepIndex) => {
+  const stepWeights = getDungeonStepLootWeights(mission, stepIndex);
+  const normalized = normalizeLootWeights(stepWeights);
+  const rolledQuality = rollQualityFromWeights(stepWeights, 2);
+  const fallbackOrder = [4, 3, 2, 1];
+  const configuredFallbacks = normalized
+    .filter((entry) => entry.quality !== rolledQuality)
+    .sort((a, b) => b.chance - a.chance)
+    .map((entry) => entry.quality);
+  return [...new Set([rolledQuality, ...configuredFallbacks, ...fallbackOrder])];
 };
 
 const getDefaultDungeonProgress = (startTime, totalDuration) => {
@@ -95,14 +184,20 @@ const resolveMissionRewardQualities = (mission) => {
   return [1];
 };
 
+const getMissionRecommendedRange = (mission) => {
+  if (typeof mission?.recommended !== "string") return null;
+  const rangeValues = mission.recommended.match(/\d+/g);
+  if (!rangeValues || rangeValues.length < 2) return null;
+  const minLevel = Number(rangeValues[0]);
+  const maxLevel = Number(rangeValues[1]);
+  if (!Number.isFinite(minLevel) || !Number.isFinite(maxLevel)) return null;
+  return { minLevel, maxLevel };
+};
+
 const getMissionLootLevelRange = (mission) => {
   if (mission.type === "dungeon") {
-    const rangeValues =
-      typeof mission.recommended === "string"
-        ? mission.recommended.match(/\d+/g)
-        : null;
-    const recommendedMax =
-      rangeValues && rangeValues.length >= 2 ? Number(rangeValues[1]) : null;
+    const recommendedRange = getMissionRecommendedRange(mission);
+    const recommendedMax = recommendedRange ? recommendedRange.maxLevel : null;
     const fallbackMissionLevel = Number(mission.level) || 1;
     const minLevel = Number.isFinite(mission.minLevel)
       ? Math.max(1, Number(mission.minLevel))
@@ -118,6 +213,18 @@ const getMissionLootLevelRange = (mission) => {
     minLevel: Math.max(1, missionLevel - 6),
     maxLevel: missionLevel,
   };
+};
+
+const getDungeonOverlevelExpMultiplier = (characterLevel, mission) => {
+  if (mission?.type !== "dungeon") return 1;
+  const range = getMissionRecommendedRange(mission);
+  const maxRecommendedLevel = range ? range.maxLevel : Number(mission.level) || 1;
+  const levelsAbove = (Number(characterLevel) || 1) - maxRecommendedLevel;
+
+  if (levelsAbove <= 0) return 1;
+  if (levelsAbove >= 10) return 0;
+  if (levelsAbove >= 5) return 0.5;
+  return 0.75;
 };
 
 const getMissionLootCandidatesForCharacter = (mission, char, quality) => {
@@ -144,7 +251,13 @@ const getMissionLootCandidatesForCharacter = (mission, char, quality) => {
   });
 };
 
-const getMissionLootCandidatesForQuality = (mission, quality) => {
+const getMissionLootCandidatesForQuality = (
+  mission,
+  quality,
+  options = {},
+) => {
+  const includeWorldDrops = options.includeWorldDrops === true;
+  const dungeonOnly = options.dungeonOnly === true;
   const { minLevel, maxLevel } = getMissionLootLevelRange(mission);
 
   return DB_ITEMS.filter((item) => {
@@ -153,7 +266,9 @@ const getMissionLootCandidatesForQuality = (mission, quality) => {
 
     const isDungeonItem = typeof item.dungeon === "string";
     if (mission.type === "dungeon") {
-      return isDungeonItem && item.dungeon === mission.name;
+      if (isDungeonItem) return item.dungeon === mission.name;
+      if (dungeonOnly) return false;
+      return includeWorldDrops;
     }
 
     return !isDungeonItem;
@@ -193,51 +308,75 @@ const pickMissionLootForCharacter = (
   return candidates[Math.floor(Math.random() * candidates.length)];
 };
 
-const pickDungeonDropForParty = (mission, partyMembers, preferredQuality) => {
+const pickDungeonDropForParty = (
+  mission,
+  partyMembers,
+  qualityPriority,
+  options = {},
+) => {
   if (partyMembers.length === 0) return { discarded: true };
 
-  const qualityPool = getMissionLootCandidatesForQuality(mission, preferredQuality);
-  if (qualityPool.length === 0) return { discarded: true };
+  const qualityOrder =
+    Array.isArray(qualityPriority) && qualityPriority.length > 0
+      ? qualityPriority
+      : [2, 3];
 
-  const usableItems = qualityPool.filter((item) =>
-    partyMembers.some((member) => canCharacterUseItem(member, item)),
-  );
-  if (usableItems.length === 0) return { discarded: true };
+  for (const preferredQuality of qualityOrder) {
+    const qualityPool = getMissionLootCandidatesForQuality(
+      mission,
+      preferredQuality,
+      options,
+    );
+    if (qualityPool.length === 0) continue;
 
-  const upgradeItems = usableItems.filter((item) =>
-    partyMembers.some(
-      (member) =>
-        canCharacterUseItem(member, item) &&
-        getItemUpgradeGainForCharacter(member, item) > 0,
-    ),
-  );
-  const itemPool = upgradeItems.length > 0 ? upgradeItems : usableItems;
-  const rolledItem = itemPool[Math.floor(Math.random() * itemPool.length)];
+    const usableItems = qualityPool.filter((item) =>
+      partyMembers.some((member) => canCharacterUseItem(member, item)),
+    );
+    if (usableItems.length === 0) continue;
 
-  const eligibleMembers = partyMembers.filter((member) =>
-    canCharacterUseItem(member, rolledItem),
-  );
-  if (eligibleMembers.length === 0) return { discarded: true };
-  if (eligibleMembers.length === 1) {
-    return { winnerId: eligibleMembers[0].id, item: rolledItem, discarded: false };
+    const upgradeItems = usableItems.filter((item) =>
+      partyMembers.some(
+        (member) =>
+          canCharacterUseItem(member, item) &&
+          getItemUpgradeGainForCharacter(member, item) > 0,
+      ),
+    );
+    const itemPool = upgradeItems.length > 0 ? upgradeItems : usableItems;
+    const rolledItem = itemPool[Math.floor(Math.random() * itemPool.length)];
+
+    const eligibleMembers = partyMembers.filter((member) =>
+      canCharacterUseItem(member, rolledItem),
+    );
+    if (eligibleMembers.length === 0) continue;
+    if (eligibleMembers.length === 1) {
+      return {
+        winnerId: eligibleMembers[0].id,
+        item: rolledItem,
+        discarded: false,
+      };
+    }
+
+    const upgradeEligible = eligibleMembers.filter(
+      (member) => getItemUpgradeGainForCharacter(member, rolledItem) > 0,
+    );
+    const recipientPool =
+      upgradeEligible.length > 0 ? upgradeEligible : eligibleMembers;
+    const bestGain = Math.max(
+      ...recipientPool.map((member) =>
+        getItemUpgradeGainForCharacter(member, rolledItem),
+      ),
+    );
+    const bestRecipients = recipientPool.filter(
+      (member) => getItemUpgradeGainForCharacter(member, rolledItem) === bestGain,
+    );
+    const winner =
+      bestRecipients[Math.floor(Math.random() * bestRecipients.length)];
+    if (winner) {
+      return { winnerId: winner.id, item: rolledItem, discarded: false };
+    }
   }
 
-  const upgradeEligible = eligibleMembers.filter(
-    (member) => getItemUpgradeGainForCharacter(member, rolledItem) > 0,
-  );
-  const recipientPool = upgradeEligible.length > 0 ? upgradeEligible : eligibleMembers;
-  const bestGain = Math.max(
-    ...recipientPool.map((member) => getItemUpgradeGainForCharacter(member, rolledItem)),
-  );
-  const bestRecipients = recipientPool.filter(
-    (member) => getItemUpgradeGainForCharacter(member, rolledItem) === bestGain,
-  );
-  const winner =
-    bestRecipients[Math.floor(Math.random() * bestRecipients.length)];
-  if (!winner) {
-    return { discarded: true };
-  }
-  return { winnerId: winner.id, item: rolledItem, discarded: false };
+  return { discarded: true };
 };
 
 const buildMissionLootMap = (mission, partyMembers) => {
@@ -261,15 +400,31 @@ const buildDungeonBossLootMap = (mission, partyMembers, clearedSteps) => {
   const lootMap = new Map(partyMembers.map((member) => [member.id, []]));
   const safeClearedSteps = Math.max(0, Math.min(DUNGEON_STEP_COUNT, clearedSteps));
   let discardedDrops = 0;
+  const applyDropResult = (dropResult) => {
+    if (!dropResult || dropResult.discarded || !dropResult.item) {
+      discardedDrops += 1;
+      return;
+    }
+    lootMap.get(dropResult.winnerId)?.push(dropResult.item);
+  };
 
   for (let stepIndex = 0; stepIndex < safeClearedSteps; stepIndex++) {
-    const preferredQuality = getDungeonStepQuality(stepIndex);
-    const drop = pickDungeonDropForParty(mission, partyMembers, preferredQuality);
-    if (!drop || drop.discarded || !drop.item) {
-      discardedDrops += 1;
-      continue;
+    const qualityPriority = getDungeonStepQualityPriority(mission, stepIndex);
+    const isEndboss = stepIndex === DUNGEON_STEP_COUNT - 1;
+    const drop = pickDungeonDropForParty(mission, partyMembers, qualityPriority, {
+      includeWorldDrops: !isEndboss,
+      dungeonOnly: isEndboss,
+    });
+    applyDropResult(drop);
+
+    // Additional per-boss bonus: 10% chance for one extra uncommon item (dungeon or world pool).
+    if (Math.random() < DUNGEON_BONUS_UNCOMMON_DROP_CHANCE) {
+      const bonusDrop = pickDungeonDropForParty(mission, partyMembers, [2], {
+        includeWorldDrops: true,
+        dungeonOnly: false,
+      });
+      applyDropResult(bonusDrop);
     }
-    lootMap.get(drop.winnerId)?.push(drop.item);
   }
 
   return { lootMap, discardedDrops };
@@ -789,7 +944,7 @@ const MissionModal = ({
                   </div>
                   <p className="text-xs text-amber-100/80 mt-2 max-w-2xl leading-relaxed">
                     {selectedQuest.type === "dungeon"
-                      ? "Dungeon briefing: 4 bosses (Boss 1, Boss 2, Boss 3, Endboss). Each cleared boss grants 1 drop, and XP scales 25/50/75/100%."
+                      ? "Dungeon briefing: 4 bosses (Boss 1, Boss 2, Boss 3, Endboss). Each cleared boss grants 1 drop, XP scales 25/50/75/100%, and over-level heroes earn less XP above the recommended max (1+: -25%, 5+: -50%, 10+: no XP)."
                       : selectedQuest.elite
                         ? "Elite briefing: high-risk target with dangerous resistance. Bring appropriate levels and roles."
                         : "Quest briefing: a standard operation suited for steady progression and resource gains."}
@@ -933,8 +1088,8 @@ const MissionModal = ({
   );
 };
 
-const ActiveMissionCard = ({ mission, onFinish }) => {
-  const now = Date.now();
+const ActiveMissionCard = ({ mission, onFinish, gameTimeMs }) => {
+  const now = Number.isFinite(gameTimeMs) ? gameTimeMs : mission.startTime || 0;
   const timeLeft = Math.max(0, mission.finishTime - now);
   const progress = 100 - (timeLeft / mission.totalDuration) * 100;
   const successChance =
@@ -1014,6 +1169,7 @@ const OptionsModal = ({
   onSaveSession,
   onLoadSession,
   onOpenDebug,
+  onOpenGuildTalents,
 }) => {
   return (
     <BaseModal
@@ -1049,6 +1205,15 @@ const OptionsModal = ({
           </button>
           <button
             onClick={() => {
+              onOpenGuildTalents();
+              onClose();
+            }}
+            className="w-full px-4 py-3 rounded border border-amber-800 bg-gray-800 text-amber-200 hover:bg-gray-700 text-sm font-bold"
+          >
+            🌟 Guild Talents
+          </button>
+          <button
+            onClick={() => {
               onOpenDebug();
               onClose();
             }}
@@ -1069,11 +1234,17 @@ const App = () => {
   const [missionList, setMissionList] = useState(INITIAL_MISSIONS);
   const [guildLog, setGuildLog] = useState([]);
   const [guildGold, setGuildGold] = useState(0);
+  const [guildProgress, setGuildProgress] = useState(() =>
+    createInitialGuildProgress(),
+  );
   const [isPaused, setIsPaused] = useState(false);
+  const [gameSpeed, setGameSpeed] = useState(DEFAULT_GAME_SPEED);
+  const [gameTimeMs, setGameTimeMs] = useState(() => Date.now());
   const [showRecruit, setShowRecruit] = useState(false);
   const [showMissions, setShowMissions] = useState(false);
   const [showLootTable, setShowLootTable] = useState(false);
   const [showGuildLog, setShowGuildLog] = useState(false);
+  const [showGuildTalents, setShowGuildTalents] = useState(false);
   const [showDebug, setShowDebug] = useState(false);
   const [showMap, setShowMap] = useState(false);
   const [showOptions, setShowOptions] = useState(false);
@@ -1083,6 +1254,9 @@ const App = () => {
   const rosterRef = useRef(roster);
   const missionsRef = useRef(activeMissions);
   const goldRef = useRef(guildGold);
+  const guildProgressRef = useRef(guildProgress);
+  const gameTimeRef = useRef(gameTimeMs);
+  const lastRealTimeRef = useRef(Date.now());
   const rewardedMissionIdsRef = useRef(new Set());
   const notificationTimersRef = useRef(new Map());
   const sessionFileInputRef = useRef(null);
@@ -1098,17 +1272,36 @@ const App = () => {
     }
   }, []);
 
-  const pushNotification = useCallback((message, type = "info", durationMs = 4200) => {
+  const pushNotification = useCallback((payload, fallbackType = "info", fallbackDurationMs = 4200) => {
+    const normalized =
+      typeof payload === "string"
+        ? { message: payload, type: fallbackType, durationMs: fallbackDurationMs }
+        : {
+            message: payload?.message || "",
+            title: payload?.title || "",
+            type: payload?.type || fallbackType,
+            durationMs: payload?.durationMs ?? fallbackDurationMs,
+          };
+    if (!normalized.message) return;
+
     const notificationId = createId();
     setNotifications((prev) =>
-      [...prev, { id: notificationId, message, type }].slice(-4),
+      [
+        ...prev,
+        {
+          id: notificationId,
+          message: normalized.message,
+          title: normalized.title,
+          type: normalized.type,
+        },
+      ].slice(-4),
     );
     const timerId = window.setTimeout(() => {
       setNotifications((prev) =>
         prev.filter((notification) => notification.id !== notificationId),
       );
       notificationTimersRef.current.delete(notificationId);
-    }, durationMs);
+    }, normalized.durationMs);
     notificationTimersRef.current.set(notificationId, timerId);
   }, []);
 
@@ -1121,6 +1314,15 @@ const App = () => {
   useEffect(() => {
     goldRef.current = guildGold;
   }, [guildGold]);
+  useEffect(() => {
+    guildProgressRef.current = guildProgress;
+  }, [guildProgress]);
+  useEffect(() => {
+    gameTimeRef.current = gameTimeMs;
+  }, [gameTimeMs]);
+  useEffect(() => {
+    lastRealTimeRef.current = Date.now();
+  }, [isPaused, gameSpeed]);
   useEffect(
     () => () => {
       notificationTimersRef.current.forEach((timerId) => {
@@ -1130,6 +1332,131 @@ const App = () => {
     },
     [],
   );
+
+  const guildDerivedStats = getGuildDerivedStats(guildProgress);
+
+  const appendGuildRenownLog = useCallback((message) => {
+    const time = new Date().toLocaleTimeString();
+    setGuildLog((prev) => [{ time, type: "guild-renown", message }, ...prev].slice(0, 50));
+  }, []);
+
+  const appendAchievementLog = useCallback((label, reward, context = "") => {
+    const time = new Date().toLocaleTimeString();
+    setGuildLog((prev) =>
+      [
+        {
+          time,
+          type: "achievement",
+          label,
+          reward,
+          context,
+        },
+        ...prev,
+      ].slice(0, 50),
+    );
+  }, []);
+
+  const registerDungeonClearMilestones = useCallback(
+    (missionName) => {
+      let unlockedMilestones = [];
+      setGuildProgress((prev) => {
+        const result = applyDungeonClearMilestones(prev, missionName);
+        unlockedMilestones = result.unlocked;
+        return result.guildProgress;
+      });
+
+      unlockedMilestones.forEach((milestone) => {
+        pushNotification(
+          {
+            type: "achievement",
+            title: "Achievement Unlocked",
+            message: `${milestone.label}: +${milestone.reward} ${GUILD_POINT_LABEL} (${missionName})`,
+            durationMs: 5200,
+          },
+        );
+        appendAchievementLog(milestone.label, milestone.reward, missionName);
+      });
+    },
+    [appendAchievementLog, pushNotification],
+  );
+
+  const registerDungeonWipeMilestone = useCallback(
+    (missionName) => {
+      let unlockedMilestone = null;
+      setGuildProgress((prev) => {
+        const result = applyDungeonWipeMilestone(prev);
+        unlockedMilestone = result.unlocked;
+        return result.guildProgress;
+      });
+
+      if (unlockedMilestone) {
+        pushNotification(
+          {
+            type: "achievement",
+            title: "Achievement Unlocked",
+            message: `${unlockedMilestone.label}: +${unlockedMilestone.reward} ${GUILD_POINT_LABEL} (${missionName})`,
+            durationMs: 5200,
+          },
+        );
+        appendAchievementLog(
+          unlockedMilestone.label,
+          unlockedMilestone.reward,
+          missionName,
+        );
+      }
+    },
+    [appendAchievementLog, pushNotification],
+  );
+
+  const handleUpgradeGuildTalent = useCallback(
+    (talentKey) => {
+      let upgradeSummary = null;
+      setGuildProgress((prev) => {
+        const result = upgradeGuildTalent(prev, talentKey);
+        if (result.upgraded && result.talent) {
+          upgradeSummary = {
+            title: result.talent.title,
+            suffix: result.talent.suffix,
+            spentCost: result.spentCost,
+            nextValue: result.nextValue,
+          };
+        }
+        return result.guildProgress;
+      });
+
+      if (upgradeSummary) {
+        pushNotification(
+          `${upgradeSummary.title} upgraded to +${upgradeSummary.nextValue} ${upgradeSummary.suffix}.`,
+          "info",
+        );
+        appendGuildRenownLog(
+          `${upgradeSummary.title} upgraded for ${upgradeSummary.spentCost} ${GUILD_POINT_LABEL}.`,
+        );
+      }
+    },
+    [appendGuildRenownLog, pushNotification],
+  );
+
+  useEffect(() => {
+    let newlyUnlocked = [];
+    setGuildProgress((prev) => {
+      const result = applyLevelMilestones(prev, roster);
+      newlyUnlocked = result.unlocked;
+      return result.guildProgress;
+    });
+
+    if (newlyUnlocked.length > 0) {
+      newlyUnlocked.forEach(({ level, reward }) => {
+        pushNotification({
+          type: "achievement",
+          title: "Achievement Unlocked",
+          message: `First level ${level} character: +${reward} ${GUILD_POINT_LABEL}`,
+          durationMs: 5200,
+        });
+        appendAchievementLog(`First level ${level} character`, reward);
+      });
+    }
+  }, [appendAchievementLog, pushNotification, roster]);
 
   const applyLevelAndProfessionDelta = (char, levelDelta) => {
     const newLevel = Math.min(
@@ -1194,6 +1521,7 @@ const App = () => {
     const partyMembers = currentRoster.filter((c) =>
       mission.memberIds.includes(c.id),
     );
+    const activeGuildStats = getGuildDerivedStats(guildProgressRef.current);
     const isDungeon = mission.type === "dungeon";
     const dungeonClearedSteps = isDungeon
       ? Math.max(
@@ -1216,8 +1544,10 @@ const App = () => {
       typeof mission.payoutGold === "number"
         ? Math.max(0, mission.payoutGold)
         : getMissionGoldReward(mission);
-    const missionGold = missionSucceeded ? baseMissionGold : 0;
-    const missionExpReward = isDungeon
+    const missionGold = missionSucceeded
+      ? Math.max(0, Math.floor(baseMissionGold * activeGuildStats.goldMultiplier))
+      : 0;
+    const baseMissionExpReward = isDungeon
       ? Math.max(0, Math.floor(mission.exp * (dungeonClearedSteps / DUNGEON_STEP_COUNT)))
       : missionSucceeded
         ? mission.exp
@@ -1246,6 +1576,22 @@ const App = () => {
 
     const updatedRoster = currentRoster.map((c) => {
       if (mission.memberIds.includes(c.id)) {
+        const dungeonExpMultiplier = isDungeon
+          ? getDungeonOverlevelExpMultiplier(c.level, mission)
+          : 1;
+        const missionExpReward = isDungeon
+          ? Math.max(
+              0,
+              Math.floor(
+                baseMissionExpReward *
+                  dungeonExpMultiplier *
+                  activeGuildStats.expMultiplier,
+              ),
+            )
+          : Math.max(
+              0,
+              Math.floor(baseMissionExpReward * activeGuildStats.expMultiplier),
+            );
         let newExp = c.exp + missionExpReward;
         let newLevel = c.level;
         let maxExp = getReqExp(newLevel);
@@ -1321,12 +1667,24 @@ const App = () => {
   // --- GAME LOOP ---
   useEffect(() => {
     const tick = setInterval(() => {
+      const clockStep = advanceGameTime({
+        currentGameTime: gameTimeRef.current,
+        lastRealTime: lastRealTimeRef.current,
+        realNow: Date.now(),
+        isPaused,
+        speed: gameSpeed,
+      });
+      gameTimeRef.current = clockStep.gameTime;
+      lastRealTimeRef.current = clockStep.lastRealTime;
+      const now = gameTimeRef.current;
+      setGameTimeMs(now);
+
       if (isPaused) return;
 
-      const now = Date.now();
       const currentRoster = rosterRef.current;
       const currentMissions = missionsRef.current;
       const currentGold = goldRef.current;
+      const currentGuildStats = getGuildDerivedStats(guildProgressRef.current);
 
       let newRoster = [...currentRoster];
       let newMissions = [];
@@ -1362,11 +1720,22 @@ const App = () => {
         const result = processMissionRewards(m, newRoster);
         newRoster = result.updatedRoster;
         newLogs = [...newLogs, ...result.missionLogs];
+        if (m.type === "dungeon") {
+          if (result.missionSucceeded) {
+            registerDungeonClearMilestones(m.name);
+          } else {
+            registerDungeonWipeMilestone(m.name);
+          }
+        }
         if (!result.missionSucceeded) {
-          pushNotification(`Mission failed: ${m.name}`, "error");
+          pushNotification({
+            type: "error",
+            title: "Mission Failed",
+            message: m.name,
+          });
         }
 
-        const openGoldSpace = CONFIG.GOLD_CAP - newGold;
+        const openGoldSpace = currentGuildStats.goldCap - newGold;
         const gainedGold = Math.max(
           0,
           Math.min(result.missionGold, openGoldSpace),
@@ -1428,7 +1797,10 @@ const App = () => {
         }
 
         if (gainXP) {
-          const expGain = 20 + char.level * 4;
+          const expGain = Math.max(
+            1,
+            Math.floor((20 + char.level * 4) * currentGuildStats.expMultiplier),
+          );
           let newExp = char.exp + expGain;
           let newLevel = char.level;
           let maxExp = getReqExp(newLevel);
@@ -1504,12 +1876,18 @@ const App = () => {
       }
     }, CONFIG.TICK_RATE);
     return () => clearInterval(tick);
-  }, [isPaused, pushNotification]);
+  }, [
+    gameSpeed,
+    isPaused,
+    pushNotification,
+    registerDungeonClearMilestones,
+    registerDungeonWipeMilestone,
+  ]);
 
   const handleRecruit = (chars) => {
     setRoster((prev) => {
-      if (prev.length >= CONFIG.MAX_ROSTER) return prev;
-      const slotsLeft = CONFIG.MAX_ROSTER - prev.length;
+      if (prev.length >= guildDerivedStats.maxRoster) return prev;
+      const slotsLeft = guildDerivedStats.maxRoster - prev.length;
       const recruits = chars.slice(0, slotsLeft);
       return [...prev, ...recruits];
     });
@@ -1523,6 +1901,15 @@ const App = () => {
     setRoster((p) =>
       p.map((c) => (c.id !== id ? c : { ...c, activityMode: mode })),
     );
+  };
+  const handleGuildModeChange = (mode) => {
+    if (!GUILD_ACTIVITY_MODES.includes(mode)) return;
+    setRoster((p) => p.map((c) => ({ ...c, activityMode: mode })));
+    pushNotification({
+      type: "info",
+      title: "Guild Directive",
+      message: `All members set to ${mode}.`,
+    });
   };
   const handleProfChange = (id, idx, newProf) => {
     setRoster((p) =>
@@ -1543,13 +1930,13 @@ const App = () => {
     try {
       const prompt = `Write a short, engaging 2-sentence fantasy backstory for a level ${char.level} ${char.race} ${char.charClass} named ${char.name}. They are a member of the 'Alliance Vanguard' guild.`;
       return await callGemini(prompt, false);
-    } catch (error) {
+    } catch {
       alert("Oracle is meditating. Add VITE_GEMINI_API_KEY and try again.");
       return null;
     }
   };
   const handleDeploy = (quest, ids) => {
-    const startTime = Date.now();
+    const startTime = gameTimeRef.current;
     const selectedMembers = roster.filter((c) => ids.includes(c.id));
     const missionPreview = getMissionSuccessPreview(quest, selectedMembers);
     const totalDuration = quest.duration * 1000;
@@ -1589,7 +1976,7 @@ const App = () => {
     ]);
   };
   const handleManualFinish = (m) => {
-    const now = Date.now();
+    const now = gameTimeRef.current;
     const dungeonAdvance =
       m.type === "dungeon" ? advanceDungeonMission(m, now, true) : null;
     const missionToResolve = dungeonAdvance ? dungeonAdvance.mission : m;
@@ -1603,8 +1990,15 @@ const App = () => {
     const result = processMissionRewards(missionToResolve, rosterRef.current);
     rosterRef.current = result.updatedRoster;
     setRoster(result.updatedRoster);
+    if (missionToResolve.type === "dungeon") {
+      if (result.missionSucceeded) {
+        registerDungeonClearMilestones(missionToResolve.name);
+      } else {
+        registerDungeonWipeMilestone(missionToResolve.name);
+      }
+    }
 
-    const openGoldSpace = CONFIG.GOLD_CAP - goldRef.current;
+    const openGoldSpace = guildDerivedStats.goldCap - goldRef.current;
     const gainedGold = Math.max(0, Math.min(result.missionGold, openGoldSpace));
 
     if (gainedGold > 0) {
@@ -1632,7 +2026,11 @@ const App = () => {
     }
 
     if (!result.missionSucceeded) {
-      pushNotification(`Mission failed: ${missionToResolve.name}`, "error");
+      pushNotification({
+        type: "error",
+        title: "Mission Failed",
+        message: missionToResolve.name,
+      });
     }
   };
 
@@ -1648,7 +2046,7 @@ const App = () => {
   };
 
   const buildSessionPayload = () => {
-    const now = Date.now();
+    const now = gameTimeRef.current;
     const serializedActiveMissions = activeMissions.map((mission) => {
       const remainingMs = Math.max(0, mission.finishTime - now);
       return {
@@ -1667,6 +2065,14 @@ const App = () => {
         missionList,
         guildLog,
         guildGold,
+        guildProgress,
+        milestones: guildProgress?.milestones || null,
+        achievements: guildProgress?.milestones || null,
+        progression: {
+          gameSpeed,
+          isPaused,
+          gameTimeMs: gameTimeRef.current,
+        },
       },
     };
   };
@@ -1719,18 +2125,45 @@ const App = () => {
         const loadedGuildLog = Array.isArray(payloadData.guildLog)
           ? payloadData.guildLog.slice(0, 50)
           : [];
+        const snapshotMilestones =
+          payloadData.milestones || payloadData.achievements || null;
+        const rawGuildProgress =
+          payloadData.guildProgress && typeof payloadData.guildProgress === "object"
+            ? {
+                ...payloadData.guildProgress,
+                milestones: {
+                  ...(payloadData.guildProgress.milestones || {}),
+                  ...(snapshotMilestones || {}),
+                  dungeon: {
+                    ...(payloadData.guildProgress.milestones?.dungeon || {}),
+                    ...(snapshotMilestones?.dungeon || {}),
+                  },
+                },
+              }
+            : snapshotMilestones
+              ? { milestones: snapshotMilestones }
+              : null;
+        const loadedGuildProgress = normalizeGuildProgress(rawGuildProgress);
+        const loadedGuildStats = getGuildDerivedStats(loadedGuildProgress);
         const loadedGuildGold =
           typeof payloadData.guildGold === "number"
-            ? Math.max(0, Math.min(CONFIG.GOLD_CAP, payloadData.guildGold))
+            ? Math.max(0, Math.min(loadedGuildStats.goldCap, payloadData.guildGold))
             : 0;
 
-        const now = Date.now();
+        const loadedProgression = normalizeProgressionState(
+          payloadData?.progression || {
+            gameSpeed: payloadData?.gameSpeed ?? DEFAULT_GAME_SPEED,
+            isPaused: payloadData?.isPaused ?? false,
+            gameTimeMs: payloadData?.gameTimeMs,
+          },
+        );
+        const loadBaseTime = loadedProgression.gameTimeMs;
         const loadedActiveMissions = Array.isArray(payloadData.activeMissions)
           ? payloadData.activeMissions.map((mission) => {
               const remainingMs =
                 typeof mission.remainingMs === "number"
                   ? Math.max(0, mission.remainingMs)
-                  : Math.max(0, (mission.finishTime || now) - now);
+                  : Math.max(0, (mission.finishTime || loadBaseTime) - loadBaseTime);
               const totalDuration =
                 typeof mission.totalDuration === "number" &&
                 mission.totalDuration > 0
@@ -1739,8 +2172,8 @@ const App = () => {
               return {
                 ...mission,
                 instanceId: mission.instanceId || createId(),
-                startTime: now,
-                finishTime: now + remainingMs,
+                startTime: loadBaseTime,
+                finishTime: loadBaseTime + remainingMs,
                 totalDuration,
                 dungeonProgress:
                   mission.type === "dungeon"
@@ -1787,7 +2220,9 @@ const App = () => {
                           failedAtStep,
                           stepResults,
                           stepDuration,
-                          nextStepAt: finished ? now : now + stepDuration,
+                          nextStepAt: finished
+                            ? loadBaseTime
+                            : loadBaseTime + stepDuration,
                           finished,
                         };
                       })()
@@ -1823,12 +2258,18 @@ const App = () => {
         rosterRef.current = normalizedRoster;
         missionsRef.current = loadedActiveMissions;
         goldRef.current = loadedGuildGold;
+        guildProgressRef.current = loadedGuildProgress;
         setRoster(normalizedRoster);
         setActiveMissions(loadedActiveMissions);
         setMissionList(loadedMissionList);
         setGuildLog(loadedGuildLog);
         setGuildGold(loadedGuildGold);
-        setIsPaused(false);
+        setGuildProgress(loadedGuildProgress);
+        setIsPaused(loadedProgression.isPaused);
+        setGameSpeed(clampGameSpeed(loadedProgression.gameSpeed));
+        gameTimeRef.current = loadBaseTime;
+        setGameTimeMs(loadBaseTime);
+        lastRealTimeRef.current = Date.now();
         setDetailCharId(null);
         setShowRecruit(false);
         setShowMissions(false);
@@ -1850,30 +2291,23 @@ const App = () => {
     reader.readAsText(file);
   };
 
+  const guildActivityModeSummary =
+    roster.length === 0
+      ? null
+      : (() => {
+          const firstMode = roster[0]?.activityMode || "Auto";
+          const uniform = roster.every(
+            (member) => (member?.activityMode || "Auto") === firstMode,
+          );
+          return uniform ? firstMode : "Mixed";
+        })();
+
   return (
     <div className="wow-shell w-full max-w-5xl mx-auto p-4 pb-20">
-      {notifications.length > 0 && (
-        <div className="fixed top-4 right-4 z-[70] flex flex-col gap-2 pointer-events-none">
-          {notifications.map((notification) => (
-            <div
-              key={notification.id}
-              className={`pointer-events-auto min-w-[220px] max-w-[320px] px-3 py-2 rounded border shadow-lg text-sm flex items-center justify-between gap-2 ${
-                notification.type === "error"
-                  ? "bg-red-950/90 border-red-700 text-red-100"
-                  : "bg-gray-900/90 border-gray-600 text-gray-100"
-              }`}
-            >
-              <span>{notification.message}</span>
-              <button
-                onClick={() => dismissNotification(notification.id)}
-                className="text-xs text-gray-300 hover:text-white"
-              >
-                ✕
-              </button>
-            </div>
-          ))}
-        </div>
-      )}
+      <ToastNotifications
+        notifications={notifications}
+        onDismiss={dismissNotification}
+      />
       <header className="wow-header flex justify-between items-center mb-6 border-b border-gray-700 pb-4 px-2 rounded-md">
         <div>
           <h1 className="wow-header-title fantasy-font text-xl md:text-3xl font-bold truncate">
@@ -1888,21 +2322,30 @@ const App = () => {
             Mem:{" "}
             <span
               className={
-                roster.length >= CONFIG.MAX_ROSTER ? "text-red-500" : ""
+                roster.length >= guildDerivedStats.maxRoster ? "text-red-500" : ""
               }
             >
               {roster.length}
             </span>
-            /{CONFIG.MAX_ROSTER}
+            /{guildDerivedStats.maxRoster}
           </div>
           <div className="text-xs md:text-sm text-yellow-400 font-bold mt-1">
-            Gold: {guildGold}/{CONFIG.GOLD_CAP}
+            Gold: {guildGold}/{guildDerivedStats.goldCap}
+          </div>
+          <div className="text-[11px] text-amber-200/80 mt-1">
+            {GUILD_POINT_LABEL}: {guildProgress.renownPoints}
           </div>
           <button
             onClick={() => setIsPaused(!isPaused)}
             className={`mt-2 px-3 py-1 rounded text-xs md:text-sm font-bold shadow border ${isPaused ? "bg-gray-800 border-yellow-600 text-yellow-500" : "bg-gray-800 border-gray-600 text-green-400"}`}
           >
-            {isPaused ? "⏸" : "▶"}
+            {isPaused ? "▶" : "⏸"}
+          </button>
+          <button
+            onClick={() => setGameSpeed((prev) => getNextGameSpeed(prev))}
+            className={`mt-2 ml-2 px-3 py-1 rounded text-xs md:text-sm font-bold shadow border ${gameSpeed > 1 ? "bg-blue-900 border-blue-500 text-blue-100" : "bg-gray-800 border-gray-600 text-gray-200"}`}
+          >
+            {formatGameSpeedLabel(gameSpeed)}
           </button>
         </div>
       </header>
@@ -1910,10 +2353,16 @@ const App = () => {
       <div className="flex overflow-x-auto gap-3 mb-6 pb-2 no-scrollbar snap-x">
         <button
           onClick={() => setShowRecruit(true)}
-          disabled={roster.length >= CONFIG.MAX_ROSTER}
+          disabled={roster.length >= guildDerivedStats.maxRoster}
           className="flex-none snap-start btn-recruit text-yellow-100 font-bold py-3 px-6 rounded border border-yellow-900 shadow-lg flex items-center gap-2 select-none disabled:opacity-50 whitespace-nowrap"
         >
           <span className="text-xl">📜</span> Recruit
+        </button>
+        <button
+          onClick={() => setShowGuildTalents(true)}
+          className="wow-command flex-none snap-start px-4 py-3 rounded bg-gray-800 border border-amber-700 text-amber-200 hover:bg-gray-700 shadow flex items-center gap-2 whitespace-nowrap"
+        >
+          <span className="text-xl">🌟</span> Guild
         </button>
         <button
           onClick={() => setShowMissions(true)}
@@ -1947,6 +2396,40 @@ const App = () => {
         </button>
       </div>
 
+      <div className="mb-6 rounded border border-gray-700 bg-gray-900/70 p-3">
+        <div className="flex items-center justify-between gap-2 mb-2">
+          <h3 className="text-xs uppercase tracking-wider text-gray-300 font-bold">
+            Guild Activity Focus
+          </h3>
+          <span className="text-[11px] text-gray-400">
+            Current: {guildActivityModeSummary || "None"}
+          </span>
+        </div>
+        <div className="grid grid-cols-1 sm:grid-cols-3 gap-2">
+          {GUILD_ACTIVITY_MODES.map((mode) => {
+            const isActive = guildActivityModeSummary === mode;
+            return (
+              <button
+                key={mode}
+                onClick={() => handleGuildModeChange(mode)}
+                disabled={roster.length === 0}
+                className={`px-3 py-2 rounded border text-xs md:text-sm font-bold transition-colors disabled:opacity-50 disabled:cursor-not-allowed ${
+                  isActive
+                    ? "border-blue-500 bg-blue-900/40 text-blue-100"
+                    : "border-gray-600 bg-gray-800 text-gray-300 hover:bg-gray-700"
+                }`}
+              >
+                {mode === "Auto"
+                  ? "🤖 Auto"
+                  : mode === "Leveling"
+                    ? "⚔️ Leveling"
+                    : "🔨 Professions"}
+              </button>
+            );
+          })}
+        </div>
+      </div>
+
       {activeMissions.length > 0 && (
         <div className="mb-6">
           <h3 className="text-sm font-bold text-gray-400 mb-2 uppercase tracking-wider">
@@ -1958,6 +2441,7 @@ const App = () => {
                 key={`${m.questId}-${m.startTime}`}
                 mission={m}
                 onFinish={handleManualFinish}
+                gameTimeMs={gameTimeMs}
               />
             ))}
           </div>
@@ -1994,13 +2478,21 @@ const App = () => {
         onSaveSession={handleSaveSession}
         onLoadSession={handleLoadButtonClick}
         onOpenDebug={() => setShowDebug(true)}
+        onOpenGuildTalents={() => setShowGuildTalents(true)}
       />
 
       <RecruitModal
         isOpen={showRecruit}
         onClose={() => setShowRecruit(false)}
         onRecruit={handleRecruit}
-        availableSlots={Math.max(0, CONFIG.MAX_ROSTER - roster.length)}
+        availableSlots={Math.max(0, guildDerivedStats.maxRoster - roster.length)}
+      />
+      <GuildTalentsModal
+        isOpen={showGuildTalents}
+        onClose={() => setShowGuildTalents(false)}
+        guildProgress={guildProgress}
+        guildDerivedStats={guildDerivedStats}
+        onUpgradeTalent={handleUpgradeGuildTalent}
       />
       <MissionModal
         isOpen={showMissions}

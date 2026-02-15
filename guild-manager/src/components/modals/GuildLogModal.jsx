@@ -46,6 +46,13 @@ const GuildLogModal = ({ isOpen, onClose, logs }) => {
                     {log.missionName}: {log.bossName}{" "}
                     {log.outcome === "failed" ? "wiped the party" : "cleared"}.
                   </span>
+                ) : log.type === "guild-renown" ? (
+                  <span className="text-amber-300">{log.message}</span>
+                ) : log.type === "achievement" ? (
+                  <span className="text-emerald-300">
+                    Achievement unlocked: {log.label} (+{log.reward} Guild Renown)
+                    {log.context ? ` (${log.context})` : ""}.
+                  </span>
                 ) : log.type === "gold" ? (
                   <span className="text-yellow-400">
                     Guild earned {log.amount} gold from {log.missionName}.
