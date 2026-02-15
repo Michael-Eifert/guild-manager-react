@@ -15,7 +15,8 @@ import {
   getAutoSkillTarget,
   getNextTierLevel,
   getRoleIcon,
-  getRaceIcon,
+  getRacePortraitUrl,
+  getWowIconUrl,
   createId,
   getClassArmorTypes,
 } from "./utils";
@@ -240,9 +241,14 @@ const RecruitModal = ({ isOpen, onClose, onRecruit, availableSlots }) => {
                     onClick={() => toggleCandidate(char.id)}
                     className={`bg-gray-800 p-4 rounded flex flex-col items-center text-center cursor-pointer border hover:bg-gray-700 transition-all active:scale-95 ${selectedIds.includes(char.id) ? "border-green-500 bg-green-900/20" : "border-transparent hover:border-yellow-500"}`}
                   >
-                    <div className="text-4xl mb-2">
-                      {getRaceIcon(char.race)}
-                    </div>
+                    <img
+                      src={getRacePortraitUrl(char.race, char.gender)}
+                      alt={`${char.race} ${char.gender}`}
+                      className="w-16 h-16 mb-2 rounded border border-gray-600 object-cover"
+                      onError={(event) => {
+                        event.currentTarget.src = getWowIconUrl("inv_misc_questionmark");
+                      }}
+                    />
                     <div
                       className="font-bold text-lg inline-flex items-center gap-1"
                       style={{
@@ -607,9 +613,14 @@ const MissionModal = ({
                     onClick={() => isEligible && toggleMember(char.id)}
                     className={`p-3 rounded flex items-center gap-3 transition-all cursor-pointer border ${!isEligible ? "opacity-40 cursor-not-allowed bg-black border-transparent" : isSelected ? "bg-green-900/30 border-green-500" : "bg-gray-700 border-gray-600 hover:bg-gray-600"}`}
                   >
-                    <div className="text-2xl bg-gray-900 w-10 h-10 flex items-center justify-center rounded border border-gray-600">
-                      {getRaceIcon(char.race)}
-                    </div>
+                    <img
+                      src={getRacePortraitUrl(char.race, char.gender)}
+                      alt={`${char.race} ${char.gender}`}
+                      className="w-10 h-10 rounded border border-gray-600 object-cover bg-gray-900"
+                      onError={(event) => {
+                        event.currentTarget.src = getWowIconUrl("inv_misc_questionmark");
+                      }}
+                    />
                     <div className="flex-1">
                       <div
                         className="font-bold text-sm"

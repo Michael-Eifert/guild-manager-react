@@ -6,9 +6,11 @@ import {
   getItemIconUrl,
   getNextTierLevel,
   getQualityColor,
+  getRacePortraitUrl,
   getReqExp,
   getRoleIcon,
   getSkillCap,
+  getWowIconUrl,
 } from "../../utils";
 import BaseModal from "./BaseModal";
 
@@ -94,28 +96,38 @@ const DetailModal = ({
       panelClassName="wow-modal-panel bg-gray-900 border-x-0 border-y-0 md:border-2 border-gray-600 rounded-none md:rounded-lg w-full max-w-4xl h-full md:h-[80vh] flex flex-col relative shadow-2xl"
     >
         <div className="p-4 border-b border-gray-700 flex justify-between items-center bg-gray-900 z-10">
-          <div>
-            <h2 className="text-xl md:text-2xl font-bold text-white flex items-center gap-2">
-              {char.name}{" "}
-              <span className="text-lg text-gray-500">{char.gender === "Male" ? "♂️" : "♀️"}</span>
-            </h2>
-            <div className="text-sm text-gray-400">
-              {char.race}{" "}
-              <span className="inline-flex items-center gap-1" style={{ color: classData.color }}>
-                {classData.icon && (
-                  <img
-                    src={classData.icon}
-                    alt={char.charClass}
-                    className="w-4 h-4 rounded-sm border border-gray-600"
-                    onError={(e) => {
-                      e.currentTarget.style.display = "none";
-                    }}
-                  />
-                )}
-                {char.charClass}
-              </span>
+          <div className="flex items-center gap-3 min-w-0">
+            <img
+              src={getRacePortraitUrl(char.race, char.gender)}
+              alt={`${char.race} ${char.gender}`}
+              className="w-12 h-12 rounded border border-gray-600 object-cover flex-none"
+              onError={(event) => {
+                event.currentTarget.src = getWowIconUrl("inv_misc_questionmark");
+              }}
+            />
+            <div className="min-w-0">
+              <h2 className="text-xl md:text-2xl font-bold text-white flex items-center gap-2">
+                {char.name}{" "}
+                <span className="text-lg text-gray-500">{char.gender === "Male" ? "♂️" : "♀️"}</span>
+              </h2>
+              <div className="text-sm text-gray-400">
+                {char.race}{" "}
+                <span className="inline-flex items-center gap-1" style={{ color: classData.color }}>
+                  {classData.icon && (
+                    <img
+                      src={classData.icon}
+                      alt={char.charClass}
+                      className="w-4 h-4 rounded-sm border border-gray-600"
+                      onError={(e) => {
+                        e.currentTarget.style.display = "none";
+                      }}
+                    />
+                  )}
+                  {char.charClass}
+                </span>
+              </div>
+              <div className="text-xs text-gray-500 mt-1">Can wear: {getClassArmorText(char.charClass)}</div>
             </div>
-            <div className="text-xs text-gray-500 mt-1">Can wear: {getClassArmorText(char.charClass)}</div>
           </div>
           <button onClick={onClose} className="text-gray-500 hover:text-white text-3xl px-2">
             &times;

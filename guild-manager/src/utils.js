@@ -18,6 +18,24 @@ const SLOT_FALLBACK_ICONS = {
   hands: "inv_gauntlets_04",
   mainHand: "inv_sword_04",
 };
+const RACE_GENDER_ICON_CODES = {
+  Human: {
+    Male: "achievement_character_human_male",
+    Female: "achievement_character_human_female",
+  },
+  Dwarf: {
+    Male: "achievement_character_dwarf_male",
+    Female: "achievement_character_dwarf_female",
+  },
+  Gnome: {
+    Male: "achievement_character_gnome_male",
+    Female: "achievement_character_gnome_female",
+  },
+  "Night Elf": {
+    Male: "achievement_character_nightelf_male",
+    Female: "achievement_character_nightelf_female",
+  },
+};
 const STAT_LABELS = {
   strength: "Str",
   agility: "Agi",
@@ -83,6 +101,15 @@ export const getReqExp = (l) => {
 };
 export const getRaceIcon = (r) =>
   r === "Human" ? "🛡️" : r === "Dwarf" ? "🍺" : r === "Night Elf" ? "🌙" : "⚙️";
+export const getRacePortraitUrl = (race, gender) => {
+  const raceIcons = RACE_GENDER_ICON_CODES[race];
+  if (!raceIcons) return getWowIconUrl("inv_misc_questionmark");
+  const normalizedGender = String(gender || "Male").toLowerCase().startsWith("f")
+    ? "Female"
+    : "Male";
+  const iconCode = raceIcons[normalizedGender] || raceIcons.Male;
+  return getWowIconUrl(iconCode);
+};
 export const getRoleIcon = (r) =>
   r === "Tank" ? "🛡️" : r === "Healer" ? "➕" : "⚔️";
 

@@ -1,5 +1,5 @@
 import { CONFIG, DB_CLASSES } from "../constants";
-import { getRoleIcon } from "../utils";
+import { getRacePortraitUrl, getRoleIcon, getWowIconUrl } from "../utils";
 
 const CharacterCard = ({ char, onClick }) => {
   const classData = DB_CLASSES[char.charClass];
@@ -41,7 +41,17 @@ const CharacterCard = ({ char, onClick }) => {
       </div>
 
       <div className="flex items-center gap-2 mb-3 text-sm text-gray-400">
-        <span className="font-bold text-gray-300 uppercase text-xs">{char.race}</span>
+        <span className="font-bold text-gray-300 uppercase text-xs inline-flex items-center gap-1">
+          <img
+            src={getRacePortraitUrl(char.race, char.gender)}
+            alt={`${char.race} ${char.gender}`}
+            className="w-4 h-4 rounded-sm border border-gray-600 object-cover"
+            onError={(event) => {
+              event.currentTarget.src = getWowIconUrl("inv_misc_questionmark");
+            }}
+          />
+          {char.race}
+        </span>
         <span className="opacity-50">|</span>
         <span className="inline-flex items-center gap-1" style={{ color: classData.color }}>
           {classData.icon && (
