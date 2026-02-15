@@ -30,9 +30,30 @@ const GuildLogModal = ({ isOpen, onClose, logs }) => {
                 className="border-l-2 border-gray-700 pl-3 py-1 text-gray-300"
               >
                 <span className="text-xs text-gray-500 block">{log.time}</span>
-                {log.type === "gold" ? (
+                {log.type === "mission" ? (
+                  <span className={log.outcome === "failed" ? "text-red-300" : "text-green-300"}>
+                    {log.missionName}: {log.outcome === "failed" ? "Failed" : "Completed"}
+                    {typeof log.bossesCleared === "number" &&
+                    typeof log.totalBosses === "number"
+                      ? ` (${log.bossesCleared}/${log.totalBosses} bosses)`
+                      : ""}
+                    {typeof log.successChance === "number" && typeof log.failChance === "number"
+                      ? ` (S ${log.successChance}% / F ${log.failChance}%)`
+                      : ""}
+                  </span>
+                ) : log.type === "dungeon-step" ? (
+                  <span className={log.outcome === "failed" ? "text-red-300" : "text-emerald-300"}>
+                    {log.missionName}: {log.bossName}{" "}
+                    {log.outcome === "failed" ? "wiped the party" : "cleared"}.
+                  </span>
+                ) : log.type === "gold" ? (
                   <span className="text-yellow-400">
                     Guild earned {log.amount} gold from {log.missionName}.
+                  </span>
+                ) : log.type === "loot-discard" ? (
+                  <span className="text-gray-400">
+                    {log.missionName}: {log.count} drop
+                    {log.count === 1 ? "" : "s"} discarded (no eligible recipient).
                   </span>
                 ) : (
                   <span>
@@ -40,7 +61,12 @@ const GuildLogModal = ({ isOpen, onClose, logs }) => {
                     <span className={getQualityClass(log.itemQuality)}>
                       [{log.itemName}]
                     </span>{" "}
-                    from {log.missionName}.
+                    from {log.missionName}
+                    {typeof log.equipped === "boolean"
+                      ? log.equipped
+                        ? " (equipped)."
+                        : " (discarded)."
+                      : "."}
                   </span>
                 )}
               </div>

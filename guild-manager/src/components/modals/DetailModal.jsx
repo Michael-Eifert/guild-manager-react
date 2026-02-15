@@ -1,9 +1,12 @@
 import { useEffect, useState } from "react";
 import { DB_CLASSES, PROFESSIONS_LIST } from "../../constants";
 import {
+  getCharacterAverageItemLevel,
+  getCharacterPowerScore,
   formatItemStats,
   getClassArmorText,
   getItemIconUrl,
+  getItemEffectiveLevel,
   getNextTierLevel,
   getQualityColor,
   getRacePortraitUrl,
@@ -17,6 +20,7 @@ import BaseModal from "./BaseModal";
 const ItemSlot = ({ slotName, item }) => {
   const borderColor = item ? getQualityColor(item.quality) : "#444";
   const itemStats = formatItemStats(item?.stats);
+  const itemLevel = getItemEffectiveLevel(item);
 
   return (
     <div className="flex items-center gap-3 bg-gray-800/50 p-2 rounded border border-gray-700 hover:bg-gray-700/50 transition-colors wow-card">
@@ -28,6 +32,9 @@ const ItemSlot = ({ slotName, item }) => {
           src={getItemIconUrl(item, slotName)}
           alt={item ? item.name : slotName}
           className="w-9 h-9 rounded-sm object-cover"
+          onError={(event) => {
+            event.currentTarget.src = getWowIconUrl("inv_misc_questionmark");
+          }}
         />
       </div>
       <div className="flex-1 min-w-0">
@@ -38,6 +45,7 @@ const ItemSlot = ({ slotName, item }) => {
         >
           {item ? item.name : "Empty"}
         </div>
+        <div className="text-[10px] text-amber-200/70">iLvl {itemLevel}</div>
         {itemStats && <div className="text-[10px] text-gray-400 truncate">{itemStats}</div>}
       </div>
     </div>
@@ -73,6 +81,8 @@ const DetailModal = ({
   };
 
   const hardCap = getSkillCap(char?.level || 1);
+  const averageItemLevel = getCharacterAverageItemLevel(char);
+  const characterPower = getCharacterPowerScore(char);
   const historyEntries = Array.isArray(char?.history) ? char.history : [];
   const historyPageCount = Math.max(1, Math.ceil(historyEntries.length / HISTORY_PAGE_SIZE));
   const currentPage = Math.min(historyPage, historyPageCount - 1);
@@ -177,6 +187,10 @@ const DetailModal = ({
                   <div className="text-right text-xs text-gray-400 mt-1">
                     {char.exp} / {getReqExp(char.level)} XP
                   </div>
+                  <div className="mt-2 text-xs text-amber-200/80 flex items-center gap-3">
+                    <span>Avg iLvl: {averageItemLevel.toFixed(1)}</span>
+                    <span>Power: {characterPower.toFixed(1)}</span>
+                  </div>
                 </div>
               </div>
 
@@ -246,6 +260,7 @@ const DetailModal = ({
                       {visibleHistory.map((entry, idx) => {
                         const missionTypeLabel =
                           entry.type === "dungeon" ? "Dungeon" : entry.elite ? "Elite Quest" : "Quest";
+                        const missionResult = entry.result === "Failed" ? "Failed" : "Success";
                         return (
                           <div
                             key={`${entry.time}-${entry.name}-${idx}`}
@@ -255,8 +270,12 @@ const DetailModal = ({
                               <span className="font-bold text-gray-200 truncate">{entry.name}</span>
                               <span className="text-gray-500 whitespace-nowrap">{entry.time}</span>
                             </div>
-                            <div className="text-gray-400 mt-1">
-                              {missionTypeLabel} • +{entry.exp} XP
+                            <div
+                              className={`mt-1 ${
+                                missionResult === "Failed" ? "text-red-300" : "text-gray-400"
+                              }`}
+                            >
+                              {missionTypeLabel} • {missionResult === "Failed" ? "Failed" : "Success"} • +{entry.exp} XP
                             </div>
                           </div>
                         );

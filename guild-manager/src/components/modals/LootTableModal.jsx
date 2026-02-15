@@ -5,6 +5,7 @@ import {
   getItemIconUrl,
   getQualityClass,
   getQualityLabel,
+  getWowIconUrl,
 } from "../../utils";
 import BaseModal from "./BaseModal";
 
@@ -157,6 +158,11 @@ const LootTableModal = ({ isOpen, onClose }) => {
                                   src={getItemIconUrl(item)}
                                   alt={item.name}
                                   className="w-10 h-10 rounded border border-gray-700 object-cover flex-none"
+                                  onError={(event) => {
+                                    event.currentTarget.src = getWowIconUrl(
+                                      "inv_misc_questionmark",
+                                    );
+                                  }}
                                 />
                                 <div className="min-w-0">
                                   <div className={`font-bold truncate ${getQualityClass(item.quality)}`}>

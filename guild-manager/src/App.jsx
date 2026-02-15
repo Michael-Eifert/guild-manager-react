@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useRef } from "react";
+import React, { useState, useEffect, useRef, useCallback } from "react";
 import {
   CONFIG,
   INITIAL_MISSIONS,
@@ -14,7 +14,10 @@ import {
   getSkillCap,
   getAutoSkillTarget,
   getNextTierLevel,
+  getItemEffectiveLevel,
   getRoleIcon,
+  getMissionBaseFailChance,
+  getMissionSuccessPreview,
   getRacePortraitUrl,
   getWowIconUrl,
   createId,
@@ -57,6 +60,30 @@ const callGemini = async (prompt, isJson = false) => {
 
 const SESSION_FORMAT = "guild-manager-session";
 const SESSION_VERSION = 1;
+const FAILED_MISSION_EXP_FACTOR = 0.2;
+const DUNGEON_STEP_COUNT = 4;
+const DUNGEON_STEP_LABELS = ["Boss 1", "Boss 2", "Boss 3", "Endboss"];
+
+const getDungeonStepQuality = (stepIndex) => {
+  if (stepIndex === DUNGEON_STEP_COUNT - 1) {
+    return Math.random() < 0.8 ? 3 : 2;
+  }
+  return Math.random() < 0.2 ? 3 : 2;
+};
+
+const getDefaultDungeonProgress = (startTime, totalDuration) => {
+  const safeDuration = Math.max(4000, Number(totalDuration) || 0);
+  const stepDuration = Math.max(1000, Math.floor(safeDuration / DUNGEON_STEP_COUNT));
+  return {
+    currentStep: 0,
+    clearedSteps: 0,
+    failedAtStep: null,
+    stepResults: [],
+    stepDuration,
+    nextStepAt: startTime + stepDuration,
+    finished: false,
+  };
+};
 
 // --- Loot Logic (Dependencies on DB_ITEMS/DB_CLASSES) ---
 const resolveMissionRewardQualities = (mission) => {
@@ -68,75 +95,272 @@ const resolveMissionRewardQualities = (mission) => {
   return [1];
 };
 
-const generatePersonalLoot = (mission, char) => {
-  const isDungeon = mission.type === "dungeon";
-  const dropChance = isDungeon ? 1.0 : 0.5;
-  if (Math.random() > dropChance) return null;
+const getMissionLootLevelRange = (mission) => {
+  if (mission.type === "dungeon") {
+    const rangeValues =
+      typeof mission.recommended === "string"
+        ? mission.recommended.match(/\d+/g)
+        : null;
+    const recommendedMax =
+      rangeValues && rangeValues.length >= 2 ? Number(rangeValues[1]) : null;
+    const fallbackMissionLevel = Number(mission.level) || 1;
+    const minLevel = Number.isFinite(mission.minLevel)
+      ? Math.max(1, Number(mission.minLevel))
+      : Math.max(1, fallbackMissionLevel - 6);
+    const maxLevel =
+      Number.isFinite(recommendedMax) && recommendedMax > 0
+        ? recommendedMax
+        : fallbackMissionLevel;
+    return { minLevel, maxLevel };
+  }
+  const missionLevel = Number(mission.level) || 1;
+  return {
+    minLevel: Math.max(1, missionLevel - 6),
+    maxLevel: missionLevel,
+  };
+};
 
+const getMissionLootCandidatesForCharacter = (mission, char, quality) => {
+  const classInfo = DB_CLASSES[char.charClass];
+  if (!classInfo) return [];
+
+  const allowedTypes = getClassArmorTypes(char.charClass);
+  const { minLevel, maxLevel } = getMissionLootLevelRange(mission);
+
+  return DB_ITEMS.filter((item) => {
+    if (item.quality !== quality) return false;
+    if (item.minLevel < minLevel || item.minLevel > maxLevel) return false;
+
+    const typeOK = item.type === "Generic" || allowedTypes.includes(item.type);
+    if (!typeOK) return false;
+
+    const isDungeonItem = typeof item.dungeon === "string";
+    if (mission.type === "dungeon") {
+      if (isDungeonItem && item.dungeon !== mission.name) return false;
+      return true;
+    }
+
+    return !isDungeonItem;
+  });
+};
+
+const getMissionLootCandidatesForQuality = (mission, quality) => {
+  const { minLevel, maxLevel } = getMissionLootLevelRange(mission);
+
+  return DB_ITEMS.filter((item) => {
+    if (item.quality !== quality) return false;
+    if (item.minLevel < minLevel || item.minLevel > maxLevel) return false;
+
+    const isDungeonItem = typeof item.dungeon === "string";
+    if (mission.type === "dungeon") {
+      return isDungeonItem && item.dungeon === mission.name;
+    }
+
+    return !isDungeonItem;
+  });
+};
+
+const canCharacterUseItem = (char, item) => {
+  if (!char || !item) return false;
+  const allowedTypes = getClassArmorTypes(char.charClass);
+  return item.type === "Generic" || allowedTypes.includes(item.type);
+};
+
+const getItemUpgradeGainForCharacter = (char, item) => {
+  const currentItemLevel = getItemEffectiveLevel(char?.equipment?.[item.slot]);
+  return getItemEffectiveLevel(item) - currentItemLevel;
+};
+
+const pickMissionLootForCharacter = (
+  mission,
+  char,
+  quality,
+  preferUpgrade = true,
+) => {
+  let candidates = getMissionLootCandidatesForCharacter(mission, char, quality);
+
+  if (candidates.length === 0) return null;
+
+  if (preferUpgrade) {
+    const upgrades = candidates.filter(
+      (item) =>
+        getItemEffectiveLevel(item) >
+        getItemEffectiveLevel(char.equipment?.[item.slot]),
+    );
+    if (upgrades.length > 0) candidates = upgrades;
+  }
+
+  return candidates[Math.floor(Math.random() * candidates.length)];
+};
+
+const pickDungeonDropForParty = (mission, partyMembers, preferredQuality) => {
+  if (partyMembers.length === 0) return { discarded: true };
+
+  const qualityPool = getMissionLootCandidatesForQuality(mission, preferredQuality);
+  if (qualityPool.length === 0) return { discarded: true };
+
+  const usableItems = qualityPool.filter((item) =>
+    partyMembers.some((member) => canCharacterUseItem(member, item)),
+  );
+  if (usableItems.length === 0) return { discarded: true };
+
+  const upgradeItems = usableItems.filter((item) =>
+    partyMembers.some(
+      (member) =>
+        canCharacterUseItem(member, item) &&
+        getItemUpgradeGainForCharacter(member, item) > 0,
+    ),
+  );
+  const itemPool = upgradeItems.length > 0 ? upgradeItems : usableItems;
+  const rolledItem = itemPool[Math.floor(Math.random() * itemPool.length)];
+
+  const eligibleMembers = partyMembers.filter((member) =>
+    canCharacterUseItem(member, rolledItem),
+  );
+  if (eligibleMembers.length === 0) return { discarded: true };
+  if (eligibleMembers.length === 1) {
+    return { winnerId: eligibleMembers[0].id, item: rolledItem, discarded: false };
+  }
+
+  const upgradeEligible = eligibleMembers.filter(
+    (member) => getItemUpgradeGainForCharacter(member, rolledItem) > 0,
+  );
+  const recipientPool = upgradeEligible.length > 0 ? upgradeEligible : eligibleMembers;
+  const bestGain = Math.max(
+    ...recipientPool.map((member) => getItemUpgradeGainForCharacter(member, rolledItem)),
+  );
+  const bestRecipients = recipientPool.filter(
+    (member) => getItemUpgradeGainForCharacter(member, rolledItem) === bestGain,
+  );
+  const winner =
+    bestRecipients[Math.floor(Math.random() * bestRecipients.length)];
+  if (!winner) {
+    return { discarded: true };
+  }
+  return { winnerId: winner.id, item: rolledItem, discarded: false };
+};
+
+const buildMissionLootMap = (mission, partyMembers) => {
+  const lootMap = new Map(partyMembers.map((member) => [member.id, []]));
+  if (partyMembers.length === 0) return { lootMap, discardedDrops: 0 };
+
+  // Quest/Elite: each participating character gets one item matching mission reward quality.
+  const rewardQualities = resolveMissionRewardQualities(mission);
+  partyMembers.forEach((member) => {
+    const quality =
+      rewardQualities[Math.floor(Math.random() * rewardQualities.length)] || 1;
+    const item = pickMissionLootForCharacter(mission, member, quality, true);
+    if (!item) return;
+    lootMap.get(member.id)?.push(item);
+  });
+
+  return { lootMap, discardedDrops: 0 };
+};
+
+const buildDungeonBossLootMap = (mission, partyMembers, clearedSteps) => {
+  const lootMap = new Map(partyMembers.map((member) => [member.id, []]));
+  const safeClearedSteps = Math.max(0, Math.min(DUNGEON_STEP_COUNT, clearedSteps));
+  let discardedDrops = 0;
+
+  for (let stepIndex = 0; stepIndex < safeClearedSteps; stepIndex++) {
+    const preferredQuality = getDungeonStepQuality(stepIndex);
+    const drop = pickDungeonDropForParty(mission, partyMembers, preferredQuality);
+    if (!drop || drop.discarded || !drop.item) {
+      discardedDrops += 1;
+      continue;
+    }
+    lootMap.get(drop.winnerId)?.push(drop.item);
+  }
+
+  return { lootMap, discardedDrops };
+};
+
+const advanceDungeonMission = (mission, now, instant = false) => {
+  if (mission.type !== "dungeon") {
+    return { mission, stepLogs: [] };
+  }
+
+  const baseProgress =
+    mission.dungeonProgress ||
+    getDefaultDungeonProgress(mission.startTime || now, mission.totalDuration);
+  const progress = {
+    ...baseProgress,
+    stepResults: Array.isArray(baseProgress.stepResults)
+      ? [...baseProgress.stepResults]
+      : [],
+  };
+  const stepLogs = [];
+  const successChance =
+    typeof mission.successChance === "number" ? mission.successChance : 100;
+
+  while (
+    !progress.finished &&
+    progress.currentStep < DUNGEON_STEP_COUNT &&
+    (instant || now >= progress.nextStepAt)
+  ) {
+    const stepIndex = progress.currentStep;
+    const bossName = DUNGEON_STEP_LABELS[stepIndex];
+    const succeeded = Math.random() * 100 < successChance;
+
+    progress.stepResults.push({
+      step: stepIndex + 1,
+      bossName,
+      outcome: succeeded ? "cleared" : "failed",
+    });
+    stepLogs.push({
+      type: "dungeon-step",
+      missionName: mission.name,
+      bossName,
+      step: stepIndex + 1,
+      outcome: succeeded ? "cleared" : "failed",
+    });
+
+    if (!succeeded) {
+      progress.failedAtStep = stepIndex + 1;
+      progress.finished = true;
+      break;
+    }
+
+    progress.clearedSteps = stepIndex + 1;
+    progress.currentStep = stepIndex + 1;
+    if (progress.currentStep >= DUNGEON_STEP_COUNT) {
+      progress.finished = true;
+      progress.failedAtStep = null;
+      break;
+    }
+
+    progress.nextStepAt += progress.stepDuration;
+  }
+
+  const resolvedMission = {
+    ...mission,
+    dungeonProgress: progress,
+  };
+  if (progress.finished) {
+    resolvedMission.missionSuccess = progress.clearedSteps >= DUNGEON_STEP_COUNT;
+    resolvedMission.finishTime = Math.min(now, mission.finishTime || now);
+  }
+
+  return { mission: resolvedMission, stepLogs };
+};
+
+const generateWorldTickLoot = (char, quality) => {
   const classInfo = DB_CLASSES[char.charClass];
   if (!classInfo) return null;
 
-  const profs = getClassArmorTypes(char.charClass);
-  const rewardQualities = resolveMissionRewardQualities(mission);
-  const targetQuality = isDungeon ? 2 : Math.max(...rewardQualities);
-  const missionDungeon = isDungeon ? mission.name : null;
-  const maxItemLevel = isDungeon
-    ? char.level + 2
-    : Math.min(char.level + 2, mission.level);
-  const minItemLevel = Math.max(1, mission.level - 5);
+  const allowedTypes = getClassArmorTypes(char.charClass);
+  const minLevel = Math.max(1, char.level - 6);
+  const maxLevel = char.level;
 
   const possibleItems = DB_ITEMS.filter((item) => {
-    const isDungeonItem = typeof item.dungeon === "string";
-    if (!isDungeon && isDungeonItem) return false;
-    if (isDungeon && isDungeonItem && item.dungeon !== missionDungeon) return false;
-
-    const levelOK =
-      item.minLevel <= maxItemLevel && item.minLevel >= minItemLevel;
-    const typeOK = item.type === "Generic" || profs.includes(item.type);
-    const qualityOK = item.quality === targetQuality;
-    return levelOK && typeOK && qualityOK;
+    if (item.dungeon) return false;
+    if (item.quality !== quality) return false;
+    if (item.minLevel < minLevel || item.minLevel > maxLevel) return false;
+    return item.type === "Generic" || allowedTypes.includes(item.type);
   });
 
   if (possibleItems.length === 0) return null;
-
-  if (isDungeon) {
-    const missionSpecificItems = possibleItems.filter(
-      (item) => item.dungeon === missionDungeon,
-    );
-    const pool = missionSpecificItems.length > 0 ? missionSpecificItems : possibleItems;
-    return pool[Math.floor(Math.random() * pool.length)];
-  }
-
   return possibleItems[Math.floor(Math.random() * possibleItems.length)];
-};
-
-const generateBossLoot = (mission, partyMembers) => {
-  if (mission.type !== "dungeon") return null;
-  if (Math.random() > 0.2) return null;
-  const missionDungeon = mission.name;
-  const blueItems = DB_ITEMS.filter((i) => {
-    if (i.quality !== 3) return false;
-    if (!i.dungeon) return true;
-    return i.dungeon === missionDungeon;
-  });
-  if (blueItems.length === 0) return null;
-  const missionSpecificBlues = blueItems.filter(
-    (item) => item.dungeon === missionDungeon,
-  );
-  const bluePool =
-    missionSpecificBlues.length > 0 ? missionSpecificBlues : blueItems;
-  const loot = bluePool[Math.floor(Math.random() * bluePool.length)];
-
-  const eligible = partyMembers.filter((c) => {
-    const info = DB_CLASSES[c.charClass];
-    if (!info) return false;
-    const profs = getClassArmorTypes(c.charClass);
-    return loot.type === "Generic" || profs.includes(loot.type);
-  });
-
-  if (eligible.length === 0) return null;
-  const winner = eligible[Math.floor(Math.random() * eligible.length)];
-  return { loot, winnerId: winner.id };
 };
 
 const getMissionGoldReward = (mission) => {
@@ -375,6 +599,10 @@ const MissionModal = ({
       c.status.includes("Disenchanting") ||
       c.status.includes("Brewing"),
   );
+  const selectedPartyMembers = roster.filter((char) => party.includes(char.id));
+  const missionPreview = selectedQuest
+    ? getMissionSuccessPreview(selectedQuest, selectedPartyMembers)
+    : null;
   const orderedMissions = [...missionList].sort((a, b) => {
     if (a.level !== b.level) return a.level - b.level;
     return a.name.localeCompare(b.name);
@@ -508,6 +736,9 @@ const MissionModal = ({
                                 <div className="text-sm text-gray-500">
                                   {getMissionMetaText(m)}
                                 </div>
+                                <div className="text-xs text-red-300/80 mt-0.5">
+                                  Base fail chance: {getMissionBaseFailChance(m)}%
+                                </div>
                                 <div className="text-xs text-yellow-400 mt-1">
                                   Rewards:{" "}
                                   {typeof m.gold === "number"
@@ -558,7 +789,7 @@ const MissionModal = ({
                   </div>
                   <p className="text-xs text-amber-100/80 mt-2 max-w-2xl leading-relaxed">
                     {selectedQuest.type === "dungeon"
-                      ? "Dungeon briefing: prepare a full squad and expect extended combat with stronger loot opportunities."
+                      ? "Dungeon briefing: 4 bosses (Boss 1, Boss 2, Boss 3, Endboss). Each cleared boss grants 1 drop, and XP scales 25/50/75/100%."
                       : selectedQuest.elite
                         ? "Elite briefing: high-risk target with dangerous resistance. Bring appropriate levels and roles."
                         : "Quest briefing: a standard operation suited for steady progression and resource gains."}
@@ -591,6 +822,38 @@ const MissionModal = ({
                         ),
                       )}
                     </span>
+                    {missionPreview && selectedPartyMembers.length === 0 && (
+                      <span className="px-2 py-1 rounded border border-gray-700 bg-gray-800 text-gray-300">
+                        Select heroes to calculate success chance
+                      </span>
+                    )}
+                    {missionPreview && selectedPartyMembers.length > 0 && (
+                      <>
+                        <span className="px-2 py-1 rounded border border-green-800 bg-green-950/30 text-green-300">
+                          Success: {missionPreview.successChance}%
+                        </span>
+                        <span className="px-2 py-1 rounded border border-red-900 bg-red-950/30 text-red-300">
+                          Fail: {missionPreview.failChance}%
+                        </span>
+                        <span className="px-2 py-1 rounded border border-gray-700 bg-gray-800 text-gray-300">
+                          Team Avg Lvl: {missionPreview.averagePartyLevel.toFixed(1)}
+                        </span>
+                        <span className="px-2 py-1 rounded border border-gray-700 bg-gray-800 text-gray-300">
+                          Team Avg iLvl: {missionPreview.averagePartyItemLevel.toFixed(1)}
+                        </span>
+                        <span className="px-2 py-1 rounded border border-gray-700 bg-gray-800 text-gray-300">
+                          Power: {missionPreview.partyPower.toFixed(1)} / {missionPreview.missionPower.toFixed(1)}
+                        </span>
+                        <span
+                          className={`px-2 py-1 rounded border ${missionPreview.hasCoreRoleComposition ? "border-emerald-700 bg-emerald-950/30 text-emerald-300" : "border-gray-700 bg-gray-800 text-gray-400"}`}
+                        >
+                          Role comp bonus:{" "}
+                          {missionPreview.hasCoreRoleComposition
+                            ? `+${missionPreview.roleCompositionBonus}% Success`
+                            : "Need Tank + Healer + DPS"}
+                        </span>
+                      </>
+                    )}
                   </div>
                 </div>
                 <div className="text-right flex-none">
@@ -674,6 +937,16 @@ const ActiveMissionCard = ({ mission, onFinish }) => {
   const now = Date.now();
   const timeLeft = Math.max(0, mission.finishTime - now);
   const progress = 100 - (timeLeft / mission.totalDuration) * 100;
+  const successChance =
+    typeof mission.successChance === "number" ? mission.successChance : 100;
+  const dungeonProgress = mission.dungeonProgress;
+  const stepResults = Array.isArray(dungeonProgress?.stepResults)
+    ? dungeonProgress.stepResults
+    : [];
+  const activeStepIndex =
+    typeof dungeonProgress?.currentStep === "number"
+      ? dungeonProgress.currentStep
+      : 0;
   return (
     <div className="wow-card p-3 rounded flex flex-col gap-2 shadow-lg relative overflow-hidden border border-gray-600 bg-gray-800">
       <div className="flex justify-between items-center z-10 relative">
@@ -684,6 +957,41 @@ const ActiveMissionCard = ({ mission, onFinish }) => {
           {Math.ceil(timeLeft / 1000)}s
         </span>
       </div>
+      <div className="text-[11px] text-amber-200/80">
+        Success chance: {successChance}%
+      </div>
+      {mission.type === "dungeon" && (
+        <>
+          <div className="text-[11px] text-gray-300">
+            Cleared: {dungeonProgress?.clearedSteps || 0}/{DUNGEON_STEP_COUNT} bosses
+          </div>
+          <div className="grid grid-cols-4 gap-1">
+            {DUNGEON_STEP_LABELS.map((label, index) => {
+              const stepResult = stepResults[index];
+              const hasResolved = Boolean(stepResult);
+              const failed = hasResolved && stepResult.outcome === "failed";
+              const cleared = hasResolved && stepResult.outcome === "cleared";
+              const isActive =
+                !dungeonProgress?.finished && !hasResolved && index === activeStepIndex;
+              const className = failed
+                ? "border-red-700 bg-red-950/40 text-red-300"
+                : cleared
+                  ? "border-emerald-700 bg-emerald-950/40 text-emerald-300"
+                  : isActive
+                    ? "border-amber-700 bg-amber-950/40 text-amber-300"
+                    : "border-gray-700 bg-gray-900/60 text-gray-500";
+              return (
+                <div
+                  key={`${mission.instanceId || mission.id}-${label}`}
+                  className={`rounded border px-1 py-1 text-[10px] text-center ${className}`}
+                >
+                  {label}
+                </div>
+              );
+            })}
+          </div>
+        </>
+      )}
       <div className="w-full bg-gray-700 h-2 rounded-full overflow-hidden z-10 relative">
         <div
           className="bg-blue-500 h-full transition-all duration-100 linear"
@@ -770,12 +1078,39 @@ const App = () => {
   const [showMap, setShowMap] = useState(false);
   const [showOptions, setShowOptions] = useState(false);
   const [detailCharId, setDetailCharId] = useState(null);
+  const [notifications, setNotifications] = useState([]);
 
   const rosterRef = useRef(roster);
   const missionsRef = useRef(activeMissions);
   const goldRef = useRef(guildGold);
   const rewardedMissionIdsRef = useRef(new Set());
+  const notificationTimersRef = useRef(new Map());
   const sessionFileInputRef = useRef(null);
+
+  const dismissNotification = useCallback((notificationId) => {
+    setNotifications((prev) =>
+      prev.filter((notification) => notification.id !== notificationId),
+    );
+    const timerId = notificationTimersRef.current.get(notificationId);
+    if (timerId) {
+      window.clearTimeout(timerId);
+      notificationTimersRef.current.delete(notificationId);
+    }
+  }, []);
+
+  const pushNotification = useCallback((message, type = "info", durationMs = 4200) => {
+    const notificationId = createId();
+    setNotifications((prev) =>
+      [...prev, { id: notificationId, message, type }].slice(-4),
+    );
+    const timerId = window.setTimeout(() => {
+      setNotifications((prev) =>
+        prev.filter((notification) => notification.id !== notificationId),
+      );
+      notificationTimersRef.current.delete(notificationId);
+    }, durationMs);
+    notificationTimersRef.current.set(notificationId, timerId);
+  }, []);
 
   useEffect(() => {
     rosterRef.current = roster;
@@ -786,6 +1121,15 @@ const App = () => {
   useEffect(() => {
     goldRef.current = guildGold;
   }, [guildGold]);
+  useEffect(
+    () => () => {
+      notificationTimersRef.current.forEach((timerId) => {
+        window.clearTimeout(timerId);
+      });
+      notificationTimersRef.current.clear();
+    },
+    [],
+  );
 
   const applyLevelAndProfessionDelta = (char, levelDelta) => {
     const newLevel = Math.min(
@@ -813,23 +1157,96 @@ const App = () => {
     };
   };
 
+  const tryApplyWorldTickLoot = (char, logCollector) => {
+    const roll = Math.random();
+    const targetQuality = roll < 0.01 ? 2 : roll < 0.09 ? 1 : null;
+    if (!targetQuality) return char;
+
+    const lootItem = generateWorldTickLoot(char, targetQuality);
+    if (!lootItem) return char;
+
+    const currentItem = char.equipment?.[lootItem.slot];
+    const currentItemLevel = getItemEffectiveLevel(currentItem);
+    const newItemLevel = getItemEffectiveLevel(lootItem);
+
+    if (newItemLevel <= currentItemLevel) return char;
+
+    logCollector.push({
+      type: "loot",
+      characterName: char.name,
+      itemName: lootItem.name,
+      itemQuality: lootItem.quality,
+      missionName: "World Drop",
+    });
+
+    return {
+      ...char,
+      equipment: { ...char.equipment, [lootItem.slot]: lootItem },
+      statusText: `Found [${lootItem.name}] while adventuring.`,
+    };
+  };
+
   const getMissionInstanceId = (mission) =>
     mission.instanceId || `${mission.questId || mission.id}-${mission.startTime || 0}`;
 
   // Reusable Reward Logic
   const processMissionRewards = (mission, currentRoster) => {
-    const dungeonBonusRoll = generateBossLoot(
-      mission,
-      currentRoster.filter((c) => mission.memberIds.includes(c.id)),
+    const partyMembers = currentRoster.filter((c) =>
+      mission.memberIds.includes(c.id),
     );
-    const missionGold =
+    const isDungeon = mission.type === "dungeon";
+    const dungeonClearedSteps = isDungeon
+      ? Math.max(
+          0,
+          Math.min(
+            DUNGEON_STEP_COUNT,
+            Number(mission.dungeonProgress?.clearedSteps) || 0,
+          ),
+        )
+      : 0;
+    const missionSucceeded = isDungeon
+      ? dungeonClearedSteps >= DUNGEON_STEP_COUNT
+      : mission.missionSuccess !== false;
+    const { lootMap: missionLootMap, discardedDrops } = isDungeon
+      ? buildDungeonBossLootMap(mission, partyMembers, dungeonClearedSteps)
+      : missionSucceeded
+        ? buildMissionLootMap(mission, partyMembers)
+        : { lootMap: new Map(), discardedDrops: 0 };
+    const baseMissionGold =
       typeof mission.payoutGold === "number"
         ? Math.max(0, mission.payoutGold)
         : getMissionGoldReward(mission);
-    let missionLogs = [];
+    const missionGold = missionSucceeded ? baseMissionGold : 0;
+    const missionExpReward = isDungeon
+      ? Math.max(0, Math.floor(mission.exp * (dungeonClearedSteps / DUNGEON_STEP_COUNT)))
+      : missionSucceeded
+        ? mission.exp
+        : Math.max(1, Math.floor(mission.exp * FAILED_MISSION_EXP_FACTOR));
+    const missionLogs = [
+      {
+        type: "mission",
+        missionName: mission.name,
+        outcome: missionSucceeded ? "success" : "failed",
+        successChance:
+          typeof mission.successChance === "number" ? mission.successChance : null,
+        failChance:
+          typeof mission.failChance === "number" ? mission.failChance : null,
+        memberCount: Array.isArray(mission.memberIds) ? mission.memberIds.length : 0,
+        bossesCleared: isDungeon ? dungeonClearedSteps : null,
+        totalBosses: isDungeon ? DUNGEON_STEP_COUNT : null,
+      },
+    ];
+    if (discardedDrops > 0) {
+      missionLogs.push({
+        type: "loot-discard",
+        missionName: mission.name,
+        count: discardedDrops,
+      });
+    }
+
     const updatedRoster = currentRoster.map((c) => {
       if (mission.memberIds.includes(c.id)) {
-        let newExp = c.exp + mission.exp;
+        let newExp = c.exp + missionExpReward;
         let newLevel = c.level;
         let maxExp = getReqExp(newLevel);
         let leveledUp = false;
@@ -849,38 +1266,45 @@ const App = () => {
           name: mission.name,
           type: mission.type,
           elite: !!mission.elite,
-          exp: mission.exp,
+          exp: missionExpReward,
+          result: missionSucceeded ? "Success" : "Failed",
+          bossesCleared: isDungeon ? dungeonClearedSteps : null,
           time: new Date().toLocaleTimeString(),
           loot: null,
         };
 
-        let lootItem = null;
-        if (dungeonBonusRoll && dungeonBonusRoll.winnerId === c.id) {
-          lootItem = dungeonBonusRoll.loot;
-        } else {
-          lootItem = generatePersonalLoot(mission, c);
-        }
-
-        if (lootItem) {
+        const awardedLootItems = missionLootMap.get(c.id) || [];
+        awardedLootItems.forEach((lootItem, index) => {
           const currentItem = newEquipment[lootItem.slot];
-          if (!currentItem || lootItem.quality > currentItem.quality) {
+          const currentItemLevel = getItemEffectiveLevel(currentItem);
+          const newItemLevel = getItemEffectiveLevel(lootItem);
+          const willEquip = !currentItem || newItemLevel > currentItemLevel;
+
+          if (willEquip) {
             newEquipment[lootItem.slot] = lootItem;
-            historyEntry.loot = lootItem;
-            missionLogs.push({
-              type: "loot",
-              characterName: c.name,
-              itemName: lootItem.name,
-              itemQuality: lootItem.quality,
-              missionName: mission.name,
-            });
           }
-        }
+
+          if (index === 0) {
+            historyEntry.loot = lootItem;
+          }
+
+          missionLogs.push({
+            type: "loot",
+            characterName: c.name,
+            itemName: lootItem.name,
+            itemQuality: lootItem.quality,
+            missionName: mission.name,
+            equipped: willEquip,
+          });
+        });
 
         // IMPORTANT: Set Status back to Idle immediately!
         return {
           ...c,
           status: "Idle",
-          statusText: "Returning from Mission...",
+          statusText: missionSucceeded
+            ? "Returning from Mission..."
+            : "Recovering from failed mission...",
           level: newLevel,
           exp: newExp,
           maxExp,
@@ -891,7 +1315,7 @@ const App = () => {
       }
       return c;
     });
-    return { updatedRoster, missionLogs, missionGold };
+    return { updatedRoster, missionLogs, missionGold, missionSucceeded };
   };
 
   // --- GAME LOOP ---
@@ -910,10 +1334,23 @@ const App = () => {
       let newLogs = [];
       let newGold = currentGold;
 
-      // 1. Separate Missions
-      currentMissions.forEach((m) => {
-        if (m.finishTime <= now) finishedMissions.push(m);
-        else newMissions.push(m);
+      // 1. Advance missions and separate finished/active
+      currentMissions.forEach((mission) => {
+        let currentMission = mission;
+        if (currentMission.type === "dungeon") {
+          const dungeonAdvance = advanceDungeonMission(currentMission, now);
+          currentMission = dungeonAdvance.mission;
+          if (dungeonAdvance.stepLogs.length > 0) {
+            newLogs = [...newLogs, ...dungeonAdvance.stepLogs];
+          }
+        }
+
+        const dungeonFinished = Boolean(currentMission.dungeonProgress?.finished);
+        if (currentMission.finishTime <= now || dungeonFinished) {
+          finishedMissions.push(currentMission);
+        } else {
+          newMissions.push(currentMission);
+        }
       });
 
       // 2. Process Finished Missions (Fixes "Stuck" Issue)
@@ -925,6 +1362,9 @@ const App = () => {
         const result = processMissionRewards(m, newRoster);
         newRoster = result.updatedRoster;
         newLogs = [...newLogs, ...result.missionLogs];
+        if (!result.missionSucceeded) {
+          pushNotification(`Mission failed: ${m.name}`, "error");
+        }
 
         const openGoldSpace = CONFIG.GOLD_CAP - newGold;
         const gainedGold = Math.max(
@@ -1003,7 +1443,7 @@ const App = () => {
             newLevel = CONFIG.LEVEL_CAP;
             newExp = maxExp;
           }
-          return {
+          const leveledChar = {
             ...char,
             level: newLevel,
             exp: newExp,
@@ -1011,6 +1451,7 @@ const App = () => {
             statusText,
             lastLevelUp: leveledUp ? Date.now() : char.lastLevelUp,
           };
+          return tryApplyWorldTickLoot(leveledChar, newLogs);
         }
 
         if (gainSkill) {
@@ -1063,7 +1504,7 @@ const App = () => {
       }
     }, CONFIG.TICK_RATE);
     return () => clearInterval(tick);
-  }, [isPaused]);
+  }, [isPaused, pushNotification]);
 
   const handleRecruit = (chars) => {
     setRoster((prev) => {
@@ -1109,6 +1550,17 @@ const App = () => {
   };
   const handleDeploy = (quest, ids) => {
     const startTime = Date.now();
+    const selectedMembers = roster.filter((c) => ids.includes(c.id));
+    const missionPreview = getMissionSuccessPreview(quest, selectedMembers);
+    const totalDuration = quest.duration * 1000;
+    const dungeonProgress =
+      quest.type === "dungeon"
+        ? getDefaultDungeonProgress(startTime, totalDuration)
+        : null;
+    const missionSuccess =
+      quest.type === "dungeon"
+        ? undefined
+        : Math.random() * 100 < missionPreview.successChance;
     setRoster((prev) =>
       prev.map((c) =>
         ids.includes(c.id)
@@ -1122,51 +1574,66 @@ const App = () => {
         ...quest,
         instanceId: createId(),
         payoutGold: getMissionGoldReward(quest),
+        missionSuccess,
+        successChance: missionPreview.successChance,
+        failChance: missionPreview.failChance,
+        partyPower: missionPreview.partyPower,
+        missionPower: missionPreview.missionPower,
         questId: quest.id,
         startTime,
-        finishTime: startTime + quest.duration * 1000,
-        totalDuration: quest.duration * 1000,
+        finishTime: startTime + totalDuration,
+        totalDuration,
+        dungeonProgress,
         memberIds: [...ids],
       },
     ]);
   };
   const handleManualFinish = (m) => {
-    const missionInstanceId = getMissionInstanceId(m);
+    const now = Date.now();
+    const dungeonAdvance =
+      m.type === "dungeon" ? advanceDungeonMission(m, now, true) : null;
+    const missionToResolve = dungeonAdvance ? dungeonAdvance.mission : m;
+    const missionInstanceId = getMissionInstanceId(missionToResolve);
     if (rewardedMissionIdsRef.current.has(missionInstanceId)) return;
     rewardedMissionIdsRef.current.add(missionInstanceId);
 
     // Manually trigger the finish logic immediately (logic also exists in loop, but this is for instant feedback)
     // To avoid race conditions, we filter it out of activeMissions immediately
     setActiveMissions((prev) => prev.filter((mi) => mi !== m));
-    setRoster((prevRoster) => {
-      const result = processMissionRewards(m, prevRoster);
-      const openGoldSpace = CONFIG.GOLD_CAP - goldRef.current;
-      const gainedGold = Math.max(0, Math.min(result.missionGold, openGoldSpace));
+    const result = processMissionRewards(missionToResolve, rosterRef.current);
+    rosterRef.current = result.updatedRoster;
+    setRoster(result.updatedRoster);
 
-      if (gainedGold > 0) {
-        const updatedGold = goldRef.current + gainedGold;
-        goldRef.current = updatedGold;
-        setGuildGold(updatedGold);
-      }
+    const openGoldSpace = CONFIG.GOLD_CAP - goldRef.current;
+    const gainedGold = Math.max(0, Math.min(result.missionGold, openGoldSpace));
 
-      if (result.missionLogs.length > 0 || gainedGold > 0) {
-        const time = new Date().toLocaleTimeString();
-        const extraLogs =
-          gainedGold > 0
-            ? [{ type: "gold", amount: gainedGold, missionName: m.name }]
-            : [];
-        setGuildLog((prev) =>
-          [
-            ...[...result.missionLogs, ...extraLogs].map((log) => ({
-              time,
-              ...log,
-            })),
-            ...prev,
-          ].slice(0, 50),
-        );
-      }
-      return result.updatedRoster;
-    });
+    if (gainedGold > 0) {
+      const updatedGold = goldRef.current + gainedGold;
+      goldRef.current = updatedGold;
+      setGuildGold(updatedGold);
+    }
+
+    if (result.missionLogs.length > 0 || gainedGold > 0) {
+      const time = new Date().toLocaleTimeString();
+      const dungeonStepLogs = dungeonAdvance ? dungeonAdvance.stepLogs : [];
+      const extraLogs =
+        gainedGold > 0
+          ? [{ type: "gold", amount: gainedGold, missionName: missionToResolve.name }]
+          : [];
+      setGuildLog((prev) =>
+        [
+          ...[...dungeonStepLogs, ...result.missionLogs, ...extraLogs].map((log) => ({
+            time,
+            ...log,
+          })),
+          ...prev,
+        ].slice(0, 50),
+      );
+    }
+
+    if (!result.missionSucceeded) {
+      pushNotification(`Mission failed: ${missionToResolve.name}`, "error");
+    }
   };
 
   const handleLevelChange = (id, amt) => {
@@ -1275,6 +1742,56 @@ const App = () => {
                 startTime: now,
                 finishTime: now + remainingMs,
                 totalDuration,
+                dungeonProgress:
+                  mission.type === "dungeon"
+                    ? (() => {
+                        const progress = mission.dungeonProgress || {};
+                        const stepDuration =
+                          Number(progress.stepDuration) > 0
+                            ? Number(progress.stepDuration)
+                            : Math.max(
+                                1000,
+                                Math.floor(totalDuration / DUNGEON_STEP_COUNT),
+                              );
+                        const stepResults = Array.isArray(progress.stepResults)
+                          ? progress.stepResults
+                          : [];
+                        const clearedSteps = Math.max(
+                          0,
+                          Math.min(
+                            DUNGEON_STEP_COUNT,
+                            Number(progress.clearedSteps) ||
+                              stepResults.filter((step) => step.outcome === "cleared")
+                                .length,
+                          ),
+                        );
+                        const failedAtStep = Number.isFinite(progress.failedAtStep)
+                          ? Number(progress.failedAtStep)
+                          : null;
+                        const finished =
+                          Boolean(progress.finished) ||
+                          Boolean(failedAtStep) ||
+                          clearedSteps >= DUNGEON_STEP_COUNT;
+                        const currentStep = finished
+                          ? clearedSteps
+                          : Math.max(
+                              0,
+                              Math.min(
+                                DUNGEON_STEP_COUNT - 1,
+                                Number(progress.currentStep) || clearedSteps,
+                              ),
+                            );
+                        return {
+                          currentStep,
+                          clearedSteps,
+                          failedAtStep,
+                          stepResults,
+                          stepDuration,
+                          nextStepAt: finished ? now : now + stepDuration,
+                          finished,
+                        };
+                      })()
+                    : null,
               };
             })
           : [];
@@ -1335,6 +1852,28 @@ const App = () => {
 
   return (
     <div className="wow-shell w-full max-w-5xl mx-auto p-4 pb-20">
+      {notifications.length > 0 && (
+        <div className="fixed top-4 right-4 z-[70] flex flex-col gap-2 pointer-events-none">
+          {notifications.map((notification) => (
+            <div
+              key={notification.id}
+              className={`pointer-events-auto min-w-[220px] max-w-[320px] px-3 py-2 rounded border shadow-lg text-sm flex items-center justify-between gap-2 ${
+                notification.type === "error"
+                  ? "bg-red-950/90 border-red-700 text-red-100"
+                  : "bg-gray-900/90 border-gray-600 text-gray-100"
+              }`}
+            >
+              <span>{notification.message}</span>
+              <button
+                onClick={() => dismissNotification(notification.id)}
+                className="text-xs text-gray-300 hover:text-white"
+              >
+                ✕
+              </button>
+            </div>
+          ))}
+        </div>
+      )}
       <header className="wow-header flex justify-between items-center mb-6 border-b border-gray-700 pb-4 px-2 rounded-md">
         <div>
           <h1 className="wow-header-title fantasy-font text-xl md:text-3xl font-bold truncate">

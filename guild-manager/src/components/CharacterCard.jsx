@@ -1,5 +1,10 @@
 import { CONFIG, DB_CLASSES } from "../constants";
-import { getRacePortraitUrl, getRoleIcon, getWowIconUrl } from "../utils";
+import {
+  getCharacterAverageItemLevel,
+  getRacePortraitUrl,
+  getRoleIcon,
+  getWowIconUrl,
+} from "../utils";
 
 const CharacterCard = ({ char, onClick }) => {
   const classData = DB_CLASSES[char.charClass];
@@ -8,6 +13,7 @@ const CharacterCard = ({ char, onClick }) => {
   const isMax = char.level >= CONFIG.LEVEL_CAP;
   const pct = Math.min(100, (char.exp / char.maxExp) * 100);
   const isFlashing = Date.now() - char.lastLevelUp < 1000;
+  const avgItemLevel = getCharacterAverageItemLevel(char);
 
   return (
     <div
@@ -72,6 +78,9 @@ const CharacterCard = ({ char, onClick }) => {
 
       <div className="mb-2">
         <div className="text-xs text-blue-300 italic truncate">{char.statusText}</div>
+      </div>
+      <div className="text-[11px] text-amber-200/80 font-semibold mb-1">
+        Avg iLvl: {avgItemLevel.toFixed(1)}
       </div>
 
       {!isMax ? (
