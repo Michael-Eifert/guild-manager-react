@@ -3,7 +3,7 @@ import {
   DB_CLASSES,
   DB_RACES,
   DB_NAMES,
-  DB_LASTNAMES,
+  DB_FUNNY_NAMES,
   PROF_PAIRS,
   DEFAULT_PROF_PAIR,
   KEY_DEFINITIONS,
@@ -133,6 +133,7 @@ const STAT_LABELS = {
   spirit: "Spi",
   armor: "Armor",
 };
+const FUNNY_NAME_CHANCE = 0.12;
 
 export const createId = () =>
   typeof crypto !== "undefined" && crypto.randomUUID
@@ -404,6 +405,53 @@ export const getMissionBaseFailChance = (mission) => {
   return 5;
 };
 
+export const getMissionVeteranCoverage = (mission, partyMembers) => {
+  const members = Array.isArray(partyMembers) ? partyMembers : [];
+  if (!mission || mission.type !== "dungeon" || members.length === 0) {
+    return {
+      missionKey: null,
+      experiencedCount: 0,
+      partySize: members.length,
+      coverageRatio: 0,
+      successBonus: 0,
+    };
+  }
+
+  const rawMissionKey = mission?.questId ?? mission?.id;
+  const missionKey = rawMissionKey == null ? null : String(rawMissionKey);
+  if (!missionKey) {
+    return {
+      missionKey: null,
+      experiencedCount: 0,
+      partySize: members.length,
+      coverageRatio: 0,
+      successBonus: 0,
+    };
+  }
+
+  const experiencedCount = members.reduce((count, member) => {
+    const clearedMissionIds = Array.isArray(member?.clearedMissionIds)
+      ? member.clearedMissionIds
+      : [];
+    const hasClear = clearedMissionIds.some(
+      (missionId) => String(missionId) === missionKey,
+    );
+    return hasClear ? count + 1 : count;
+  }, 0);
+
+  const partySize = Math.max(0, members.length);
+  const coverageRatio = partySize > 0 ? experiencedCount / partySize : 0;
+  const successBonus = coverageRatio >= 0.5 ? 10 : 0;
+
+  return {
+    missionKey,
+    experiencedCount,
+    partySize,
+    coverageRatio,
+    successBonus,
+  };
+};
+
 export const getMissionSuccessPreview = (mission, partyMembers) => {
   const members = Array.isArray(partyMembers) ? partyMembers : [];
   const missionPower = getMissionPowerTarget(mission);
@@ -635,12 +683,23 @@ export const generateCharacter = (faction = GUILD_FACTION.ALLIANCE) => {
     allowedClasses[Math.floor(Math.random() * allowedClasses.length)];
   const gender = Math.random() > 0.5 ? "Male" : "Female";
   const raceNames = DB_NAMES[selectedRace] || DB_NAMES["Human"];
-  const namesList = raceNames[gender] || raceNames["Male"];
-  const firstName = namesList[Math.floor(Math.random() * namesList.length)];
-  const lastName =
-    Math.random() > 0.4
-      ? " " + DB_LASTNAMES[Math.floor(Math.random() * DB_LASTNAMES.length)]
-      : "";
+  const namesList = raceNames[gender] || raceNames["Male"] || [];
+  const fallbackPool =
+    DB_NAMES?.Human?.Male && DB_NAMES.Human.Male.length > 0
+      ? DB_NAMES.Human.Male
+      : ["Adventurer"];
+  const funnyPool =
+    Array.isArray(DB_FUNNY_NAMES) && DB_FUNNY_NAMES.length > 0
+      ? DB_FUNNY_NAMES
+      : null;
+  const useFunnyName = Boolean(funnyPool) && Math.random() < FUNNY_NAME_CHANCE;
+  const selectedPool = useFunnyName
+    ? funnyPool
+    : namesList.length > 0
+      ? namesList
+      : fallbackPool;
+  const firstName =
+    selectedPool[Math.floor(Math.random() * selectedPool.length)] || "Adventurer";
   const allowedRoles = DB_CLASSES[charClass].allowedRoles;
   const role = allowedRoles[Math.floor(Math.random() * allowedRoles.length)];
 
@@ -649,7 +708,7 @@ export const generateCharacter = (faction = GUILD_FACTION.ALLIANCE) => {
 
   return {
     id: createId(),
-    name: firstName + lastName,
+    name: firstName,
     race: selectedRace,
     gender,
     charClass,
@@ -663,6 +722,7 @@ export const generateCharacter = (faction = GUILD_FACTION.ALLIANCE) => {
     professions: professions,
     history: [],
     keys: [],
+    clearedMissionIds: [],
     equipment: getStarterGear(charClass),
     lastLevelUp: 0,
     backstory: null,

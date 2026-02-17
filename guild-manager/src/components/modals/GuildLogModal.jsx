@@ -46,6 +46,11 @@ const GuildLogModal = ({ isOpen, onClose, logs }) => {
                     {log.missionName}: {log.bossName}{" "}
                     {log.outcome === "failed" ? "wiped the party" : "cleared"}.
                   </span>
+                ) : log.type === "mission-attempt" ? (
+                  <span className="text-amber-200">
+                    {log.missionName}: wipe on {log.bossName} (attempts{" "}
+                    {log.attemptsUsed}/{log.maxAttempts}, {log.attemptsRemaining} left).
+                  </span>
                 ) : log.type === "dungeon-chain" ? (
                   <span
                     className={
@@ -92,6 +97,7 @@ const GuildLogModal = ({ isOpen, onClose, logs }) => {
                       [{log.itemName}]
                     </span>{" "}
                     from {log.missionName}
+                    {log.bossName ? ` (${log.bossName})` : ""}
                     {typeof log.equipped === "boolean"
                       ? log.equipped
                         ? " (equipped)."

@@ -1,15 +1,49 @@
 import { buildDungeonMissions } from "./missions/dungeonDefinitions";
 
 const GAME_MAX_SUPPORTED_LEVEL = 60;
-const QUEST_EXP_FACTOR = 0.3;
-const ELITE_QUEST_EXP_FACTOR = 0.6;
-const ELITE_QUEST_EXP_REBALANCE_FROM_LEVEL = 20;
-const ELITE_QUEST_EXP_REBALANCE_MULTIPLIER = 0.8;
-const STANDARD_QUEST_EXP_REBALANCE_FROM_LEVEL = 8;
-const STANDARD_QUEST_EXP_REBALANCE_MULTIPLIER = 0.8;
 
 const roundDownToHundred = (value) => Math.floor(value / 100) * 100;
 const roundUpToHundred = (value) => Math.ceil(value / 100) * 100;
+
+const interpolateSecondsByLevel = (level, points) => {
+  const safeLevel = Math.max(1, Math.min(GAME_MAX_SUPPORTED_LEVEL, Number(level) || 1));
+  const safePoints = Array.isArray(points) ? points : [];
+  if (safePoints.length === 0) return 60;
+  if (safeLevel <= safePoints[0].level) return safePoints[0].seconds;
+
+  for (let index = 1; index < safePoints.length; index += 1) {
+    const previous = safePoints[index - 1];
+    const current = safePoints[index];
+    if (safeLevel > current.level) continue;
+    const span = Math.max(1, current.level - previous.level);
+    const progress = (safeLevel - previous.level) / span;
+    return previous.seconds + (current.seconds - previous.seconds) * progress;
+  }
+
+  return safePoints[safePoints.length - 1].seconds;
+};
+
+const QUEST_TARGET_SECONDS_POINTS = [
+  { level: 1, seconds: 10 },
+  { level: 10, seconds: 20 },
+  { level: 20, seconds: 60 },
+  { level: 30, seconds: 80 },
+  { level: 40, seconds: 100 },
+  { level: 50, seconds: 180 },
+  { level: 58, seconds: 240 },
+  { level: 60, seconds: 240 },
+];
+
+const ELITE_TARGET_SECONDS_POINTS = [
+  { level: 1, seconds: 10 },
+  { level: 10, seconds: 20 },
+  { level: 20, seconds: 30 },
+  { level: 30, seconds: 60 },
+  { level: 40, seconds: 90 },
+  { level: 50, seconds: 150 },
+  { level: 58, seconds: 220 },
+  { level: 60, seconds: 220 },
+];
 
 const getXpToNextLevel = (level) => {
   const cl = Math.max(
@@ -39,48 +73,45 @@ const buildXpTable = (maxLevel) => {
   return table;
 };
 
-const getQuestMissionExp = (level, elite = false) => {
-  const factor = elite ? ELITE_QUEST_EXP_FACTOR : QUEST_EXP_FACTOR;
-  const eliteQuestRebalanceMultiplier =
-    elite && level >= ELITE_QUEST_EXP_REBALANCE_FROM_LEVEL
-      ? ELITE_QUEST_EXP_REBALANCE_MULTIPLIER
-      : 1;
-  const standardQuestRebalanceMultiplier =
-    !elite && level >= STANDARD_QUEST_EXP_REBALANCE_FROM_LEVEL
-      ? STANDARD_QUEST_EXP_REBALANCE_MULTIPLIER
-      : 1;
-  const minExp = elite ? 300 : 200;
-  return Math.max(
-    minExp,
-    roundDownToHundred(
-      getXpToNextLevel(level) *
-        factor *
-        eliteQuestRebalanceMultiplier *
-        standardQuestRebalanceMultiplier,
-    ),
-  );
-};
-
-const getRecommendedMedianLevel = (recommended, fallbackLevel) => {
-  if (typeof recommended !== "string") return fallbackLevel;
-  const values = recommended.match(/\d+/g);
-  if (!values || values.length < 2) return fallbackLevel;
-  const minLevel = Number(values[0]);
-  const maxLevel = Number(values[1]);
-  if (!Number.isFinite(minLevel) || !Number.isFinite(maxLevel)) {
-    return fallbackLevel;
+const getQuestDurationForLevel = (level, elite = false) => {
+  let baseDuration;
+  if (level < 10) {
+    // Early leveling stays fast: 8s - 15s
+    baseDuration = Math.min(15, 8 + Math.max(0, level - 1));
+  } else if (level < 20) {
+    // Mid band: 15s - 20s
+    baseDuration = Math.min(20, 15 + Math.floor((level - 10) / 2));
+  } else {
+    // High band: 20s - 30s
+    baseDuration = Math.min(30, 20 + Math.floor((level - 20) * 1.5));
   }
-  return Math.round((minLevel + maxLevel) / 2);
+  return elite ? baseDuration * 2 : baseDuration;
 };
 
-const getDungeonMissionExp = (recommended, fallbackLevel, durationSeconds = 100) => {
-  // Dungeon baseline: around one level-up worth of XP at the recommended median level.
-  const targetLevel = getRecommendedMedianLevel(recommended, fallbackLevel);
-  const baselineLevelExp = getXpToNextLevel(targetLevel);
-  const durationMultiplier = Math.max(0.1, Number(durationSeconds) / 100);
+const getQuestMissionExp = (level, elite = false) => {
+  const minExp = elite ? 300 : 200;
+  const targetSeconds = interpolateSecondsByLevel(
+    level,
+    elite ? ELITE_TARGET_SECONDS_POINTS : QUEST_TARGET_SECONDS_POINTS,
+  );
+  const duration = getQuestDurationForLevel(level, elite);
+  const xpToLevel = getXpToNextLevel(level);
+  const tunedExp = roundDownToHundred((xpToLevel * duration) / targetSeconds);
+  return Math.max(minExp, tunedExp);
+};
+
+const DUNGEON_EXP_BASELINE_LEVEL = 59;
+const DUNGEON_SECONDS_PER_LEVEL_TARGET = 150;
+const DUNGEON_BASELINE_LEVEL_EXP = getXpToNextLevel(DUNGEON_EXP_BASELINE_LEVEL);
+
+const getDungeonMissionExp = (_recommended, _fallbackLevel, durationSeconds = 100) => {
+  // Global dungeon scaling: 150 seconds ~= one level worth of XP,
+  // where "one level" uses the XP needed from level 59 -> 60.
+  const safeDuration = Math.max(1, Number(durationSeconds) || 100);
+  const durationMultiplier = safeDuration / DUNGEON_SECONDS_PER_LEVEL_TARGET;
   return Math.max(
     1000,
-    roundUpToHundred(baselineLevelExp * durationMultiplier),
+    roundUpToHundred(DUNGEON_BASELINE_LEVEL_EXP * durationMultiplier),
   );
 };
 
@@ -111,6 +142,29 @@ export const GUILD_FACTION = Object.freeze({
 
 export const GUILD_FACTION_OPTIONS = Object.freeze(Object.values(GUILD_FACTION));
 
+export const GUILD_SERVER_STYLE = Object.freeze({
+  PVE: "PvE",
+  PVP: "PvP",
+});
+
+export const GUILD_SERVER = Object.freeze({
+  EVERLOOK: "Everlook",
+  FIREMAW: "Firemaw",
+});
+
+export const GUILD_SERVER_OPTIONS = Object.freeze([
+  {
+    value: GUILD_SERVER.EVERLOOK,
+    label: `${GUILD_SERVER.EVERLOOK} (${GUILD_SERVER_STYLE.PVE})`,
+    style: GUILD_SERVER_STYLE.PVE,
+  },
+  {
+    value: GUILD_SERVER.FIREMAW,
+    label: `${GUILD_SERVER.FIREMAW} (${GUILD_SERVER_STYLE.PVP})`,
+    style: GUILD_SERVER_STYLE.PVP,
+  },
+]);
+
 export const FACTION_RACES = Object.freeze({
   [GUILD_FACTION.ALLIANCE]: Object.freeze([
     "Human",
@@ -126,20 +180,8 @@ export const FACTION_RACES = Object.freeze({
   ]),
 });
 
-const getQuestDuration = (level, elite = false) => {
-  let baseDuration;
-  if (level < 10) {
-    // Early leveling stays fast: 8s - 15s
-    baseDuration = Math.min(15, 8 + Math.max(0, level - 1));
-  } else if (level < 20) {
-    // Mid band: 15s - 20s
-    baseDuration = Math.min(20, 15 + Math.floor((level - 10) / 2));
-  } else {
-    // High band: 20s - 30s
-    baseDuration = Math.min(30, 20 + Math.floor((level - 20) * 1.5));
-  }
-  return elite ? baseDuration * 2 : baseDuration;
-};
+const getQuestDuration = (level, elite = false) =>
+  getQuestDurationForLevel(level, elite);
 
 const getQuestRewardQualities = (level, elite = false) => {
   if (elite) return level >= 18 ? [3] : [2];
@@ -7422,46 +7464,319 @@ export const DB_RACES = {
 
 export const DB_NAMES = {
   Human: {
-    Male: ["Varian", "Anduin", "Bolvar"],
-    Female: ["Jaina", "Vanessa", "Tess"],
+    Male: [
+      "Varian",
+      "Anduin",
+      "Bolvar",
+      "Turalyon",
+      "Danath",
+      "Marcus",
+      "Roland",
+      "Mathias",
+      "Reginald",
+      "Arator",
+      "Lothar",
+      "Benedict",
+      "Uther",
+      "Edwin",
+      "Taevon",
+    ],
+    Female: [
+      "Jaina",
+      "Vanessa",
+      "Tess",
+      "Calia",
+      "Taelia",
+      "Sally",
+      "Alicia",
+      "Marian",
+      "Eliza",
+      "Brienne",
+      "Helena",
+      "Mara",
+      "Katherine",
+      "Lysa",
+      "Annetta",
+    ],
   },
   "Night Elf": {
-    Male: ["Malfurion", "Illidan", "Jarod"],
-    Female: ["Tyrande", "Shandris", "Maiev"],
+    Male: [
+      "Malfurion",
+      "Illidan",
+      "Jarod",
+      "Broll",
+      "Remulos",
+      "Fandral",
+      "Rensar",
+      "Theran",
+      "Delandros",
+      "Nerith",
+      "Alandar",
+      "Korvas",
+      "Thalan",
+      "Cenarius",
+      "Lethon",
+    ],
+    Female: [
+      "Tyrande",
+      "Shandris",
+      "Maiev",
+      "Delaryn",
+      "Naisha",
+      "Alandien",
+      "Belysra",
+      "Lyrielle",
+      "Elyndra",
+      "Arielle",
+      "Myrande",
+      "Thyadra",
+      "Serelis",
+      "Nymara",
+      "Velira",
+    ],
   },
   Dwarf: {
-    Male: ["Magni", "Muradin", "Brann"],
-    Female: ["Moira", "Fenella", "Dorna"],
+    Male: [
+      "Magni",
+      "Muradin",
+      "Brann",
+      "Falstad",
+      "Kurdran",
+      "Baelgun",
+      "Thargas",
+      "Khardros",
+      "Brom",
+      "Durak",
+      "Rurik",
+      "Thrain",
+      "Hargin",
+      "Gimlor",
+      "Durnan",
+    ],
+    Female: [
+      "Moira",
+      "Fenella",
+      "Dorna",
+      "Brida",
+      "Grelda",
+      "Hildra",
+      "Ylsa",
+      "Marda",
+      "Kilda",
+      "Helga",
+      "Brynja",
+      "Annika",
+      "Sigrid",
+      "Torga",
+      "Runa",
+    ],
   },
   Gnome: {
-    Male: ["Gelbin", "Mekkatorque", "Sicco"],
-    Female: ["Kinndy", "Kelsey", "Pippi"],
+    Male: [
+      "Gelbin",
+      "Mekkatorque",
+      "Sicco",
+      "Cogspin",
+      "Fizzik",
+      "Nubbin",
+      "Boltin",
+      "Razzle",
+      "Tinkor",
+      "Whizzik",
+      "Sprocket",
+      "Plex",
+      "Gearwin",
+      "Zapster",
+      "Bixby",
+    ],
+    Female: [
+      "Kinndy",
+      "Kelsey",
+      "Pippi",
+      "Whizzla",
+      "Sparkette",
+      "Nixxi",
+      "Milli",
+      "Bubbles",
+      "Tinki",
+      "Gadgeta",
+      "Fizzlea",
+      "Geara",
+      "Poppi",
+      "Zippi",
+      "Riveta",
+    ],
   },
   Orc: {
-    Male: ["Thrall", "Garrosh", "Durotan"],
-    Female: ["Draka", "Aggra", "Geya'rah"],
+    Male: [
+      "Thrall",
+      "Garrosh",
+      "Durotan",
+      "Orgrim",
+      "Dranosh",
+      "Kargath",
+      "Saurfang",
+      "Grommash",
+      "Broxigar",
+      "Nazgrel",
+      "Eitrigg",
+      "Rend",
+      "Malkor",
+      "Grimtoof",
+      "Drek",
+    ],
+    Female: [
+      "Draka",
+      "Aggra",
+      "Geyarah",
+      "Igria",
+      "Roka",
+      "Shagara",
+      "Mazoga",
+      "Korra",
+      "Gorla",
+      "Zagga",
+      "Magra",
+      "Urga",
+      "Nazgra",
+      "Rukha",
+      "Thura",
+    ],
   },
   Undead: {
-    Male: ["Nathanos", "Putress", "Alonsus"],
-    Female: ["Sylvanas", "Lilian", "Velonara"],
+    Male: [
+      "Nathanos",
+      "Putress",
+      "Alonsus",
+      "Belmont",
+      "Faranell",
+      "Renferrel",
+      "Gunther",
+      "Helcular",
+      "Marwyn",
+      "Mordren",
+      "Vossen",
+      "Darnell",
+      "Cadell",
+      "Aldren",
+      "Rathis",
+    ],
+    Female: [
+      "Sylvanas",
+      "Lilian",
+      "Velonara",
+      "Amelia",
+      "Anara",
+      "Vereesa",
+      "Mirelle",
+      "Ravenia",
+      "Thyssra",
+      "Morwen",
+      "Yvella",
+      "Serena",
+      "Katria",
+      "Nyxara",
+      "Voss",
+    ],
   },
   Tauren: {
-    Male: ["Cairne", "Baine", "Hamuul"],
-    Female: ["Mayla", "Aponi", "Nara"],
+    Male: [
+      "Cairne",
+      "Baine",
+      "Hamuul",
+      "Runetotem",
+      "Tahu",
+      "Mull",
+      "Bromos",
+      "Karn",
+      "Torik",
+      "Rokar",
+      "Maro",
+      "Anak",
+      "Talrok",
+      "Kornak",
+      "Rathok",
+    ],
+    Female: [
+      "Mayla",
+      "Aponi",
+      "Nara",
+      "Hamuula",
+      "Tezu",
+      "Mialla",
+      "Sorna",
+      "Kaya",
+      "Tamaala",
+      "Rokhana",
+      "Shoma",
+      "Anari",
+      "Torala",
+      "Mahra",
+      "Kelra",
+    ],
   },
   Troll: {
-    Male: ["Vol'jin", "Rokhan", "Sen'jin"],
-    Female: ["Talanji", "Hexx", "Zekhania"],
+    Male: [
+      "Voljin",
+      "Rokhan",
+      "Senjin",
+      "Zuljin",
+      "Jinrokh",
+      "Nazgrim",
+      "Hexxar",
+      "Razan",
+      "Kragwa",
+      "Bwonsamdi",
+      "Zekhan",
+      "Jindo",
+      "Mojodo",
+      "Khanzo",
+      "Talruk",
+    ],
+    Female: [
+      "Talanji",
+      "Hexx",
+      "Zekhania",
+      "Shadra",
+      "Loti",
+      "Nokari",
+      "Zulani",
+      "Rukzi",
+      "Mekli",
+      "Veska",
+      "Jinara",
+      "Sazri",
+      "Taliri",
+      "Nyoka",
+      "Keshra",
+    ],
   },
 };
 
-export const DB_LASTNAMES = [
-  "Lightbringer",
-  "Proudmoore",
-  "Bronzebeard",
-  "Whisperwind",
-  "Stormrage",
-  "Hellscream",
-  "Menethil",
-  "Fordring",
+export const DB_FUNNY_NAMES = [
+  "Leroy Jenkins",
+  "Mankriks Wife",
+  "Thunderfury",
+  "Thex",
+  "NotAFk",
+  "OopsPull",
+  "TankyMcTank",
+  "HealzPlease",
+  "Critmas",
+  "Lagspike",
+  "ManaBiscuit",
+  "LootsMcGee",
+  "NozdormuLate",
+  "KeyboardTurner",
+  "BubbleHearth",
+  "FireStandsIn",
+  "WipeInsurance",
+  "DingMachine",
+  "SpiritHealer",
+  "VendorTrash",
+  "DurabilityZero",
+  "AggroMagnet",
+  "ResPls",
+  "FearWardWho",
+  "WindfuryWhen",
 ];

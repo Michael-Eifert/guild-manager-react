@@ -1,5 +1,9 @@
 import React from "react";
-import { GUILD_FACTION } from "../constants";
+import {
+  GUILD_FACTION,
+  GUILD_SERVER,
+  GUILD_SERVER_OPTIONS,
+} from "../constants";
 
 const GUILD_FOCUS_COPY = {
   Leveling: "Leveling (+5% Guild XP)",
@@ -71,9 +75,27 @@ const GuildSetupScreen = ({ guildSetup, onChange, onStart, onLoadSession }) => {
               </select>
             </label>
 
+            <label className="block space-y-2">
+              <span className="text-xs uppercase tracking-wider text-gray-300 font-bold">
+                Server
+              </span>
+              <select
+                value={guildSetup?.server || GUILD_SERVER.EVERLOOK}
+                onChange={(event) => onChange("server", event.target.value)}
+                className="w-full rounded border border-gray-600 bg-gray-800 px-3 py-2 text-gray-100 focus:outline-none focus:border-amber-500"
+              >
+                {GUILD_SERVER_OPTIONS.map((option) => (
+                  <option key={option.value} value={option.value}>
+                    {option.label}
+                  </option>
+                ))}
+              </select>
+            </label>
+
             <div className="rounded border border-gray-700 bg-gray-800/60 p-3 text-xs text-gray-300">
               <div>Default faction: {GUILD_FACTION.ALLIANCE} (can be changed)</div>
               <div>Default focus: Leveling</div>
+              <div>Default server: Everlook (PvE)</div>
               <div>Starting resources: 5 heroes and 5 gold</div>
               <div className="text-gray-400 mt-1">You can expand this setup later.</div>
             </div>

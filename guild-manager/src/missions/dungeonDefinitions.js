@@ -173,6 +173,7 @@ const DUNGEON_MISSION_DEFINITIONS = [
     recommended: "26 - 36",
     gold: 25,
     rewardQualities: [2, 3],
+    maxAttempts: 2,
     dungeonBosses: ["Interrogator Vishas", "Bloodmage Thalnos"],
     bonusDrops: [
       {
@@ -213,6 +214,7 @@ const DUNGEON_MISSION_DEFINITIONS = [
     recommended: "29 - 39",
     gold: 28,
     rewardQualities: [2, 3],
+    maxAttempts: 2,
     rewardKeys: ["scarlet_monastery_key"],
     dungeonBosses: ["Houndmaster Loksey", "Arcanist Doan"],
     bonusDrops: [
@@ -254,6 +256,7 @@ const DUNGEON_MISSION_DEFINITIONS = [
     recommended: "32 - 42",
     gold: 31,
     rewardQualities: [3],
+    maxAttempts: 2,
     dungeonBosses: ["Herod"],
     bonusDrops: [
       {
@@ -288,6 +291,7 @@ const DUNGEON_MISSION_DEFINITIONS = [
     recommended: "35 - 45",
     gold: 34,
     rewardQualities: [2, 3],
+    maxAttempts: 2,
     dungeonBosses: [
       "High Inquisitor Fairbanks",
       "Scarlet Commander Mograine",
@@ -649,8 +653,8 @@ const DUNGEON_MISSION_DEFINITIONS = [
     id: 62,
     name: "Molten Core",
     level: 60,
-    minLevel: 50,
-    entryLevel: 50,
+    minLevel: 56,
+    entryLevel: 56,
     keyId: "molten_core_attunement",
     requiresKey: true,
     requiresKeyForAllMembers: true,
@@ -662,7 +666,9 @@ const DUNGEON_MISSION_DEFINITIONS = [
     baseFailChance: 45,
     rewardQualities: [4, 5],
     isRaid: true,
+    minPartySize: 5,
     requiredPartySize: 40,
+    raidMaxAttempts: 10,
     raidRoleRequirement: {
       Tank: 4,
       Healer: 8,
@@ -894,6 +900,9 @@ export const buildDungeonMissions = ({
       rewardQualities: Array.isArray(mission.rewardQualities)
         ? [...mission.rewardQualities]
         : [],
+      maxAttempts: Number.isFinite(mission.maxAttempts)
+        ? Math.max(1, Math.floor(mission.maxAttempts))
+        : undefined,
       rewardKeys: Array.isArray(mission.rewardKeys) ? [...mission.rewardKeys] : [],
       dungeonLootTable: cloneDungeonLootTable(mission.dungeonLootTable),
       bonusDrops: cloneBonusDrops(mission.bonusDrops),
@@ -912,6 +921,12 @@ export const buildDungeonMissions = ({
       isRaid: mission.isRaid === true,
       requiredPartySize: Number.isFinite(mission.requiredPartySize)
         ? Math.max(1, Math.floor(mission.requiredPartySize))
+        : undefined,
+      minPartySize: Number.isFinite(mission.minPartySize)
+        ? Math.max(1, Math.floor(mission.minPartySize))
+        : undefined,
+      raidMaxAttempts: Number.isFinite(mission.raidMaxAttempts)
+        ? Math.max(1, Math.floor(mission.raidMaxAttempts))
         : undefined,
       raidRoleRequirement:
         mission.raidRoleRequirement &&

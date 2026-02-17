@@ -59,6 +59,7 @@ const ItemSlot = ({ slotName, item }) => {
 const DetailModal = ({
   char,
   isOpen,
+  missionAchievementCatalog = [],
   onClose,
   onDismiss,
   onLevelChange,
@@ -93,6 +94,51 @@ const DetailModal = ({
   const characterKeys = Array.isArray(char?.keys)
     ? [...new Set(char.keys.map((keyId) => String(keyId || "").trim()).filter(Boolean))]
     : [];
+  const clearedMissionIdSet = new Set(
+    (Array.isArray(char?.clearedMissionIds) ? char.clearedMissionIds : [])
+      .map((missionId) => String(missionId || "").trim())
+      .filter(Boolean),
+  );
+  const uniqueAchievementMissions = (() => {
+    const source = Array.isArray(missionAchievementCatalog)
+      ? missionAchievementCatalog
+      : [];
+    const seen = new Set();
+    const rows = [];
+    source.forEach((mission) => {
+      const missionId = String(mission?.id || "").trim();
+      if (!missionId || seen.has(missionId)) return;
+      seen.add(missionId);
+      rows.push({
+        id: mission.id,
+        label: mission?.label || mission?.name || "Dungeon",
+        isRaid: mission?.isRaid === true,
+        recommended: mission?.recommended || null,
+        minLevel: Number.isFinite(mission?.minLevel)
+          ? Math.max(1, Number(mission.minLevel))
+          : null,
+        entryLevel: Number.isFinite(mission?.entryLevel)
+          ? Math.max(1, Number(mission.entryLevel))
+          : null,
+      });
+    });
+    return rows;
+  })();
+  const dungeonAchievementMissions = uniqueAchievementMissions.filter(
+    (mission) => !mission.isRaid,
+  );
+  const raidAchievementMissions = uniqueAchievementMissions.filter(
+    (mission) => mission.isRaid,
+  );
+  const clearedDungeonAchievementCount = dungeonAchievementMissions.filter((mission) =>
+    clearedMissionIdSet.has(String(mission.id)),
+  ).length;
+  const clearedRaidAchievementCount = raidAchievementMissions.filter((mission) =>
+    clearedMissionIdSet.has(String(mission.id)),
+  ).length;
+  const clearedAchievementCount = uniqueAchievementMissions.filter((mission) =>
+    clearedMissionIdSet.has(String(mission.id)),
+  ).length;
   const MIN_KEY_SLOTS = 4;
   const visibleKeySlots = Array.from(
     { length: Math.max(MIN_KEY_SLOTS, characterKeys.length) },
@@ -172,6 +218,12 @@ const DetailModal = ({
             className={`flex-1 py-3 text-sm font-bold uppercase tracking-wider hover:bg-gray-700 ${tab === "profs" ? "text-white border-b-2 border-yellow-500 bg-gray-700" : "text-gray-500"}`}
           >
             Professions
+          </button>
+          <button
+            onClick={() => setTab("achievements")}
+            className={`flex-1 py-3 text-sm font-bold uppercase tracking-wider hover:bg-gray-700 ${tab === "achievements" ? "text-white border-b-2 border-amber-500 bg-gray-700" : "text-gray-500"}`}
+          >
+            Achievements
           </button>
         </div>
 
@@ -446,6 +498,119 @@ const DetailModal = ({
                   </div>
                 ))}
               </div>
+            </div>
+          )}
+
+          {tab === "achievements" && (
+            <div className="space-y-4">
+              <div className="rounded border border-amber-900/60 bg-amber-950/10 px-3 py-2 text-xs text-amber-100 flex items-center justify-between">
+                <span>Total Clears</span>
+                <span>
+                  {clearedAchievementCount}/{uniqueAchievementMissions.length}
+                </span>
+              </div>
+              {uniqueAchievementMissions.length === 0 ? (
+                <div className="text-xs text-gray-500 italic">
+                  No dungeons or raids available in the mission database.
+                </div>
+              ) : (
+                <div className="space-y-4">
+                  {[
+                    {
+                      key: "dungeons",
+                      title: "Dungeon Clears",
+                      missions: dungeonAchievementMissions,
+                      clearedCount: clearedDungeonAchievementCount,
+                      titleClass: "text-blue-200",
+                    },
+                    {
+                      key: "raids",
+                      title: "Raid Clears",
+                      missions: raidAchievementMissions,
+                      clearedCount: clearedRaidAchievementCount,
+                      titleClass: "text-orange-200",
+                    },
+                  ].map((section) => (
+                    <div
+                      key={`${char.id}-achievement-section-${section.key}`}
+                      className="rounded border border-gray-700 bg-gray-900/30 p-2"
+                    >
+                      <div className="flex items-center justify-between mb-2">
+                        <span className={`text-xs font-bold uppercase tracking-wide ${section.titleClass}`}>
+                          {section.title}
+                        </span>
+                        <span className="text-[11px] text-gray-400">
+                          {section.clearedCount}/{section.missions.length}
+                        </span>
+                      </div>
+                      {section.missions.length === 0 ? (
+                        <div className="text-[11px] text-gray-500 italic">
+                          No {section.key} available yet.
+                        </div>
+                      ) : (
+                        <div className="space-y-2">
+                          {section.missions.map((mission) => {
+                            const missionIdKey = String(mission.id);
+                            const isCleared = clearedMissionIdSet.has(missionIdKey);
+                            return (
+                              <div
+                                key={`${char.id}-achievement-${missionIdKey}`}
+                                className={`rounded border p-2 ${
+                                  isCleared
+                                    ? "border-yellow-700 bg-yellow-950/25"
+                                    : "border-gray-700 bg-gray-900/40"
+                                }`}
+                              >
+                                <div className="flex items-center justify-between gap-2">
+                                  <div className="flex items-center gap-2 min-w-0">
+                                    <img
+                                      src={getWowIconUrl(
+                                        isCleared
+                                          ? "achievement_general_raid_10man"
+                                          : "achievement_bg_returnxflags_def_wsg",
+                                      )}
+                                      alt={isCleared ? "Cleared achievement" : "Not cleared"}
+                                      className="w-4 h-4 rounded-sm border border-gray-700 object-cover flex-none"
+                                      onError={(event) => {
+                                        event.currentTarget.src = getWowIconUrl(
+                                          "inv_misc_questionmark",
+                                        );
+                                      }}
+                                    />
+                                    <span
+                                      className={`text-xs font-semibold truncate ${
+                                        isCleared ? "text-yellow-200" : "text-gray-400"
+                                      }`}
+                                    >
+                                      {mission.label}
+                                    </span>
+                                  </div>
+                                  <span
+                                    className={`text-[10px] uppercase tracking-wide whitespace-nowrap ${
+                                      mission.isRaid ? "text-orange-300" : "text-blue-300"
+                                    }`}
+                                  >
+                                    {mission.isRaid ? "Raid" : "Dungeon"}
+                                  </span>
+                                </div>
+                                <div
+                                  className={`mt-1 text-[11px] ${
+                                    isCleared ? "text-yellow-300" : "text-gray-500"
+                                  }`}
+                                >
+                                  {isCleared ? `🏅 Cleared ${mission.label}` : "Not cleared yet"}
+                                  {mission.recommended ? ` • Recommended: Lvl ${mission.recommended}` : ""}
+                                  {mission.minLevel ? ` • Min Join: Lvl ${mission.minLevel}` : ""}
+                                </div>
+                              </div>
+                            );
+                          })}
+                        </div>
+                      )}
+                    </div>
+                  ))}
+                </div>
+              )}
             </div>
           )}
         </div>

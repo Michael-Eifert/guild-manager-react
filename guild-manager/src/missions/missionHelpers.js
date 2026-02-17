@@ -4,6 +4,8 @@ export const DEFAULT_DUNGEON_BOSS_NAMES = Object.freeze([
   "Boss 3",
   "Endboss",
 ]);
+export const DEFAULT_DUNGEON_MAX_ATTEMPTS = 4;
+export const DEFAULT_RAID_MAX_ATTEMPTS = 10;
 
 export const resolveMissionRewardQualities = (mission) => {
   if (Array.isArray(mission?.rewardQualities) && mission.rewardQualities.length) {
@@ -29,6 +31,25 @@ export const getMissionTypeLabel = (mission) =>
 
 export const getMissionMetaText = (mission) =>
   `${getMissionTypeLabel(mission)} • Lvl ${mission?.recommended || mission?.level} • ${mission?.duration}s`;
+
+export const getMissionMaxAttempts = (mission) => {
+  if (mission?.type !== "dungeon") return 0;
+
+  const explicitMaxAttempts = Number(mission?.maxAttempts);
+  if (Number.isFinite(explicitMaxAttempts) && explicitMaxAttempts > 0) {
+    return Math.max(1, Math.floor(explicitMaxAttempts));
+  }
+
+  if (mission?.isRaid === true) {
+    const raidAttempts = Number(mission?.raidMaxAttempts);
+    if (Number.isFinite(raidAttempts) && raidAttempts > 0) {
+      return Math.max(1, Math.floor(raidAttempts));
+    }
+    return DEFAULT_RAID_MAX_ATTEMPTS;
+  }
+
+  return DEFAULT_DUNGEON_MAX_ATTEMPTS;
+};
 
 export const getMissionRecommendedRange = (mission) => {
   if (typeof mission?.recommended !== "string") return null;
@@ -81,10 +102,38 @@ export const getMissionLevelExpMultiplier = (characterLevel, mission) => {
   const missionType = String(mission?.type || "").toLowerCase();
   if (missionType !== "quest" && missionType !== "dungeon") return 1;
 
-  const level = Number(characterLevel) || 1;
-  if (level >= 50) return 0.5;
-  if (level >= 40) return 0.75;
-  return 1;
+  // Quest/Elite quest XP is already tuned per-level in constants.
+  // Keep additional mission-level multiplier neutral here.
+  if (missionType === "quest") return 1;
+
+  const safeLevel = Math.max(1, Number(characterLevel) || 1);
+  const dungeonMultiplierPoints = [
+    { level: 10, multiplier: 0.66 },
+    { level: 20, multiplier: 0.6 },
+    { level: 30, multiplier: 0.68 },
+    { level: 40, multiplier: 0.72 },
+    { level: 50, multiplier: 0.88 },
+    { level: 58, multiplier: 0.72 },
+    { level: 60, multiplier: 0.72 },
+  ];
+
+  if (safeLevel <= dungeonMultiplierPoints[0].level) {
+    return dungeonMultiplierPoints[0].multiplier;
+  }
+
+  for (let index = 1; index < dungeonMultiplierPoints.length; index += 1) {
+    const previous = dungeonMultiplierPoints[index - 1];
+    const current = dungeonMultiplierPoints[index];
+    if (safeLevel > current.level) continue;
+    const span = Math.max(1, current.level - previous.level);
+    const progress = (safeLevel - previous.level) / span;
+    return (
+      previous.multiplier +
+      (current.multiplier - previous.multiplier) * progress
+    );
+  }
+
+  return dungeonMultiplierPoints[dungeonMultiplierPoints.length - 1].multiplier;
 };
 
 export const getMissionRewardQualities = (mission) =>

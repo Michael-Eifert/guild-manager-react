@@ -1,3 +1,5 @@
+import { getMissionMaxAttempts } from "../missions/missionHelpers";
+
 export const SESSION_FORMAT = "guild-manager-session";
 export const SESSION_VERSION = 4;
 const MAX_GUILD_LOG_ENTRIES = 50;
@@ -74,10 +76,27 @@ const normalizeDungeonProgressForLoad = ({
   const failedAtStep = Number.isFinite(progress.failedAtStep)
     ? Number(progress.failedAtStep)
     : null;
+  const maxAttempts = getMissionMaxAttempts(mission);
+  const failedAttemptsFromResults = stepResults.filter(
+    (step) => step?.outcome === "failed",
+  ).length;
+  const attemptsUsed =
+    maxAttempts > 0
+      ? Math.max(
+          0,
+          Math.min(
+            maxAttempts,
+            Math.floor(
+              Number(progress.attemptsUsed) || Number(failedAttemptsFromResults) || 0,
+            ),
+          ),
+        )
+      : 0;
   const finished =
     Boolean(progress.finished) ||
     Boolean(failedAtStep) ||
-    clearedSteps >= dungeonStepCount;
+    clearedSteps >= dungeonStepCount ||
+    (maxAttempts > 0 && attemptsUsed >= maxAttempts);
   const currentStep = finished
     ? clearedSteps
     : Math.max(
@@ -96,6 +115,8 @@ const normalizeDungeonProgressForLoad = ({
     stepDuration,
     nextStepAt: finished ? loadBaseTime : loadBaseTime + stepDuration,
     finished,
+    maxAttempts,
+    attemptsUsed,
   };
 };
 
@@ -255,10 +276,20 @@ export const hydrateSessionData = ({
     const normalizedKeys = Array.isArray(char?.keys)
       ? [...new Set(char.keys.map((keyId) => String(keyId || "").trim()).filter(Boolean))]
       : [];
+    const normalizedClearedMissionIds = Array.isArray(char?.clearedMissionIds)
+      ? [
+          ...new Set(
+            char.clearedMissionIds
+              .map((missionId) => String(missionId || "").trim())
+              .filter(Boolean),
+          ),
+        ]
+      : [];
     if (activeMemberIds.has(char.id)) {
       return {
         ...char,
         keys: normalizedKeys,
+        clearedMissionIds: normalizedClearedMissionIds,
         status: "Questing",
         statusText: "On Mission",
       };
@@ -267,6 +298,7 @@ export const hydrateSessionData = ({
       return {
         ...char,
         keys: normalizedKeys,
+        clearedMissionIds: normalizedClearedMissionIds,
         status: "Idle",
         statusText: "Awaiting Orders",
       };
@@ -274,6 +306,7 @@ export const hydrateSessionData = ({
     return {
       ...char,
       keys: normalizedKeys,
+      clearedMissionIds: normalizedClearedMissionIds,
     };
   });
 

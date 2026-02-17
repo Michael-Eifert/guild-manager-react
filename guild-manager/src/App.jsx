@@ -7,6 +7,8 @@ import {
   DB_ITEMS,
   GUILD_FACTION,
   GUILD_FACTION_OPTIONS,
+  GUILD_SERVER,
+  GUILD_SERVER_OPTIONS,
 } from "./constants";
 import {
   getReqExp,
@@ -17,6 +19,7 @@ import {
   getItemEffectiveLevel,
   getCharacterAverageItemLevel,
   getMissionSuccessPreview,
+  getMissionVeteranCoverage,
   createId,
   getClassArmorTypes,
   isItemUsableByClass,
@@ -35,7 +38,7 @@ import DebugModal from "./components/modals/DebugModal";
 import WorldMapModal from "./components/modals/WorldMapModal";
 import GuildTalentsModal from "./components/modals/GuildTalentsModal";
 import MissionModal from "./components/modals/MissionModal";
-import BaseModal from "./components/modals/BaseModal";
+import OptionsModal from "./components/modals/OptionsModal";
 import {
   GUILD_POINT_LABEL,
   createInitialGuildProgress,
@@ -65,6 +68,7 @@ import {
   getDungeonBossCount,
   getDungeonBossNames,
   getDungeonQuarterExpMultiplier,
+  getMissionMaxAttempts,
   getDungeonOverlevelExpMultiplier,
   getMissionLevelExpMultiplier,
   getMissionGoldReward,
@@ -106,12 +110,24 @@ const callGemini = async (prompt, isJson = false) => {
 };
 
 const FAILED_MISSION_EXP_FACTOR = 0.2;
-const LEVELING_TICK_EXP_MULTIPLIER = 1.15;
+const LEVELING_TICK_EXP_MULTIPLIER = 1;
 const GUILD_ACTIVITY_MODES = ["Leveling", "Professions", "Auto"];
 const MEMBER_RANKING_MODES = {
   STANDARD: "standard",
   EQUIP_CHECK: "equipCheck",
 };
+const GUILD_MEMBER_SORT = {
+  LEVEL_DESC: "levelDesc",
+  LEVEL_ASC: "levelAsc",
+  ILVL_DESC: "ilvlDesc",
+  ILVL_ASC: "ilvlAsc",
+};
+const GUILD_MEMBER_SORT_OPTIONS = [
+  { value: GUILD_MEMBER_SORT.LEVEL_DESC, label: "Level Desc" },
+  { value: GUILD_MEMBER_SORT.LEVEL_ASC, label: "Level Asc" },
+  { value: GUILD_MEMBER_SORT.ILVL_DESC, label: "iLvl Desc" },
+  { value: GUILD_MEMBER_SORT.ILVL_ASC, label: "iLvl Asc" },
+];
 const GUILD_FOCUS = {
   LEVELING: "Leveling",
   DUNGEONS: "Dungeons",
@@ -121,6 +137,10 @@ const GUILD_FOCUS_OPTIONS = Object.values(GUILD_FOCUS);
 const DEFAULT_GUILD_SETUP = {
   name: "",
   faction: GUILD_FACTION.ALLIANCE,
+  server: GUILD_SERVER.EVERLOOK,
+  serverStyle:
+    GUILD_SERVER_OPTIONS.find((option) => option.value === GUILD_SERVER.EVERLOOK)?.style ||
+    "PvE",
   focus: GUILD_FOCUS.LEVELING,
   hasStarted: false,
 };
@@ -137,9 +157,37 @@ const DEFAULT_DUNGEON_LOOT_TABLE = {
 const STARTING_GUILD_MEMBERS = 5;
 const STARTING_GUILD_GOLD = 5;
 const RECRUIT_COST_GOLD = 5;
+const WORLD_TICK_COMMON_DROP_CHANCE = 0.08;
+const WORLD_TICK_UNCOMMON_DROP_CHANCE = 0.01;
+const WORLD_TICK_EPIC_DROP_CHANCE = 0.0001; // 0.01%
+const WORLD_TICK_EPIC_MIN_LEVEL = 40;
 const FACTION_EMBLEM_ICON = {
   [GUILD_FACTION.ALLIANCE]: "inv_bannerpvp_02",
   [GUILD_FACTION.HORDE]: "inv_bannerpvp_01",
+};
+
+const getLevelingTargetSecondsPerLevel = (level) => {
+  const safeLevel = Math.max(1, Number(level) || 1);
+  if (safeLevel <= 5) return 10;
+  if (safeLevel <= 12) return 20;
+  if (safeLevel <= 18) return 40;
+  if (safeLevel <= 22) return 60;
+  if (safeLevel <= 30) return 90;
+  if (safeLevel <= 40) return 120;
+  if (safeLevel <= 49) return 150;
+  if (safeLevel <= 55) return 200;
+  return 300;
+};
+
+const getLevelingTickExpGain = (level, totalExpMultiplier = 1) => {
+  const safeLevel = Math.max(1, Number(level) || 1);
+  const reqExp = getReqExp(safeLevel);
+  const targetSeconds = getLevelingTargetSecondsPerLevel(safeLevel);
+  const baseExpPerTick = reqExp / targetSeconds;
+  return Math.max(
+    1,
+    Math.floor(baseExpPerTick * LEVELING_TICK_EXP_MULTIPLIER * totalExpMultiplier),
+  );
 };
 
 const getFactionDefaultGuildName = (faction) =>
@@ -147,6 +195,20 @@ const getFactionDefaultGuildName = (faction) =>
 
 const getFactionFallbackManagerName = (faction) =>
   faction === GUILD_FACTION.HORDE ? "Horde Manager" : "Alliance Manager";
+
+const getServerOptionByValue = (serverValue) =>
+  GUILD_SERVER_OPTIONS.find((option) => option.value === serverValue) ||
+  GUILD_SERVER_OPTIONS[0];
+
+const getGuildServerStyle = (serverValue) =>
+  getServerOptionByValue(serverValue)?.style || DEFAULT_GUILD_SETUP.serverStyle;
+
+const getGuildServerLabel = (serverValue, serverStyle) => {
+  const option = getServerOptionByValue(serverValue);
+  const resolvedStyle = serverStyle || option?.style || DEFAULT_GUILD_SETUP.serverStyle;
+  const resolvedServer = serverValue || option?.value || DEFAULT_GUILD_SETUP.server;
+  return `${resolvedServer} (${resolvedStyle})`;
+};
 
 const getDungeonBossLabel = (mission, stepIndex) => {
   const bossNames = getDungeonBossNames(mission);
@@ -279,6 +341,7 @@ const getDefaultDungeonProgress = (mission, startTime, totalDuration) => {
   const dungeonBossCount = getDungeonBossCount(mission);
   const safeDuration = Math.max(4000, Number(totalDuration) || 0);
   const stepDuration = Math.max(1000, Math.floor(safeDuration / dungeonBossCount));
+  const maxAttempts = getMissionMaxAttempts(mission);
   return {
     currentStep: 0,
     clearedSteps: 0,
@@ -287,6 +350,8 @@ const getDefaultDungeonProgress = (mission, startTime, totalDuration) => {
     stepDuration,
     nextStepAt: startTime + stepDuration,
     finished: false,
+    maxAttempts,
+    attemptsUsed: 0,
   };
 };
 
@@ -301,13 +366,35 @@ const advanceDungeonMission = (mission, now, instant = false) => {
   const baseProgress =
     mission.dungeonProgress ||
     getDefaultDungeonProgress(mission, mission.startTime || now, mission.totalDuration);
+  const missionAttemptCap = getMissionMaxAttempts(mission);
   const progress = {
     ...baseProgress,
     stepResults: Array.isArray(baseProgress.stepResults)
       ? [...baseProgress.stepResults]
       : [],
+    maxAttempts: missionAttemptCap,
+    attemptsUsed: Math.max(
+      0,
+      Math.min(
+        missionAttemptCap,
+        Math.floor(Number(baseProgress.attemptsUsed) || 0),
+      ),
+    ),
   };
   const stepLogs = [];
+  let adjustedTotalDuration = Number(mission.totalDuration);
+  if (!Number.isFinite(adjustedTotalDuration) || adjustedTotalDuration <= 0) {
+    adjustedTotalDuration = Math.max(
+      1000,
+      progress.stepDuration * Math.max(1, dungeonBossCount),
+    );
+  }
+  let adjustedFinishTime = Number(mission.finishTime);
+  if (!Number.isFinite(adjustedFinishTime)) {
+    const start = Number(mission.startTime);
+    adjustedFinishTime =
+      (Number.isFinite(start) ? start : now) + adjustedTotalDuration;
+  }
   const successChance =
     typeof mission.successChance === "number" ? mission.successChance : 100;
 
@@ -319,10 +406,13 @@ const advanceDungeonMission = (mission, now, instant = false) => {
     const stepIndex = progress.currentStep;
     const bossName = getDungeonBossLabel(mission, stepIndex);
     const succeeded = Math.random() * 100 < successChance;
+    const attemptForStep =
+      progress.stepResults.filter((result) => result?.step === stepIndex + 1).length + 1;
 
     progress.stepResults.push({
       step: stepIndex + 1,
       bossName,
+      attempt: attemptForStep,
       outcome: succeeded ? "cleared" : "failed",
     });
     stepLogs.push({
@@ -330,10 +420,45 @@ const advanceDungeonMission = (mission, now, instant = false) => {
       missionName: mission.name,
       bossName,
       step: stepIndex + 1,
+      attempt: attemptForStep,
       outcome: succeeded ? "cleared" : "failed",
     });
 
     if (!succeeded) {
+      if (missionAttemptCap > 0) {
+        progress.attemptsUsed = Math.min(
+          missionAttemptCap,
+          progress.attemptsUsed + 1,
+        );
+        const attemptsRemaining = Math.max(
+          0,
+          missionAttemptCap - progress.attemptsUsed,
+        );
+        stepLogs.push({
+          type: "mission-attempt",
+          missionName: mission.name,
+          bossName,
+          step: stepIndex + 1,
+          attemptsUsed: progress.attemptsUsed,
+          maxAttempts: missionAttemptCap,
+          attemptsRemaining,
+        });
+        if (attemptsRemaining <= 0) {
+          progress.failedAtStep = stepIndex + 1;
+          progress.finished = true;
+          break;
+        }
+        // Retry should not lose clock time. Give this boss step time back.
+        adjustedTotalDuration += progress.stepDuration;
+        adjustedFinishTime += progress.stepDuration;
+        progress.failedAtStep = stepIndex + 1;
+        progress.nextStepAt = Math.max(
+          progress.nextStepAt + progress.stepDuration,
+          now + progress.stepDuration,
+        );
+        if (!instant) break;
+        continue;
+      }
       progress.failedAtStep = stepIndex + 1;
       progress.finished = true;
       break;
@@ -341,6 +466,7 @@ const advanceDungeonMission = (mission, now, instant = false) => {
 
     progress.clearedSteps = stepIndex + 1;
     progress.currentStep = stepIndex + 1;
+    progress.failedAtStep = null;
     if (progress.currentStep >= dungeonBossCount) {
       progress.finished = true;
       progress.failedAtStep = null;
@@ -352,6 +478,8 @@ const advanceDungeonMission = (mission, now, instant = false) => {
 
   const resolvedMission = {
     ...mission,
+    totalDuration: adjustedTotalDuration,
+    finishTime: adjustedFinishTime,
     dungeonProgress: progress,
   };
   if (progress.finished) {
@@ -402,6 +530,12 @@ const normalizeGuildSetup = (value, payloadData = {}) => {
   const normalizedFocus = GUILD_FOCUS_OPTIONS.includes(safe.focus)
     ? safe.focus
     : GUILD_FOCUS.LEVELING;
+  const normalizedServer = GUILD_SERVER_OPTIONS.some(
+    (option) => option.value === safe.server,
+  )
+    ? safe.server
+    : DEFAULT_GUILD_SETUP.server;
+  const normalizedServerStyle = getGuildServerStyle(normalizedServer);
 
   const hasStarted = Boolean(
     safe.hasStarted || normalizedName || hasLegacyGameData,
@@ -413,6 +547,8 @@ const normalizeGuildSetup = (value, payloadData = {}) => {
       normalizedName ||
       (hasStarted ? getFactionDefaultGuildName(normalizedFaction) : DEFAULT_GUILD_SETUP.name),
     faction: normalizedFaction,
+    server: normalizedServer,
+    serverStyle: normalizedServerStyle,
     focus: normalizedFocus,
     hasStarted,
   };
@@ -488,9 +624,24 @@ const ActiveMissionCard = ({ mission, onFinish, gameTimeMs }) => {
       : 0;
   const dungeonBossNames = getDungeonBossNames(mission);
   const dungeonBossCount = dungeonBossNames.length;
+  const stepResultsByStep = stepResults.reduce((acc, result) => {
+    const step = Number(result?.step);
+    if (!Number.isFinite(step) || step <= 0) return acc;
+    if (!acc.has(step)) acc.set(step, []);
+    acc.get(step).push(result);
+    return acc;
+  }, new Map());
   const chainContext = mission.chainContext;
   const chainTotal = Number(chainContext?.totalMissions) || 0;
   const chainPosition = Number(chainContext?.currentPosition) || 0;
+  const attemptsUsed = Math.max(
+    0,
+    Math.floor(Number(dungeonProgress?.attemptsUsed) || 0),
+  );
+  const maxAttempts = Math.max(
+    0,
+    Math.floor(Number(dungeonProgress?.maxAttempts) || 0),
+  );
   return (
     <div className="wow-card p-3 rounded flex flex-col gap-2 shadow-lg relative overflow-hidden border border-gray-600 bg-gray-800">
       <div className="flex justify-between items-center z-10 relative">
@@ -515,6 +666,11 @@ const ActiveMissionCard = ({ mission, onFinish, gameTimeMs }) => {
           <div className="text-[11px] text-gray-300">
             Cleared: {dungeonProgress?.clearedSteps || 0}/{dungeonBossCount} bosses
           </div>
+          {maxAttempts > 0 && (
+            <div className="text-[11px] text-amber-200/80">
+              Attempts: {attemptsUsed}/{maxAttempts}
+            </div>
+          )}
           <div
             className="grid gap-1"
             style={{
@@ -526,25 +682,38 @@ const ActiveMissionCard = ({ mission, onFinish, gameTimeMs }) => {
             }}
           >
             {dungeonBossNames.map((label, index) => {
-              const stepResult = stepResults[index];
-              const hasResolved = Boolean(stepResult);
-              const failed = hasResolved && stepResult.outcome === "failed";
-              const cleared = hasResolved && stepResult.outcome === "cleared";
+              const stepAttemptResults = stepResultsByStep.get(index + 1) || [];
+              const latestStepResult = stepAttemptResults[stepAttemptResults.length - 1];
+              const hasResolved = stepAttemptResults.length > 0;
+              const failedAttempts = stepAttemptResults.filter(
+                (result) => result?.outcome === "failed",
+              ).length;
+              const failed = hasResolved && latestStepResult?.outcome === "failed";
+              const cleared = hasResolved && latestStepResult?.outcome === "cleared";
               const isActive =
                 !dungeonProgress?.finished && !hasResolved && index === activeStepIndex;
-              const className = failed
-                ? "border-red-700 bg-red-950/40 text-red-300"
-                : cleared
-                  ? "border-emerald-700 bg-emerald-950/40 text-emerald-300"
-                  : isActive
-                    ? "border-amber-700 bg-amber-950/40 text-amber-300"
-                    : "border-gray-700 bg-gray-900/60 text-gray-500";
+              const isRetryingAfterWipe =
+                !dungeonProgress?.finished &&
+                index === activeStepIndex &&
+                failedAttempts > 0 &&
+                !cleared;
+              const className = cleared
+                ? "border-emerald-700 bg-emerald-950/40 text-emerald-300"
+                : isRetryingAfterWipe
+                  ? "border-amber-700 bg-amber-950/40 text-amber-300"
+                  : failed
+                    ? "border-red-700 bg-red-950/40 text-red-300"
+                    : isActive
+                      ? "border-amber-700 bg-amber-950/40 text-amber-300"
+                      : "border-gray-700 bg-gray-900/60 text-gray-500";
+              const stepLabel =
+                failedAttempts > 0 ? `${label} (${failedAttempts}w)` : label;
               return (
                 <div
                   key={`${mission.instanceId || mission.id}-${label}`}
                   className={`rounded border px-1 py-1 text-[10px] text-center ${className}`}
                 >
-                  {label}
+                  {stepLabel}
                 </div>
               );
             })}
@@ -564,69 +733,6 @@ const ActiveMissionCard = ({ mission, onFinish, gameTimeMs }) => {
         ⚡ Instant Finish
       </button>
     </div>
-  );
-};
-
-const OptionsModal = ({
-  isOpen,
-  onClose,
-  onSaveSession,
-  onLoadSession,
-  onOpenDebug,
-  onOpenGuildTalents,
-}) => {
-  return (
-    <BaseModal
-      isOpen={isOpen}
-      onClose={onClose}
-      overlayClassName="bg-black/70 backdrop-blur-sm p-4"
-      panelClassName="wow-modal-panel bg-gray-900 border-2 border-gray-700 rounded-lg w-full max-w-sm shadow-2xl"
-    >
-        <div className="p-4 border-b border-gray-700 flex items-center justify-between">
-          <h2 className="text-lg font-bold fantasy-font text-gray-100">Options</h2>
-          <button onClick={onClose} className="text-gray-500 hover:text-white text-2xl px-1">
-            &times;
-          </button>
-        </div>
-        <div className="p-4 space-y-3">
-          <button
-            onClick={() => {
-              onSaveSession();
-              onClose();
-            }}
-            className="w-full px-4 py-3 rounded border border-emerald-800 bg-gray-800 text-emerald-200 hover:bg-gray-700 text-sm font-bold"
-          >
-            💾 Save Session
-          </button>
-          <button
-            onClick={() => {
-              onLoadSession();
-              onClose();
-            }}
-            className="w-full px-4 py-3 rounded border border-teal-800 bg-gray-800 text-teal-200 hover:bg-gray-700 text-sm font-bold"
-          >
-            📂 Load Session
-          </button>
-          <button
-            onClick={() => {
-              onOpenGuildTalents();
-              onClose();
-            }}
-            className="w-full px-4 py-3 rounded border border-amber-800 bg-gray-800 text-amber-200 hover:bg-gray-700 text-sm font-bold"
-          >
-            🌟 Guild Talents
-          </button>
-          <button
-            onClick={() => {
-              onOpenDebug();
-              onClose();
-            }}
-            className="w-full px-4 py-3 rounded border border-red-900 bg-gray-900 text-red-300 hover:bg-red-900/20 text-sm font-bold"
-          >
-            ⚙️ Debug Menu
-          </button>
-        </div>
-    </BaseModal>
   );
 };
 
@@ -659,6 +765,11 @@ const App = () => {
   const [notifications, setNotifications] = useState([]);
   const [memberRankingMode, setMemberRankingMode] = useState(
     MEMBER_RANKING_MODES.STANDARD,
+  );
+  const [guildMemberMinLevelFilter, setGuildMemberMinLevelFilter] = useState("");
+  const [guildMemberMaxLevelFilter, setGuildMemberMaxLevelFilter] = useState("");
+  const [guildMemberSortMode, setGuildMemberSortMode] = useState(
+    GUILD_MEMBER_SORT.LEVEL_DESC,
   );
 
   const rosterRef = useRef(roster);
@@ -915,7 +1026,18 @@ const App = () => {
 
   const tryApplyWorldTickLoot = (char, logCollector) => {
     const roll = Math.random();
-    const targetQuality = roll < 0.01 ? 2 : roll < 0.09 ? 1 : null;
+    const epicEligible = (Number(char?.level) || 1) >= WORLD_TICK_EPIC_MIN_LEVEL;
+    const epicThreshold = epicEligible ? WORLD_TICK_EPIC_DROP_CHANCE : 0;
+    const uncommonThreshold = epicThreshold + WORLD_TICK_UNCOMMON_DROP_CHANCE;
+    const commonThreshold = uncommonThreshold + WORLD_TICK_COMMON_DROP_CHANCE;
+    const targetQuality =
+      roll < epicThreshold
+        ? 4
+        : roll < uncommonThreshold
+          ? 2
+          : roll < commonThreshold
+            ? 1
+            : null;
     if (!targetQuality) return char;
 
     const lootItem = generateWorldTickLoot(char, targetQuality);
@@ -951,12 +1073,19 @@ const App = () => {
       mission?.type === "dungeon"
         ? getGuildFocusBonuses(guildSetupRef.current?.focus).dungeonSuccessBonus
         : 0;
-    const adjustedSuccess = Math.min(100, preview.successChance + dungeonBonus);
+    const veteranCoverage = getMissionVeteranCoverage(mission, members);
+    const adjustedSuccess = Math.min(
+      100,
+      preview.successChance + dungeonBonus + veteranCoverage.successBonus,
+    );
     return {
       ...preview,
       successChance: adjustedSuccess,
       failChance: Math.max(0, 100 - adjustedSuccess),
       focusSuccessBonus: dungeonBonus,
+      veteranSuccessBonus: veteranCoverage.successBonus,
+      veteranExperiencedCount: veteranCoverage.experiencedCount,
+      veteranCoverageRatio: veteranCoverage.coverageRatio,
     };
   }, []);
 
@@ -1379,14 +1508,9 @@ const App = () => {
         }
 
         if (gainXP) {
-          const expGain = Math.max(
-            1,
-            Math.floor(
-              (20 + char.level * 4) *
-                LEVELING_TICK_EXP_MULTIPLIER *
-                currentGuildStats.expMultiplier *
-                currentFocusBonuses.expMultiplier,
-            ),
+          const expGain = getLevelingTickExpGain(
+            char.level,
+            currentGuildStats.expMultiplier * currentFocusBonuses.expMultiplier,
           );
           let newExp = char.exp + expGain;
           let newLevel = char.level;
@@ -1553,6 +1677,18 @@ const App = () => {
           focus: GUILD_FOCUS_OPTIONS.includes(value) ? value : GUILD_FOCUS.LEVELING,
         };
       }
+      if (field === "server") {
+        const normalizedServer = GUILD_SERVER_OPTIONS.some(
+          (option) => option.value === value,
+        )
+          ? value
+          : DEFAULT_GUILD_SETUP.server;
+        return {
+          ...prev,
+          server: normalizedServer,
+          serverStyle: getGuildServerStyle(normalizedServer),
+        };
+      }
       return prev;
     });
   };
@@ -1599,15 +1735,18 @@ const App = () => {
   const handleDeploy = (quest, ids, options = {}) => {
     const memberIds = Array.isArray(ids) ? ids.filter(Boolean) : [];
     if (!quest || memberIds.length === 0) return;
-    const requiredPartySize = Math.max(
+    const recommendedPartySize = Math.max(
       1,
       Number(quest?.requiredPartySize) || (quest?.isRaid ? 40 : 5),
     );
-    if (quest?.isRaid && memberIds.length !== requiredPartySize) {
+    const minimumPartySize = quest?.isRaid
+      ? Math.max(1, Number(quest?.minPartySize) || 5)
+      : 1;
+    if (quest?.isRaid && memberIds.length < minimumPartySize) {
       pushNotification({
         type: "error",
         title: "Raid Setup Incomplete",
-        message: `${quest.name} requires exactly ${requiredPartySize} heroes.`,
+        message: `${quest.name} requires at least ${minimumPartySize} heroes (recommended: ${recommendedPartySize}).`,
       });
       return;
     }
@@ -1763,21 +1902,23 @@ const App = () => {
       setGuildGold(updatedGold);
     }
 
-    if (result.missionLogs.length > 0 || gainedGold > 0) {
-      const time = new Date().toLocaleTimeString();
-      const dungeonStepLogs = dungeonAdvance ? dungeonAdvance.stepLogs : [];
-      const extraLogs =
-        gainedGold > 0
-          ? [{ type: "gold", amount: gainedGold, missionName: missionToResolve.name }]
-          : [];
+    const time = new Date().toLocaleTimeString();
+    const dungeonStepLogs = dungeonAdvance ? dungeonAdvance.stepLogs : [];
+    const extraLogs =
+      gainedGold > 0
+        ? [{ type: "gold", amount: gainedGold, missionName: missionToResolve.name }]
+        : [];
+    const manualFinishLogs = [
+      // Put reward logs first so loot entries are kept even when many wipe/step logs are generated.
+      ...result.missionLogs,
+      ...extraLogs,
+      ...chainResolution.chainLogs,
+      ...dungeonStepLogs,
+    ];
+    if (manualFinishLogs.length > 0) {
       setGuildLog((prev) =>
         [
-          ...[
-            ...dungeonStepLogs,
-            ...result.missionLogs,
-            ...extraLogs,
-            ...chainResolution.chainLogs,
-          ].map((log) => ({
+          ...manualFinishLogs.map((log) => ({
             time,
             ...log,
           })),
@@ -1982,34 +2123,104 @@ const App = () => {
           return uniform ? firstMode : "Mixed";
         })();
 
+  const parsedGuildMemberMinLevel = Number(guildMemberMinLevelFilter);
+  const parsedGuildMemberMaxLevel = Number(guildMemberMaxLevelFilter);
+  const hasGuildMemberMinLevelFilter =
+    guildMemberMinLevelFilter !== "" &&
+    Number.isFinite(parsedGuildMemberMinLevel) &&
+    parsedGuildMemberMinLevel > 0;
+  const hasGuildMemberMaxLevelFilter =
+    guildMemberMaxLevelFilter !== "" &&
+    Number.isFinite(parsedGuildMemberMaxLevel) &&
+    parsedGuildMemberMaxLevel > 0;
+  const normalizedGuildMemberMinLevel = hasGuildMemberMinLevelFilter
+    ? Math.max(1, Math.floor(parsedGuildMemberMinLevel))
+    : null;
+  const normalizedGuildMemberMaxLevel = hasGuildMemberMaxLevelFilter
+    ? Math.max(1, Math.floor(parsedGuildMemberMaxLevel))
+    : null;
+  const hasAnyGuildMemberLevelFilter =
+    hasGuildMemberMinLevelFilter || hasGuildMemberMaxLevelFilter;
   const rankedRoster = useMemo(
-    () =>
-      [...roster].sort((left, right) => {
-        if (memberRankingMode === MEMBER_RANKING_MODES.EQUIP_CHECK) {
-          const rightItemLevel = getCharacterAverageItemLevel(right);
-          const leftItemLevel = getCharacterAverageItemLevel(left);
-          if (rightItemLevel !== leftItemLevel) {
-            return rightItemLevel - leftItemLevel;
-          }
-          if (right.level !== left.level) {
-            return right.level - left.level;
-          }
-          return String(left.name || "").localeCompare(String(right.name || ""));
-        }
+    () => {
+      const levelBounds =
+        normalizedGuildMemberMinLevel !== null &&
+        normalizedGuildMemberMaxLevel !== null
+          ? {
+              min: Math.min(
+                normalizedGuildMemberMinLevel,
+                normalizedGuildMemberMaxLevel,
+              ),
+              max: Math.max(
+                normalizedGuildMemberMinLevel,
+                normalizedGuildMemberMaxLevel,
+              ),
+            }
+          : {
+              min: normalizedGuildMemberMinLevel ?? 1,
+              max: normalizedGuildMemberMaxLevel ?? Number.POSITIVE_INFINITY,
+            };
 
-        if (left.level !== right.level) {
-          return right.level - left.level;
-        }
+      const filteredRoster = roster.filter((member) => {
+        if (!hasAnyGuildMemberLevelFilter) return true;
+        const level = Number(member?.level) || 1;
+        return level >= levelBounds.min && level <= levelBounds.max;
+      });
 
-        const rightItemLevel = getCharacterAverageItemLevel(right);
+      return [...filteredRoster].sort((left, right) => {
+        const leftLevel = Number(left?.level) || 1;
+        const rightLevel = Number(right?.level) || 1;
         const leftItemLevel = getCharacterAverageItemLevel(left);
-        if (rightItemLevel !== leftItemLevel) {
-          return rightItemLevel - leftItemLevel;
+        const rightItemLevel = getCharacterAverageItemLevel(right);
+
+        if (guildMemberSortMode === GUILD_MEMBER_SORT.LEVEL_ASC) {
+          if (leftLevel !== rightLevel) return leftLevel - rightLevel;
+          if (rightItemLevel !== leftItemLevel) return rightItemLevel - leftItemLevel;
+        } else if (guildMemberSortMode === GUILD_MEMBER_SORT.ILVL_DESC) {
+          if (rightItemLevel !== leftItemLevel) return rightItemLevel - leftItemLevel;
+          if (rightLevel !== leftLevel) return rightLevel - leftLevel;
+        } else if (guildMemberSortMode === GUILD_MEMBER_SORT.ILVL_ASC) {
+          if (leftItemLevel !== rightItemLevel) return leftItemLevel - rightItemLevel;
+          if (leftLevel !== rightLevel) return leftLevel - rightLevel;
+        } else {
+          if (rightLevel !== leftLevel) return rightLevel - leftLevel;
+          if (rightItemLevel !== leftItemLevel) return rightItemLevel - leftItemLevel;
         }
 
-        return String(left.name || "").localeCompare(String(right.name || ""));
-      }),
-    [memberRankingMode, roster],
+        return String(left?.name || "").localeCompare(String(right?.name || ""));
+      });
+    },
+    [
+      guildMemberSortMode,
+      hasAnyGuildMemberLevelFilter,
+      normalizedGuildMemberMaxLevel,
+      normalizedGuildMemberMinLevel,
+      roster,
+    ],
+  );
+  const missionAchievementCatalog = useMemo(
+    () =>
+      [...missionList]
+        .filter((mission) => mission?.type === "dungeon")
+        .sort((left, right) => {
+          if ((left?.level || 0) !== (right?.level || 0)) {
+            return (left?.level || 0) - (right?.level || 0);
+          }
+          return String(left?.name || "").localeCompare(String(right?.name || ""));
+        })
+        .map((mission) => ({
+          id: mission.id,
+          name: mission.name,
+          label:
+            mission?.type === "dungeon" && mission?.dungeonWing
+              ? `${mission.dungeonWing}${mission?.dungeonSetName ? ` (${mission.dungeonSetName})` : ""}`
+              : mission.name,
+          isRaid: mission.isRaid === true,
+          recommended: mission.recommended,
+          minLevel: mission.minLevel,
+          entryLevel: mission.entryLevel,
+        })),
+    [missionList],
   );
   const {
     openSlots: openRecruitSlots,
@@ -2058,7 +2269,9 @@ const App = () => {
             {guildSetup.name || getFactionFallbackManagerName(guildSetup.faction)}
           </h1>
           <p className="text-amber-100/70 text-xs md:text-sm tracking-wide">
-            {guildSetup.faction} Command • Focus: {guildSetup.focus}
+            {guildSetup.faction} Command • Server:{" "}
+            {getGuildServerLabel(guildSetup.server, guildSetup.serverStyle)} • Focus:{" "}
+            {guildSetup.focus}
           </p>
         </div>
         <div className="text-right flex-none ml-2">
@@ -2215,24 +2428,90 @@ const App = () => {
           <h3 className="text-sm font-bold text-gray-300 uppercase tracking-wider">
             Guild Members
           </h3>
-          <div className="flex items-center gap-2">
-            <span className="text-xs text-gray-400 uppercase tracking-wider">
-              Ranking
-            </span>
-            <select
-              value={memberRankingMode}
-              onChange={(event) => setMemberRankingMode(event.target.value)}
-              className="bg-gray-800 text-gray-100 text-xs border border-gray-600 rounded px-2 py-1 focus:outline-none focus:border-amber-500"
+          <div className="flex flex-wrap items-end gap-2">
+            <label className="text-[11px] text-gray-300">
+              <span className="block mb-1 uppercase tracking-wide text-gray-500">
+                Ranking
+              </span>
+              <select
+                value={memberRankingMode}
+                onChange={(event) => setMemberRankingMode(event.target.value)}
+                className="bg-gray-800 text-gray-100 text-xs border border-gray-600 rounded px-2 py-1 focus:outline-none focus:border-amber-500"
+              >
+                <option value={MEMBER_RANKING_MODES.STANDARD}>Standard</option>
+                <option value={MEMBER_RANKING_MODES.EQUIP_CHECK}>Equip Check</option>
+              </select>
+            </label>
+            <label className="text-[11px] text-gray-300">
+              <span className="block mb-1 uppercase tracking-wide text-gray-500">
+                Sort
+              </span>
+              <select
+                value={guildMemberSortMode}
+                onChange={(event) => setGuildMemberSortMode(event.target.value)}
+                className="bg-gray-800 text-gray-100 text-xs border border-gray-600 rounded px-2 py-1 focus:outline-none focus:border-amber-500"
+              >
+                {GUILD_MEMBER_SORT_OPTIONS.map((option) => (
+                  <option key={option.value} value={option.value}>
+                    {option.label}
+                  </option>
+                ))}
+              </select>
+            </label>
+            <label className="text-[11px] text-gray-300">
+              <span className="block mb-1 uppercase tracking-wide text-gray-500">
+                Min Level
+              </span>
+              <input
+                type="number"
+                min="1"
+                step="1"
+                inputMode="numeric"
+                value={guildMemberMinLevelFilter}
+                onChange={(event) => setGuildMemberMinLevelFilter(event.target.value)}
+                className="w-20 bg-gray-800 text-gray-100 text-xs border border-gray-600 rounded px-2 py-1 focus:outline-none focus:border-amber-500"
+                placeholder="Any"
+              />
+            </label>
+            <label className="text-[11px] text-gray-300">
+              <span className="block mb-1 uppercase tracking-wide text-gray-500">
+                Max Level
+              </span>
+              <input
+                type="number"
+                min="1"
+                step="1"
+                inputMode="numeric"
+                value={guildMemberMaxLevelFilter}
+                onChange={(event) => setGuildMemberMaxLevelFilter(event.target.value)}
+                className="w-20 bg-gray-800 text-gray-100 text-xs border border-gray-600 rounded px-2 py-1 focus:outline-none focus:border-amber-500"
+                placeholder="Any"
+              />
+            </label>
+            <button
+              type="button"
+              onClick={() => {
+                setGuildMemberMinLevelFilter("");
+                setGuildMemberMaxLevelFilter("");
+              }}
+              disabled={!hasAnyGuildMemberLevelFilter}
+              className="h-[26px] px-2 rounded border border-gray-600 bg-gray-800 text-[11px] text-gray-200 hover:bg-gray-700 disabled:opacity-40 disabled:cursor-not-allowed"
             >
-              <option value={MEMBER_RANKING_MODES.STANDARD}>Standard</option>
-              <option value={MEMBER_RANKING_MODES.EQUIP_CHECK}>Equip Check</option>
-            </select>
+              Clear
+            </button>
+            <span className="text-xs text-gray-500 ml-auto">
+              Showing {rankedRoster.length}/{roster.length}
+            </span>
           </div>
         </div>
 
         {roster.length === 0 ? (
           <div className="text-gray-500 text-center py-10 italic">
             Guild empty. Recruit heroes!
+          </div>
+        ) : rankedRoster.length === 0 ? (
+          <div className="text-gray-500 text-center py-10 italic">
+            No guild members match this level filter.
           </div>
         ) : (
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
@@ -2325,6 +2604,7 @@ const App = () => {
       <DetailModal
         char={roster.find((c) => c.id === detailCharId)}
         isOpen={!!detailCharId}
+        missionAchievementCatalog={missionAchievementCatalog}
         onClose={() => setDetailCharId(null)}
         onDismiss={handleDismiss}
         onModeChange={handleModeChange}

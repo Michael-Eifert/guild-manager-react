@@ -29,26 +29,38 @@ export const createMissionRewardProcessor = ({
   getReqExp,
   getMissionGoldReward,
 }) => {
+  const normalizeDungeonKey = (value) => {
+    const raw = String(value || "").trim();
+    if (!raw) return "";
+    return raw
+      .toLowerCase()
+      .replace(/['’]/g, "")
+      .replace(/[^a-z0-9]+/g, "_")
+      .replace(/^_+|_+$/g, "");
+  };
+
+  const toNormalizedDungeonKeys = (values) => [
+    ...new Set(
+      (Array.isArray(values) ? values : [])
+        .map((value) => normalizeDungeonKey(value))
+        .filter(Boolean),
+    ),
+  ];
+
   const getItemDungeonKeys = (item) => {
-    const keys = [];
-    if (typeof item?.dungeon === "string" && item.dungeon.trim()) {
-      keys.push(item.dungeon.trim());
-    }
-    if (typeof item?.dungeonSetId === "string" && item.dungeonSetId.trim()) {
-      keys.push(item.dungeonSetId.trim());
-    }
-    return keys;
+    return toNormalizedDungeonKeys([
+      item?.dungeon,
+      item?.dungeonSetId,
+      item?.dungeonSetName,
+    ]);
   };
 
   const getMissionDungeonKeys = (mission) => {
-    const keys = [];
-    if (typeof mission?.name === "string" && mission.name.trim()) {
-      keys.push(mission.name.trim());
-    }
-    if (typeof mission?.dungeonSetId === "string" && mission.dungeonSetId.trim()) {
-      keys.push(mission.dungeonSetId.trim());
-    }
-    return keys;
+    return toNormalizedDungeonKeys([
+      mission?.name,
+      mission?.dungeonSetId,
+      mission?.dungeonSetName,
+    ]);
   };
 
   const getMissionLootCandidatesForCharacter = (mission, char, quality) => {
@@ -201,6 +213,18 @@ export const createMissionRewardProcessor = ({
     return { discarded: true };
   };
 
+  const getMissionBossName = (mission, stepIndex) => {
+    const bossNames = Array.isArray(mission?.dungeonBosses)
+      ? mission.dungeonBosses
+          .map((bossName) => String(bossName || "").trim())
+          .filter(Boolean)
+      : [];
+    if (bossNames[stepIndex]) return bossNames[stepIndex];
+
+    const totalBosses = Math.max(1, Number(getDungeonBossCount(mission)) || 1);
+    return stepIndex === totalBosses - 1 ? "Endboss" : `Boss ${stepIndex + 1}`;
+  };
+
   const buildMissionLootMap = (mission, partyMembers) => {
     const lootMap = new Map(partyMembers.map((member) => [member.id, []]));
     if (partyMembers.length === 0) return { lootMap, discardedDrops: 0 };
@@ -211,7 +235,11 @@ export const createMissionRewardProcessor = ({
         rewardQualities[Math.floor(Math.random() * rewardQualities.length)] || 1;
       const item = pickMissionLootForCharacter(mission, member, quality, true);
       if (!item) return;
-      lootMap.get(member.id)?.push(item);
+      lootMap.get(member.id)?.push({
+        item,
+        sourceBossName: null,
+        sourceBossStep: null,
+      });
     });
 
     return { lootMap, discardedDrops: 0 };
@@ -223,12 +251,21 @@ export const createMissionRewardProcessor = ({
     const safeClearedSteps = Math.max(0, Math.min(dungeonBossCount, clearedSteps));
     let discardedDrops = 0;
 
-    const applyDropResult = (dropResult) => {
+    const applyDropResult = (dropResult, sourceContext = null) => {
       if (!dropResult || dropResult.discarded || !dropResult.item) {
         discardedDrops += 1;
         return;
       }
-      lootMap.get(dropResult.winnerId)?.push(dropResult.item);
+      lootMap.get(dropResult.winnerId)?.push({
+        item: dropResult.item,
+        sourceBossName:
+          sourceContext && typeof sourceContext.bossName === "string"
+            ? sourceContext.bossName
+            : null,
+        sourceBossStep: Number.isFinite(sourceContext?.bossStep)
+          ? Number(sourceContext.bossStep)
+          : null,
+      });
     };
 
     const getConfiguredBonusDrops = () => {
@@ -288,6 +325,11 @@ export const createMissionRewardProcessor = ({
     };
 
     for (let stepIndex = 0; stepIndex < safeClearedSteps; stepIndex++) {
+      const bossName = getMissionBossName(mission, stepIndex);
+      const sourceContext = {
+        bossName,
+        bossStep: stepIndex + 1,
+      };
       const stepLootConfig = getDungeonStepLootConfig(mission, stepIndex);
       const qualityPriority = getDungeonStepQualityPriority(mission, stepIndex);
       const stepDropCount = getStepDropCount(stepIndex);
@@ -302,7 +344,7 @@ export const createMissionRewardProcessor = ({
             worldOnly: stepLootConfig.worldOnly,
           },
         );
-        applyDropResult(drop);
+        applyDropResult(drop, sourceContext);
       }
 
       bonusDrops.forEach((bonusDropConfig) => {
@@ -314,7 +356,7 @@ export const createMissionRewardProcessor = ({
           bonusDropConfig.qualityPriority,
           bonusDropConfig.options,
         );
-        applyDropResult(bonusDrop);
+        applyDropResult(bonusDrop, sourceContext);
       });
     }
 
@@ -357,6 +399,7 @@ export const createMissionRewardProcessor = ({
     const missionSucceeded = isDungeon
       ? dungeonClearedSteps >= dungeonBossCount
       : mission.missionSuccess !== false;
+    const missionClearKey = mission?.questId ?? mission?.id;
 
     const { lootMap: missionLootMap, discardedDrops } = isDungeon
       ? buildDungeonBossLootMap(mission, partyMembers, dungeonClearedSteps)
@@ -464,6 +507,20 @@ export const createMissionRewardProcessor = ({
       }
 
       const newEquipment = { ...char.equipment };
+      const existingClearedMissionIds = Array.isArray(char?.clearedMissionIds)
+        ? [...char.clearedMissionIds]
+        : [];
+      const normalizedClearKey =
+        missionClearKey == null ? null : String(missionClearKey);
+      const updatedClearedMissionIds =
+        missionSucceeded &&
+        isDungeon &&
+        normalizedClearKey &&
+        !existingClearedMissionIds.some(
+          (missionId) => String(missionId) === normalizedClearKey,
+        )
+          ? [...existingClearedMissionIds, missionClearKey]
+          : existingClearedMissionIds;
       const historyEntry = {
         name: mission.name,
         type: mission.type,
@@ -500,7 +557,16 @@ export const createMissionRewardProcessor = ({
       });
 
       const awardedLootItems = missionLootMap.get(char.id) || [];
-      awardedLootItems.forEach((lootItem, index) => {
+      awardedLootItems.forEach((lootEntry, index) => {
+        const lootItem = lootEntry?.item || lootEntry;
+        if (!lootItem) return;
+        const sourceBossName =
+          typeof lootEntry?.sourceBossName === "string"
+            ? lootEntry.sourceBossName
+            : null;
+        const sourceBossStep = Number.isFinite(lootEntry?.sourceBossStep)
+          ? Number(lootEntry.sourceBossStep)
+          : null;
         const currentItem = newEquipment[lootItem.slot];
         const currentItemLevel = getItemEffectiveLevel(currentItem);
         const newItemLevel = getItemEffectiveLevel(lootItem);
@@ -515,6 +581,8 @@ export const createMissionRewardProcessor = ({
           itemName: lootItem.name,
           itemQuality: lootItem.quality,
           missionName: mission.name,
+          bossName: sourceBossName,
+          bossStep: sourceBossStep,
           equipped: willEquip,
         });
       });
@@ -531,6 +599,7 @@ export const createMissionRewardProcessor = ({
         lastLevelUp: leveledUp ? Date.now() : char.lastLevelUp,
         history: [historyEntry, ...char.history],
         keys: updatedKeys,
+        clearedMissionIds: updatedClearedMissionIds,
         equipment: newEquipment,
       };
     });

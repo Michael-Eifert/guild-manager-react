@@ -7,6 +7,7 @@ import {
   getKeySourceQuestLabel,
   getMissionBaseFailChance,
   getMissionSuccessPreview,
+  getMissionVeteranCoverage,
   getQualityClass,
   getQualityLabel,
   getRacePortraitUrl,
@@ -19,6 +20,7 @@ import {
   getMissionLevelExpMultiplier,
   evaluateMissionKeyAccess,
   getMissionGoldReward,
+  getMissionMaxAttempts,
   getMissionMetaText,
   getMissionRequiredKeys,
   getMissionRecommendedRange,
@@ -51,6 +53,20 @@ const AUTO_SELECT_MODE_LABEL = Object.fromEntries(
   AUTO_SELECT_MODE_OPTIONS.map((option) => [option.value, option.label]),
 );
 
+const TACTICAL_CHARACTER_SORT = {
+  LEVEL_DESC: "levelDesc",
+  LEVEL_ASC: "levelAsc",
+  ILVL_DESC: "ilvlDesc",
+  ILVL_ASC: "ilvlAsc",
+};
+
+const TACTICAL_CHARACTER_SORT_OPTIONS = [
+  { value: TACTICAL_CHARACTER_SORT.LEVEL_DESC, label: "Level Desc" },
+  { value: TACTICAL_CHARACTER_SORT.LEVEL_ASC, label: "Level Asc" },
+  { value: TACTICAL_CHARACTER_SORT.ILVL_DESC, label: "iLvl Desc" },
+  { value: TACTICAL_CHARACTER_SORT.ILVL_ASC, label: "iLvl Asc" },
+];
+
 const CATEGORY_LABELS = {
   all: "All",
   quest: "Quests",
@@ -78,6 +94,11 @@ const getMissionDisplayName = (mission) => {
 
 const getMissionPartySize = (mission) =>
   Math.max(1, Number(mission?.requiredPartySize) || (mission?.isRaid ? 40 : 5));
+
+const getMissionMinPartySize = (mission) =>
+  mission?.isRaid
+    ? Math.max(1, Number(mission?.minPartySize) || 5)
+    : 1;
 
 const formatBonusDropChanceLabel = (rawChance) => {
   const numericChance = Number(rawChance);
@@ -116,6 +137,8 @@ const getMissionBonusDropNotes = (mission) => {
 
 const getDungeonBriefingText = (mission) => {
   const bossNames = getDungeonBossNames(mission);
+  const isRaid = mission?.isRaid === true;
+  const missionMaxAttempts = getMissionMaxAttempts(mission);
   const minJoinLevel = Number.isFinite(mission?.minLevel)
     ? Math.max(1, Number(mission.minLevel))
     : Math.max(1, (Number(mission?.level) || 1) - 6);
@@ -139,7 +162,11 @@ const getDungeonBriefingText = (mission) => {
             : ""
         }.`
       : "";
-  return `Dungeon briefing: ${bossNames.length} bosses (${bossNames.join(", ")}). Each cleared boss grants 1 drop, and XP unlocks in fixed quarter milestones (25% / 50% / 75% / 100%) based on total completion.${entryText}${keyText} Over-level heroes earn less XP above the recommended max (1+: -25%, 5+: -50%, 10+: no XP).`;
+  const attemptText =
+    missionMaxAttempts > 0
+    ? ` ${isRaid ? "Raid wipe rules" : "Wipe rules"}: ${missionMaxAttempts} total attempts. A wipe retries the same boss until attempts are exhausted.`
+    : "";
+  return `Dungeon briefing: ${bossNames.length} bosses (${bossNames.join(", ")}). Each cleared boss grants 1 drop, and XP unlocks in fixed quarter milestones (25% / 50% / 75% / 100%) based on total completion.${entryText}${keyText}${attemptText} Over-level heroes earn less XP above the recommended max (1+: -25%, 5+: -50%, 10+: no XP).`;
 };
 
 const getMissionLevelBounds = (mission) => {
@@ -180,6 +207,12 @@ const getMissionProgressionBounds = (mission) => {
   };
 };
 
+const roundDownToHundred = (value) => {
+  const numeric = Number(value);
+  if (!Number.isFinite(numeric) || numeric <= 0) return 0;
+  return Math.floor(numeric / 100) * 100;
+};
+
 const roundDownToThousand = (value) => {
   const numeric = Number(value);
   if (!Number.isFinite(numeric) || numeric <= 0) return 0;
@@ -187,9 +220,16 @@ const roundDownToThousand = (value) => {
 };
 
 const formatXpRewardText = (value) => {
-  const rounded = roundDownToThousand(value);
-  if (rounded >= 1000) return `${Math.floor(rounded / 1000)}k`;
-  return `${Math.max(0, Math.floor(rounded))}`;
+  const numeric = Number(value);
+  if (!Number.isFinite(numeric) || numeric <= 0) return "0";
+
+  if (numeric >= 1000) {
+    const roundedThousands = roundDownToThousand(numeric);
+    return `${Math.floor(roundedThousands / 1000)}k`;
+  }
+
+  const roundedHundreds = roundDownToHundred(numeric);
+  return `${(roundedHundreds / 1000).toFixed(1)}k`;
 };
 
 const getDungeonGroupLevelRangeLabel = (missions) => {
@@ -270,6 +310,13 @@ const MissionModal = ({
   const [selectedQuest, setSelectedQuest] = useState(null);
   const [party, setParty] = useState([]);
   const [selectedCategory, setSelectedCategory] = useState("all");
+  const [levelFilterMin, setLevelFilterMin] = useState("");
+  const [levelFilterMax, setLevelFilterMax] = useState("");
+  const [characterFilterMinLevel, setCharacterFilterMinLevel] = useState("");
+  const [characterFilterMaxLevel, setCharacterFilterMaxLevel] = useState("");
+  const [characterSortMode, setCharacterSortMode] = useState(
+    TACTICAL_CHARACTER_SORT.LEVEL_DESC,
+  );
   const [autoAssignSummary, setAutoAssignSummary] = useState("");
   const [autoSelectMode, setAutoSelectMode] = useState(
     AUTO_SELECT_MODES.OPTIMIZED_EXP,
@@ -292,6 +339,11 @@ const MissionModal = ({
     setParty([]);
     setSelectedQuest(null);
     setSelectedCategory("all");
+    setLevelFilterMin("");
+    setLevelFilterMax("");
+    setCharacterFilterMinLevel("");
+    setCharacterFilterMaxLevel("");
+    setCharacterSortMode(TACTICAL_CHARACTER_SORT.LEVEL_DESC);
     setAutoAssignSummary("");
     setAutoSelectMode(AUTO_SELECT_MODES.OPTIMIZED_EXP);
     setExpandedDungeonGroups({});
@@ -386,6 +438,9 @@ const MissionModal = ({
     ? chainStartMission.minLevel || Math.max(1, chainStartMission.level - 6)
     : 1;
   const selectedMissionPartySize = getMissionPartySize(chainStartMission || selectedQuest);
+  const selectedMissionMinPartySize = getMissionMinPartySize(
+    chainStartMission || selectedQuest,
+  );
 
   const idleRoster = roster.filter(
     (char) =>
@@ -401,15 +456,87 @@ const MissionModal = ({
   );
 
   const eligibleRoster = idleRoster.filter((char) => char.level >= minLevel);
+  const parsedCharacterFilterMin = Number(characterFilterMinLevel);
+  const parsedCharacterFilterMax = Number(characterFilterMaxLevel);
+  const hasCharacterFilterMin =
+    characterFilterMinLevel !== "" &&
+    Number.isFinite(parsedCharacterFilterMin) &&
+    parsedCharacterFilterMin > 0;
+  const hasCharacterFilterMax =
+    characterFilterMaxLevel !== "" &&
+    Number.isFinite(parsedCharacterFilterMax) &&
+    parsedCharacterFilterMax > 0;
+  const normalizedCharacterFilterMin = hasCharacterFilterMin
+    ? Math.max(1, Math.floor(parsedCharacterFilterMin))
+    : null;
+  const normalizedCharacterFilterMax = hasCharacterFilterMax
+    ? Math.max(1, Math.floor(parsedCharacterFilterMax))
+    : null;
+  const hasAnyCharacterLevelFilter = hasCharacterFilterMin || hasCharacterFilterMax;
+  const tacticalCharacterRoster = useMemo(() => {
+    const normalizedMinMax =
+      normalizedCharacterFilterMin !== null && normalizedCharacterFilterMax !== null
+        ? {
+            min: Math.min(normalizedCharacterFilterMin, normalizedCharacterFilterMax),
+            max: Math.max(normalizedCharacterFilterMin, normalizedCharacterFilterMax),
+          }
+        : {
+            min: normalizedCharacterFilterMin ?? 1,
+            max:
+              normalizedCharacterFilterMax ?? Number.POSITIVE_INFINITY,
+          };
+
+    const filtered = idleRoster.filter((char) => {
+      if (!hasAnyCharacterLevelFilter) return true;
+      const charLevel = Number(char?.level) || 1;
+      return charLevel >= normalizedMinMax.min && charLevel <= normalizedMinMax.max;
+    });
+
+    return [...filtered].sort((left, right) => {
+      const leftLevel = Number(left?.level) || 1;
+      const rightLevel = Number(right?.level) || 1;
+      const leftItemLevel = getCharacterAverageItemLevel(left);
+      const rightItemLevel = getCharacterAverageItemLevel(right);
+
+      if (characterSortMode === TACTICAL_CHARACTER_SORT.LEVEL_ASC) {
+        if (leftLevel !== rightLevel) return leftLevel - rightLevel;
+        if (rightItemLevel !== leftItemLevel) return rightItemLevel - leftItemLevel;
+      } else if (characterSortMode === TACTICAL_CHARACTER_SORT.ILVL_DESC) {
+        if (rightItemLevel !== leftItemLevel) return rightItemLevel - leftItemLevel;
+        if (rightLevel !== leftLevel) return rightLevel - leftLevel;
+      } else if (characterSortMode === TACTICAL_CHARACTER_SORT.ILVL_ASC) {
+        if (leftItemLevel !== rightItemLevel) return leftItemLevel - rightItemLevel;
+        if (leftLevel !== rightLevel) return leftLevel - rightLevel;
+      } else {
+        if (rightLevel !== leftLevel) return rightLevel - leftLevel;
+        if (rightItemLevel !== leftItemLevel) return rightItemLevel - leftItemLevel;
+      }
+
+      return String(left?.name || "").localeCompare(String(right?.name || ""));
+    });
+  }, [
+    characterSortMode,
+    hasAnyCharacterLevelFilter,
+    idleRoster,
+    normalizedCharacterFilterMax,
+    normalizedCharacterFilterMin,
+  ]);
   const getAdjustedMissionPreview = (mission, members) => {
     const preview = getMissionSuccessPreview(mission, members);
     const bonus = mission?.type === "dungeon" ? Math.max(0, dungeonSuccessBonus) : 0;
-    const adjustedSuccess = Math.min(100, preview.successChance + bonus);
+    const veteranCoverage = getMissionVeteranCoverage(mission, members);
+    const adjustedSuccess = Math.min(
+      100,
+      preview.successChance + bonus + veteranCoverage.successBonus,
+    );
     return {
       ...preview,
       successChance: adjustedSuccess,
       failChance: Math.max(0, 100 - adjustedSuccess),
       focusSuccessBonus: bonus,
+      veteranSuccessBonus: veteranCoverage.successBonus,
+      veteranExperiencedCount: veteranCoverage.experiencedCount,
+      veteranCoverageRatio: veteranCoverage.coverageRatio,
     };
   };
 
@@ -472,7 +599,7 @@ const MissionModal = ({
   const isKeyBlocked =
     selectedPartyMembers.length > 0 && !selectedMissionKeyAccess.canEnter;
   const isRaidPartySizeInvalid =
-    Boolean(chainStartMission?.isRaid) && party.length !== selectedMissionPartySize;
+    Boolean(chainStartMission?.isRaid) && party.length < selectedMissionMinPartySize;
   const missionPreview = chainStartMission
     ? getAdjustedMissionPreview(chainStartMission, selectedPartyMembers)
     : null;
@@ -517,6 +644,46 @@ const MissionModal = ({
     if ((left?.level || 0) !== (right?.level || 0)) return (left?.level || 0) - (right?.level || 0);
     return String(left?.name || "").localeCompare(String(right?.name || ""));
   });
+  const parsedLevelFilterMin = Number(levelFilterMin);
+  const parsedLevelFilterMax = Number(levelFilterMax);
+  const hasMinLevelFilter =
+    levelFilterMin !== "" &&
+    Number.isFinite(parsedLevelFilterMin) &&
+    parsedLevelFilterMin > 0;
+  const hasMaxLevelFilter =
+    levelFilterMax !== "" &&
+    Number.isFinite(parsedLevelFilterMax) &&
+    parsedLevelFilterMax > 0;
+  const activeLevelFilterMin = hasMinLevelFilter
+    ? Math.max(1, Math.floor(parsedLevelFilterMin))
+    : null;
+  const activeLevelFilterMax = hasMaxLevelFilter
+    ? Math.max(1, Math.floor(parsedLevelFilterMax))
+    : null;
+  const hasAnyLevelFilter = hasMinLevelFilter || hasMaxLevelFilter;
+  const normalizedLevelFilter = (() => {
+    if (!hasAnyLevelFilter) return null;
+    if (activeLevelFilterMin !== null && activeLevelFilterMax !== null) {
+      return {
+        minLevel: Math.min(activeLevelFilterMin, activeLevelFilterMax),
+        maxLevel: Math.max(activeLevelFilterMin, activeLevelFilterMax),
+      };
+    }
+    if (activeLevelFilterMin !== null) {
+      return { minLevel: activeLevelFilterMin, maxLevel: Number.POSITIVE_INFINITY };
+    }
+    return { minLevel: 1, maxLevel: activeLevelFilterMax };
+  })();
+  const filteredOrderedMissions = hasAnyLevelFilter
+    ? orderedMissions.filter((mission) => {
+        if (!normalizedLevelFilter) return true;
+        const missionBounds = getMissionLevelBounds(mission);
+        return (
+          missionBounds.maxLevel >= normalizedLevelFilter.minLevel &&
+          missionBounds.minLevel <= normalizedLevelFilter.maxLevel
+        );
+      })
+    : orderedMissions;
 
   const missionEligibilityById = useMemo(() => {
     const totalRoster = roster.length;
@@ -563,7 +730,7 @@ const MissionModal = ({
             key: "quest",
             title: "Quests",
             icon: "📜",
-            missions: orderedMissions.filter(
+            missions: filteredOrderedMissions.filter(
               (mission) => getMissionCategory(mission) === "quest",
             ),
           },
@@ -571,7 +738,7 @@ const MissionModal = ({
             key: "elite",
             title: "Elite Quests",
             icon: "⚔️",
-            missions: orderedMissions.filter(
+            missions: filteredOrderedMissions.filter(
               (mission) => getMissionCategory(mission) === "elite",
             ),
           },
@@ -579,7 +746,7 @@ const MissionModal = ({
             key: "dungeon",
             title: "Dungeons",
             icon: "🏰",
-            missions: orderedMissions.filter(
+            missions: filteredOrderedMissions.filter(
               (mission) => getMissionCategory(mission) === "dungeon",
             ),
           },
@@ -587,7 +754,7 @@ const MissionModal = ({
             key: "raid",
             title: "Raids",
             icon: "🔥",
-            missions: orderedMissions.filter(
+            missions: filteredOrderedMissions.filter(
               (mission) => getMissionCategory(mission) === "raid",
             ),
           },
@@ -600,11 +767,11 @@ const MissionModal = ({
               selectedCategory === "raid"
                 ? "🔥"
                 : selectedCategory === "dungeon"
-                ? "🏰"
-                : selectedCategory === "elite"
+                  ? "🏰"
+                  : selectedCategory === "elite"
                   ? "⚔️"
                   : "📜",
-            missions: orderedMissions.filter(
+            missions: filteredOrderedMissions.filter(
               (mission) => getMissionCategory(mission) === selectedCategory,
             ),
           },
@@ -676,6 +843,11 @@ const MissionModal = ({
             <div className="text-xs text-red-300/80 mt-0.5">
               Base fail chance: {getMissionBaseFailChance(mission)}%
             </div>
+            {mission.type === "dungeon" && (
+              <div className="text-xs text-amber-200/80 mt-0.5">
+                Attempts: {getMissionMaxAttempts(mission)}
+              </div>
+            )}
             <div className="text-xs text-yellow-400 mt-1">
               Rewards: {getMissionGoldReward(mission)}g • {missionExpLabel} XP / hero{" "}
               {" • "}
@@ -1142,7 +1314,7 @@ const MissionModal = ({
       isOpen={isOpen}
       onClose={onClose}
       overlayClassName="bg-black/85 backdrop-blur-sm p-0 md:p-4"
-      panelClassName="wow-modal-panel bg-gray-900 border-x-0 border-y-0 md:border-2 border-blue-900 rounded-none md:rounded-lg w-full max-w-4xl h-full md:h-[80vh] flex flex-col relative shadow-2xl"
+      panelClassName="wow-modal-panel bg-gray-900 border-x-0 border-y-0 md:border-2 border-blue-900 rounded-none md:rounded-lg w-full max-w-4xl h-full md:h-[90vh] flex flex-col relative shadow-2xl"
     >
       <div className="p-4 border-b border-gray-700 bg-gray-900 flex justify-between items-center flex-none">
         <h2 className="text-xl md:text-2xl fantasy-font text-blue-400">
@@ -1178,6 +1350,52 @@ const MissionModal = ({
                   </button>
                 );
               })}
+            </div>
+            <div className="mt-3 flex flex-wrap items-end gap-2">
+              <label className="text-[11px] text-gray-300">
+                <span className="block mb-1 uppercase tracking-wide text-gray-500">
+                  Min Level
+                </span>
+                <input
+                  type="number"
+                  min="1"
+                  step="1"
+                  inputMode="numeric"
+                  value={levelFilterMin}
+                  onChange={(event) => setLevelFilterMin(event.target.value)}
+                  className="w-24 bg-gray-900 border border-gray-700 rounded px-2 py-1.5 text-xs text-gray-100 focus:outline-none focus:border-blue-500"
+                  placeholder="Any"
+                />
+              </label>
+              <label className="text-[11px] text-gray-300">
+                <span className="block mb-1 uppercase tracking-wide text-gray-500">
+                  Max Level
+                </span>
+                <input
+                  type="number"
+                  min="1"
+                  step="1"
+                  inputMode="numeric"
+                  value={levelFilterMax}
+                  onChange={(event) => setLevelFilterMax(event.target.value)}
+                  className="w-24 bg-gray-900 border border-gray-700 rounded px-2 py-1.5 text-xs text-gray-100 focus:outline-none focus:border-blue-500"
+                  placeholder="Any"
+                />
+              </label>
+              <button
+                type="button"
+                onClick={() => {
+                  setLevelFilterMin("");
+                  setLevelFilterMax("");
+                }}
+                disabled={!hasAnyLevelFilter}
+                className="h-[30px] px-3 rounded border border-gray-600 bg-gray-800 text-xs text-gray-200 hover:bg-gray-700 disabled:opacity-40 disabled:cursor-not-allowed"
+              >
+                Clear
+              </button>
+              <span className="text-xs text-gray-500 ml-auto">
+                Showing {filteredOrderedMissions.length}/{orderedMissions.length}
+              </span>
             </div>
           </div>
           <div className="flex-1 overflow-y-auto p-4 custom-scrollbar">
@@ -1254,7 +1472,7 @@ const MissionModal = ({
       )}
       {view === "prep" && selectedQuest && (
         <div className="flex-1 flex flex-col min-h-0 bg-gray-800">
-          <div className="bg-gray-900 p-4 md:p-6 border-b border-gray-700 flex-none shadow-md">
+          <div className="bg-gray-900 p-4 md:p-6 border-b border-gray-700 flex-none shadow-md max-h-[52vh] overflow-y-auto custom-scrollbar">
             <div className="flex justify-between items-start mb-2">
               <div>
                 <h2
@@ -1452,6 +1670,11 @@ const MissionModal = ({
                   <span className="px-2 py-1 rounded border border-gray-700 bg-gray-800 text-gray-300">
                     Minimum to Join: Lvl {minLevel}
                   </span>
+                {(chainStartMission || selectedQuest)?.type === "dungeon" && (
+                  <span className="px-2 py-1 rounded border border-amber-800 bg-amber-950/30 text-amber-200">
+                    Attempts: {getMissionMaxAttempts(chainStartMission || selectedQuest)}
+                  </span>
+                )}
                 {selectedMissionRequiredKeyLabels.length > 0 && (
                   <span className="px-2 py-1 rounded border border-rose-800 bg-rose-950/30 text-rose-200 font-semibold">
                     Key Required: [{selectedMissionRequiredKeyLabels.join("] + [")}]
@@ -1614,6 +1837,24 @@ const MissionModal = ({
                           Guild focus bonus: +{missionPreview.focusSuccessBonus}% Success
                         </span>
                       )}
+                      {chainStartMission?.type === "dungeon" && (
+                        <span
+                          className={`px-2 py-1 rounded border ${
+                            missionPreview.veteranSuccessBonus > 0
+                              ? "border-yellow-700 bg-yellow-950/30 text-yellow-200"
+                              : "border-gray-700 bg-gray-800 text-gray-400"
+                          }`}
+                        >
+                          Veteran bonus:{" "}
+                          {missionPreview.veteranSuccessBonus > 0
+                            ? `+${missionPreview.veteranSuccessBonus}% Success`
+                            : "Need 50%+ cleared heroes"}{" "}
+                          ({missionPreview.veteranExperiencedCount}/{Math.max(
+                            1,
+                            selectedPartyMembers.length,
+                          )})
+                        </span>
+                      )}
                     </>
                   )}
                 </div>
@@ -1637,13 +1878,6 @@ const MissionModal = ({
                     </option>
                   ))}
                 </select>
-                <button
-                  onClick={handleAutoSelectParty}
-                  disabled={keyEligibleRoster.length === 0}
-                  className="mt-2 px-3 py-1 text-[11px] rounded border border-emerald-700 bg-emerald-900/30 text-emerald-200 hover:bg-emerald-800/40 disabled:opacity-40 disabled:cursor-not-allowed"
-                >
-                  Auto-Select
-                </button>
                 <div className="mt-2 rounded border border-gray-700 bg-gray-900/60 px-2 py-1 text-[10px] text-left text-gray-300">
                   <div className="text-gray-400 uppercase tracking-wide mb-0.5">
                     Selected Roles
@@ -1660,6 +1894,13 @@ const MissionModal = ({
                     </div>
                   )}
                 </div>
+                <button
+                  onClick={handleAutoSelectParty}
+                  disabled={keyEligibleRoster.length === 0}
+                  className="mt-3 w-full px-4 py-2 text-sm font-bold uppercase tracking-wide rounded border border-emerald-500 bg-emerald-900/45 text-emerald-100 hover:bg-emerald-800/55 shadow-lg disabled:opacity-40 disabled:cursor-not-allowed"
+                >
+                  Auto-Select
+                </button>
               </div>
             </div>
             {autoAssignSummary && (
@@ -1669,12 +1910,82 @@ const MissionModal = ({
             )}
             {isRaidPartySizeInvalid && (
               <div className="mt-2 text-[11px] text-amber-200 border border-amber-900/60 bg-amber-950/20 rounded px-2 py-1">
-                Raid requires exactly {selectedMissionPartySize} heroes to deploy.
+                Raid requires at least {selectedMissionMinPartySize} heroes to deploy
+                (recommended: {selectedMissionPartySize}).
               </div>
             )}
           </div>
-          <div className="flex-1 overflow-y-auto p-4 bg-gray-800 grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-3 custom-scrollbar">
-            {idleRoster.map((char) => {
+          <div className="px-4 py-3 border-b border-gray-700 bg-gray-900/30">
+            <div className="flex flex-wrap items-end gap-2">
+              <label className="text-[11px] text-gray-300">
+                <span className="block mb-1 uppercase tracking-wide text-gray-500">
+                  Hero Min Level
+                </span>
+                <input
+                  type="number"
+                  min="1"
+                  step="1"
+                  inputMode="numeric"
+                  value={characterFilterMinLevel}
+                  onChange={(event) => setCharacterFilterMinLevel(event.target.value)}
+                  className="w-24 bg-gray-900 border border-gray-700 rounded px-2 py-1.5 text-xs text-gray-100 focus:outline-none focus:border-blue-500"
+                  placeholder="Any"
+                />
+              </label>
+              <label className="text-[11px] text-gray-300">
+                <span className="block mb-1 uppercase tracking-wide text-gray-500">
+                  Hero Max Level
+                </span>
+                <input
+                  type="number"
+                  min="1"
+                  step="1"
+                  inputMode="numeric"
+                  value={characterFilterMaxLevel}
+                  onChange={(event) => setCharacterFilterMaxLevel(event.target.value)}
+                  className="w-24 bg-gray-900 border border-gray-700 rounded px-2 py-1.5 text-xs text-gray-100 focus:outline-none focus:border-blue-500"
+                  placeholder="Any"
+                />
+              </label>
+              <label className="text-[11px] text-gray-300">
+                <span className="block mb-1 uppercase tracking-wide text-gray-500">
+                  Sort
+                </span>
+                <select
+                  value={characterSortMode}
+                  onChange={(event) => setCharacterSortMode(event.target.value)}
+                  className="w-36 bg-gray-900 border border-gray-700 rounded px-2 py-1.5 text-xs text-gray-100 focus:outline-none focus:border-blue-500"
+                >
+                  {TACTICAL_CHARACTER_SORT_OPTIONS.map((option) => (
+                    <option key={option.value} value={option.value}>
+                      {option.label}
+                    </option>
+                  ))}
+                </select>
+              </label>
+              <button
+                type="button"
+                onClick={() => {
+                  setCharacterFilterMinLevel("");
+                  setCharacterFilterMaxLevel("");
+                }}
+                disabled={!hasAnyCharacterLevelFilter}
+                className="h-[30px] px-3 rounded border border-gray-600 bg-gray-800 text-xs text-gray-200 hover:bg-gray-700 disabled:opacity-40 disabled:cursor-not-allowed"
+              >
+                Clear
+              </button>
+              <span className="text-xs text-gray-500 ml-auto">
+                Showing {tacticalCharacterRoster.length}/{idleRoster.length}
+              </span>
+            </div>
+          </div>
+          <div className="flex-1 min-h-[260px] overflow-y-auto p-4 bg-gray-800 grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-3 custom-scrollbar">
+            {tacticalCharacterRoster.length === 0 && (
+              <div className="text-center text-gray-500 italic py-10 col-span-full">
+                No heroes match this tactical filter.
+              </div>
+            )}
+            {tacticalCharacterRoster.map((char) => {
               const isEligible = char.level >= minLevel;
               const isSelected = party.includes(char.id);
               const ownedKeys = Array.isArray(char.keys)
