@@ -50,9 +50,7 @@ const GuildSetupScreen = ({ guildSetup, onChange, onStart, onLoadSession }) => {
                 className="w-full rounded border border-gray-600 bg-gray-800 px-3 py-2 text-gray-100 focus:outline-none focus:border-amber-500"
               >
                 <option value={GUILD_FACTION.ALLIANCE}>{GUILD_FACTION.ALLIANCE}</option>
-                <option value={GUILD_FACTION.HORDE} disabled>
-                  {GUILD_FACTION.HORDE} (Coming later)
-                </option>
+                <option value={GUILD_FACTION.HORDE}>{GUILD_FACTION.HORDE}</option>
               </select>
             </label>
 
@@ -74,7 +72,7 @@ const GuildSetupScreen = ({ guildSetup, onChange, onStart, onLoadSession }) => {
             </label>
 
             <div className="rounded border border-gray-700 bg-gray-800/60 p-3 text-xs text-gray-300">
-              <div>Default faction: {GUILD_FACTION.ALLIANCE}</div>
+              <div>Default faction: {GUILD_FACTION.ALLIANCE} (can be changed)</div>
               <div>Default focus: Leveling</div>
               <div>Starting resources: 5 heroes and 5 gold</div>
               <div className="text-gray-400 mt-1">You can expand this setup later.</div>

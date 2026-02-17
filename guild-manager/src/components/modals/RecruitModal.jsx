@@ -1,5 +1,5 @@
 import React, { useEffect, useState } from "react";
-import { DB_CLASSES } from "../../constants";
+import { DB_CLASSES, GUILD_FACTION } from "../../constants";
 import { generateCharacters, getRoleIcon, getRacePortraitUrl, getWowIconUrl } from "../../utils";
 import BaseModal from "./BaseModal";
 
@@ -11,6 +11,7 @@ const RecruitModal = ({
   openSlots,
   affordableSlots,
   recruitCostGold,
+  guildFaction = GUILD_FACTION.ALLIANCE,
 }) => {
   const [candidates, setCandidates] = useState([]);
   const [isLoading, setIsLoading] = useState(true);
@@ -24,11 +25,11 @@ const RecruitModal = ({
     setSelectedIds([]);
     setLimitWarning(false);
     const timer = setTimeout(() => {
-      setCandidates(generateCharacters(3));
+      setCandidates(generateCharacters(3, guildFaction));
       setIsLoading(false);
     }, 1000);
     return () => clearTimeout(timer);
-  }, [isOpen]);
+  }, [guildFaction, isOpen]);
 
   const toggleCandidate = (candidateId) => {
     setSelectedIds((prev) => {

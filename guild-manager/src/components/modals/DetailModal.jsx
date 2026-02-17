@@ -3,6 +3,8 @@ import { DB_CLASSES, PROFESSIONS_LIST } from "../../constants";
 import {
   getCharacterAverageItemLevel,
   getCharacterPowerScore,
+  getCharacterSetBonus,
+  getEquipmentSetBonuses,
   formatItemStats,
   getClassArmorText,
   getKeyIconUrl,
@@ -85,6 +87,8 @@ const DetailModal = ({
   const hardCap = getSkillCap(char?.level || 1);
   const averageItemLevel = getCharacterAverageItemLevel(char);
   const characterPower = getCharacterPowerScore(char);
+  const setBonus = getCharacterSetBonus(char);
+  const activeSetBonuses = getEquipmentSetBonuses(char?.equipment);
   const historyEntries = Array.isArray(char?.history) ? char.history : [];
   const characterKeys = Array.isArray(char?.keys)
     ? [...new Set(char.keys.map((keyId) => String(keyId || "").trim()).filter(Boolean))]
@@ -209,6 +213,20 @@ const DetailModal = ({
                   <div className="mt-2 text-xs text-cyan-200/85 font-semibold">
                     Power Score: {characterPower.toFixed(1)}
                   </div>
+                  {setBonus > 0 && (
+                    <div className="mt-1 text-xs text-emerald-300/90 font-semibold">
+                      Set Bonus: +{setBonus} iLvl / Power
+                    </div>
+                  )}
+                  {activeSetBonuses.length > 0 && (
+                    <div className="mt-1 text-[11px] text-emerald-200/80">
+                      {activeSetBonuses.map((entry) => (
+                        <div key={`${char.id}-set-${entry.setId}`}>
+                          {entry.setName}: {entry.pieces} pieces (+{entry.bonus})
+                        </div>
+                      ))}
+                    </div>
+                  )}
                 </div>
               </div>
 

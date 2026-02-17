@@ -19,7 +19,13 @@ export const getMissionGoldReward = (mission) =>
 
 export const getMissionTypeLabel = (mission) =>
   mission?.typeLabel ||
-  (mission?.type === "dungeon" ? "Dungeon" : mission?.elite ? "Elite Quest" : "Quest");
+  (mission?.isRaid
+    ? "Raid"
+    : mission?.type === "dungeon"
+      ? "Dungeon"
+      : mission?.elite
+        ? "Elite Quest"
+        : "Quest");
 
 export const getMissionMetaText = (mission) =>
   `${getMissionTypeLabel(mission)} • Lvl ${mission?.recommended || mission?.level} • ${mission?.duration}s`;
@@ -109,24 +115,41 @@ export const evaluateMissionKeyAccess = ({ missions, partyMembers }) => {
   const selectedPartyMembers = Array.isArray(partyMembers) ? partyMembers : [];
 
   const initialKeySet = new Set();
+  const partyKeyMap = new Map();
   selectedPartyMembers.forEach((member) => {
-    getCharacterOwnedKeys(member).forEach((keyId) => initialKeySet.add(keyId));
+    const keySet = new Set(getCharacterOwnedKeys(member));
+    partyKeyMap.set(member?.id, keySet);
+    keySet.forEach((keyId) => initialKeySet.add(keyId));
   });
 
   const activeKeySet = new Set(initialKeySet);
   const requiredKeySet = new Set();
   const unlockedDuringSequenceSet = new Set();
   const missingRequirements = [];
+  let requiresAllMembers = false;
 
   for (const mission of missionSequence) {
     const requiredKeys = getMissionRequiredKeys(mission);
     requiredKeys.forEach((keyId) => requiredKeySet.add(keyId));
-    const missingKeys = requiredKeys.filter((keyId) => !activeKeySet.has(keyId));
+    const requiresAllMembersForMission = mission?.requiresKeyForAllMembers === true;
+    requiresAllMembers = requiresAllMembers || requiresAllMembersForMission;
+
+    const missingKeys = requiredKeys.filter((keyId) => {
+      if (requiresAllMembersForMission) {
+        if (selectedPartyMembers.length === 0) return !activeKeySet.has(keyId);
+        return selectedPartyMembers.some((member) => {
+          const memberKeys = partyKeyMap.get(member?.id);
+          return !memberKeys?.has(keyId);
+        });
+      }
+      return !activeKeySet.has(keyId);
+    });
     if (missingKeys.length > 0) {
       missingRequirements.push({
         missionId: mission?.id || null,
         missionName: mission?.name || "Mission",
         keyIds: missingKeys,
+        requiresAllMembers: requiresAllMembersForMission,
       });
       break;
     }
@@ -134,6 +157,10 @@ export const evaluateMissionKeyAccess = ({ missions, partyMembers }) => {
     getMissionRewardKeys(mission).forEach((keyId) => {
       if (!activeKeySet.has(keyId)) unlockedDuringSequenceSet.add(keyId);
       activeKeySet.add(keyId);
+      selectedPartyMembers.forEach((member) => {
+        const memberKeys = partyKeyMap.get(member?.id);
+        if (memberKeys) memberKeys.add(keyId);
+      });
     });
   }
 
@@ -145,6 +172,13 @@ export const evaluateMissionKeyAccess = ({ missions, partyMembers }) => {
   const requiredKeyIds = [...requiredKeySet];
   const initialKeyIds = [...initialKeySet];
   const unlockedDuringSequence = [...unlockedDuringSequenceSet];
+  const partyHasAllRequiredKeys =
+    requiredKeyIds.length === 0 ||
+    selectedPartyMembers.every((member) => {
+      const memberKeys = partyKeyMap.get(member?.id);
+      if (!memberKeys) return false;
+      return requiredKeyIds.every((keyId) => memberKeys.has(keyId));
+    });
 
   return {
     canEnter: missingRequirements.length === 0,
@@ -159,7 +193,9 @@ export const evaluateMissionKeyAccess = ({ missions, partyMembers }) => {
       (keyId) =>
         unlockedDuringSequenceSet.has(keyId) && !initialKeySet.has(keyId),
     ),
+    requiresAllMembers,
     partyHasAnyRequiredKey: requiredKeyIds.some((keyId) => initialKeySet.has(keyId)),
+    partyHasAllRequiredKeys,
   };
 };
 

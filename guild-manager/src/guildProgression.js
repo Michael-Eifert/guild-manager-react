@@ -30,6 +30,20 @@ export const GUILD_GNOMEREGAN_CLEAR_MILESTONE = {
   label: "Clear Gnomeregan",
   dungeonName: "Gnomeregan",
 };
+export const GUILD_BLACKROCK_DEPTHS_CLEAR_MILESTONE = {
+  reward: 5,
+  label: "Cleared Blackrock Depths",
+  dungeonSetName: "Blackrock Depths",
+  missionNamePrefix: "BRD:",
+  wingNames: ["Arena & Prison", "Shadowforge", "Shadowforge City"],
+};
+export const GUILD_SCOURGE_CLEAR_MILESTONE = {
+  reward: 5,
+  label: "Cleared The Scourge - Stratholme & Scholomance",
+  stratholmeSetName: "Stratholme",
+  stratholmeWingNames: ["Scarlet Side", "Undead Side"],
+  scholomanceDungeonName: "Scholomance",
+};
 
 export const GUILD_TALENT_DEFS = {
   rosterCap: {
@@ -39,9 +53,9 @@ export const GUILD_TALENT_DEFS = {
     description: "Increase maximum guild roster size.",
     suffix: "slots",
     ranks: [
-      { value: 5, cost: 1 },
-      { value: 15, cost: 2 },
-      { value: 30, cost: 4 },
+      { value: 10, displayValue: 10, cost: 1 },
+      { value: 30, displayValue: 20, cost: 2 },
+      { value: 70, displayValue: 40, cost: 4 },
     ],
   },
   expBoost: {
@@ -55,6 +69,14 @@ export const GUILD_TALENT_DEFS = {
       { value: 10, cost: 2 },
       { value: 15, cost: 4 },
     ],
+  },
+  raidAttunement: {
+    key: "raidAttunement",
+    category: "roster",
+    title: "Raid Attunement",
+    description: "Unlock raid missions on the mission board.",
+    suffix: "unlock",
+    ranks: [{ value: 1, cost: 5 }],
   },
   goldCap: {
     key: "goldCap",
@@ -101,20 +123,18 @@ const createDungeonClearMilestoneMap = () =>
     GUILD_DUNGEON_CLEAR_MILESTONES.map((milestone) => [milestone.target, false]),
   );
 
-const createScarletWingMap = () =>
-  Object.fromEntries(
-    GUILD_SCARLET_MONASTERY_CLEAR_MILESTONE.wingNames.map((wing) => [wing, false]),
-  );
+const createWingMap = (wingNames = []) =>
+  Object.fromEntries(wingNames.map((wing) => [wing, false]));
 
-const getFallbackScarletMonasteryState = (scarletState) => {
+const getFallbackWingSetState = (wingSetState, wingNames) => {
   const rawState =
-    scarletState && typeof scarletState === "object" ? scarletState : {};
+    wingSetState && typeof wingSetState === "object" ? wingSetState : {};
   const rawWings =
     rawState.wingsCleared && typeof rawState.wingsCleared === "object"
       ? rawState.wingsCleared
       : {};
   const wingsCleared = {
-    ...createScarletWingMap(),
+    ...createWingMap(wingNames),
     ...rawWings,
   };
   const fullClear = Boolean(
@@ -133,26 +153,85 @@ const getFallbackScarletMonasteryState = (scarletState) => {
   };
 };
 
-const resolveScarletWingName = ({ missionName, missionSetName, missionWing }) => {
+const getFallbackScarletMonasteryState = (scarletState) =>
+  getFallbackWingSetState(
+    scarletState,
+    GUILD_SCARLET_MONASTERY_CLEAR_MILESTONE.wingNames,
+  );
+const getFallbackBlackrockDepthsState = (blackrockDepthsState) =>
+  getFallbackWingSetState(
+    blackrockDepthsState,
+    GUILD_BLACKROCK_DEPTHS_CLEAR_MILESTONE.wingNames,
+  );
+const getFallbackStratholmeState = (stratholmeState) =>
+  getFallbackWingSetState(
+    stratholmeState,
+    GUILD_SCOURGE_CLEAR_MILESTONE.stratholmeWingNames,
+  );
+
+const escapeRegExp = (value) =>
+  String(value || "").replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+
+const resolveWingNameForSet = ({
+  missionName,
+  missionSetName,
+  missionWing,
+  dungeonSetName,
+  missionNamePrefix = "",
+  wingNames = [],
+}) => {
   const missionLabel = String(missionName || "");
   const setLabel = String(missionSetName || "");
   const wingLabel = String(missionWing || "");
-  const isScarletMission =
-    setLabel.toLowerCase() ===
-      GUILD_SCARLET_MONASTERY_CLEAR_MILESTONE.dungeonSetName.toLowerCase() ||
-    missionLabel.toLowerCase().startsWith("scarlet monastery:");
-  if (!isScarletMission) return null;
+  const normalizedSetName = String(dungeonSetName || "").toLowerCase();
+  const normalizedPrefix = String(missionNamePrefix || "").toLowerCase();
+  const normalizedMissionName = missionLabel.toLowerCase();
+  const normalizedMissionSet = setLabel.toLowerCase();
 
-  const candidateWingName =
-    wingLabel ||
-    missionLabel.replace(/^scarlet monastery:\s*/i, "").trim();
+  const isMissionInSet =
+    (normalizedSetName &&
+      (normalizedMissionSet === normalizedSetName ||
+        normalizedMissionName.startsWith(`${normalizedSetName}:`))) ||
+    (normalizedPrefix && normalizedMissionName.startsWith(normalizedPrefix));
+  if (!isMissionInSet) return null;
+
+  let candidateWingName = wingLabel;
+  if (!candidateWingName) {
+    if (normalizedSetName && normalizedMissionName.startsWith(`${normalizedSetName}:`)) {
+      candidateWingName = missionLabel
+        .replace(new RegExp(`^${escapeRegExp(dungeonSetName)}:\\s*`, "i"), "")
+        .trim();
+    } else if (normalizedPrefix && normalizedMissionName.startsWith(normalizedPrefix)) {
+      candidateWingName = missionLabel
+        .replace(new RegExp(`^${escapeRegExp(missionNamePrefix)}\\s*`, "i"), "")
+        .trim();
+    }
+  }
   const normalized = candidateWingName.toLowerCase();
-  return (
-    GUILD_SCARLET_MONASTERY_CLEAR_MILESTONE.wingNames.find(
-      (wing) => wing.toLowerCase() === normalized,
-    ) || null
-  );
+  return wingNames.find((wing) => wing.toLowerCase() === normalized) || null;
 };
+
+const resolveScarletWingName = (missionData) =>
+  resolveWingNameForSet({
+    ...missionData,
+    dungeonSetName: GUILD_SCARLET_MONASTERY_CLEAR_MILESTONE.dungeonSetName,
+    missionNamePrefix: "Scarlet Monastery:",
+    wingNames: GUILD_SCARLET_MONASTERY_CLEAR_MILESTONE.wingNames,
+  });
+const resolveBlackrockDepthsWingName = (missionData) =>
+  resolveWingNameForSet({
+    ...missionData,
+    dungeonSetName: GUILD_BLACKROCK_DEPTHS_CLEAR_MILESTONE.dungeonSetName,
+    missionNamePrefix: GUILD_BLACKROCK_DEPTHS_CLEAR_MILESTONE.missionNamePrefix,
+    wingNames: GUILD_BLACKROCK_DEPTHS_CLEAR_MILESTONE.wingNames,
+  });
+const resolveStratholmeWingName = (missionData) =>
+  resolveWingNameForSet({
+    ...missionData,
+    dungeonSetName: GUILD_SCOURGE_CLEAR_MILESTONE.stratholmeSetName,
+    missionNamePrefix: "Stratholme ",
+    wingNames: GUILD_SCOURGE_CLEAR_MILESTONE.stratholmeWingNames,
+  });
 
 const getFallbackDungeonState = (dungeonState) => ({
   clearCount: Math.max(0, Math.floor(Number(dungeonState?.clearCount) || 0)),
@@ -165,6 +244,12 @@ const getFallbackDungeonState = (dungeonState) => ({
   scarletMonastery: getFallbackScarletMonasteryState(
     dungeonState?.scarletMonastery,
   ),
+  blackrockDepths: getFallbackBlackrockDepthsState(
+    dungeonState?.blackrockDepths,
+  ),
+  stratholme: getFallbackStratholmeState(dungeonState?.stratholme),
+  scholomanceCleared: Boolean(dungeonState?.scholomanceCleared),
+  scourgeCleared: Boolean(dungeonState?.scourgeCleared),
 });
 
 export const createInitialGuildProgress = () => ({
@@ -199,6 +284,10 @@ export const getTalentCurrentValue = (guildProgress, talentKey) => {
 export const getGuildDerivedStats = (guildProgress) => {
   const rosterCapIncrease = getTalentCurrentValue(guildProgress, "rosterCap");
   const expBoostPercent = getTalentCurrentValue(guildProgress, "expBoost");
+  const raidAttunementRank = getTalentCurrentValue(
+    guildProgress,
+    "raidAttunement",
+  );
   const goldCapIncrease = getTalentCurrentValue(guildProgress, "goldCap");
   const goldGainPercent = getTalentCurrentValue(guildProgress, "goldGain");
   return {
@@ -206,6 +295,7 @@ export const getGuildDerivedStats = (guildProgress) => {
     goldCap: CONFIG.GOLD_CAP + goldCapIncrease,
     expBoostPercent,
     goldGainPercent,
+    raidUnlocked: raidAttunementRank > 0,
     expMultiplier: 1 + expBoostPercent / 100,
     goldMultiplier: 1 + goldGainPercent / 100,
   };
@@ -290,6 +380,66 @@ export const normalizeGuildProgress = (rawGuildProgress) => {
     });
   }
 
+  const rawBlackrockDepthsState = getFallbackBlackrockDepthsState(
+    rawDungeonMilestones?.blackrockDepths,
+  );
+  const legacyBlackrockDepthsWings =
+    rawDungeonMilestones?.blackrockDepthsWingsCleared &&
+    typeof rawDungeonMilestones.blackrockDepthsWingsCleared === "object"
+      ? rawDungeonMilestones.blackrockDepthsWingsCleared
+      : {};
+  const blackrockDepthsWingsCleared = {
+    ...rawBlackrockDepthsState.wingsCleared,
+    ...legacyBlackrockDepthsWings,
+  };
+  const legacyBlackrockDepthsFullClear = Boolean(
+    rawDungeonMilestones?.blackrockDepthsCleared ||
+      rawGuildProgress?.milestones?.blackrockDepthsCleared,
+  );
+  const blackrockDepthsFullClear =
+    legacyBlackrockDepthsFullClear ||
+    Object.values(blackrockDepthsWingsCleared).every(Boolean);
+  if (blackrockDepthsFullClear) {
+    Object.keys(blackrockDepthsWingsCleared).forEach((wing) => {
+      blackrockDepthsWingsCleared[wing] = true;
+    });
+  }
+
+  const rawStratholmeState = getFallbackStratholmeState(
+    rawDungeonMilestones?.stratholme,
+  );
+  const legacyStratholmeWings =
+    rawDungeonMilestones?.stratholmeWingsCleared &&
+    typeof rawDungeonMilestones.stratholmeWingsCleared === "object"
+      ? rawDungeonMilestones.stratholmeWingsCleared
+      : {};
+  const stratholmeWingsCleared = {
+    ...rawStratholmeState.wingsCleared,
+    ...legacyStratholmeWings,
+  };
+  const legacyStratholmeFullClear = Boolean(
+    rawDungeonMilestones?.stratholmeCleared ||
+      rawGuildProgress?.milestones?.stratholmeCleared,
+  );
+  const stratholmeFullClear =
+    legacyStratholmeFullClear || Object.values(stratholmeWingsCleared).every(Boolean);
+  if (stratholmeFullClear) {
+    Object.keys(stratholmeWingsCleared).forEach((wing) => {
+      stratholmeWingsCleared[wing] = true;
+    });
+  }
+
+  const scholomanceCleared = Boolean(
+    rawDungeonMilestones?.scholomanceCleared ||
+      rawGuildProgress?.milestones?.scholomanceCleared ||
+      rawGuildProgress?.milestones?.scholomanceClear,
+  );
+  const scourgeCleared = Boolean(
+    rawDungeonMilestones?.scourgeCleared ||
+      rawGuildProgress?.milestones?.scourgeCleared ||
+      (stratholmeFullClear && scholomanceCleared),
+  );
+
   const renownPoints = Math.max(
     0,
     Math.floor(Number(rawGuildProgress.renownPoints) || 0),
@@ -314,6 +464,16 @@ export const normalizeGuildProgress = (rawGuildProgress) => {
           wingsCleared: scarletWingsCleared,
           fullClear: scarletMonasteryFullClear,
         },
+        blackrockDepths: {
+          wingsCleared: blackrockDepthsWingsCleared,
+          fullClear: blackrockDepthsFullClear,
+        },
+        stratholme: {
+          wingsCleared: stratholmeWingsCleared,
+          fullClear: stratholmeFullClear,
+        },
+        scholomanceCleared,
+        scourgeCleared,
       },
     },
   };
@@ -382,6 +542,41 @@ export const applyDungeonClearMilestones = (guildProgress, missionContext = "") 
   }
   const scarletMonasteryFullClear =
     scarletMonastery.fullClear || Object.values(scarletWingsCleared).every(Boolean);
+  const blackrockDepths = getFallbackBlackrockDepthsState(
+    dungeon.blackrockDepths,
+  );
+  const blackrockDepthsWingsCleared = { ...blackrockDepths.wingsCleared };
+  const blackrockDepthsWing = resolveBlackrockDepthsWingName({
+    missionName,
+    missionSetName,
+    missionWing,
+  });
+  if (blackrockDepthsWing) {
+    blackrockDepthsWingsCleared[blackrockDepthsWing] = true;
+  }
+  const blackrockDepthsFullClear =
+    blackrockDepths.fullClear || Object.values(blackrockDepthsWingsCleared).every(Boolean);
+  const stratholme = getFallbackStratholmeState(dungeon.stratholme);
+  const stratholmeWingsCleared = { ...stratholme.wingsCleared };
+  const stratholmeWing = resolveStratholmeWingName({
+    missionName,
+    missionSetName,
+    missionWing,
+  });
+  if (stratholmeWing) {
+    stratholmeWingsCleared[stratholmeWing] = true;
+  }
+  const stratholmeFullClear =
+    stratholme.fullClear || Object.values(stratholmeWingsCleared).every(Boolean);
+  const scholomanceTargetName =
+    GUILD_SCOURGE_CLEAR_MILESTONE.scholomanceDungeonName.toLowerCase();
+  const scholomanceCleared =
+    dungeon.scholomanceCleared ||
+    [missionName, missionSetName].some(
+      (label) => String(label || "").toLowerCase() === scholomanceTargetName,
+    );
+  const scourgeCleared =
+    dungeon.scourgeCleared || (stratholmeFullClear && scholomanceCleared);
 
   let gained = 0;
   const unlocked = [];
@@ -411,6 +606,20 @@ export const applyDungeonClearMilestones = (guildProgress, missionContext = "") 
       reward: GUILD_SCARLET_MONASTERY_CLEAR_MILESTONE.reward,
     });
   }
+  if (!blackrockDepths.fullClear && blackrockDepthsFullClear) {
+    gained += GUILD_BLACKROCK_DEPTHS_CLEAR_MILESTONE.reward;
+    unlocked.push({
+      label: GUILD_BLACKROCK_DEPTHS_CLEAR_MILESTONE.label,
+      reward: GUILD_BLACKROCK_DEPTHS_CLEAR_MILESTONE.reward,
+    });
+  }
+  if (!dungeon.scourgeCleared && scourgeCleared) {
+    gained += GUILD_SCOURGE_CLEAR_MILESTONE.reward;
+    unlocked.push({
+      label: GUILD_SCOURGE_CLEAR_MILESTONE.label,
+      reward: GUILD_SCOURGE_CLEAR_MILESTONE.reward,
+    });
+  }
 
   return {
     unlocked,
@@ -429,6 +638,16 @@ export const applyDungeonClearMilestones = (guildProgress, missionContext = "") 
             wingsCleared: scarletWingsCleared,
             fullClear: scarletMonasteryFullClear,
           },
+          blackrockDepths: {
+            wingsCleared: blackrockDepthsWingsCleared,
+            fullClear: blackrockDepthsFullClear,
+          },
+          stratholme: {
+            wingsCleared: stratholmeWingsCleared,
+            fullClear: stratholmeFullClear,
+          },
+          scholomanceCleared,
+          scourgeCleared,
         },
       },
     },
@@ -531,6 +750,37 @@ export const buildGuildAchievementEntries = (guildProgress) => {
       ? ` • Missing: ${missingScarletWings.join(", ")}`
       : ""
   }`;
+  const blackrockDepths = getFallbackBlackrockDepthsState(
+    normalized?.milestones?.dungeon?.blackrockDepths,
+  );
+  const clearedBlackrockDepthsWings =
+    GUILD_BLACKROCK_DEPTHS_CLEAR_MILESTONE.wingNames.filter(
+      (wing) => blackrockDepths.wingsCleared[wing],
+    );
+  const missingBlackrockDepthsWings =
+    GUILD_BLACKROCK_DEPTHS_CLEAR_MILESTONE.wingNames.filter(
+      (wing) => !blackrockDepths.wingsCleared[wing],
+    );
+  const blackrockDepthsProgress = `${clearedBlackrockDepthsWings.length}/${GUILD_BLACKROCK_DEPTHS_CLEAR_MILESTONE.wingNames.length}${
+    missingBlackrockDepthsWings.length > 0
+      ? ` • Missing: ${missingBlackrockDepthsWings.join(", ")}`
+      : ""
+  }`;
+  const stratholme = getFallbackStratholmeState(
+    normalized?.milestones?.dungeon?.stratholme,
+  );
+  const clearedStratholmeWings = GUILD_SCOURGE_CLEAR_MILESTONE.stratholmeWingNames.filter(
+    (wing) => stratholme.wingsCleared[wing],
+  );
+  const missingStratholmeWings = GUILD_SCOURGE_CLEAR_MILESTONE.stratholmeWingNames.filter(
+    (wing) => !stratholme.wingsCleared[wing],
+  );
+  const scholomanceCleared = Boolean(normalized?.milestones?.dungeon?.scholomanceCleared);
+  const scourgeProgress = `${clearedStratholmeWings.length}/${GUILD_SCOURGE_CLEAR_MILESTONE.stratholmeWingNames.length} Stratholme wings • Scholomance ${scholomanceCleared ? 1 : 0}/1${
+    missingStratholmeWings.length > 0
+      ? ` • Missing: ${missingStratholmeWings.join(", ")}`
+      : ""
+  }`;
 
   return [
     ...GUILD_LEVEL_MILESTONES.map((level) => ({
@@ -559,6 +809,20 @@ export const buildGuildAchievementEntries = (guildProgress) => {
       unlocked: Boolean(scarletMonastery.fullClear),
       progress: scarletProgress,
       reward: `+${GUILD_SCARLET_MONASTERY_CLEAR_MILESTONE.reward} ${GUILD_POINT_LABEL}`,
+    },
+    {
+      key: "dungeon-clear-blackrock-depths",
+      label: GUILD_BLACKROCK_DEPTHS_CLEAR_MILESTONE.label,
+      unlocked: Boolean(blackrockDepths.fullClear),
+      progress: blackrockDepthsProgress,
+      reward: `+${GUILD_BLACKROCK_DEPTHS_CLEAR_MILESTONE.reward} ${GUILD_POINT_LABEL}`,
+    },
+    {
+      key: "dungeon-clear-the-scourge",
+      label: GUILD_SCOURGE_CLEAR_MILESTONE.label,
+      unlocked: Boolean(normalized?.milestones?.dungeon?.scourgeCleared),
+      progress: scourgeProgress,
+      reward: `+${GUILD_SCOURGE_CLEAR_MILESTONE.reward} ${GUILD_POINT_LABEL}`,
     },
     {
       key: "dungeon-first-wipe",

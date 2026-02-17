@@ -167,7 +167,7 @@ const GuildTalentsModal = ({
                         }`}
                       >
                         <div className="font-bold">T{index + 1}</div>
-                        <div>+{rankData.value}</div>
+                        <div>+{rankData.displayValue ?? rankData.value}</div>
                         <div>{rankData.cost} pt</div>
                       </div>
                     );

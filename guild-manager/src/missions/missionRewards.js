@@ -15,6 +15,7 @@ export const createMissionRewardProcessor = ({
   dbItems,
   dbClasses,
   getClassArmorTypes,
+  isItemUsableByClass,
   getKeyLabel,
   getItemEffectiveLevel,
   getMissionLootLevelRange,
@@ -60,6 +61,8 @@ export const createMissionRewardProcessor = ({
     return dbItems.filter((item) => {
       if (item.quality !== quality) return false;
       if (item.minLevel < minLevel || item.minLevel > maxLevel) return false;
+
+      if (!isItemUsableByClass(item, char?.charClass)) return false;
 
       const typeOK = item.type === "Generic" || allowedTypes.includes(item.type);
       if (!typeOK) return false;
@@ -108,6 +111,7 @@ export const createMissionRewardProcessor = ({
 
   const canCharacterUseItem = (char, item) => {
     if (!char || !item) return false;
+    if (!isItemUsableByClass(item, char.charClass)) return false;
     const allowedTypes = getClassArmorTypes(char.charClass, char.level);
     return item.type === "Generic" || allowedTypes.includes(item.type);
   };
@@ -266,15 +270,40 @@ export const createMissionRewardProcessor = ({
     const isFullDungeonClear =
       dungeonBossCount > 0 && safeClearedSteps >= dungeonBossCount;
 
+    const getStepDropCount = (stepIndex) => {
+      const isEndbossStep = stepIndex === dungeonBossCount - 1;
+      const minRaw = isEndbossStep
+        ? mission?.endbossDropCountMin ?? mission?.bossDropCountMin ?? 1
+        : mission?.bossDropCountMin ?? 1;
+      const maxRaw = isEndbossStep
+        ? mission?.endbossDropCountMax ??
+          mission?.bossDropCountMax ??
+          mission?.bossDropCountMin ??
+          1
+        : mission?.bossDropCountMax ?? mission?.bossDropCountMin ?? 1;
+      const min = Math.max(1, Math.floor(Number(minRaw) || 1));
+      const max = Math.max(min, Math.floor(Number(maxRaw) || min));
+      if (max <= min) return min;
+      return min + Math.floor(Math.random() * (max - min + 1));
+    };
+
     for (let stepIndex = 0; stepIndex < safeClearedSteps; stepIndex++) {
       const stepLootConfig = getDungeonStepLootConfig(mission, stepIndex);
       const qualityPriority = getDungeonStepQualityPriority(mission, stepIndex);
-      const drop = pickDungeonDropForParty(mission, partyMembers, qualityPriority, {
-        includeWorldDrops: stepLootConfig.includeWorldDrops,
-        dungeonOnly: stepLootConfig.dungeonOnly,
-        worldOnly: stepLootConfig.worldOnly,
-      });
-      applyDropResult(drop);
+      const stepDropCount = getStepDropCount(stepIndex);
+      for (let dropIndex = 0; dropIndex < stepDropCount; dropIndex += 1) {
+        const drop = pickDungeonDropForParty(
+          mission,
+          partyMembers,
+          qualityPriority,
+          {
+            includeWorldDrops: stepLootConfig.includeWorldDrops,
+            dungeonOnly: stepLootConfig.dungeonOnly,
+            worldOnly: stepLootConfig.worldOnly,
+          },
+        );
+        applyDropResult(drop);
+      }
 
       bonusDrops.forEach((bonusDropConfig) => {
         if (bonusDropConfig.onComplete) return;

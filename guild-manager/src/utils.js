@@ -7,6 +7,8 @@ import {
   PROF_PAIRS,
   DEFAULT_PROF_PAIR,
   KEY_DEFINITIONS,
+  GUILD_FACTION,
+  FACTION_RACES,
 } from "./constants";
 
 const ARMOR_HIERARCHY = ["Plate", "Mail", "Leather", "Cloth"];
@@ -67,6 +69,28 @@ const ITEM_QUALITY_LEVEL_BONUS = {
   4: 20, // Epic (purple)
   5: 40, // Legendary (orange)
 };
+const ITEM_SET_BONUS_TIERS = Object.freeze([
+  { pieces: 4, bonus: 10 },
+  { pieces: 2, bonus: 5 },
+]);
+const SET_CLASS_RESTRICTIONS = Object.freeze({
+  t1_cenarion_raiment: ["Druid"],
+  t1_giantstalker_armor: ["Hunter"],
+  t1_arcanist_regalia: ["Mage"],
+  t1_lawbringer_armor: ["Paladin"],
+  t1_prophecy_vestments: ["Priest"],
+  t1_nightslayer_armor: ["Rogue"],
+  t1_earthfury: ["Shaman"],
+  t1_felheart_raiment: ["Warlock"],
+  t1_battlegear_of_might: ["Warrior"],
+});
+const ITEM_SET_ARMOR_SLOTS = Object.freeze([
+  "head",
+  "chest",
+  "legs",
+  "feet",
+  "hands",
+]);
 const RACE_GENDER_ICON_CODES = {
   Human: {
     Male: "achievement_character_human_male",
@@ -83,6 +107,22 @@ const RACE_GENDER_ICON_CODES = {
   "Night Elf": {
     Male: "achievement_character_nightelf_male",
     Female: "achievement_character_nightelf_female",
+  },
+  Orc: {
+    Male: "achievement_character_orc_male",
+    Female: "achievement_character_orc_female",
+  },
+  Undead: {
+    Male: "achievement_character_undead_male",
+    Female: "achievement_character_undead_female",
+  },
+  Tauren: {
+    Male: "achievement_character_tauren_male",
+    Female: "achievement_character_tauren_female",
+  },
+  Troll: {
+    Male: "achievement_character_troll_male",
+    Female: "achievement_character_troll_female",
   },
 };
 const STAT_LABELS = {
@@ -177,7 +217,21 @@ export const getReqExp = (l) => {
   return 20800 + Math.max(0, l - 20) * 1500;
 };
 export const getRaceIcon = (r) =>
-  r === "Human" ? "🛡️" : r === "Dwarf" ? "🍺" : r === "Night Elf" ? "🌙" : "⚙️";
+  r === "Human"
+    ? "🛡️"
+    : r === "Dwarf"
+      ? "🍺"
+      : r === "Night Elf"
+        ? "🌙"
+        : r === "Gnome"
+          ? "⚙️"
+          : r === "Orc"
+            ? "🪓"
+            : r === "Undead"
+              ? "☠️"
+              : r === "Tauren"
+                ? "🐂"
+                : "🗡️";
 export const getRacePortraitUrl = (race, gender) => {
   const raceIcons = RACE_GENDER_ICON_CODES[race];
   if (!raceIcons) return getWowIconUrl("inv_misc_questionmark");
@@ -203,6 +257,8 @@ export const getKeyDefinition = (keyId) => {
 export const getKeyLabel = (keyId) => getKeyDefinition(keyId)?.name || "";
 export const getKeyIconUrl = (keyId) =>
   getKeyDefinition(keyId)?.icon || getWowIconUrl("inv_misc_key_03");
+export const getKeySourceQuestLabel = (keyId) =>
+  getKeyDefinition(keyId)?.sourceQuest || "";
 
 export const getItemEffectiveLevel = (item) => {
   if (!item || typeof item !== "object") return 0;
@@ -214,7 +270,30 @@ export const getItemEffectiveLevel = (item) => {
   return Math.max(0, minLevel + qualityBonus + itemLevelBonus);
 };
 
-export const getEquipmentAverageItemLevel = (equipment) => {
+export const getItemAllowedClasses = (item) => {
+  if (!item || typeof item !== "object") return [];
+
+  if (Array.isArray(item.allowedClasses) && item.allowedClasses.length > 0) {
+    return [...new Set(item.allowedClasses.map(String).map((name) => name.trim()).filter(Boolean))];
+  }
+
+  const setId = String(item.setId || "").trim();
+  if (setId && Array.isArray(SET_CLASS_RESTRICTIONS[setId])) {
+    return [...SET_CLASS_RESTRICTIONS[setId]];
+  }
+
+  return [];
+};
+
+export const isItemUsableByClass = (item, charClass) => {
+  const allowedClasses = getItemAllowedClasses(item);
+  if (allowedClasses.length === 0) return true;
+  const normalizedClass = String(charClass || "").trim();
+  if (!normalizedClass) return false;
+  return allowedClasses.includes(normalizedClass);
+};
+
+const getEquipmentBaseAverageItemLevel = (equipment) => {
   if (!equipment || typeof equipment !== "object") return 0;
   const slots = Object.values(equipment);
   if (slots.length === 0) return 0;
@@ -225,13 +304,69 @@ export const getEquipmentAverageItemLevel = (equipment) => {
   return totalItemLevel / slots.length;
 };
 
+const getSetBonusForPieceCount = (pieces) => {
+  const pieceCount = Math.max(0, Number(pieces) || 0);
+  const matchedTier = ITEM_SET_BONUS_TIERS.find(
+    (tier) => pieceCount >= tier.pieces,
+  );
+  return matchedTier ? matchedTier.bonus : 0;
+};
+
+export const getEquipmentSetBonuses = (equipment) => {
+  if (!equipment || typeof equipment !== "object") return [];
+  const entries = Object.entries(equipment).filter(
+    ([slotName, item]) =>
+      ITEM_SET_ARMOR_SLOTS.includes(slotName) &&
+      item &&
+      typeof item === "object",
+  );
+  const setAggregation = entries.reduce((acc, [, item]) => {
+    const setId = String(item?.setId || "").trim();
+    if (!setId) return acc;
+    if (!acc[setId]) {
+      acc[setId] = {
+        setId,
+        setName: String(item?.setName || setId).trim(),
+        pieces: 0,
+      };
+    }
+    acc[setId].pieces += 1;
+    return acc;
+  }, {});
+
+  return Object.values(setAggregation)
+    .map((entry) => ({
+      ...entry,
+      bonus: getSetBonusForPieceCount(entry.pieces),
+    }))
+    .filter((entry) => entry.bonus > 0)
+    .sort((left, right) => {
+      if (right.bonus !== left.bonus) return right.bonus - left.bonus;
+      if (right.pieces !== left.pieces) return right.pieces - left.pieces;
+      return left.setName.localeCompare(right.setName);
+    });
+};
+
+export const getEquipmentSetBonus = (equipment) =>
+  getEquipmentSetBonuses(equipment).reduce(
+    (sum, entry) => sum + (Number(entry.bonus) || 0),
+    0,
+  );
+
+export const getEquipmentAverageItemLevel = (equipment) =>
+  getEquipmentBaseAverageItemLevel(equipment) + getEquipmentSetBonus(equipment);
+
+export const getCharacterSetBonus = (char) =>
+  getEquipmentSetBonus(char?.equipment);
+
 export const getCharacterAverageItemLevel = (char) =>
   getEquipmentAverageItemLevel(char?.equipment);
 
 export const getCharacterPowerScore = (char) => {
   const level = Number(char?.level) || 1;
-  const avgItemLevel = getCharacterAverageItemLevel(char);
-  return level * 0.6 + avgItemLevel * 0.4;
+  const baseItemLevel = getEquipmentBaseAverageItemLevel(char?.equipment);
+  const setBonus = getEquipmentSetBonus(char?.equipment);
+  return level * 0.6 + baseItemLevel * 0.4 + setBonus;
 };
 
 const parseRecommendedRange = (recommended) => {
@@ -248,6 +383,10 @@ export const getMissionPowerTarget = (mission) => {
   if (!mission || typeof mission !== "object") return 1;
   if (mission.type === "dungeon") {
     const range = parseRecommendedRange(mission.recommended);
+    if (mission.isRaid) {
+      if (range) return (range.low + range.high) / 2 + 8;
+      return (Number(mission.level) || 1) + 8;
+    }
     if (range) return (range.low + range.high) / 2 + 2;
     return (Number(mission.level) || 1) + 2;
   }
@@ -257,6 +396,9 @@ export const getMissionPowerTarget = (mission) => {
 
 export const getMissionBaseFailChance = (mission) => {
   if (!mission || typeof mission !== "object") return 5;
+  if (Number.isFinite(mission.baseFailChance)) {
+    return Math.max(0, Math.min(95, Number(mission.baseFailChance)));
+  }
   if (mission.type === "dungeon") return 25;
   if (mission.elite) return 15;
   return 5;
@@ -266,11 +408,60 @@ export const getMissionSuccessPreview = (mission, partyMembers) => {
   const members = Array.isArray(partyMembers) ? partyMembers : [];
   const missionPower = getMissionPowerTarget(mission);
   const baseFail = getMissionBaseFailChance(mission);
+  const isRaid = mission?.isRaid === true;
+  const roleCounts = {
+    Tank: members.filter((member) => member?.role === "Tank").length,
+    Healer: members.filter((member) => member?.role === "Healer").length,
+    DPS: members.filter((member) => member?.role === "DPS").length,
+  };
+  const defaultRaidRequirement = {
+    Tank: 4,
+    Healer: 8,
+    DPS: 18,
+    bonus: 20,
+  };
+  const configuredRaidRequirement =
+    mission?.raidRoleRequirement &&
+    typeof mission.raidRoleRequirement === "object"
+      ? mission.raidRoleRequirement
+      : {};
+  const raidRoleRequirement = {
+    Tank: Math.max(
+      0,
+      Math.floor(
+        Number(configuredRaidRequirement.Tank ?? defaultRaidRequirement.Tank) || 0,
+      ),
+    ),
+    Healer: Math.max(
+      0,
+      Math.floor(
+        Number(
+          configuredRaidRequirement.Healer ?? defaultRaidRequirement.Healer,
+        ) || 0,
+      ),
+    ),
+    DPS: Math.max(
+      0,
+      Math.floor(Number(configuredRaidRequirement.DPS ?? defaultRaidRequirement.DPS) || 0),
+    ),
+    bonus: Math.max(
+      0,
+      Number(configuredRaidRequirement.bonus ?? defaultRaidRequirement.bonus) || 0,
+    ),
+  };
+  const hasRaidRoleCoverage =
+    roleCounts.Tank >= raidRoleRequirement.Tank &&
+    roleCounts.Healer >= raidRoleRequirement.Healer &&
+    roleCounts.DPS >= raidRoleRequirement.DPS;
+  const raidRoleRequirementBonus = hasRaidRoleCoverage
+    ? raidRoleRequirement.bonus
+    : 0;
   const hasTank = members.some((member) => member?.role === "Tank");
   const hasHealer = members.some((member) => member?.role === "Healer");
   const hasDps = members.some((member) => member?.role === "DPS");
   const hasCoreRoleComposition = hasTank && hasHealer && hasDps;
-  const roleCompositionBonus = hasCoreRoleComposition ? 20 : 0;
+  const roleCompositionBonus =
+    !isRaid && hasCoreRoleComposition ? 20 : 0;
 
   if (members.length === 0) {
     return {
@@ -280,6 +471,10 @@ export const getMissionSuccessPreview = (mission, partyMembers) => {
       averagePartyItemLevel: 0,
       partySizeBonus: 0,
       roleCompositionBonus,
+      raidRoleRequirement,
+      raidRoleRequirementBonus: 0,
+      hasRaidRoleCoverage: false,
+      roleCounts,
       hasCoreRoleComposition: false,
       baseFailChance: baseFail,
       failChance: 100,
@@ -303,12 +498,31 @@ export const getMissionSuccessPreview = (mission, partyMembers) => {
   const partyPower = totalPartyPower / members.length;
   const averagePartyLevel = totalPartyLevel / members.length;
   const averagePartyItemLevel = totalPartyItemLevel / members.length;
-  const partySizeBonus = Math.max(0, members.length - 1) * 2.5;
-  const rawFailChance =
-    baseFail +
-    (missionPower - partyPower) * 5 -
-    partySizeBonus -
-    roleCompositionBonus;
+  const requiredPartySize = isRaid
+    ? Math.max(1, Number(mission?.requiredPartySize) || 40)
+    : 5;
+  const partySizeBonus = isRaid
+    ? Math.min(12, (Math.max(0, members.length) / requiredPartySize) * 12)
+    : Math.max(0, members.length - 1) * 2.5;
+  const raidMissingTank = Math.max(0, raidRoleRequirement.Tank - roleCounts.Tank);
+  const raidMissingHealer = Math.max(
+    0,
+    raidRoleRequirement.Healer - roleCounts.Healer,
+  );
+  const raidMissingDps = Math.max(0, raidRoleRequirement.DPS - roleCounts.DPS);
+  const raidRoleDeficitPenalty = isRaid
+    ? raidMissingTank * 3 + raidMissingHealer * 2 + raidMissingDps
+    : 0;
+  const rawFailChance = isRaid
+    ? baseFail +
+      (missionPower - partyPower) * 4 +
+      raidRoleDeficitPenalty -
+      partySizeBonus -
+      raidRoleRequirementBonus
+    : baseFail +
+      (missionPower - partyPower) * 5 -
+      partySizeBonus -
+      roleCompositionBonus;
   const failChance = Math.max(0, Math.min(95, Math.round(rawFailChance)));
 
   return {
@@ -318,6 +532,10 @@ export const getMissionSuccessPreview = (mission, partyMembers) => {
     averagePartyItemLevel,
     partySizeBonus,
     roleCompositionBonus,
+    raidRoleRequirement,
+    raidRoleRequirementBonus,
+    hasRaidRoleCoverage,
+    roleCounts,
     hasCoreRoleComposition,
     baseFailChance: baseFail,
     failChance,
@@ -367,6 +585,18 @@ export const getClassArmorTypes = (charClass, level = 1) => {
 export const getClassArmorText = (charClass, level = 1) =>
   getClassArmorTypes(charClass, level).join(", ");
 
+export const getFactionRaces = (faction = GUILD_FACTION.ALLIANCE) => {
+  const factionRaces = FACTION_RACES[faction];
+  if (Array.isArray(factionRaces) && factionRaces.length > 0) {
+    return [...factionRaces];
+  }
+  const allianceFallback = FACTION_RACES[GUILD_FACTION.ALLIANCE];
+  if (Array.isArray(allianceFallback) && allianceFallback.length > 0) {
+    return [...allianceFallback];
+  }
+  return Object.keys(DB_RACES);
+};
+
 export const getStarterGear = (charClass) => {
   const armorTypes = getClassArmorTypes(charClass);
   const armor = armorTypes[0] || "Cloth";
@@ -393,14 +623,18 @@ export const getStarterGear = (charClass) => {
   return gear;
 };
 
-export const generateCharacter = () => {
-  const races = Object.keys(DB_RACES);
-  const race = races[Math.floor(Math.random() * races.length)];
-  const allowedClasses = DB_RACES[race];
+export const generateCharacter = (faction = GUILD_FACTION.ALLIANCE) => {
+  const races = getFactionRaces(faction).filter((race) =>
+    Object.prototype.hasOwnProperty.call(DB_RACES, race),
+  );
+  const candidateRaces = races.length > 0 ? races : Object.keys(DB_RACES);
+  const selectedRace =
+    candidateRaces[Math.floor(Math.random() * candidateRaces.length)];
+  const allowedClasses = DB_RACES[selectedRace];
   const charClass =
     allowedClasses[Math.floor(Math.random() * allowedClasses.length)];
   const gender = Math.random() > 0.5 ? "Male" : "Female";
-  const raceNames = DB_NAMES[race] || DB_NAMES["Human"];
+  const raceNames = DB_NAMES[selectedRace] || DB_NAMES["Human"];
   const namesList = raceNames[gender] || raceNames["Male"];
   const firstName = namesList[Math.floor(Math.random() * namesList.length)];
   const lastName =
@@ -416,7 +650,7 @@ export const generateCharacter = () => {
   return {
     id: createId(),
     name: firstName + lastName,
-    race,
+    race: selectedRace,
     gender,
     charClass,
     role,
@@ -435,7 +669,7 @@ export const generateCharacter = () => {
   };
 };
 
-export const generateCharacters = (count = 1) => {
+export const generateCharacters = (count = 1, faction = GUILD_FACTION.ALLIANCE) => {
   const safeCount = Math.max(0, Math.floor(Number(count) || 0));
-  return Array.from({ length: safeCount }, () => generateCharacter());
+  return Array.from({ length: safeCount }, () => generateCharacter(faction));
 };

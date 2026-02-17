@@ -19,7 +19,9 @@ import {
   getMissionSuccessPreview,
   createId,
   getClassArmorTypes,
+  isItemUsableByClass,
   getKeyLabel,
+  getWowIconUrl,
 } from "./utils";
 import CharacterCard from "./components/CharacterCard";
 import CharacterEquipCheckCard from "./components/CharacterEquipCheckCard";
@@ -74,6 +76,7 @@ import {
   getRecruitmentCapacity,
   resolveRecruitmentResult,
 } from "./recruitment/recruitmentLogic";
+import { buildDebugRosterPreset, resolveDebugPreset } from "./debug/rosterPresets";
 
 const apiKey = import.meta.env.VITE_GEMINI_API_KEY || "";
 const callGemini = async (prompt, isJson = false) => {
@@ -103,6 +106,7 @@ const callGemini = async (prompt, isJson = false) => {
 };
 
 const FAILED_MISSION_EXP_FACTOR = 0.2;
+const LEVELING_TICK_EXP_MULTIPLIER = 1.15;
 const GUILD_ACTIVITY_MODES = ["Leveling", "Professions", "Auto"];
 const MEMBER_RANKING_MODES = {
   STANDARD: "standard",
@@ -133,6 +137,16 @@ const DEFAULT_DUNGEON_LOOT_TABLE = {
 const STARTING_GUILD_MEMBERS = 5;
 const STARTING_GUILD_GOLD = 5;
 const RECRUIT_COST_GOLD = 5;
+const FACTION_EMBLEM_ICON = {
+  [GUILD_FACTION.ALLIANCE]: "inv_bannerpvp_02",
+  [GUILD_FACTION.HORDE]: "inv_bannerpvp_01",
+};
+
+const getFactionDefaultGuildName = (faction) =>
+  faction === GUILD_FACTION.HORDE ? "Horde Vanguard" : "Alliance Vanguard";
+
+const getFactionFallbackManagerName = (faction) =>
+  faction === GUILD_FACTION.HORDE ? "Horde Manager" : "Alliance Manager";
 
 const getDungeonBossLabel = (mission, stepIndex) => {
   const bossNames = getDungeonBossNames(mission);
@@ -365,6 +379,7 @@ const generateWorldTickLoot = (char, quality) => {
     }
     if (item.quality !== quality) return false;
     if (item.minLevel < minLevel || item.minLevel > maxLevel) return false;
+    if (!isItemUsableByClass(item, char.charClass)) return false;
     return item.type === "Generic" || allowedTypes.includes(item.type);
   });
 
@@ -395,7 +410,8 @@ const normalizeGuildSetup = (value, payloadData = {}) => {
   return {
     ...DEFAULT_GUILD_SETUP,
     name:
-      normalizedName || (hasStarted ? "Alliance Vanguard" : DEFAULT_GUILD_SETUP.name),
+      normalizedName ||
+      (hasStarted ? getFactionDefaultGuildName(normalizedFaction) : DEFAULT_GUILD_SETUP.name),
     faction: normalizedFaction,
     focus: normalizedFocus,
     hasStarted,
@@ -448,6 +464,10 @@ const cloneMissionTemplate = (mission) => ({
   bonusDrops: Array.isArray(mission.bonusDrops)
     ? JSON.parse(JSON.stringify(mission.bonusDrops))
     : mission.bonusDrops,
+  raidRoleRequirement:
+    mission.raidRoleRequirement && typeof mission.raidRoleRequirement === "object"
+      ? { ...mission.raidRoleRequirement }
+      : mission.raidRoleRequirement,
 });
 
 // --- Local Components ---
@@ -475,7 +495,8 @@ const ActiveMissionCard = ({ mission, onFinish, gameTimeMs }) => {
     <div className="wow-card p-3 rounded flex flex-col gap-2 shadow-lg relative overflow-hidden border border-gray-600 bg-gray-800">
       <div className="flex justify-between items-center z-10 relative">
         <span className="font-bold text-sm text-white flex items-center gap-1">
-          {mission.type === "dungeon" ? "🏰" : "📜"} {mission.name}
+          {mission.isRaid ? "🔥" : mission.type === "dungeon" ? "🏰" : "📜"}{" "}
+          {mission.name}
         </span>
         <span className="text-xs text-gray-400">
           {Math.ceil(timeLeft / 1000)}s
@@ -497,7 +518,11 @@ const ActiveMissionCard = ({ mission, onFinish, gameTimeMs }) => {
           <div
             className="grid gap-1"
             style={{
-              gridTemplateColumns: `repeat(${Math.max(1, dungeonBossCount)}, minmax(0, 1fr))`,
+              gridTemplateColumns: `repeat(${
+                mission.isRaid
+                  ? Math.min(5, Math.max(1, dungeonBossCount))
+                  : Math.max(1, dungeonBossCount)
+              }, minmax(0, 1fr))`,
             }}
           >
             {dungeonBossNames.map((label, index) => {
@@ -730,6 +755,9 @@ const App = () => {
   const guildFocusBonuses = useMemo(
     () => getGuildFocusBonuses(guildSetup.focus),
     [guildSetup.focus],
+  );
+  const factionMissionIconUrl = getWowIconUrl(
+    FACTION_EMBLEM_ICON[guildSetup.faction] || FACTION_EMBLEM_ICON[GUILD_FACTION.ALLIANCE],
   );
 
   const appendGuildRenownLog = useCallback((message) => {
@@ -1173,6 +1201,7 @@ const App = () => {
         dbItems: DB_ITEMS,
         dbClasses: DB_CLASSES,
         getClassArmorTypes,
+        isItemUsableByClass,
         getKeyLabel,
         getItemEffectiveLevel,
         getMissionLootLevelRange,
@@ -1354,6 +1383,7 @@ const App = () => {
             1,
             Math.floor(
               (20 + char.level * 4) *
+                LEVELING_TICK_EXP_MULTIPLIER *
                 currentGuildStats.expMultiplier *
                 currentFocusBonuses.expMultiplier,
             ),
@@ -1530,7 +1560,10 @@ const App = () => {
   const handleStartGuild = () => {
     const normalizedName = String(guildSetup.name || "").trim();
     if (!normalizedName) return;
-    const starterRoster = generateCharacters(STARTING_GUILD_MEMBERS);
+    const starterRoster = generateCharacters(
+      STARTING_GUILD_MEMBERS,
+      guildSetup.faction,
+    );
     const starterGold = STARTING_GUILD_GOLD;
 
     rewardedMissionIdsRef.current = new Set();
@@ -1552,7 +1585,10 @@ const App = () => {
 
   const handleGenerateBackstory = async (char) => {
     try {
-      const guildName = guildSetupRef.current?.name || "Alliance Vanguard";
+      const fallbackGuildName = getFactionDefaultGuildName(
+        guildSetupRef.current?.faction,
+      );
+      const guildName = guildSetupRef.current?.name || fallbackGuildName;
       const prompt = `Write a short, engaging 2-sentence fantasy backstory for a level ${char.level} ${char.race} ${char.charClass} named ${char.name}. They are a member of the '${guildName}' guild.`;
       return await callGemini(prompt, false);
     } catch {
@@ -1563,6 +1599,18 @@ const App = () => {
   const handleDeploy = (quest, ids, options = {}) => {
     const memberIds = Array.isArray(ids) ? ids.filter(Boolean) : [];
     if (!quest || memberIds.length === 0) return;
+    const requiredPartySize = Math.max(
+      1,
+      Number(quest?.requiredPartySize) || (quest?.isRaid ? 40 : 5),
+    );
+    if (quest?.isRaid && memberIds.length !== requiredPartySize) {
+      pushNotification({
+        type: "error",
+        title: "Raid Setup Incomplete",
+        message: `${quest.name} requires exactly ${requiredPartySize} heroes.`,
+      });
+      return;
+    }
     const rosterSnapshot = Array.isArray(rosterRef.current)
       ? rosterRef.current
       : roster;
@@ -1609,10 +1657,19 @@ const App = () => {
         .map((keyId) => getKeyLabel(keyId) || keyId)
         .join(", ");
       const blockedMissionName = blockingRequirement?.missionName || quest.name;
+      const requiresAllMembers = Boolean(
+        blockingRequirement?.requiresAllMembers ||
+          (Array.isArray(missionSequenceForAccess) &&
+            missionSequenceForAccess.some(
+              (missionEntry) => missionEntry?.requiresKeyForAllMembers === true,
+            )),
+      );
       pushNotification({
         type: "error",
         title: "Key Required",
-        message: `${blockedMissionName} needs ${missingKeyLabel}. Add a key holder or include a key-rewarding wing first.`,
+        message: requiresAllMembers
+          ? `${blockedMissionName} needs ${missingKeyLabel} on every selected hero.`
+          : `${blockedMissionName} needs ${missingKeyLabel}. Add a key holder or include a key-rewarding wing first.`,
       });
       return;
     }
@@ -1756,6 +1813,57 @@ const App = () => {
     const cappedGold = Math.min(guildDerivedStats.goldCap, goldRef.current + safeAmount);
     goldRef.current = cappedGold;
     setGuildGold(cappedGold);
+  };
+
+  const handleDebugAddRenown = (amount) => {
+    const safeAmount = Math.max(0, Math.floor(Number(amount) || 0));
+    if (safeAmount <= 0) return;
+
+    setGuildProgress((prev) => {
+      const normalized = normalizeGuildProgress(prev);
+      return {
+        ...normalized,
+        renownPoints: normalized.renownPoints + safeAmount,
+        totalRenown: normalized.totalRenown + safeAmount,
+      };
+    });
+    appendGuildRenownLog(`Debug grant: +${safeAmount} ${GUILD_POINT_LABEL}.`);
+    pushNotification({
+      type: "info",
+      title: "Guild Renown Added",
+      message: `+${safeAmount} ${GUILD_POINT_LABEL}`,
+    });
+  };
+
+  const handleDebugAddPresetParty = (presetValue) => {
+    const preset = resolveDebugPreset(presetValue);
+    const openSlots = Math.max(0, guildDerivedStats.maxRoster - rosterRef.current.length);
+    if (openSlots < preset.count) {
+      pushNotification({
+        type: "error",
+        title: "Debug Party Blocked",
+        message: preset.blockedMessage,
+      });
+      return;
+    }
+
+    const faction = guildSetupRef.current?.faction || GUILD_FACTION.ALLIANCE;
+    const debugParty = buildDebugRosterPreset({
+      faction,
+      level: preset.level,
+      count: preset.count,
+      roleOrder: preset.roleOrder,
+      guaranteedKeys: preset.guaranteedKeys,
+    });
+    const updatedRoster = [...rosterRef.current, ...debugParty];
+    rosterRef.current = updatedRoster;
+    setRoster(updatedRoster);
+    pushNotification({
+      type: "info",
+      title: preset.successTitle,
+      message: preset.successMessage(faction),
+    });
+    setShowDebug(false);
   };
 
   const handleDebugReloadDatabase = () => {
@@ -1947,7 +2055,7 @@ const App = () => {
       <header className="wow-header flex justify-between items-center mb-6 border-b border-gray-700 pb-4 px-2 rounded-md">
         <div>
           <h1 className="wow-header-title fantasy-font text-xl md:text-3xl font-bold truncate">
-            {guildSetup.name || "Alliance Manager"}
+            {guildSetup.name || getFactionFallbackManagerName(guildSetup.faction)}
           </h1>
           <p className="text-amber-100/70 text-xs md:text-sm tracking-wide">
             {guildSetup.faction} Command • Focus: {guildSetup.focus}
@@ -2004,7 +2112,15 @@ const App = () => {
           onClick={() => setShowMissions(true)}
           className="flex-none snap-start btn-quest text-blue-100 font-bold py-3 px-6 rounded border border-blue-800 shadow-lg flex items-center gap-2 select-none whitespace-nowrap"
         >
-          <span className="text-xl">🛡️</span> Missions
+          <img
+            src={factionMissionIconUrl}
+            alt={guildSetup.faction}
+            className="w-5 h-5 rounded-sm border border-blue-900/60 object-cover"
+            onError={(event) => {
+              event.currentTarget.src = getWowIconUrl("inv_misc_questionmark");
+            }}
+          />
+          Missions
         </button>
         <button
           onClick={() => setShowMap(true)}
@@ -2074,14 +2190,22 @@ const App = () => {
             Active
           </h3>
           <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-            {activeMissions.map((m) => (
-              <ActiveMissionCard
-                key={`${m.questId}-${m.startTime}`}
-                mission={m}
-                onFinish={handleManualFinish}
-                gameTimeMs={gameTimeMs}
-              />
-            ))}
+            {activeMissions.map((m) => {
+              const hasLargeBossCount =
+                m.type === "dungeon" && getDungeonBossCount(m) >= 5;
+              return (
+                <div
+                  key={`${m.questId}-${m.startTime}`}
+                  className={hasLargeBossCount ? "md:col-span-2" : ""}
+                >
+                  <ActiveMissionCard
+                    mission={m}
+                    onFinish={handleManualFinish}
+                    gameTimeMs={gameTimeMs}
+                  />
+                </div>
+              );
+            })}
           </div>
         </div>
       )}
@@ -2156,6 +2280,7 @@ const App = () => {
         openSlots={openRecruitSlots}
         affordableSlots={affordableRecruitSlots}
         recruitCostGold={RECRUIT_COST_GOLD}
+        guildFaction={guildSetup.faction}
       />
       <GuildTalentsModal
         isOpen={showGuildTalents}
@@ -2172,6 +2297,10 @@ const App = () => {
         missionList={missionList}
         guildFaction={guildSetup.faction}
         dungeonSuccessBonus={guildFocusBonuses.dungeonSuccessBonus}
+        guildExpMultiplier={
+          guildDerivedStats.expMultiplier * guildFocusBonuses.expMultiplier
+        }
+        isRaidUnlocked={guildDerivedStats.raidUnlocked}
         onNotify={pushNotification}
       />
       <LootTableModal
@@ -2188,6 +2317,8 @@ const App = () => {
         onClose={() => setShowDebug(false)}
         onBulkLevel={handleBulkLevel}
         onAddGold={handleDebugAddGold}
+        onAddRenown={handleDebugAddRenown}
+        onAddPresetParty={handleDebugAddPresetParty}
         onReloadDatabase={handleDebugReloadDatabase}
       />
       <WorldMapModal isOpen={showMap} onClose={() => setShowMap(false)} />

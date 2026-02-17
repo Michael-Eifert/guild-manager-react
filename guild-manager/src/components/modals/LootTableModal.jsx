@@ -2,6 +2,8 @@ import { useEffect, useMemo, useState } from "react";
 import { DB_ITEMS, INITIAL_MISSIONS } from "../../constants";
 import {
   formatItemStats,
+  getItemAllowedClasses,
+  getItemEffectiveLevel,
   getItemIconUrl,
   getQualityClass,
   getQualityLabel,
@@ -18,26 +20,26 @@ import BaseModal from "./BaseModal";
 
 const SOURCE_ALL = "All";
 const DUNGEON_FILTER_NONE = "";
+const RAID_FILTER_NONE = "";
 
 const LootTableModal = ({ isOpen, onClose }) => {
   const [sourceFilter, setSourceFilter] = useState(SOURCE_ALL);
   const [dungeonFilter, setDungeonFilter] = useState(DUNGEON_FILTER_NONE);
+  const [raidFilter, setRaidFilter] = useState(RAID_FILTER_NONE);
 
   useEffect(() => {
     if (isOpen) {
       setSourceFilter(SOURCE_ALL);
       setDungeonFilter(DUNGEON_FILTER_NONE);
+      setRaidFilter(RAID_FILTER_NONE);
     }
   }, [isOpen]);
 
-  const dungeonOptions = useMemo(() => {
-    const dungeonMissions = INITIAL_MISSIONS.filter(
-      (mission) => mission.type === "dungeon",
-    );
+  const buildMissionSourceOptions = (missions) => {
     const missionSourceMeta = new Map();
     const orderedMissionSources = [];
 
-    dungeonMissions.forEach((mission) => {
+    missions.forEach((mission) => {
       const source = mission.dungeonSetName || mission.name;
       const range = parseRecommendedRange(mission.recommended);
       if (!missionSourceMeta.has(source)) {
@@ -66,19 +68,7 @@ const LootTableModal = ({ isOpen, onClose }) => {
       });
     });
 
-    const dungeonsFromItems = [
-      ...new Set(
-        DB_ITEMS.map((item) => getItemSource(item)).filter(
-          (source) => source && source !== SOURCE_WORLD,
-        ),
-      ),
-    ];
-    const orderedDungeonNames = [
-      ...orderedMissionSources,
-      ...dungeonsFromItems.filter((name) => !missionSourceMeta.has(name)),
-    ];
-
-    return orderedDungeonNames.map((name) => {
+    return orderedMissionSources.map((name) => {
       const range = missionSourceMeta.get(name);
       const rangeLabel =
         range?.min != null && range?.max != null ? `${range.min}-${range.max}` : null;
@@ -87,6 +77,20 @@ const LootTableModal = ({ isOpen, onClose }) => {
         label: rangeLabel ? `${name}: ${rangeLabel}` : name,
       };
     });
+  };
+
+  const dungeonOptions = useMemo(() => {
+    const dungeonMissions = INITIAL_MISSIONS.filter(
+      (mission) => mission.type === "dungeon" && mission?.isRaid !== true,
+    );
+    return buildMissionSourceOptions(dungeonMissions);
+  }, []);
+
+  const raidOptions = useMemo(() => {
+    const raidMissions = INITIAL_MISSIONS.filter(
+      (mission) => mission.type === "dungeon" && mission?.isRaid === true,
+    );
+    return buildMissionSourceOptions(raidMissions);
   }, []);
 
   const sourceSections = useMemo(() => {
@@ -103,9 +107,23 @@ const LootTableModal = ({ isOpen, onClose }) => {
       return acc;
     }, {});
 
+    const extraItemSources = Object.keys(groupedBySource).filter(
+      (source) =>
+        source !== SOURCE_WORLD &&
+        !dungeonOptions.some((option) => option.value === source) &&
+        !raidOptions.some((option) => option.value === source),
+    );
+
     const sourceOrder =
       sourceFilter === SOURCE_ALL
-        ? [SOURCE_WORLD, ...dungeonOptions.map((option) => option.value)]
+        ? [
+            ...new Set([
+              SOURCE_WORLD,
+              ...dungeonOptions.map((option) => option.value),
+              ...raidOptions.map((option) => option.value),
+              ...extraItemSources,
+            ]),
+          ]
         : [sourceFilter];
 
     return sourceOrder
@@ -115,7 +133,7 @@ const LootTableModal = ({ isOpen, onClose }) => {
         items: groupedBySource[source],
         qualityGroups: groupByQuality(groupedBySource[source]),
       }));
-  }, [dungeonOptions, sourceFilter]);
+  }, [dungeonOptions, raidOptions, sourceFilter]);
 
   const qualityOrder = [5, 4, 3, 2, 1, 0];
 
@@ -146,6 +164,7 @@ const LootTableModal = ({ isOpen, onClose }) => {
                 onClick={() => {
                   setSourceFilter(source);
                   setDungeonFilter(DUNGEON_FILTER_NONE);
+                  setRaidFilter(RAID_FILTER_NONE);
                 }}
                 className={`px-3 py-1 text-xs rounded border transition-colors ${
                   sourceFilter === source
@@ -166,12 +185,37 @@ const LootTableModal = ({ isOpen, onClose }) => {
                 onChange={(event) => {
                   const value = event.target.value;
                   setDungeonFilter(value);
+                  setRaidFilter(RAID_FILTER_NONE);
                   setSourceFilter(value || SOURCE_ALL);
                 }}
                 className="bg-gray-800 border border-gray-600 rounded px-2 py-1 text-xs text-gray-100 focus:outline-none focus:border-yellow-500"
               >
                 <option value={DUNGEON_FILTER_NONE}>Select dungeon</option>
                 {dungeonOptions.map((option) => (
+                  <option key={option.value} value={option.value}>
+                    {option.label}
+                  </option>
+                ))}
+              </select>
+              <label
+                htmlFor="loot-raid-filter"
+                className="text-xs text-gray-400 uppercase tracking-wider"
+              >
+                Raids
+              </label>
+              <select
+                id="loot-raid-filter"
+                value={raidFilter}
+                onChange={(event) => {
+                  const value = event.target.value;
+                  setRaidFilter(value);
+                  setDungeonFilter(DUNGEON_FILTER_NONE);
+                  setSourceFilter(value || SOURCE_ALL);
+                }}
+                className="bg-gray-800 border border-gray-600 rounded px-2 py-1 text-xs text-gray-100 focus:outline-none focus:border-yellow-500"
+              >
+                <option value={RAID_FILTER_NONE}>Select raid</option>
+                {raidOptions.map((option) => (
                   <option key={option.value} value={option.value}>
                     {option.label}
                   </option>
@@ -211,7 +255,9 @@ const LootTableModal = ({ isOpen, onClose }) => {
                         </div>
 
                         <div className="divide-y divide-gray-800">
-                          {items.map((item) => (
+                          {items.map((item) => {
+                            const allowedClasses = getItemAllowedClasses(item);
+                            return (
                             <div
                               key={item.id}
                               className="px-3 py-2 flex items-center justify-between gap-3 hover:bg-gray-800/40"
@@ -231,6 +277,21 @@ const LootTableModal = ({ isOpen, onClose }) => {
                                   <div className={`font-bold truncate ${getQualityClass(item.quality)}`}>
                                     [{item.name}]
                                   </div>
+                                  {item.setId && (
+                                    <div className="mt-0.5 flex flex-wrap items-center gap-1 text-[11px]">
+                                      <span className="px-1.5 py-0.5 rounded border border-emerald-700 bg-emerald-950/30 text-emerald-200 font-bold uppercase tracking-wide">
+                                        Set Piece
+                                      </span>
+                                      <span className="text-emerald-300/90">
+                                        {item.setName || item.setId}
+                                      </span>
+                                      {allowedClasses.length > 0 && (
+                                        <span className="px-1.5 py-0.5 rounded border border-cyan-700 bg-cyan-950/30 text-cyan-200 font-semibold">
+                                          Class: {allowedClasses.join(" / ")} (Exclusive)
+                                        </span>
+                                      )}
+                                    </div>
+                                  )}
                                   <div className="text-xs text-gray-500 mt-0.5 min-w-0">
                                     Slot: {item.slot} • Type: {item.type} • {formatItemStats(item.stats) || "No stat line yet"}
                                     {item.wowheadId ? (
@@ -249,9 +310,15 @@ const LootTableModal = ({ isOpen, onClose }) => {
                                   </div>
                                 </div>
                               </div>
-                              <div className="text-xs text-gray-400 whitespace-nowrap">Req Lv {item.minLevel}</div>
+                              <div className="text-xs text-gray-400 whitespace-nowrap text-right">
+                                <div>Req Lv {item.minLevel}</div>
+                                <div className="text-amber-300/90 font-semibold">
+                                  iLvl {getItemEffectiveLevel(item)}
+                                </div>
+                              </div>
                             </div>
-                          ))}
+                            );
+                          })}
                         </div>
                       </div>
                     );
