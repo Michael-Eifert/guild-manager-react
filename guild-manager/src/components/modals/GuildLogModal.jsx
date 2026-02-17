@@ -46,6 +46,23 @@ const GuildLogModal = ({ isOpen, onClose, logs }) => {
                     {log.missionName}: {log.bossName}{" "}
                     {log.outcome === "failed" ? "wiped the party" : "cleared"}.
                   </span>
+                ) : log.type === "dungeon-chain" ? (
+                  <span
+                    className={
+                      log.outcome === "stopped"
+                        ? "text-red-300"
+                        : log.outcome === "completed"
+                          ? "text-emerald-300"
+                          : "text-indigo-200"
+                    }
+                  >
+                    {log.chainName}:{" "}
+                    {log.outcome === "continued"
+                      ? `next wing ${log.missionName} (${log.position}/${log.total}).`
+                      : log.outcome === "completed"
+                        ? `chain completed (${log.position}/${log.total}).`
+                        : `chain stopped at ${log.missionName} (${log.position}/${log.total}).`}
+                  </span>
                 ) : log.type === "guild-renown" ? (
                   <span className="text-amber-300">{log.message}</span>
                 ) : log.type === "achievement" ? (
@@ -56,6 +73,12 @@ const GuildLogModal = ({ isOpen, onClose, logs }) => {
                 ) : log.type === "gold" ? (
                   <span className="text-yellow-400">
                     Guild earned {log.amount} gold from {log.missionName}.
+                  </span>
+                ) : log.type === "key" ? (
+                  <span className="text-amber-300">
+                    <strong>{log.characterName}</strong> obtained{" "}
+                    <span className="text-amber-100">[{log.keyLabel || log.keyId}]</span>{" "}
+                    from {log.missionName}.
                   </span>
                 ) : log.type === "loot-discard" ? (
                   <span className="text-gray-400">

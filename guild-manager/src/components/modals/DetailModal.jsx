@@ -5,6 +5,8 @@ import {
   getCharacterPowerScore,
   formatItemStats,
   getClassArmorText,
+  getKeyIconUrl,
+  getKeyLabel,
   getItemIconUrl,
   getItemEffectiveLevel,
   getNextTierLevel,
@@ -84,6 +86,14 @@ const DetailModal = ({
   const averageItemLevel = getCharacterAverageItemLevel(char);
   const characterPower = getCharacterPowerScore(char);
   const historyEntries = Array.isArray(char?.history) ? char.history : [];
+  const characterKeys = Array.isArray(char?.keys)
+    ? [...new Set(char.keys.map((keyId) => String(keyId || "").trim()).filter(Boolean))]
+    : [];
+  const MIN_KEY_SLOTS = 4;
+  const visibleKeySlots = Array.from(
+    { length: Math.max(MIN_KEY_SLOTS, characterKeys.length) },
+    (_, index) => characterKeys[index] || null,
+  );
   const historyPageCount = Math.max(1, Math.ceil(historyEntries.length / HISTORY_PAGE_SIZE));
   const currentPage = Math.min(historyPage, historyPageCount - 1);
   const historyStart = currentPage * HISTORY_PAGE_SIZE;
@@ -136,7 +146,9 @@ const DetailModal = ({
                   {char.charClass}
                 </span>
               </div>
-              <div className="text-xs text-gray-500 mt-1">Can wear: {getClassArmorText(char.charClass)}</div>
+              <div className="text-xs text-gray-500 mt-1">
+                Can wear: {getClassArmorText(char.charClass, char.level)}
+              </div>
             </div>
           </div>
           <button onClick={onClose} className="text-gray-500 hover:text-white text-3xl px-2">
@@ -164,8 +176,15 @@ const DetailModal = ({
             <div className="space-y-6">
               <div className="flex flex-col sm:flex-row gap-6">
                 <div className="w-full">
-                  <div className="flex justify-between items-end mb-1">
-                    <span className="font-bold text-gray-300">Level {char.level}</span>
+                  <div className="flex justify-between items-start gap-2 mb-2">
+                    <div>
+                      <div className="text-base md:text-lg font-bold text-gray-200 flex items-center gap-2">
+                        <span>Level {char.level}</span>
+                        <span className="inline-flex text-xs px-2 py-1 rounded whitespace-nowrap border border-amber-700 bg-amber-950/35 text-amber-200 font-bold">
+                          iLvl {averageItemLevel.toFixed(1)}
+                        </span>
+                      </div>
+                    </div>
                     <div className="flex gap-1">
                       {classData.allowedRoles.map((role) => (
                         <button
@@ -187,9 +206,8 @@ const DetailModal = ({
                   <div className="text-right text-xs text-gray-400 mt-1">
                     {char.exp} / {getReqExp(char.level)} XP
                   </div>
-                  <div className="mt-2 text-xs text-amber-200/80 flex items-center gap-3">
-                    <span>Avg iLvl: {averageItemLevel.toFixed(1)}</span>
-                    <span>Power: {characterPower.toFixed(1)}</span>
+                  <div className="mt-2 text-xs text-cyan-200/85 font-semibold">
+                    Power Score: {characterPower.toFixed(1)}
                   </div>
                 </div>
               </div>
@@ -215,6 +233,36 @@ const DetailModal = ({
                     {isGenerating ? "..." : "✨ Uncover Past"}
                   </button>
                 )}
+              </div>
+
+              <div className="mt-4 bg-gray-800/50 p-3 rounded border border-amber-900/50">
+                <h3 className="text-[10px] text-amber-400 uppercase tracking-widest mb-2 font-bold">
+                  Keys
+                </h3>
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+                  {visibleKeySlots.map((keyId, index) => (
+                    <div
+                      key={`${char.id}-key-slot-${index}-${keyId || "empty"}`}
+                      className={`inline-flex items-center gap-1.5 px-2 py-1 rounded border text-xs font-semibold ${
+                        keyId
+                          ? "border-amber-800 bg-amber-950/25 text-amber-100"
+                          : "border-gray-700 bg-gray-900/40 text-gray-500"
+                      }`}
+                    >
+                      <img
+                        src={keyId ? getKeyIconUrl(keyId) : getWowIconUrl("inv_misc_key_03")}
+                        alt={keyId ? getKeyLabel(keyId) : "Empty key slot"}
+                        className={`w-4 h-4 rounded-sm border object-cover ${
+                          keyId ? "border-amber-900/80" : "border-gray-700 opacity-50"
+                        }`}
+                        onError={(event) => {
+                          event.currentTarget.src = getWowIconUrl("inv_misc_key_03");
+                        }}
+                      />
+                      <span>{keyId ? getKeyLabel(keyId) : "Empty slot"}</span>
+                    </div>
+                  ))}
+                </div>
               </div>
 
               <div className="flex gap-2 items-center mt-4">
@@ -277,6 +325,17 @@ const DetailModal = ({
                             >
                               {missionTypeLabel} • {missionResult === "Failed" ? "Failed" : "Success"} • +{entry.exp} XP
                             </div>
+                            {Array.isArray(entry.keys) && entry.keys.length > 0 && (
+                              <div className="mt-1 text-[11px] text-amber-200">
+                                Key Reward:{" "}
+                                {entry.keys.map((keyId, keyIndex) => (
+                                  <span key={`${entry.name}-${entry.time}-${keyId}`}>
+                                    [{getKeyLabel(keyId)}]
+                                    {keyIndex < entry.keys.length - 1 ? " + " : ""}
+                                  </span>
+                                ))}
+                              </div>
+                            )}
                           </div>
                         );
                       })}

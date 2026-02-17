@@ -1,0 +1,1371 @@
+import React, { useEffect, useMemo, useState } from "react";
+import { CONFIG, DB_CLASSES, DB_ITEMS, GUILD_FACTION } from "../../constants";
+import {
+  getCharacterAverageItemLevel,
+  getItemIconUrl,
+  getKeyLabel,
+  getMissionBaseFailChance,
+  getMissionSuccessPreview,
+  getQualityClass,
+  getQualityLabel,
+  getRacePortraitUrl,
+  getRoleIcon,
+  getWowIconUrl,
+} from "../../utils";
+import {
+  getDungeonBossNames,
+  getDungeonOverlevelExpMultiplier,
+  evaluateMissionKeyAccess,
+  getMissionGoldReward,
+  getMissionMetaText,
+  getMissionRequiredKeys,
+  getMissionRecommendedRange,
+  getMissionRewardKeys,
+  getMissionRewardQualities,
+} from "../../missions/missionHelpers";
+import {
+  getItemSource,
+  getMissionLootSource,
+  groupByQuality,
+  sortLootItems,
+} from "../../loot/lootTableHelpers";
+import BaseModal from "./BaseModal";
+
+const AUTO_SELECT_MODES = {
+  BOOST_LOW_LEVEL: "boostLowLevel",
+  MAX_SUCCESS: "maxSuccess",
+  OPTIMIZED_EXP: "optimizedExp",
+  IN_LEVEL_RANGE: "inLevelRange",
+};
+
+const AUTO_SELECT_MODE_OPTIONS = [
+  { value: AUTO_SELECT_MODES.BOOST_LOW_LEVEL, label: "Boost low lvl" },
+  { value: AUTO_SELECT_MODES.MAX_SUCCESS, label: "Max Success" },
+  { value: AUTO_SELECT_MODES.OPTIMIZED_EXP, label: "Optimized Exp" },
+  { value: AUTO_SELECT_MODES.IN_LEVEL_RANGE, label: "In level range" },
+];
+
+const AUTO_SELECT_MODE_LABEL = Object.fromEntries(
+  AUTO_SELECT_MODE_OPTIONS.map((option) => [option.value, option.label]),
+);
+
+const CATEGORY_LABELS = {
+  all: "All",
+  quest: "Quests",
+  elite: "Elite Quests",
+  dungeon: "Dungeons",
+};
+
+const CATEGORY_FILTER_OPTIONS = ["all", "quest", "elite", "dungeon"];
+const FACTION_MISSION_ICON = {
+  [GUILD_FACTION.ALLIANCE]: "inv_bannerpvp_02",
+  [GUILD_FACTION.HORDE]: "inv_bannerpvp_01",
+};
+
+const getMissionCategory = (mission) => {
+  if (mission.type === "dungeon") return "dungeon";
+  return mission.elite ? "elite" : "quest";
+};
+
+const getMissionDisplayName = (mission) => {
+  if (mission?.type === "dungeon" && mission?.dungeonWing) return mission.dungeonWing;
+  return mission?.name || "Mission";
+};
+
+const formatBonusDropChanceLabel = (rawChance) => {
+  const numericChance = Number(rawChance);
+  if (!Number.isFinite(numericChance) || numericChance <= 0) return null;
+  const normalizedChance =
+    numericChance > 1 && numericChance <= 100 ? numericChance : numericChance * 100;
+  if (!Number.isFinite(normalizedChance) || normalizedChance <= 0) return null;
+  const rounded = normalizedChance < 1 ? normalizedChance.toFixed(2) : normalizedChance.toFixed(0);
+  return `${rounded}%`;
+};
+
+const getMissionBonusDropNotes = (mission) => {
+  if (!Array.isArray(mission?.bonusDrops) || mission.bonusDrops.length === 0) return [];
+  return mission.bonusDrops
+    .map((entry) => {
+      if (!entry || typeof entry !== "object") return null;
+      const chanceLabel = formatBonusDropChanceLabel(entry.chance);
+      if (!chanceLabel) return null;
+      const qualityList = Array.isArray(entry.qualityPriority)
+        ? entry.qualityPriority
+            .map((quality) => getQualityLabel(Number(quality)))
+            .filter(Boolean)
+        : [];
+      const qualityLabel = qualityList.length > 0 ? qualityList.join(" / ") : "Bonus item";
+      const fullClearLabel = entry.onComplete ? " on full clear" : "";
+      const sourceLabel =
+        entry.worldOnly === true
+          ? " (world drop)"
+          : entry.dungeonOnly === true
+            ? " (dungeon drop)"
+            : "";
+      return `${qualityLabel}: ${chanceLabel}${fullClearLabel}${sourceLabel}`;
+    })
+    .filter(Boolean);
+};
+
+const getDungeonBriefingText = (mission) => {
+  const bossNames = getDungeonBossNames(mission);
+  const minJoinLevel = Number.isFinite(mission?.minLevel)
+    ? Math.max(1, Number(mission.minLevel))
+    : Math.max(1, (Number(mission?.level) || 1) - 6);
+  const entryLevel = Number(mission?.entryLevel);
+  const normalizedEntryLevel =
+    Number.isFinite(entryLevel) && entryLevel > 0 ? Math.max(1, Math.floor(entryLevel)) : null;
+  const showEntryLevel =
+    normalizedEntryLevel !== null && normalizedEntryLevel !== minJoinLevel;
+  const entryText = showEntryLevel ? ` Entry level: ${normalizedEntryLevel}.` : "";
+  const requiredKeyLabels = getMissionRequiredKeys(mission)
+    .map((keyId) => getKeyLabel(keyId))
+    .filter(Boolean);
+  const keyText =
+    requiredKeyLabels.length > 0
+      ? ` Key required: ${requiredKeyLabels.join(" / ")}.`
+      : "";
+  return `Dungeon briefing: ${bossNames.length} bosses (${bossNames.join(", ")}). Each cleared boss grants 1 drop, and XP unlocks in fixed quarter milestones (25% / 50% / 75% / 100%) based on total completion.${entryText}${keyText} Over-level heroes earn less XP above the recommended max (1+: -25%, 5+: -50%, 10+: no XP).`;
+};
+
+const getMissionLevelBounds = (mission) => {
+  const recommendedRange = getMissionRecommendedRange(mission);
+  if (recommendedRange) return recommendedRange;
+  const fallbackLevel = Math.max(1, Number(mission?.level) || 1);
+  return { minLevel: fallbackLevel, maxLevel: fallbackLevel };
+};
+
+const getMissionJoinMinLevel = (mission) =>
+  Number.isFinite(mission?.minLevel)
+    ? Math.max(1, Number(mission.minLevel))
+    : Math.max(1, (Number(mission?.level) || 1) - 6);
+
+const getMissionEntryLevel = (mission) => {
+  const entryLevel = Number(mission?.entryLevel);
+  if (!Number.isFinite(entryLevel) || entryLevel <= 0) return null;
+  return Math.max(1, Math.floor(entryLevel));
+};
+
+const getMissionRewardKeyLabels = (mission) =>
+  getMissionRewardKeys(mission)
+    .map((keyId) => getKeyLabel(keyId))
+    .filter(Boolean);
+
+const getMissionProgressionBounds = (mission) => {
+  const recommendedRange = getMissionRecommendedRange(mission);
+  if (recommendedRange) return recommendedRange;
+  const fallbackLevel = Math.max(1, Number(mission?.level) || 1);
+  return {
+    minLevel: getMissionJoinMinLevel(mission),
+    maxLevel: fallbackLevel,
+  };
+};
+
+const getDungeonGroupLevelRangeLabel = (missions) => {
+  if (!Array.isArray(missions) || missions.length === 0) return "1 - 1";
+  let minLevel = Number.POSITIVE_INFINITY;
+  let maxLevel = Number.NEGATIVE_INFINITY;
+  missions.forEach((mission) => {
+    const bounds = getMissionLevelBounds(mission);
+    minLevel = Math.min(minLevel, bounds.minLevel);
+    maxLevel = Math.max(maxLevel, bounds.maxLevel);
+  });
+  return `${minLevel} - ${maxLevel}`;
+};
+
+const getDungeonMissionGroups = (missions) => {
+  const groups = [];
+  const groupedSets = new Map();
+
+  missions.forEach((mission) => {
+    if (mission?.dungeonSetId && mission?.dungeonSetName) {
+      const groupKey = `set:${mission.dungeonSetId}`;
+      if (!groupedSets.has(groupKey)) {
+        const group = {
+          key: groupKey,
+          type: "set",
+          name: mission.dungeonSetName,
+          missions: [],
+        };
+        groupedSets.set(groupKey, group);
+        groups.push(group);
+      }
+      groupedSets.get(groupKey).missions.push(mission);
+      return;
+    }
+
+    groups.push({
+      key: `mission:${mission.id}`,
+      type: "single",
+      name: mission?.name || "Dungeon",
+      missions: [mission],
+    });
+  });
+
+  groups.forEach((group) => {
+    group.missions.sort((left, right) => {
+      const leftWingOrder = Number(left?.wingOrder) || 0;
+      const rightWingOrder = Number(right?.wingOrder) || 0;
+      if (leftWingOrder !== rightWingOrder) return leftWingOrder - rightWingOrder;
+      if ((left?.level || 0) !== (right?.level || 0)) return (left?.level || 0) - (right?.level || 0);
+      return String(left?.name || "").localeCompare(String(right?.name || ""));
+    });
+  });
+
+  return groups;
+};
+
+const sortDungeonWingsByProgression = (left, right) => {
+  if ((left?.level || 0) !== (right?.level || 0)) return (left?.level || 0) - (right?.level || 0);
+  const leftWingOrder = Number(left?.wingOrder) || 0;
+  const rightWingOrder = Number(right?.wingOrder) || 0;
+  if (leftWingOrder !== rightWingOrder) return leftWingOrder - rightWingOrder;
+  return String(left?.name || "").localeCompare(String(right?.name || ""));
+};
+
+const MissionModal = ({
+  isOpen,
+  onClose,
+  roster,
+  onDeploy,
+  missionList,
+  guildFaction = GUILD_FACTION.ALLIANCE,
+  dungeonSuccessBonus = 0,
+  onNotify,
+}) => {
+  const [view, setView] = useState("list");
+  const [selectedQuest, setSelectedQuest] = useState(null);
+  const [party, setParty] = useState([]);
+  const [selectedCategory, setSelectedCategory] = useState("all");
+  const [autoAssignSummary, setAutoAssignSummary] = useState("");
+  const [autoSelectMode, setAutoSelectMode] = useState(
+    AUTO_SELECT_MODES.OPTIMIZED_EXP,
+  );
+  const [expandedDungeonGroups, setExpandedDungeonGroups] = useState({});
+  const [isChainEnabled, setIsChainEnabled] = useState(false);
+  const [selectedChainMissionIds, setSelectedChainMissionIds] = useState([]);
+  const [isLootAccordionOpen, setIsLootAccordionOpen] = useState(false);
+
+  useEffect(() => {
+    if (!isOpen) return;
+    setView("list");
+    setParty([]);
+    setSelectedQuest(null);
+    setSelectedCategory("all");
+    setAutoAssignSummary("");
+    setAutoSelectMode(AUTO_SELECT_MODES.OPTIMIZED_EXP);
+    setExpandedDungeonGroups({});
+    setIsChainEnabled(false);
+    setSelectedChainMissionIds([]);
+    setIsLootAccordionOpen(false);
+  }, [isOpen]);
+
+  const handleSelectQuest = (quest) => {
+    setSelectedQuest(quest);
+    setView("prep");
+    setParty([]);
+    setAutoAssignSummary("");
+    setIsChainEnabled(false);
+    setSelectedChainMissionIds([]);
+    setIsLootAccordionOpen(false);
+  };
+
+  const toggleMember = (charId) => {
+    setAutoAssignSummary("");
+    setParty((prev) => {
+      if (prev.includes(charId)) return prev.filter((id) => id !== charId);
+      if (prev.length >= 5) return prev;
+      return [...prev, charId];
+    });
+  };
+
+  const chainWingMissions =
+    selectedQuest?.type === "dungeon" &&
+    selectedQuest?.dungeonSetId &&
+    selectedQuest?.dungeonSetName
+      ? [...missionList]
+          .filter(
+            (mission) =>
+              mission.type === "dungeon" &&
+              mission.dungeonSetId === selectedQuest.dungeonSetId,
+          )
+          .sort(sortDungeonWingsByProgression)
+      : [];
+
+  const canChainSetDungeons = chainWingMissions.length > 1;
+
+  useEffect(() => {
+    if (!selectedQuest || !canChainSetDungeons) {
+      setIsChainEnabled(false);
+      setSelectedChainMissionIds([]);
+      return;
+    }
+    setIsChainEnabled(false);
+    setSelectedChainMissionIds([selectedQuest.id]);
+  }, [selectedQuest, canChainSetDungeons]);
+
+  const selectedChainMissions = chainWingMissions
+    .filter((mission) => selectedChainMissionIds.includes(mission.id))
+    .sort(sortDungeonWingsByProgression);
+
+  const chainStartMission =
+    isChainEnabled && selectedChainMissions.length > 0
+      ? selectedChainMissions[0]
+      : selectedQuest;
+
+  const minLevel = chainStartMission
+    ? chainStartMission.minLevel || Math.max(1, chainStartMission.level - 6)
+    : 1;
+
+  const idleRoster = roster.filter(
+    (char) =>
+      char.status === "Idle" ||
+      char.status.includes("Mining") ||
+      char.status.includes("Herbs") ||
+      char.status.includes("Skinning") ||
+      char.status.includes("Forging") ||
+      char.status.includes("Stitching") ||
+      char.status.includes("Weaving") ||
+      char.status.includes("Disenchanting") ||
+      char.status.includes("Brewing"),
+  );
+
+  const eligibleRoster = idleRoster.filter((char) => char.level >= minLevel);
+  const getAdjustedMissionPreview = (mission, members) => {
+    const preview = getMissionSuccessPreview(mission, members);
+    const bonus = mission?.type === "dungeon" ? Math.max(0, dungeonSuccessBonus) : 0;
+    const adjustedSuccess = Math.min(100, preview.successChance + bonus);
+    return {
+      ...preview,
+      successChance: adjustedSuccess,
+      failChance: Math.max(0, 100 - adjustedSuccess),
+      focusSuccessBonus: bonus,
+    };
+  };
+
+  const selectedPartyMembers = roster.filter((char) => party.includes(char.id));
+  const selectedMissionSequence =
+    isChainEnabled && selectedChainMissions.length > 0
+      ? selectedChainMissions
+      : selectedQuest
+        ? [selectedQuest]
+        : [];
+  const selectedMissionKeyAccess = evaluateMissionKeyAccess({
+    missions: selectedMissionSequence,
+    partyMembers: selectedPartyMembers,
+  });
+  const selectedMissionRequiredKeyIds = selectedMissionKeyAccess.requiredKeyIds;
+  const selectedMissionRequiredKeyLabels = selectedMissionRequiredKeyIds.map(
+    (keyId) => getKeyLabel(keyId) || keyId,
+  );
+  const selectedMissionMissingKeyLabels = selectedMissionKeyAccess.missingKeyIds.map(
+    (keyId) => getKeyLabel(keyId) || keyId,
+  );
+  const selectedMissionUnlockedRequiredKeyLabels =
+    selectedMissionKeyAccess.unlockedRequiredKeyIds.map(
+      (keyId) => getKeyLabel(keyId) || keyId,
+    );
+  const isKeyBlocked =
+    selectedPartyMembers.length > 0 && !selectedMissionKeyAccess.canEnter;
+  const missionPreview = chainStartMission
+    ? getAdjustedMissionPreview(chainStartMission, selectedPartyMembers)
+    : null;
+  const selectedQuestEntryLevel = getMissionEntryLevel(selectedQuest);
+  const selectedMissionBonusDropNotes = getMissionBonusDropNotes(selectedQuest);
+  const selectedMissionRewardKeyLabels = getMissionRewardKeyLabels(selectedQuest);
+  const selectedDungeonLootSource =
+    selectedQuest?.type === "dungeon" ? getMissionLootSource(selectedQuest) : null;
+  const selectedDungeonLootItems = useMemo(() => {
+    if (!selectedDungeonLootSource) return [];
+    return sortLootItems(
+      DB_ITEMS.filter((item) => getItemSource(item) === selectedDungeonLootSource),
+    );
+  }, [selectedDungeonLootSource]);
+  const selectedDungeonLootByQuality = useMemo(
+    () => groupByQuality(selectedDungeonLootItems),
+    [selectedDungeonLootItems],
+  );
+
+  const orderedMissions = [...missionList].sort((left, right) => {
+    if ((left?.level || 0) !== (right?.level || 0)) return (left?.level || 0) - (right?.level || 0);
+    return String(left?.name || "").localeCompare(String(right?.name || ""));
+  });
+
+  const missionEligibilityById = useMemo(() => {
+    const totalRoster = roster.length;
+    const eligibilityMap = new Map();
+
+    missionList.forEach((mission) => {
+      const rangeBounds = getMissionProgressionBounds(mission);
+      const minJoinLevel = getMissionJoinMinLevel(mission);
+      let inRangeCount = 0;
+      let xpReadyCount = 0;
+
+      roster.forEach((char) => {
+        const level = Number(char?.level) || 1;
+        const canJoin = level >= minJoinLevel;
+        const inRange =
+          level >= rangeBounds.minLevel && level <= rangeBounds.maxLevel;
+
+        if (inRange) inRangeCount += 1;
+
+        if (!canJoin || level >= CONFIG.LEVEL_CAP) return;
+        if (
+          mission.type === "dungeon" &&
+          getDungeonOverlevelExpMultiplier(level, mission) <= 0
+        ) {
+          return;
+        }
+        xpReadyCount += 1;
+      });
+
+      eligibilityMap.set(mission.id, {
+        totalRoster,
+        inRangeCount,
+        xpReadyCount,
+      });
+    });
+
+    return eligibilityMap;
+  }, [missionList, roster]);
+
+  const missionSections =
+    selectedCategory === "all"
+      ? [
+          {
+            key: "quest",
+            title: "Quests",
+            icon: "📜",
+            missions: orderedMissions.filter(
+              (mission) => getMissionCategory(mission) === "quest",
+            ),
+          },
+          {
+            key: "elite",
+            title: "Elite Quests",
+            icon: "⚔️",
+            missions: orderedMissions.filter(
+              (mission) => getMissionCategory(mission) === "elite",
+            ),
+          },
+          {
+            key: "dungeon",
+            title: "Dungeons",
+            icon: "🏰",
+            missions: orderedMissions.filter(
+              (mission) => getMissionCategory(mission) === "dungeon",
+            ),
+          },
+        ].filter((section) => section.missions.length > 0)
+      : [
+          {
+            key: selectedCategory,
+            title: CATEGORY_LABELS[selectedCategory],
+            icon:
+              selectedCategory === "dungeon"
+                ? "🏰"
+                : selectedCategory === "elite"
+                  ? "⚔️"
+                  : "📜",
+            missions: orderedMissions.filter(
+              (mission) => getMissionCategory(mission) === selectedCategory,
+            ),
+          },
+        ];
+
+  const factionMissionIconUrl = getWowIconUrl(
+    FACTION_MISSION_ICON[guildFaction] || FACTION_MISSION_ICON[GUILD_FACTION.ALLIANCE],
+  );
+
+  const toggleDungeonGroup = (groupKey) => {
+    setExpandedDungeonGroups((prev) => ({
+      ...prev,
+      [groupKey]: !prev[groupKey],
+    }));
+  };
+
+  const toggleChainMission = (missionId) => {
+    setSelectedChainMissionIds((prev) => {
+      if (!Array.isArray(prev)) return [missionId];
+      if (missionId === selectedQuest?.id) return prev;
+      if (prev.includes(missionId)) return prev.filter((id) => id !== missionId);
+      return [...prev, missionId];
+    });
+  };
+
+  const renderMissionCard = (mission, showSetName = true) => {
+    const eligibility = missionEligibilityById.get(mission.id) || {
+      totalRoster: roster.length,
+      inRangeCount: 0,
+      xpReadyCount: 0,
+    };
+    const bonusDropNotes = getMissionBonusDropNotes(mission);
+    const rewardKeyLabels = getMissionRewardKeyLabels(mission);
+    const requiredKeyLabels = getMissionRequiredKeys(mission)
+      .map((keyId) => getKeyLabel(keyId) || keyId)
+      .filter(Boolean);
+
+    return (
+      <div
+        key={mission.id}
+        onClick={() => handleSelectQuest(mission)}
+        className={`p-4 rounded cursor-pointer flex justify-between items-center bg-gray-800 active:bg-gray-700 hover:translate-x-1 transition-transform border border-transparent hover:border-blue-500 ${mission.type === "dungeon" ? "border-l-4 border-l-blue-600" : ""}`}
+      >
+        <div className="flex items-center gap-3 min-w-0">
+          <div className="text-2xl bg-gray-900 w-10 h-10 flex items-center justify-center rounded border border-gray-700">
+            {mission.type === "dungeon" ? "🏰" : mission.elite ? "⚔️" : "📜"}
+          </div>
+          <div className="min-w-0">
+            <div className={`font-bold text-lg ${mission.elite ? "text-yellow-500" : "text-gray-200"}`}>
+              {getMissionDisplayName(mission)}
+            </div>
+            {showSetName && mission.type === "dungeon" && mission.dungeonSetName && (
+              <div className="text-[11px] text-blue-300/80 -mt-0.5 mb-0.5">{mission.dungeonSetName}</div>
+            )}
+            <div className="text-sm text-gray-500">{getMissionMetaText(mission)}</div>
+            <div className="text-xs text-red-300/80 mt-0.5">
+              Base fail chance: {getMissionBaseFailChance(mission)}%
+            </div>
+            <div className="text-xs text-yellow-400 mt-1">
+              Rewards: {getMissionGoldReward(mission)}g • {mission.exp} XP{" "}
+              {" • "}
+              Loot:{" "}
+              {getMissionRewardQualities(mission).map((quality, idx, arr) => (
+                <React.Fragment key={`${mission.id}-${quality}-${idx}`}>
+                  <span className={getQualityClass(quality)}>[{getQualityLabel(quality)}]</span>
+                  {idx < arr.length - 1 && <span className="text-gray-500"> + </span>}
+                </React.Fragment>
+              ))}
+            </div>
+            {rewardKeyLabels.length > 0 && (
+              <div className="text-xs text-amber-300 mt-0.5">
+                Key Reward:{" "}
+                {rewardKeyLabels.map((label, idx) => (
+                  <React.Fragment key={`${mission.id}-key-${label}`}>
+                    <span className="text-yellow-200">[{label}]</span>
+                    {idx < rewardKeyLabels.length - 1 && (
+                      <span className="text-gray-500"> + </span>
+                    )}
+                  </React.Fragment>
+                ))}
+              </div>
+            )}
+            {requiredKeyLabels.length > 0 && (
+              <div className="text-xs text-rose-300 mt-0.5 font-semibold">
+                Requires Key:{" "}
+                {requiredKeyLabels.map((label, idx) => (
+                  <React.Fragment key={`${mission.id}-required-key-${label}`}>
+                    <span className="text-rose-200">[{label}]</span>
+                    {idx < requiredKeyLabels.length - 1 && (
+                      <span className="text-gray-500"> + </span>
+                    )}
+                  </React.Fragment>
+                ))}
+              </div>
+            )}
+            {bonusDropNotes.map((note, index) => (
+              <div
+                key={`${mission.id}-bonus-drop-${index}`}
+                className="text-[11px] text-purple-300/85 mt-0.5"
+              >
+                Bonus Drop: {note}
+              </div>
+            ))}
+          </div>
+        </div>
+        <div className="ml-3 flex-none text-right">
+          <div className="inline-flex items-center gap-1 rounded border border-cyan-800 bg-cyan-950/30 px-2 py-1">
+            <img
+              src={factionMissionIconUrl}
+              alt={guildFaction}
+              className="w-3.5 h-3.5 rounded-sm border border-cyan-900/60 object-cover"
+              onError={(event) => {
+                event.currentTarget.src = getWowIconUrl("inv_misc_questionmark");
+              }}
+            />
+            <span className="text-xs font-bold text-cyan-100">
+              {eligibility.inRangeCount}
+            </span>
+          </div>
+          <div className="text-[10px] text-cyan-200/80 mt-1 whitespace-nowrap">
+            Characters in Level Range
+          </div>
+          <div className="text-[10px] text-gray-400">
+            XP-ready: {eligibility.xpReadyCount}
+          </div>
+        </div>
+      </div>
+    );
+  };
+
+  const getMissionExpForMember = (mission, member) => {
+    if (!mission || !member) return 0;
+    if (member.level >= CONFIG.LEVEL_CAP) return 0;
+
+    const baseExp =
+      mission.type === "dungeon"
+        ? mission.exp * getDungeonOverlevelExpMultiplier(member.level, mission)
+        : mission.exp;
+
+    return Math.max(0, Math.floor(baseExp));
+  };
+
+  const handleAutoSelectParty = () => {
+    if (!chainStartMission) return;
+
+    const missionBounds = getMissionProgressionBounds(chainStartMission);
+    const inRangeEligibleRoster = eligibleRoster.filter((member) => {
+      const level = Number(member?.level) || 1;
+      return level >= missionBounds.minLevel && level <= missionBounds.maxLevel;
+    });
+
+    if (autoSelectMode === AUTO_SELECT_MODES.IN_LEVEL_RANGE) {
+      if (inRangeEligibleRoster.length === 0) {
+        setParty([]);
+        const message = "No character in level range.";
+        setAutoAssignSummary(message);
+        if (typeof onNotify === "function") {
+          onNotify({
+            type: "error",
+            title: "Auto-Select",
+            message,
+            durationMs: 3000,
+          });
+        }
+        return;
+      }
+
+      const inRangeSelection = [...inRangeEligibleRoster]
+        .sort((left, right) => {
+          const leftScore = left.level * 3 + getCharacterAverageItemLevel(left);
+          const rightScore = right.level * 3 + getCharacterAverageItemLevel(right);
+          if (rightScore !== leftScore) return rightScore - leftScore;
+          return String(left.name || "").localeCompare(String(right.name || ""));
+        })
+        .slice(0, 5);
+
+      const preview = getAdjustedMissionPreview(chainStartMission, inRangeSelection);
+      const expValues = inRangeSelection.map((member) =>
+        getMissionExpForMember(chainStartMission, member),
+      );
+      const totalExp = expValues.reduce((sum, exp) => sum + exp, 0);
+      const expEligibleCount = expValues.filter((exp) => exp > 0).length;
+      const weightedExp = Math.floor(totalExp * (preview.successChance / 100));
+
+      setParty(inRangeSelection.map((member) => member.id));
+      setAutoAssignSummary(
+        `${AUTO_SELECT_MODE_LABEL[autoSelectMode]} • ${inRangeSelection.length} heroes • Success ${preview.successChance}% • XP-ready ${expEligibleCount}/${inRangeSelection.length} • XP ${totalExp} (expected ${weightedExp})`,
+      );
+      return;
+    }
+
+    if (eligibleRoster.length === 0) {
+      setParty([]);
+      setAutoAssignSummary("No eligible heroes available for this mission.");
+      return;
+    }
+
+    const getSupportScore = (member) =>
+      member.level * 3 + getCharacterAverageItemLevel(member);
+
+    const byExp = [...eligibleRoster].sort((left, right) => {
+      const expDiff =
+        getMissionExpForMember(chainStartMission, right) -
+        getMissionExpForMember(chainStartMission, left);
+      if (expDiff !== 0) return expDiff;
+      return getSupportScore(right) - getSupportScore(left);
+    });
+
+    const byLowLevel = [...eligibleRoster].sort((left, right) => {
+      if (left.level !== right.level) return left.level - right.level;
+      const expDiff =
+        getMissionExpForMember(chainStartMission, right) -
+        getMissionExpForMember(chainStartMission, left);
+      if (expDiff !== 0) return expDiff;
+      return getSupportScore(right) - getSupportScore(left);
+    });
+
+    const bySupport = [...eligibleRoster].sort(
+      (left, right) => getSupportScore(right) - getSupportScore(left),
+    );
+
+    const candidatePoolMap = new Map();
+    const candidateSeed =
+      autoSelectMode === AUTO_SELECT_MODES.BOOST_LOW_LEVEL
+        ? [...byLowLevel.slice(0, 12), ...bySupport.slice(0, 8)]
+        : autoSelectMode === AUTO_SELECT_MODES.MAX_SUCCESS
+          ? [...bySupport.slice(0, 15), ...byExp.slice(0, 8)]
+          : [...byExp.slice(0, 12), ...bySupport.slice(0, 12)];
+
+    candidateSeed.forEach((member) => {
+      candidatePoolMap.set(member.id, member);
+    });
+
+    if (candidatePoolMap.size === 0) {
+      setAutoAssignSummary("Auto-select could not find a valid squad.");
+      return;
+    }
+
+    const candidatePool = [...candidatePoolMap.values()].slice(0, 20);
+    const maxPartySize = Math.min(5, candidatePool.length);
+    const allCandidates = [];
+
+    const evaluateSelection = (members) => {
+      if (members.length === 0) return;
+
+      const preview = getAdjustedMissionPreview(chainStartMission, members);
+      const memberExpValues = members.map((member) =>
+        getMissionExpForMember(chainStartMission, member),
+      );
+      const expEligibleCount = memberExpValues.filter((exp) => exp > 0).length;
+      const totalExp = memberExpValues.reduce((sum, exp) => sum + exp, 0);
+      const weightedExp = Math.floor(totalExp * (preview.successChance / 100));
+      const lowLevelBoostScore = members.reduce((sum, member, index) => {
+        if (memberExpValues[index] <= 0) return sum;
+        const level = Math.max(1, Number(member.level) || 1);
+        return sum + (CONFIG.LEVEL_CAP + 1 - level);
+      }, 0);
+
+      allCandidates.push({
+        memberIds: members.map((member) => member.id),
+        successChance: preview.successChance,
+        totalExp,
+        weightedExp,
+        lowLevelBoostScore,
+        expEligibleCount,
+        allGainExp: expEligibleCount === members.length,
+        partySize: members.length,
+      });
+    };
+
+    const activeSelection = [];
+    const walkCombinations = (startIndex, targetSize) => {
+      if (activeSelection.length === targetSize) {
+        evaluateSelection(activeSelection);
+        return;
+      }
+
+      for (let index = startIndex; index < candidatePool.length; index += 1) {
+        activeSelection.push(candidatePool[index]);
+        walkCombinations(index + 1, targetSize);
+        activeSelection.pop();
+      }
+    };
+
+    for (let partySize = 1; partySize <= maxPartySize; partySize += 1) {
+      walkCombinations(0, partySize);
+    }
+
+    if (allCandidates.length === 0) {
+      setAutoAssignSummary("Auto-select could not find a valid squad.");
+      return;
+    }
+
+    const maxTotalExp = allCandidates.reduce(
+      (best, candidate) => Math.max(best, candidate.totalExp),
+      0,
+    );
+    const expFloor = maxTotalExp > 0 ? Math.floor(maxTotalExp * 0.9) : 0;
+
+    let selectionPool = allCandidates;
+    if (autoSelectMode === AUTO_SELECT_MODES.OPTIMIZED_EXP) {
+      selectionPool = allCandidates.filter((candidate) => candidate.totalExp >= expFloor);
+    }
+
+    if (autoSelectMode === AUTO_SELECT_MODES.BOOST_LOW_LEVEL) {
+      const perfectSuccessPool = selectionPool.filter(
+        (candidate) => candidate.successChance >= 100,
+      );
+      if (perfectSuccessPool.length > 0) selectionPool = perfectSuccessPool;
+    }
+
+    const bestCandidate = [...selectionPool].sort((left, right) => {
+      if (autoSelectMode === AUTO_SELECT_MODES.MAX_SUCCESS) {
+        if (right.successChance !== left.successChance) {
+          return right.successChance - left.successChance;
+        }
+        if (right.weightedExp !== left.weightedExp) {
+          return right.weightedExp - left.weightedExp;
+        }
+        if (right.totalExp !== left.totalExp) {
+          return right.totalExp - left.totalExp;
+        }
+      } else if (autoSelectMode === AUTO_SELECT_MODES.BOOST_LOW_LEVEL) {
+        if (right.lowLevelBoostScore !== left.lowLevelBoostScore) {
+          return right.lowLevelBoostScore - left.lowLevelBoostScore;
+        }
+        if (right.expEligibleCount !== left.expEligibleCount) {
+          return right.expEligibleCount - left.expEligibleCount;
+        }
+        if (right.successChance !== left.successChance) {
+          return right.successChance - left.successChance;
+        }
+        if (right.weightedExp !== left.weightedExp) {
+          return right.weightedExp - left.weightedExp;
+        }
+      } else {
+        if (right.weightedExp !== left.weightedExp) {
+          return right.weightedExp - left.weightedExp;
+        }
+        if (right.totalExp !== left.totalExp) {
+          return right.totalExp - left.totalExp;
+        }
+        if (right.successChance !== left.successChance) {
+          return right.successChance - left.successChance;
+        }
+      }
+
+      if (Number(right.allGainExp) !== Number(left.allGainExp)) {
+        return Number(right.allGainExp) - Number(left.allGainExp);
+      }
+      if (right.expEligibleCount !== left.expEligibleCount) {
+        return right.expEligibleCount - left.expEligibleCount;
+      }
+      return right.partySize - left.partySize;
+    })[0];
+
+    setParty(bestCandidate.memberIds);
+    const successLabel =
+      bestCandidate.successChance >= 100 ? "100%" : `${bestCandidate.successChance}%`;
+    setAutoAssignSummary(
+      `${AUTO_SELECT_MODE_LABEL[autoSelectMode]} • ${bestCandidate.partySize} heroes • Success ${successLabel} • XP-ready ${bestCandidate.expEligibleCount}/${bestCandidate.partySize} • XP ${bestCandidate.totalExp} (expected ${bestCandidate.weightedExp})`,
+    );
+  };
+
+  return (
+    <BaseModal
+      isOpen={isOpen}
+      onClose={onClose}
+      overlayClassName="bg-black/85 backdrop-blur-sm p-0 md:p-4"
+      panelClassName="wow-modal-panel bg-gray-900 border-x-0 border-y-0 md:border-2 border-blue-900 rounded-none md:rounded-lg w-full max-w-4xl h-full md:h-[80vh] flex flex-col relative shadow-2xl"
+    >
+      <div className="p-4 border-b border-gray-700 bg-gray-900 flex justify-between items-center flex-none">
+        <h2 className="text-xl md:text-2xl fantasy-font text-blue-400">
+          {view === "list" ? "Mission Board" : "Tactical Map"}
+        </h2>
+        <button
+          onClick={onClose}
+          className="text-gray-500 hover:text-white text-3xl px-2"
+        >
+          &times;
+        </button>
+      </div>
+      {view === "list" && (
+        <div className="flex-1 flex flex-col min-h-0">
+          <div className="px-4 pt-3 pb-2 border-b border-gray-700 bg-gray-900/80">
+            <div className="flex items-center gap-2 flex-wrap">
+              {CATEGORY_FILTER_OPTIONS.map((category) => (
+                <button
+                  key={category}
+                  onClick={() => setSelectedCategory(category)}
+                  className={`px-3 py-1 text-xs rounded border transition-colors ${selectedCategory === category ? "border-blue-500 bg-blue-900/40 text-blue-200" : "border-gray-600 bg-gray-800 text-gray-300 hover:bg-gray-700"}`}
+                >
+                  {CATEGORY_LABELS[category]}
+                </button>
+              ))}
+            </div>
+          </div>
+          <div className="flex-1 overflow-y-auto p-4 custom-scrollbar">
+            {missionSections.length === 0 ? (
+              <div className="text-center text-gray-500 italic py-10">
+                No missions in this category.
+              </div>
+            ) : (
+              <div className="space-y-5">
+                {missionSections.map((section) => (
+                  <section key={section.key} className="space-y-2">
+                    <div className="px-1 flex items-center justify-between">
+                      <h3 className="text-xs md:text-sm uppercase tracking-wider text-gray-300 font-bold">
+                        {section.icon} {section.title}
+                      </h3>
+                      <span className="text-xs text-gray-500">
+                        {section.missions.length}
+                      </span>
+                    </div>
+                    <div className="space-y-3">
+                      {section.key === "dungeon" ? (
+                        getDungeonMissionGroups(section.missions).map((group) => {
+                          if (group.type !== "set") {
+                            return renderMissionCard(group.missions[0], true);
+                          }
+
+                          const isExpanded = Boolean(expandedDungeonGroups[group.key]);
+                          const levelRangeLabel = getDungeonGroupLevelRangeLabel(group.missions);
+                          return (
+                            <div
+                              key={group.key}
+                              className="rounded border border-blue-900/50 bg-gray-900/30"
+                            >
+                              <button
+                                type="button"
+                                onClick={() => toggleDungeonGroup(group.key)}
+                                className="w-full flex items-center justify-between gap-3 px-3 py-2 text-left hover:bg-blue-950/20 transition-colors"
+                              >
+                                <div className="min-w-0">
+                                  <div className="text-sm uppercase tracking-wider text-blue-200 font-bold">
+                                    {group.name}
+                                  </div>
+                                  <div className="text-[11px] text-blue-200/80">
+                                    Dungeon Set • Lvl {levelRangeLabel}
+                                  </div>
+                                </div>
+                                <div className="flex items-center gap-3 text-xs text-blue-200/90">
+                                  <span>{group.missions.length} wings</span>
+                                  <span className="text-lg leading-none">
+                                    {isExpanded ? "▾" : "▸"}
+                                  </span>
+                                </div>
+                              </button>
+                              {isExpanded && (
+                                <div className="px-2 pb-2 space-y-2">
+                                  {group.missions.map((mission) =>
+                                    renderMissionCard(mission, false),
+                                  )}
+                                </div>
+                              )}
+                            </div>
+                          );
+                        })
+                      ) : (
+                        section.missions.map((mission) => renderMissionCard(mission, true))
+                      )}
+                    </div>
+                  </section>
+                ))}
+              </div>
+            )}
+          </div>
+        </div>
+      )}
+      {view === "prep" && selectedQuest && (
+        <div className="flex-1 flex flex-col min-h-0 bg-gray-800">
+          <div className="bg-gray-900 p-4 md:p-6 border-b border-gray-700 flex-none shadow-md">
+            <div className="flex justify-between items-start mb-2">
+              <div>
+                <h2
+                  className={`text-xl md:text-2xl fantasy-font ${selectedQuest.elite ? "text-yellow-500" : "text-white"}`}
+                >
+                  {getMissionDisplayName(selectedQuest)}
+                </h2>
+                {selectedQuest.type === "dungeon" && selectedQuest.dungeonSetName && (
+                  <div className="text-sm text-blue-300/80 mt-0.5">
+                    {selectedQuest.dungeonSetName}
+                  </div>
+                )}
+                <div className="text-xs text-gray-400 mt-1">
+                  {getMissionMetaText(selectedQuest)}
+                </div>
+                <p className="text-xs text-amber-100/80 mt-2 max-w-2xl leading-relaxed">
+                  {selectedQuest.type === "dungeon"
+                    ? getDungeonBriefingText(selectedQuest)
+                    : selectedQuest.elite
+                      ? "Elite briefing: high-risk target with dangerous resistance. Bring appropriate levels and roles."
+                      : "Quest briefing: a standard operation suited for steady progression and resource gains."}
+                </p>
+                {canChainSetDungeons && selectedQuest.type === "dungeon" && (
+                  <div className="mt-3 rounded border border-indigo-900/70 bg-indigo-950/20 p-2">
+                    <div className="flex flex-wrap items-center justify-between gap-2">
+                      <span className="text-[11px] uppercase tracking-wide text-indigo-200 font-bold">
+                        Wing Chain
+                      </span>
+                      <button
+                        type="button"
+                        onClick={() => setIsChainEnabled((prev) => !prev)}
+                        className={`px-2 py-1 rounded border text-[11px] font-bold transition-colors ${isChainEnabled ? "border-indigo-500 bg-indigo-800/40 text-indigo-100" : "border-gray-700 bg-gray-800 text-gray-300 hover:bg-gray-700"}`}
+                      >
+                        {isChainEnabled ? "Disable Chain" : "Chain Dungeons"}
+                      </button>
+                    </div>
+                    {isChainEnabled && (
+                      <div className="mt-2 space-y-1.5">
+                        {chainWingMissions.map((mission) => {
+                          const isCurrentMission = mission.id === selectedQuest.id;
+                          const isChecked = selectedChainMissionIds.includes(mission.id);
+                          return (
+                            <label
+                              key={`chain-${mission.id}`}
+                              className={`flex items-center gap-2 text-[11px] rounded px-2 py-1 border ${isChecked ? "border-indigo-700 bg-indigo-900/20 text-indigo-100" : "border-gray-700 bg-gray-900/40 text-gray-300"}`}
+                            >
+                              <input
+                                type="checkbox"
+                                checked={isChecked}
+                                disabled={isCurrentMission}
+                                onChange={() => toggleChainMission(mission.id)}
+                                className="accent-indigo-500"
+                              />
+                              <span className="font-semibold">{mission.dungeonWing || mission.name}</span>
+                              <span className="text-gray-400">Lvl {mission.recommended || mission.level}</span>
+                              {isCurrentMission && (
+                                <span className="text-indigo-300">(Current)</span>
+                              )}
+                            </label>
+                          );
+                        })}
+                        {selectedChainMissions.length > 1 && (
+                          <div className="text-[11px] text-indigo-200/90">
+                            Chain order:{" "}
+                            {selectedChainMissions
+                              .map((mission) => mission.dungeonWing || mission.name)
+                              .join(" → ")}
+                          </div>
+                        )}
+                        {selectedChainMissions.length > 0 && chainStartMission && (
+                          <div className="text-[11px] text-indigo-200/70">
+                            Starts at: {chainStartMission.dungeonWing || chainStartMission.name}
+                          </div>
+                        )}
+                      </div>
+                    )}
+                  </div>
+                )}
+                {selectedQuest.type === "dungeon" && (
+                  <div className="mt-3 rounded border border-yellow-900/70 bg-yellow-950/10">
+                    <button
+                      type="button"
+                      onClick={() => setIsLootAccordionOpen((prev) => !prev)}
+                      className="w-full flex items-center justify-between gap-3 px-3 py-2 text-left hover:bg-yellow-950/20 transition-colors"
+                    >
+                      <span className="text-[11px] uppercase tracking-wide text-yellow-200 font-bold">
+                        Dungeon Loot Table ({selectedDungeonLootItems.length})
+                      </span>
+                      <span className="text-yellow-200 text-sm leading-none">
+                        {isLootAccordionOpen ? "▾" : "▸"}
+                      </span>
+                    </button>
+                    {isLootAccordionOpen && (
+                      <div className="px-3 pb-3 border-t border-yellow-900/40">
+                        {selectedDungeonLootItems.length === 0 ? (
+                          <div className="text-[11px] text-gray-400 pt-2 italic">
+                            No dungeon-specific loot is configured for this source yet.
+                          </div>
+                        ) : (
+                          <div className="pt-2 space-y-2 max-h-52 overflow-y-auto custom-scrollbar pr-1">
+                            {[5, 4, 3, 2, 1, 0].map((quality) => {
+                              const qualityItems =
+                                selectedDungeonLootByQuality[quality] || [];
+                              if (qualityItems.length === 0) return null;
+                              return (
+                                <div
+                                  key={`tactical-loot-${quality}`}
+                                  className="rounded border border-gray-800 bg-black/20"
+                                >
+                                  <div className="px-2 py-1 border-b border-gray-800 text-[11px]">
+                                    <span
+                                      className={`${getQualityClass(quality)} font-bold uppercase tracking-wide`}
+                                    >
+                                      {getQualityLabel(quality)}
+                                    </span>
+                                    <span className="text-gray-500 ml-1">
+                                      ({qualityItems.length})
+                                    </span>
+                                  </div>
+                                  <div className="divide-y divide-gray-800">
+                                    {qualityItems.map((item) => (
+                                      <div
+                                        key={`tactical-loot-item-${item.id}`}
+                                        className="px-2 py-1.5 flex items-center justify-between gap-2 text-[11px]"
+                                      >
+                                        <div className="min-w-0 flex items-center gap-2">
+                                          <img
+                                            src={getItemIconUrl(item)}
+                                            alt={item.name}
+                                            className="w-6 h-6 rounded border border-gray-700 object-cover flex-none"
+                                            onError={(event) => {
+                                              event.currentTarget.src =
+                                                getWowIconUrl(
+                                                  "inv_misc_questionmark",
+                                                );
+                                            }}
+                                          />
+                                          <div className="min-w-0">
+                                            <div
+                                              className={`truncate font-semibold ${getQualityClass(item.quality)}`}
+                                            >
+                                              [{item.name}]
+                                            </div>
+                                            <div className="text-gray-500">
+                                              {item.slot} • {item.type}
+                                            </div>
+                                          </div>
+                                        </div>
+                                        <div className="text-right whitespace-nowrap text-gray-400">
+                                          Lvl {item.minLevel}
+                                        </div>
+                                      </div>
+                                    ))}
+                                  </div>
+                                </div>
+                              );
+                            })}
+                          </div>
+                        )}
+                      </div>
+                    )}
+                  </div>
+                )}
+                <div className="flex flex-wrap gap-2 mt-2 text-[11px]">
+                  <span className="px-2 py-1 rounded border border-gray-700 bg-gray-800 text-gray-300">
+                    Recommended: Lvl {selectedQuest.recommended || selectedQuest.level}
+                  </span>
+                  {selectedQuest.type === "dungeon" &&
+                    selectedQuestEntryLevel !== null &&
+                    selectedQuestEntryLevel !== minLevel && (
+                      <span className="px-2 py-1 rounded border border-blue-800 bg-blue-950/30 text-blue-200">
+                        Entry Level: {selectedQuestEntryLevel}
+                      </span>
+                    )}
+                  <span className="px-2 py-1 rounded border border-gray-700 bg-gray-800 text-gray-300">
+                    Minimum to Join: Lvl {minLevel}
+                  </span>
+                  {selectedMissionRequiredKeyLabels.length > 0 && (
+                    <span className="px-2 py-1 rounded border border-rose-800 bg-rose-950/30 text-rose-200 font-semibold">
+                      Key Required: [{selectedMissionRequiredKeyLabels.join("] + [")}]
+                    </span>
+                  )}
+                  <span className="px-2 py-1 rounded border border-gray-700 bg-gray-800 text-yellow-300">
+                    Rewards: {getMissionGoldReward(selectedQuest)}g • {selectedQuest.exp} XP •{" "}
+                    {getMissionRewardQualities(selectedQuest).map(
+                      (quality, idx, arr) => (
+                        <React.Fragment
+                          key={`${selectedQuest.id}-prep-${quality}-${idx}`}
+                        >
+                          <span className={getQualityClass(quality)}>
+                            [{getQualityLabel(quality)}]
+                          </span>
+                          {idx < arr.length - 1 && (
+                            <span className="text-gray-500"> + </span>
+                          )}
+                        </React.Fragment>
+                      ),
+                    )}
+                  </span>
+                  {selectedMissionRewardKeyLabels.map((label, index) => (
+                    <span
+                      key={`${selectedQuest.id}-prep-key-${index}`}
+                      className="px-2 py-1 rounded border border-amber-800 bg-amber-950/30 text-amber-200"
+                    >
+                      Key Reward: [{label}]
+                    </span>
+                  ))}
+                  {selectedMissionBonusDropNotes.map((note, index) => (
+                    <span
+                      key={`${selectedQuest.id}-prep-bonus-drop-${index}`}
+                      className="px-2 py-1 rounded border border-purple-800 bg-purple-950/30 text-purple-200"
+                    >
+                      Bonus Drop: {note}
+                    </span>
+                  ))}
+                  {selectedMissionRequiredKeyLabels.length > 0 &&
+                    selectedPartyMembers.length === 0 && (
+                      <span className="px-2 py-1 rounded border border-rose-900 bg-rose-950/30 text-rose-200">
+                        {selectedMissionUnlockedRequiredKeyLabels.length > 0
+                          ? `Chain unlock available: [${selectedMissionUnlockedRequiredKeyLabels.join("] + [")}] can be earned before locked wings.`
+                          : "Select at least one key holder to unlock this route."}
+                      </span>
+                    )}
+                  {selectedMissionRequiredKeyLabels.length > 0 &&
+                    selectedPartyMembers.length > 0 &&
+                    isKeyBlocked && (
+                      <span className="px-2 py-1 rounded border border-red-800 bg-red-950/30 text-red-200 font-semibold">
+                        Locked: Missing [{selectedMissionMissingKeyLabels.join("] + [")}]
+                        {selectedMissionKeyAccess.firstBlockingRequirement?.missionName
+                          ? ` for ${selectedMissionKeyAccess.firstBlockingRequirement.missionName}`
+                          : ""}
+                        .
+                      </span>
+                    )}
+                  {selectedMissionRequiredKeyLabels.length > 0 &&
+                    selectedPartyMembers.length > 0 &&
+                    !isKeyBlocked &&
+                    selectedMissionUnlockedRequiredKeyLabels.length > 0 && (
+                      <span className="px-2 py-1 rounded border border-emerald-700 bg-emerald-950/30 text-emerald-200">
+                        Chain unlock: [{selectedMissionUnlockedRequiredKeyLabels.join("] + [")}] will be earned before locked wings.
+                      </span>
+                    )}
+                  {selectedMissionRequiredKeyLabels.length > 0 &&
+                    selectedPartyMembers.length > 0 &&
+                    !isKeyBlocked &&
+                    selectedMissionUnlockedRequiredKeyLabels.length === 0 &&
+                    selectedMissionKeyAccess.partyHasAnyRequiredKey && (
+                      <span className="px-2 py-1 rounded border border-emerald-700 bg-emerald-950/30 text-emerald-200">
+                        Key holder detected in squad.
+                      </span>
+                    )}
+                  {missionPreview && selectedPartyMembers.length === 0 && (
+                    <span className="px-2 py-1 rounded border border-gray-700 bg-gray-800 text-gray-300">
+                      Select heroes to calculate success chance
+                    </span>
+                  )}
+                  {missionPreview && selectedPartyMembers.length > 0 && (
+                    <>
+                      <span className="px-2 py-1 rounded border border-green-800 bg-green-950/30 text-green-300">
+                        Success: {missionPreview.successChance}%
+                      </span>
+                      <span className="px-2 py-1 rounded border border-red-900 bg-red-950/30 text-red-300">
+                        Fail: {missionPreview.failChance}%
+                      </span>
+                      <span className="px-2 py-1 rounded border border-gray-700 bg-gray-800 text-gray-300">
+                        Team Avg Lvl: {missionPreview.averagePartyLevel.toFixed(1)}
+                      </span>
+                      <span className="px-2 py-1 rounded border border-gray-700 bg-gray-800 text-gray-300">
+                        Team Avg iLvl: {missionPreview.averagePartyItemLevel.toFixed(1)}
+                      </span>
+                      <span className="px-2 py-1 rounded border border-gray-700 bg-gray-800 text-gray-300">
+                        Power: {missionPreview.partyPower.toFixed(1)} /{" "}
+                        {missionPreview.missionPower.toFixed(1)}
+                      </span>
+                      <span
+                        className={`px-2 py-1 rounded border ${missionPreview.hasCoreRoleComposition ? "border-emerald-700 bg-emerald-950/30 text-emerald-300" : "border-gray-700 bg-gray-800 text-gray-400"}`}
+                      >
+                        Role comp bonus:{" "}
+                        {missionPreview.hasCoreRoleComposition
+                          ? `+${missionPreview.roleCompositionBonus}% Success`
+                          : "Need Tank + Healer + DPS"}
+                      </span>
+                      {missionPreview.focusSuccessBonus > 0 && (
+                        <span className="px-2 py-1 rounded border border-cyan-800 bg-cyan-950/30 text-cyan-200">
+                          Guild focus bonus: +{missionPreview.focusSuccessBonus}% Success
+                        </span>
+                      )}
+                    </>
+                  )}
+                </div>
+              </div>
+              <div className="text-right flex-none">
+                <div className="text-xs md:text-sm text-gray-400 mb-1">Squad</div>
+                <div className="text-xl font-bold text-white">{party.length}/5</div>
+                <select
+                  value={autoSelectMode}
+                  onChange={(event) => {
+                    setAutoSelectMode(event.target.value);
+                    setAutoAssignSummary("");
+                  }}
+                  className="mt-2 w-full bg-gray-800 border border-gray-600 rounded px-2 py-1 text-[11px] text-gray-200 focus:outline-none focus:border-emerald-500"
+                >
+                  {AUTO_SELECT_MODE_OPTIONS.map((option) => (
+                    <option key={option.value} value={option.value}>
+                      {option.label}
+                    </option>
+                  ))}
+                </select>
+                <button
+                  onClick={handleAutoSelectParty}
+                  disabled={eligibleRoster.length === 0}
+                  className="mt-2 px-3 py-1 text-[11px] rounded border border-emerald-700 bg-emerald-900/30 text-emerald-200 hover:bg-emerald-800/40 disabled:opacity-40 disabled:cursor-not-allowed"
+                >
+                  Auto-Select
+                </button>
+              </div>
+            </div>
+            {autoAssignSummary && (
+              <div className="mt-2 text-[11px] text-emerald-300 border border-emerald-900/60 bg-emerald-950/20 rounded px-2 py-1">
+                {autoAssignSummary}
+              </div>
+            )}
+          </div>
+          <div className="flex-1 overflow-y-auto p-4 bg-gray-800 grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-3 custom-scrollbar">
+            {idleRoster.map((char) => {
+              const isEligible = char.level >= minLevel;
+              const isSelected = party.includes(char.id);
+              const ownedKeys = Array.isArray(char.keys)
+                ? char.keys.map((keyId) => String(keyId || "").trim()).filter(Boolean)
+                : [];
+              const hasRequiredKey =
+                selectedMissionRequiredKeyIds.length > 0 &&
+                ownedKeys.some((keyId) =>
+                  selectedMissionRequiredKeyIds.includes(keyId),
+                );
+              return (
+                <div
+                  key={char.id}
+                  onClick={() => isEligible && toggleMember(char.id)}
+                  className={`p-3 rounded flex items-center gap-3 transition-all cursor-pointer border ${!isEligible ? "opacity-40 cursor-not-allowed bg-black border-transparent" : isSelected ? "bg-green-900/30 border-green-500" : hasRequiredKey ? "bg-amber-950/20 border-amber-600 hover:bg-amber-900/20" : "bg-gray-700 border-gray-600 hover:bg-gray-600"}`}
+                >
+                  <img
+                    src={getRacePortraitUrl(char.race, char.gender)}
+                    alt={`${char.race} ${char.gender}`}
+                    className="w-10 h-10 rounded border border-gray-600 object-cover bg-gray-900"
+                    onError={(event) => {
+                      event.currentTarget.src = getWowIconUrl("inv_misc_questionmark");
+                    }}
+                  />
+                  <div className="flex-1">
+                    <div
+                      className="font-bold text-sm"
+                      style={{ color: DB_CLASSES[char.charClass].color }}
+                    >
+                      {char.name}
+                    </div>
+                    <div className="text-[11px] text-gray-300 mt-0.5 inline-flex items-center gap-1">
+                      {DB_CLASSES[char.charClass]?.icon && (
+                        <img
+                          src={DB_CLASSES[char.charClass].icon}
+                          alt={char.charClass}
+                          className="w-3.5 h-3.5 rounded-sm border border-gray-600"
+                          onError={(event) => {
+                            event.currentTarget.style.display = "none";
+                          }}
+                        />
+                      )}
+                      <span>{char.charClass}</span>
+                    </div>
+                    {hasRequiredKey && (
+                      <div className="text-[10px] text-amber-300 uppercase tracking-wide font-bold mt-0.5">
+                        🔑 Key Holder
+                      </div>
+                    )}
+                    <div className="flex justify-between items-center mt-1">
+                      <span className="text-xs text-gray-400">
+                        {getRoleIcon(char.role)} Lvl {char.level}
+                      </span>
+                      <span className="text-[11px] text-amber-200/80">
+                        iLvl {getCharacterAverageItemLevel(char).toFixed(1)}
+                      </span>
+                      {!isEligible && (
+                        <span className="text-[10px] text-red-500 font-bold uppercase">
+                          LOW
+                        </span>
+                      )}
+                    </div>
+                  </div>
+                  {isSelected && <div className="w-4 h-4 rounded-full bg-green-500" />}
+                </div>
+              );
+            })}
+          </div>
+          <div className="p-4 border-t border-gray-700 bg-gray-900 flex justify-between items-center flex-none">
+            <button
+              onClick={() => setView("list")}
+              className="text-gray-400 hover:text-white text-sm md:text-base"
+            >
+              ← Back
+            </button>
+            <button
+              onClick={() => {
+                if (isKeyBlocked) return;
+                const chainMissionIds =
+                  isChainEnabled && selectedChainMissions.length > 1
+                    ? selectedChainMissions.map((mission) => mission.id)
+                    : null;
+                onDeploy(
+                  selectedQuest,
+                  party,
+                  chainMissionIds ? { chainMissionIds } : undefined,
+                );
+                onClose();
+              }}
+              disabled={party.length === 0 || isKeyBlocked}
+              className="btn-quest px-6 md:px-10 py-3 rounded text-blue-100 font-bold disabled:opacity-50 disabled:cursor-not-allowed text-sm md:text-base"
+            >
+              {isChainEnabled && selectedChainMissions.length > 1
+                ? `Start Chain (${selectedChainMissions.length})`
+                : "Deploy"}
+            </button>
+          </div>
+        </div>
+      )}
+    </BaseModal>
+  );
+};
+
+export default MissionModal;

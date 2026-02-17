@@ -19,6 +19,12 @@ export const GUILD_DUNGEON_WIPE_MILESTONE = {
   reward: 1,
   label: "First dungeon wipe",
 };
+export const GUILD_SCARLET_MONASTERY_CLEAR_MILESTONE = {
+  reward: 5,
+  label: "Cleared Scarlet Monastery",
+  dungeonSetName: "Scarlet Monastery",
+  wingNames: ["Graveyard", "Library", "Armory", "Cathedral"],
+};
 export const GUILD_GNOMEREGAN_CLEAR_MILESTONE = {
   reward: 1,
   label: "Clear Gnomeregan",
@@ -95,6 +101,59 @@ const createDungeonClearMilestoneMap = () =>
     GUILD_DUNGEON_CLEAR_MILESTONES.map((milestone) => [milestone.target, false]),
   );
 
+const createScarletWingMap = () =>
+  Object.fromEntries(
+    GUILD_SCARLET_MONASTERY_CLEAR_MILESTONE.wingNames.map((wing) => [wing, false]),
+  );
+
+const getFallbackScarletMonasteryState = (scarletState) => {
+  const rawState =
+    scarletState && typeof scarletState === "object" ? scarletState : {};
+  const rawWings =
+    rawState.wingsCleared && typeof rawState.wingsCleared === "object"
+      ? rawState.wingsCleared
+      : {};
+  const wingsCleared = {
+    ...createScarletWingMap(),
+    ...rawWings,
+  };
+  const fullClear = Boolean(
+    rawState.fullClear || Object.values(wingsCleared).every(Boolean),
+  );
+
+  if (fullClear) {
+    Object.keys(wingsCleared).forEach((wing) => {
+      wingsCleared[wing] = true;
+    });
+  }
+
+  return {
+    wingsCleared,
+    fullClear,
+  };
+};
+
+const resolveScarletWingName = ({ missionName, missionSetName, missionWing }) => {
+  const missionLabel = String(missionName || "");
+  const setLabel = String(missionSetName || "");
+  const wingLabel = String(missionWing || "");
+  const isScarletMission =
+    setLabel.toLowerCase() ===
+      GUILD_SCARLET_MONASTERY_CLEAR_MILESTONE.dungeonSetName.toLowerCase() ||
+    missionLabel.toLowerCase().startsWith("scarlet monastery:");
+  if (!isScarletMission) return null;
+
+  const candidateWingName =
+    wingLabel ||
+    missionLabel.replace(/^scarlet monastery:\s*/i, "").trim();
+  const normalized = candidateWingName.toLowerCase();
+  return (
+    GUILD_SCARLET_MONASTERY_CLEAR_MILESTONE.wingNames.find(
+      (wing) => wing.toLowerCase() === normalized,
+    ) || null
+  );
+};
+
 const getFallbackDungeonState = (dungeonState) => ({
   clearCount: Math.max(0, Math.floor(Number(dungeonState?.clearCount) || 0)),
   clearReached: {
@@ -103,6 +162,9 @@ const getFallbackDungeonState = (dungeonState) => ({
   },
   firstWipe: Boolean(dungeonState?.firstWipe),
   gnomereganCleared: Boolean(dungeonState?.gnomereganCleared),
+  scarletMonastery: getFallbackScarletMonasteryState(
+    dungeonState?.scarletMonastery,
+  ),
 });
 
 export const createInitialGuildProgress = () => ({
@@ -204,6 +266,29 @@ export const normalizeGuildProgress = (rawGuildProgress) => {
       rawGuildProgress?.milestones?.gnomereganCleared ||
       rawGuildProgress?.milestones?.gnomereganClear,
   );
+  const rawScarletState = getFallbackScarletMonasteryState(
+    rawDungeonMilestones?.scarletMonastery,
+  );
+  const legacyScarletWings =
+    rawDungeonMilestones?.scarletMonasteryWingsCleared &&
+    typeof rawDungeonMilestones.scarletMonasteryWingsCleared === "object"
+      ? rawDungeonMilestones.scarletMonasteryWingsCleared
+      : {};
+  const scarletWingsCleared = {
+    ...rawScarletState.wingsCleared,
+    ...legacyScarletWings,
+  };
+  const legacyScarletFullClear = Boolean(
+    rawDungeonMilestones?.scarletMonasteryCleared ||
+      rawGuildProgress?.milestones?.scarletMonasteryCleared,
+  );
+  const scarletMonasteryFullClear =
+    legacyScarletFullClear || Object.values(scarletWingsCleared).every(Boolean);
+  if (scarletMonasteryFullClear) {
+    Object.keys(scarletWingsCleared).forEach((wing) => {
+      scarletWingsCleared[wing] = true;
+    });
+  }
 
   const renownPoints = Math.max(
     0,
@@ -225,6 +310,10 @@ export const normalizeGuildProgress = (rawGuildProgress) => {
         clearReached,
         firstWipe,
         gnomereganCleared,
+        scarletMonastery: {
+          wingsCleared: scarletWingsCleared,
+          fullClear: scarletMonasteryFullClear,
+        },
       },
     },
   };
@@ -263,14 +352,36 @@ export const applyLevelMilestones = (guildProgress, roster) => {
   };
 };
 
-export const applyDungeonClearMilestones = (guildProgress, missionName = "") => {
+export const applyDungeonClearMilestones = (guildProgress, missionContext = "") => {
   const normalized = normalizeGuildProgress(guildProgress);
   const dungeon = getFallbackDungeonState(normalized.milestones.dungeon);
+  const missionName =
+    typeof missionContext === "string"
+      ? missionContext
+      : missionContext?.name || "";
+  const missionSetName =
+    typeof missionContext === "object" ? missionContext?.dungeonSetName : "";
+  const missionWing =
+    typeof missionContext === "object" ? missionContext?.dungeonWing : "";
   const clearCount = dungeon.clearCount + 1;
   const clearReached = {
     ...createDungeonClearMilestoneMap(),
     ...dungeon.clearReached,
   };
+  const scarletMonastery = getFallbackScarletMonasteryState(
+    dungeon.scarletMonastery,
+  );
+  const scarletWingsCleared = { ...scarletMonastery.wingsCleared };
+  const scarletWing = resolveScarletWingName({
+    missionName,
+    missionSetName,
+    missionWing,
+  });
+  if (scarletWing) {
+    scarletWingsCleared[scarletWing] = true;
+  }
+  const scarletMonasteryFullClear =
+    scarletMonastery.fullClear || Object.values(scarletWingsCleared).every(Boolean);
 
   let gained = 0;
   const unlocked = [];
@@ -293,6 +404,13 @@ export const applyDungeonClearMilestones = (guildProgress, missionName = "") => 
       reward: GUILD_GNOMEREGAN_CLEAR_MILESTONE.reward,
     });
   }
+  if (!scarletMonastery.fullClear && scarletMonasteryFullClear) {
+    gained += GUILD_SCARLET_MONASTERY_CLEAR_MILESTONE.reward;
+    unlocked.push({
+      label: GUILD_SCARLET_MONASTERY_CLEAR_MILESTONE.label,
+      reward: GUILD_SCARLET_MONASTERY_CLEAR_MILESTONE.reward,
+    });
+  }
 
   return {
     unlocked,
@@ -307,6 +425,10 @@ export const applyDungeonClearMilestones = (guildProgress, missionName = "") => 
           clearReached,
           firstWipe: dungeon.firstWipe,
           gnomereganCleared,
+          scarletMonastery: {
+            wingsCleared: scarletWingsCleared,
+            fullClear: scarletMonasteryFullClear,
+          },
         },
       },
     },
@@ -395,6 +517,20 @@ export const buildGuildAchievementEntries = (guildProgress) => {
     0,
     Math.floor(Number(normalized?.milestones?.dungeon?.clearCount) || 0),
   );
+  const scarletMonastery = getFallbackScarletMonasteryState(
+    normalized?.milestones?.dungeon?.scarletMonastery,
+  );
+  const clearedScarletWings = GUILD_SCARLET_MONASTERY_CLEAR_MILESTONE.wingNames.filter(
+    (wing) => scarletMonastery.wingsCleared[wing],
+  );
+  const missingScarletWings = GUILD_SCARLET_MONASTERY_CLEAR_MILESTONE.wingNames.filter(
+    (wing) => !scarletMonastery.wingsCleared[wing],
+  );
+  const scarletProgress = `${clearedScarletWings.length}/${GUILD_SCARLET_MONASTERY_CLEAR_MILESTONE.wingNames.length}${
+    missingScarletWings.length > 0
+      ? ` • Missing: ${missingScarletWings.join(", ")}`
+      : ""
+  }`;
 
   return [
     ...GUILD_LEVEL_MILESTONES.map((level) => ({
@@ -416,6 +552,13 @@ export const buildGuildAchievementEntries = (guildProgress) => {
       unlocked: Boolean(normalized?.milestones?.dungeon?.gnomereganCleared),
       progress: `${normalized?.milestones?.dungeon?.gnomereganCleared ? 1 : 0}/1`,
       reward: `+${GUILD_GNOMEREGAN_CLEAR_MILESTONE.reward} ${GUILD_POINT_LABEL}`,
+    },
+    {
+      key: "dungeon-clear-scarlet-monastery",
+      label: GUILD_SCARLET_MONASTERY_CLEAR_MILESTONE.label,
+      unlocked: Boolean(scarletMonastery.fullClear),
+      progress: scarletProgress,
+      reward: `+${GUILD_SCARLET_MONASTERY_CLEAR_MILESTONE.reward} ${GUILD_POINT_LABEL}`,
     },
     {
       key: "dungeon-first-wipe",

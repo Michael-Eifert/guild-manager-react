@@ -1,6 +1,12 @@
 import BaseModal from "./BaseModal";
 
-const DebugModal = ({ isOpen, onClose, onBulkLevel }) => {
+const DebugModal = ({
+  isOpen,
+  onClose,
+  onBulkLevel,
+  onAddGold,
+  onReloadDatabase,
+}) => {
   return (
     <BaseModal
       isOpen={isOpen}
@@ -48,6 +54,36 @@ const DebugModal = ({ isOpen, onClose, onBulkLevel }) => {
                 -1 Level All
               </button>
             </div>
+          </div>
+          <div>
+            <h3 className="text-gray-400 text-sm uppercase tracking-wider mb-3">
+              Guild Gold
+            </h3>
+            <div className="grid grid-cols-2 gap-3">
+              <button
+                onClick={() => onAddGold(10)}
+                className="bg-gray-800 hover:bg-gray-700 border border-gray-600 rounded py-2 px-4 text-yellow-300 font-bold text-sm"
+              >
+                +10 Gold
+              </button>
+              <button
+                onClick={() => onAddGold(100)}
+                className="bg-gray-800 hover:bg-gray-700 border border-gray-600 rounded py-2 px-4 text-yellow-300 font-bold text-sm"
+              >
+                +100 Gold
+              </button>
+            </div>
+          </div>
+          <div>
+            <h3 className="text-gray-400 text-sm uppercase tracking-wider mb-3">
+              Data Tools
+            </h3>
+            <button
+              onClick={onReloadDatabase}
+              className="w-full bg-gray-800 hover:bg-gray-700 border border-cyan-800 rounded py-2 px-4 text-cyan-200 font-bold text-sm"
+            >
+              Reload Database
+            </button>
           </div>
         </div>
     </BaseModal>

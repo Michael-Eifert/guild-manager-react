@@ -6,9 +6,10 @@ import {
   DB_LASTNAMES,
   PROF_PAIRS,
   DEFAULT_PROF_PAIR,
+  KEY_DEFINITIONS,
 } from "./constants";
 
-const ARMOR_HIERARCHY = ["Mail", "Leather", "Cloth"];
+const ARMOR_HIERARCHY = ["Plate", "Mail", "Leather", "Cloth"];
 const WOW_ICON_BASE_URL = "https://wow.zamimg.com/images/wow/icons/large";
 const SLOT_FALLBACK_ICONS = {
   head: "inv_helmet_03",
@@ -20,30 +21,35 @@ const SLOT_FALLBACK_ICONS = {
 };
 const SLOT_TYPE_FALLBACK_ICONS = {
   head: {
+    Plate: "inv_helmet_03",
     Cloth: "inv_crown_01",
     Leather: "inv_helmet_08",
     Mail: "inv_helmet_03",
     Generic: "inv_helmet_03",
   },
   chest: {
+    Plate: "inv_chest_chain_05",
     Cloth: "inv_chest_cloth_10",
     Leather: "inv_chest_leather_04",
     Mail: "inv_chest_chain_05",
     Generic: "inv_chest_chain_05",
   },
   legs: {
+    Plate: "inv_pants_mail_15",
     Cloth: "inv_pants_11",
     Leather: "inv_pants_02",
     Mail: "inv_pants_03",
     Generic: "inv_pants_03",
   },
   feet: {
+    Plate: "inv_boots_plate_03",
     Cloth: "inv_boots_04",
     Leather: "inv_boots_05",
     Mail: "inv_boots_09",
     Generic: "inv_boots_09",
   },
   hands: {
+    Plate: "inv_gauntlets_10",
     Cloth: "inv_gauntlets_05",
     Leather: "inv_gauntlets_04",
     Mail: "inv_gauntlets_10",
@@ -54,10 +60,12 @@ const SLOT_TYPE_FALLBACK_ICONS = {
   },
 };
 const ITEM_QUALITY_LEVEL_BONUS = {
-  0: 0,
-  1: 0,
-  2: 7,
-  3: 12,
+  0: 0, // Poor (gray)
+  1: 0, // Common (white)
+  2: 7, // Uncommon (green)
+  3: 12, // Rare (blue)
+  4: 20, // Epic (purple)
+  5: 40, // Legendary (orange)
 };
 const RACE_GENDER_ICON_CODES = {
   Human: {
@@ -92,7 +100,11 @@ export const createId = () =>
     : `${Date.now()}-${Math.random().toString(16).slice(2)}`;
 
 export const getQualityColor = (q) =>
-  q === 3
+  q === 5
+    ? "var(--q-legendary)"
+    : q === 4
+      ? "var(--q-epic)"
+      : q === 3
     ? "var(--q-rare)"
     : q === 2
       ? "var(--q-uncommon)"
@@ -100,7 +112,11 @@ export const getQualityColor = (q) =>
         ? "var(--q-common)"
         : "var(--q-poor)";
 export const getQualityClass = (q) =>
-  q === 3
+  q === 5
+    ? "text-orange-400"
+    : q === 4
+      ? "text-purple-400"
+      : q === 3
     ? "text-blue-400"
     : q === 2
       ? "text-green-400"
@@ -108,7 +124,11 @@ export const getQualityClass = (q) =>
         ? "text-white"
         : "text-gray-400";
 export const getQualityLabel = (quality) =>
-  quality === 1
+  quality === 5
+    ? "Legendary item"
+    : quality === 4
+      ? "Epic item"
+      : quality === 1
     ? "Common item"
     : quality === 2
       ? "Uncommon item"
@@ -169,13 +189,29 @@ export const getRacePortraitUrl = (race, gender) => {
 };
 export const getRoleIcon = (r) =>
   r === "Tank" ? "🛡️" : r === "Healer" ? "➕" : "⚔️";
+export const getKeyDefinition = (keyId) => {
+  const normalizedId = String(keyId || "").trim();
+  if (!normalizedId) return null;
+  const configured = KEY_DEFINITIONS[normalizedId];
+  if (configured) return configured;
+  return {
+    id: normalizedId,
+    name: normalizedId.replace(/_/g, " "),
+    icon: getWowIconUrl("inv_misc_key_03"),
+  };
+};
+export const getKeyLabel = (keyId) => getKeyDefinition(keyId)?.name || "";
+export const getKeyIconUrl = (keyId) =>
+  getKeyDefinition(keyId)?.icon || getWowIconUrl("inv_misc_key_03");
 
 export const getItemEffectiveLevel = (item) => {
   if (!item || typeof item !== "object") return 0;
   const minLevel = Number(item.minLevel) || 0;
   const quality = Number(item.quality) || 0;
   const qualityBonus = ITEM_QUALITY_LEVEL_BONUS[quality] || 0;
-  return Math.max(0, minLevel + qualityBonus);
+  // Optional per-item tuning for later balancing (e.g. stronger/weaker epics at same req level).
+  const itemLevelBonus = Number(item.itemLevelBonus) || 0;
+  return Math.max(0, minLevel + qualityBonus + itemLevelBonus);
 };
 
 export const getEquipmentAverageItemLevel = (equipment) => {
@@ -311,17 +347,25 @@ export const getNextTierLevel = (level) => {
   return "Max";
 };
 
-export const getClassArmorTypes = (charClass) => {
+export const getClassArmorTypes = (charClass, level = 1) => {
   const classInfo = DB_CLASSES[charClass];
   if (!classInfo) return [];
+  const charLevel = Math.max(1, Number(level) || 1);
   const rawArmorTypes = classInfo.armorTypes || classInfo.proficiencies || [];
-  return ARMOR_HIERARCHY.filter((armorType) =>
-    rawArmorTypes.includes(armorType),
-  );
+  const armorUnlocks =
+    classInfo.armorUnlocks && typeof classInfo.armorUnlocks === "object"
+      ? classInfo.armorUnlocks
+      : {};
+  return ARMOR_HIERARCHY.filter((armorType) => {
+    if (!rawArmorTypes.includes(armorType)) return false;
+    const unlockLevel = Number(armorUnlocks[armorType]);
+    if (!Number.isFinite(unlockLevel) || unlockLevel <= 1) return true;
+    return charLevel >= unlockLevel;
+  });
 };
 
-export const getClassArmorText = (charClass) =>
-  getClassArmorTypes(charClass).join(", ");
+export const getClassArmorText = (charClass, level = 1) =>
+  getClassArmorTypes(charClass, level).join(", ");
 
 export const getStarterGear = (charClass) => {
   const armorTypes = getClassArmorTypes(charClass);
@@ -384,8 +428,14 @@ export const generateCharacter = () => {
     activityMode: "Auto",
     professions: professions,
     history: [],
+    keys: [],
     equipment: getStarterGear(charClass),
     lastLevelUp: 0,
     backstory: null,
   };
+};
+
+export const generateCharacters = (count = 1) => {
+  const safeCount = Math.max(0, Math.floor(Number(count) || 0));
+  return Array.from({ length: safeCount }, () => generateCharacter());
 };

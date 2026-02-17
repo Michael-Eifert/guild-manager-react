@@ -37,12 +37,18 @@ const CharacterCard = ({ char, onClick }) => {
             {char.gender === "Male" ? "♂️" : "♀️"}
           </span>
         </div>
-        <div className="text-xs bg-black/40 px-2 py-1 rounded whitespace-nowrap">
-          {isMax ? (
-            <span className="text-yellow-500 font-bold">MAX</span>
-          ) : (
-            `Lvl ${char.level}`
-          )}
+        <div className="text-right flex-none shrink-0 min-w-[118px]">
+          <div className="inline-flex items-center gap-1 px-2 py-1 rounded border border-gray-700 bg-black/30">
+            <span className="text-[10px] uppercase tracking-wide text-gray-400 font-bold">Lvl</span>
+            <span className={`text-xl leading-none font-extrabold ${isMax ? "text-yellow-400" : "text-gray-100"}`}>
+              {char.level}
+            </span>
+          </div>
+          <div className="mt-1">
+            <span className="inline-flex text-xs px-2 py-1 rounded whitespace-nowrap border border-amber-700 bg-amber-950/35 text-amber-200 font-bold">
+              iLvl {avgItemLevel.toFixed(1)}
+            </span>
+          </div>
         </div>
       </div>
 
@@ -78,9 +84,6 @@ const CharacterCard = ({ char, onClick }) => {
 
       <div className="mb-2">
         <div className="text-xs text-blue-300 italic truncate">{char.statusText}</div>
-      </div>
-      <div className="text-[11px] text-amber-200/80 font-semibold mb-1">
-        Avg iLvl: {avgItemLevel.toFixed(1)}
       </div>
 
       {!isMax ? (

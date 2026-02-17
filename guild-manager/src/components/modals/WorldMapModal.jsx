@@ -5,7 +5,7 @@ const MAP_SOURCES = [
   {
     id: "classic-community-azeroth",
     label: "Classic Azeroth (Community)",
-    url: "https://external-preview.redd.it/IHfNOoU_88He4wxajBsSYdu2dTE41Ei9I25oKIMLk1A.jpg?auto=webp&s=b1ee08d9ab4d9ebaed45d701a49ea03b9fb3f72b",
+    url: "https://i.redd.it/eznae4smfel81.jpg",
     attribution: "Community map source via Reddit",
   },
 ];

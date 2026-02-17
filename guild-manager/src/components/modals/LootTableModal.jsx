@@ -7,55 +7,90 @@ import {
   getQualityLabel,
   getWowIconUrl,
 } from "../../utils";
+import {
+  getItemSource,
+  groupByQuality,
+  parseRecommendedRange,
+  sortLootItems,
+  SOURCE_WORLD,
+} from "../../loot/lootTableHelpers";
 import BaseModal from "./BaseModal";
 
 const SOURCE_ALL = "All";
-const SOURCE_WORLD = "World";
-
-const getItemSource = (item) => item.dungeon || SOURCE_WORLD;
-
-const groupByQuality = (items) =>
-  items.reduce((acc, item) => {
-    const key = item.quality;
-    if (!acc[key]) acc[key] = [];
-    acc[key].push(item);
-    return acc;
-  }, {});
-
-const sortItems = (items) =>
-  [...items].sort((a, b) => {
-    if (a.quality !== b.quality) return b.quality - a.quality;
-    if (a.minLevel !== b.minLevel) return a.minLevel - b.minLevel;
-    if (a.slot !== b.slot) return a.slot.localeCompare(b.slot);
-    return a.name.localeCompare(b.name);
-  });
+const DUNGEON_FILTER_NONE = "";
 
 const LootTableModal = ({ isOpen, onClose }) => {
   const [sourceFilter, setSourceFilter] = useState(SOURCE_ALL);
+  const [dungeonFilter, setDungeonFilter] = useState(DUNGEON_FILTER_NONE);
 
   useEffect(() => {
     if (isOpen) {
       setSourceFilter(SOURCE_ALL);
+      setDungeonFilter(DUNGEON_FILTER_NONE);
     }
   }, [isOpen]);
 
-  const sources = useMemo(() => {
-    const dungeonsFromMissions = INITIAL_MISSIONS.filter(
+  const dungeonOptions = useMemo(() => {
+    const dungeonMissions = INITIAL_MISSIONS.filter(
       (mission) => mission.type === "dungeon",
-    ).map((mission) => mission.name);
+    );
+    const missionSourceMeta = new Map();
+    const orderedMissionSources = [];
 
-    const dungeonsFromItems = [...new Set(DB_ITEMS.map((item) => item.dungeon).filter(Boolean))];
+    dungeonMissions.forEach((mission) => {
+      const source = mission.dungeonSetName || mission.name;
+      const range = parseRecommendedRange(mission.recommended);
+      if (!missionSourceMeta.has(source)) {
+        missionSourceMeta.set(source, {
+          min: range?.min ?? null,
+          max: range?.max ?? null,
+        });
+        orderedMissionSources.push(source);
+        return;
+      }
 
-    const orderedDungeons = [
-      ...dungeonsFromMissions,
-      ...dungeonsFromItems.filter((name) => !dungeonsFromMissions.includes(name)),
+      const existing = missionSourceMeta.get(source);
+      missionSourceMeta.set(source, {
+        min:
+          range?.min == null
+            ? existing.min
+            : existing.min == null
+              ? range.min
+              : Math.min(existing.min, range.min),
+        max:
+          range?.max == null
+            ? existing.max
+            : existing.max == null
+              ? range.max
+              : Math.max(existing.max, range.max),
+      });
+    });
+
+    const dungeonsFromItems = [
+      ...new Set(
+        DB_ITEMS.map((item) => getItemSource(item)).filter(
+          (source) => source && source !== SOURCE_WORLD,
+        ),
+      ),
+    ];
+    const orderedDungeonNames = [
+      ...orderedMissionSources,
+      ...dungeonsFromItems.filter((name) => !missionSourceMeta.has(name)),
     ];
 
-    return [SOURCE_ALL, SOURCE_WORLD, ...orderedDungeons];
+    return orderedDungeonNames.map((name) => {
+      const range = missionSourceMeta.get(name);
+      const rangeLabel =
+        range?.min != null && range?.max != null ? `${range.min}-${range.max}` : null;
+      return {
+        value: name,
+        label: rangeLabel ? `${name}: ${rangeLabel}` : name,
+      };
+    });
   }, []);
 
   const sourceSections = useMemo(() => {
-    const sortedItems = sortItems(DB_ITEMS);
+    const sortedItems = sortLootItems(DB_ITEMS);
     const filteredItems =
       sourceFilter === SOURCE_ALL
         ? sortedItems
@@ -68,7 +103,10 @@ const LootTableModal = ({ isOpen, onClose }) => {
       return acc;
     }, {});
 
-    const sourceOrder = sourceFilter === SOURCE_ALL ? sources.slice(1) : [sourceFilter];
+    const sourceOrder =
+      sourceFilter === SOURCE_ALL
+        ? [SOURCE_WORLD, ...dungeonOptions.map((option) => option.value)]
+        : [sourceFilter];
 
     return sourceOrder
       .filter((source) => (groupedBySource[source] || []).length > 0)
@@ -77,9 +115,9 @@ const LootTableModal = ({ isOpen, onClose }) => {
         items: groupedBySource[source],
         qualityGroups: groupByQuality(groupedBySource[source]),
       }));
-  }, [sourceFilter, sources]);
+  }, [dungeonOptions, sourceFilter]);
 
-  const qualityOrder = [3, 2, 1, 0];
+  const qualityOrder = [5, 4, 3, 2, 1, 0];
 
   return (
     <BaseModal
@@ -102,10 +140,13 @@ const LootTableModal = ({ isOpen, onClose }) => {
 
         <div className="px-4 pt-3 pb-2 border-b border-gray-700 bg-gray-900/80">
           <div className="flex items-center gap-2 flex-wrap">
-            {sources.map((source) => (
+            {[SOURCE_ALL, SOURCE_WORLD].map((source) => (
               <button
                 key={source}
-                onClick={() => setSourceFilter(source)}
+                onClick={() => {
+                  setSourceFilter(source);
+                  setDungeonFilter(DUNGEON_FILTER_NONE);
+                }}
                 className={`px-3 py-1 text-xs rounded border transition-colors ${
                   sourceFilter === source
                     ? "border-yellow-500 bg-yellow-900/40 text-yellow-200"
@@ -115,6 +156,28 @@ const LootTableModal = ({ isOpen, onClose }) => {
                 {source}
               </button>
             ))}
+            <div className="ml-auto flex items-center gap-2">
+              <label htmlFor="loot-dungeon-filter" className="text-xs text-gray-400 uppercase tracking-wider">
+                Dungeons
+              </label>
+              <select
+                id="loot-dungeon-filter"
+                value={dungeonFilter}
+                onChange={(event) => {
+                  const value = event.target.value;
+                  setDungeonFilter(value);
+                  setSourceFilter(value || SOURCE_ALL);
+                }}
+                className="bg-gray-800 border border-gray-600 rounded px-2 py-1 text-xs text-gray-100 focus:outline-none focus:border-yellow-500"
+              >
+                <option value={DUNGEON_FILTER_NONE}>Select dungeon</option>
+                {dungeonOptions.map((option) => (
+                  <option key={option.value} value={option.value}>
+                    {option.label}
+                  </option>
+                ))}
+              </select>
+            </div>
           </div>
         </div>
 

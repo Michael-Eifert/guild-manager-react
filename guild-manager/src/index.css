@@ -12,6 +12,7 @@
   --q-uncommon: #1eff00;
   --q-rare: #0070dd;
   --q-epic: #a335ee;
+  --q-legendary: #ff8000;
 }
 
 * {
@@ -22,30 +23,56 @@ body {
   margin: 0;
   min-width: 320px;
   min-height: 100vh;
-  background:
-    radial-gradient(
-      1200px 700px at 15% -10%,
-      rgb(170 120 44 / 24%),
-      transparent 60%
-    ),
-    radial-gradient(
-      900px 520px at 92% 10%,
-      rgb(48 105 156 / 20%),
-      transparent 55%
-    ),
-    linear-gradient(
-      180deg,
-      var(--wow-deeper) 0%,
-      #171411 48%,
-      #100f12 100%
-    );
+  position: relative;
+  background: #0f0f12;
   color: #e2e2e2;
   font-family: "Lato", sans-serif;
   -webkit-tap-highlight-color: transparent;
   overflow-x: hidden;
 }
 
+body::before {
+  content: "";
+  position: fixed;
+  inset: 0;
+  pointer-events: none;
+  z-index: 0;
+  background-image: url("https://i.redd.it/eznae4smfel81.jpg");
+  background-size: cover;
+  background-position: center top;
+  background-repeat: no-repeat;
+  opacity: 0.22;
+  filter: saturate(0.88) contrast(1.05);
+}
+
+body::after {
+  content: "";
+  position: fixed;
+  inset: 0;
+  pointer-events: none;
+  z-index: 1;
+  background:
+    radial-gradient(
+      1200px 700px at 15% -10%,
+      rgb(170 120 44 / 28%),
+      transparent 60%
+    ),
+    radial-gradient(
+      900px 520px at 92% 10%,
+      rgb(48 105 156 / 24%),
+      transparent 55%
+    ),
+    linear-gradient(
+      180deg,
+      rgb(12 12 14 / 70%) 0%,
+      rgb(16 14 12 / 80%) 45%,
+      rgb(9 9 12 / 85%) 100%
+    );
+}
+
 #root {
+  position: relative;
+  z-index: 2;
   width: 100%;
 }
 
