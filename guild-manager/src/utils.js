@@ -599,10 +599,17 @@ export const getSkillCap = (level) => {
 };
 
 export const getAutoSkillTarget = (level) => {
-  if (level >= 20) return 225;
-  if (level >= 15) return 150;
-  if (level >= 10) return 100;
-  if (level >= 5) return 50;
+  if (level >= 60) return 300;
+  if (level >= 55) return 275;
+  if (level >= 50) return 250;
+  if (level >= 40) return 225;
+  if (level >= 35) return 200;
+  if (level >= 30) return 175;
+  if (level >= 25) return 150;
+  if (level >= 20) return 125;
+  if (level >= 15) return 100;
+  if (level >= 10) return 75;
+  if (level >= 5) return 25;
   return 0;
 };
 

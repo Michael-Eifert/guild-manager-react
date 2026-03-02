@@ -72,6 +72,7 @@ import {
   getDungeonOverlevelExpMultiplier,
   getMissionLevelExpMultiplier,
   getMissionGoldReward,
+  getMissionWipeCost,
   getMissionLootLevelRange,
   resolveMissionRewardQualities,
 } from "./missions/missionHelpers";
@@ -642,6 +643,7 @@ const ActiveMissionCard = ({ mission, onFinish, gameTimeMs }) => {
     0,
     Math.floor(Number(dungeonProgress?.maxAttempts) || 0),
   );
+  const wipeCost = getMissionWipeCost(mission);
   return (
     <div className="wow-card p-3 rounded flex flex-col gap-2 shadow-lg relative overflow-hidden border border-gray-600 bg-gray-800">
       <div className="flex justify-between items-center z-10 relative">
@@ -669,6 +671,11 @@ const ActiveMissionCard = ({ mission, onFinish, gameTimeMs }) => {
           {maxAttempts > 0 && (
             <div className="text-[11px] text-amber-200/80">
               Attempts: {attemptsUsed}/{maxAttempts}
+            </div>
+          )}
+          {wipeCost > 0 && (
+            <div className="text-[11px] text-rose-200/90">
+              Wipe Cost: {wipeCost}g / wipe
             </div>
           )}
           <div
@@ -1064,6 +1071,42 @@ const App = () => {
     };
   };
 
+  const applyMissionWipeCosts = useCallback((mission, stepLogs, availableGold) => {
+    if (mission?.type !== "dungeon") {
+      return { updatedGold: availableGold, wipeCostLog: null };
+    }
+    const wipeEvents = (Array.isArray(stepLogs) ? stepLogs : []).filter(
+      (log) => log?.type === "mission-attempt",
+    );
+    if (wipeEvents.length === 0) {
+      return { updatedGold: availableGold, wipeCostLog: null };
+    }
+
+    const wipeCost = getMissionWipeCost(mission);
+    if (wipeCost <= 0) {
+      return { updatedGold: availableGold, wipeCostLog: null };
+    }
+
+    const totalCost = wipeCost * wipeEvents.length;
+    const paidAmount = Math.max(0, Math.min(Math.floor(availableGold), totalCost));
+    const unpaidAmount = Math.max(0, totalCost - paidAmount);
+
+    return {
+      updatedGold: Math.max(0, availableGold - paidAmount),
+      wipeCostLog:
+        paidAmount > 0 || unpaidAmount > 0
+          ? {
+              type: "wipe-cost",
+              missionName: mission?.name || "Dungeon",
+              wipeCount: wipeEvents.length,
+              wipeCost,
+              amount: paidAmount,
+              unpaidAmount,
+            }
+          : null,
+    };
+  }, []);
+
   const getMissionInstanceId = (mission) =>
     mission.instanceId || `${mission.questId || mission.id}-${mission.startTime || 0}`;
 
@@ -1119,6 +1162,7 @@ const App = () => {
         ...quest,
         instanceId: createId(),
         payoutGold: getMissionGoldReward(quest),
+        wipeCost: getMissionWipeCost(quest),
         missionSuccess,
         successChance: missionPreview.successChance,
         failChance: missionPreview.failChance,
@@ -1393,6 +1437,15 @@ const App = () => {
           const dungeonAdvance = advanceDungeonMission(currentMission, now);
           currentMission = dungeonAdvance.mission;
           if (dungeonAdvance.stepLogs.length > 0) {
+            const wipeCostResult = applyMissionWipeCosts(
+              currentMission,
+              dungeonAdvance.stepLogs,
+              newGold,
+            );
+            newGold = wipeCostResult.updatedGold;
+            if (wipeCostResult.wipeCostLog) {
+              newLogs = [...newLogs, wipeCostResult.wipeCostLog];
+            }
             newLogs = [...newLogs, ...dungeonAdvance.stepLogs];
           }
         }
@@ -1588,6 +1641,7 @@ const App = () => {
     }, CONFIG.TICK_RATE);
     return () => clearInterval(tick);
   }, [
+    applyMissionWipeCosts,
     gameSpeed,
     isPaused,
     pushNotification,
@@ -1864,6 +1918,20 @@ const App = () => {
     const missionToResolve = dungeonAdvance ? dungeonAdvance.mission : m;
     const missionInstanceId = getMissionInstanceId(missionToResolve);
     if (rewardedMissionIdsRef.current.has(missionInstanceId)) return;
+    const dungeonStepLogs = dungeonAdvance ? dungeonAdvance.stepLogs : [];
+    const wipeCostResult = applyMissionWipeCosts(
+      missionToResolve,
+      dungeonStepLogs,
+      goldRef.current,
+    );
+    let currentGoldAfterWipes = wipeCostResult.updatedGold;
+    const wipeCostLogs = wipeCostResult.wipeCostLog
+      ? [wipeCostResult.wipeCostLog]
+      : [];
+    if (currentGoldAfterWipes !== goldRef.current) {
+      goldRef.current = currentGoldAfterWipes;
+      setGuildGold(currentGoldAfterWipes);
+    }
     rewardedMissionIdsRef.current.add(missionInstanceId);
 
     // Manually trigger the finish logic immediately (logic also exists in loop, but this is for instant feedback)
@@ -1893,17 +1961,17 @@ const App = () => {
       }
     }
 
-    const openGoldSpace = guildDerivedStats.goldCap - goldRef.current;
+    const openGoldSpace = guildDerivedStats.goldCap - currentGoldAfterWipes;
     const gainedGold = Math.max(0, Math.min(result.missionGold, openGoldSpace));
 
     if (gainedGold > 0) {
-      const updatedGold = goldRef.current + gainedGold;
+      const updatedGold = currentGoldAfterWipes + gainedGold;
+      currentGoldAfterWipes = updatedGold;
       goldRef.current = updatedGold;
       setGuildGold(updatedGold);
     }
 
     const time = new Date().toLocaleTimeString();
-    const dungeonStepLogs = dungeonAdvance ? dungeonAdvance.stepLogs : [];
     const extraLogs =
       gainedGold > 0
         ? [{ type: "gold", amount: gainedGold, missionName: missionToResolve.name }]
@@ -1911,6 +1979,7 @@ const App = () => {
     const manualFinishLogs = [
       // Put reward logs first so loot entries are kept even when many wipe/step logs are generated.
       ...result.missionLogs,
+      ...wipeCostLogs,
       ...extraLogs,
       ...chainResolution.chainLogs,
       ...dungeonStepLogs,

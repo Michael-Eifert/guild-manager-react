@@ -19,6 +19,15 @@ export const resolveMissionRewardQualities = (mission) => {
 export const getMissionGoldReward = (mission) =>
   typeof mission?.gold === "number" ? Math.max(0, mission.gold) : 0;
 
+export const getMissionWipeCost = (mission) => {
+  if (mission?.type !== "dungeon") return 0;
+  const baseGold =
+    typeof mission?.payoutGold === "number"
+      ? Math.max(0, mission.payoutGold)
+      : getMissionGoldReward(mission);
+  return Math.max(0, Math.ceil(baseGold * 0.1));
+};
+
 export const getMissionTypeLabel = (mission) =>
   mission?.typeLabel ||
   (mission?.isRaid

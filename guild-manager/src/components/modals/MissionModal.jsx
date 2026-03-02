@@ -2,6 +2,7 @@ import React, { useCallback, useEffect, useMemo, useState } from "react";
 import { CONFIG, DB_CLASSES, DB_ITEMS, GUILD_FACTION } from "../../constants";
 import {
   getCharacterAverageItemLevel,
+  getItemEffectiveLevel,
   getItemIconUrl,
   getKeyLabel,
   getKeySourceQuestLabel,
@@ -20,6 +21,7 @@ import {
   getMissionLevelExpMultiplier,
   evaluateMissionKeyAccess,
   getMissionGoldReward,
+  getMissionWipeCost,
   getMissionMaxAttempts,
   getMissionMetaText,
   getMissionRequiredKeys,
@@ -154,6 +156,7 @@ const getDungeonBriefingText = (mission) => {
   const requiredKeySourceLabels = getMissionRequiredKeys(mission)
     .map((keyId) => getKeySourceQuestLabel(keyId))
     .filter(Boolean);
+  const wipeCost = getMissionWipeCost(mission);
   const keyText =
     requiredKeyLabels.length > 0
       ? ` Key required: ${requiredKeyLabels.join(" / ")}${
@@ -166,7 +169,8 @@ const getDungeonBriefingText = (mission) => {
     missionMaxAttempts > 0
     ? ` ${isRaid ? "Raid wipe rules" : "Wipe rules"}: ${missionMaxAttempts} total attempts. A wipe retries the same boss until attempts are exhausted.`
     : "";
-  return `Dungeon briefing: ${bossNames.length} bosses (${bossNames.join(", ")}). Each cleared boss grants 1 drop, and XP unlocks in fixed quarter milestones (25% / 50% / 75% / 100%) based on total completion.${entryText}${keyText}${attemptText} Over-level heroes earn less XP above the recommended max (1+: -25%, 5+: -50%, 10+: no XP).`;
+  const wipeCostText = wipeCost > 0 ? ` Wipe cost: ${wipeCost}g per wipe.` : "";
+  return `Dungeon briefing: ${bossNames.length} bosses (${bossNames.join(", ")}). Each cleared boss grants 1 drop, and XP unlocks in fixed quarter milestones (25% / 50% / 75% / 100%) based on total completion.${entryText}${keyText}${attemptText}${wipeCostText} Over-level heroes earn less XP above the recommended max (1+: -25%, 5+: -50%, 10+: no XP).`;
 };
 
 const getMissionLevelBounds = (mission) => {
@@ -809,6 +813,7 @@ const MissionModal = ({
       .map((keyId) => getKeyLabel(keyId) || keyId)
       .filter(Boolean);
     const requiredKeySourceLabels = getMissionRequiredKeySourceLabels(mission);
+    const missionWipeCost = getMissionWipeCost(mission);
     const inRangeBounds = getMissionProgressionBounds(mission);
     const inRangeReferenceLevel = Math.max(
       inRangeBounds.minLevel,
@@ -846,6 +851,11 @@ const MissionModal = ({
             {mission.type === "dungeon" && (
               <div className="text-xs text-amber-200/80 mt-0.5">
                 Attempts: {getMissionMaxAttempts(mission)}
+              </div>
+            )}
+            {mission.type === "dungeon" && missionWipeCost > 0 && (
+              <div className="text-xs text-rose-200/85 mt-0.5">
+                Wipe Cost: {missionWipeCost}g / wipe
               </div>
             )}
             <div className="text-xs text-yellow-400 mt-1">
@@ -1622,7 +1632,10 @@ const MissionModal = ({
                                           </div>
                                         </div>
                                         <div className="text-right whitespace-nowrap text-gray-400">
-                                          Lvl {item.minLevel}
+                                          <div>Lvl {item.minLevel}</div>
+                                          <div className="text-[10px] text-amber-200/80">
+                                            iLvl {getItemEffectiveLevel(item)}
+                                          </div>
                                         </div>
                                       </div>
                                     ))}
@@ -1675,6 +1688,12 @@ const MissionModal = ({
                     Attempts: {getMissionMaxAttempts(chainStartMission || selectedQuest)}
                   </span>
                 )}
+                {(chainStartMission || selectedQuest)?.type === "dungeon" &&
+                  getMissionWipeCost(chainStartMission || selectedQuest) > 0 && (
+                    <span className="px-2 py-1 rounded border border-rose-800 bg-rose-950/30 text-rose-200">
+                      Wipe Cost: {getMissionWipeCost(chainStartMission || selectedQuest)}g
+                    </span>
+                  )}
                 {selectedMissionRequiredKeyLabels.length > 0 && (
                   <span className="px-2 py-1 rounded border border-rose-800 bg-rose-950/30 text-rose-200 font-semibold">
                     Key Required: [{selectedMissionRequiredKeyLabels.join("] + [")}]

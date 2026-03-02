@@ -455,7 +455,7 @@ const DetailModal = ({
                   {char.activityMode === "Leveling" && "Focuses purely on gaining XP."}
                   {char.activityMode === "Professions" && "Pauses XP gain to level up skills."}
                   {char.activityMode === "Auto" &&
-                    "Prioritizes leveling, but pauses at levels 5, 10, 15, 20 to cap skills."}
+                    "Prioritizes leveling, but pauses every 5 levels to hit staged skill targets (25 to 275), then 300 at level 60."}
                 </p>
               </div>
 
@@ -481,12 +481,16 @@ const DetailModal = ({
                           </span>
                         )}
                       </div>
-                      <span className="text-sm font-mono text-yellow-500">{prof.skill} / 300</span>
+                      <span className="text-sm font-mono text-yellow-500">
+                        {prof.skill} / {hardCap}
+                      </span>
                     </div>
                     <div className="w-full bg-gray-900 h-3 rounded-full overflow-hidden border border-gray-600">
                       <div
                         className="bg-yellow-600 h-full transition-all duration-300"
-                        style={{ width: `${(prof.skill / hardCap) * 100}%` }}
+                        style={{
+                          width: `${Math.min(100, (prof.skill / hardCap) * 100)}%`,
+                        }}
                       ></div>
                     </div>
                     <div className="text-xs text-gray-500 mt-1 flex justify-between">

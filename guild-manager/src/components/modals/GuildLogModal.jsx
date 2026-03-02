@@ -51,6 +51,12 @@ const GuildLogModal = ({ isOpen, onClose, logs }) => {
                     {log.missionName}: wipe on {log.bossName} (attempts{" "}
                     {log.attemptsUsed}/{log.maxAttempts}, {log.attemptsRemaining} left).
                   </span>
+                ) : log.type === "wipe-cost" ? (
+                  <span className="text-rose-300">
+                    {log.missionName}: wipe cost {log.amount}g paid ({log.wipeCount} wipe
+                    {log.wipeCount === 1 ? "" : "s"} @ {log.wipeCost}g).
+                    {log.unpaidAmount > 0 ? ` Missing ${log.unpaidAmount}g.` : ""}
+                  </span>
                 ) : log.type === "dungeon-chain" ? (
                   <span
                     className={
