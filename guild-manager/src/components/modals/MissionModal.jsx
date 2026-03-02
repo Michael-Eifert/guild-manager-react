@@ -36,6 +36,13 @@ import {
   sortLootItems,
 } from "../../loot/lootTableHelpers";
 import BaseModal from "./BaseModal";
+import {
+  getZoneById,
+  getZoneEliteQuestTemplates,
+  getZoneLootRewardCounts,
+  isZoneAccessibleForFaction,
+  ZONE_FACTION,
+} from "../../zones/zoneDefinitions";
 
 const AUTO_SELECT_MODES = {
   BOOST_LOW_LEVEL: "boostLowLevel",
@@ -71,22 +78,21 @@ const TACTICAL_CHARACTER_SORT_OPTIONS = [
 
 const CATEGORY_LABELS = {
   all: "All",
-  quest: "Quests",
-  elite: "Elite Quests",
+  legacy: "Legacy",
+  zone: "Zones",
   dungeon: "Dungeons",
   raid: "Raids",
 };
-
-const CATEGORY_FILTER_OPTIONS = ["all", "quest", "elite", "dungeon", "raid"];
 const FACTION_MISSION_ICON = {
   [GUILD_FACTION.ALLIANCE]: "inv_bannerpvp_02",
   [GUILD_FACTION.HORDE]: "inv_bannerpvp_01",
 };
 
 const getMissionCategory = (mission) => {
+  if (mission?.type === "zone") return "zone";
   if (mission?.isRaid) return "raid";
   if (mission.type === "dungeon") return "dungeon";
-  return mission.elite ? "elite" : "quest";
+  return "legacy";
 };
 
 const getMissionDisplayName = (mission) => {
@@ -211,6 +217,43 @@ const getMissionProgressionBounds = (mission) => {
   };
 };
 
+const getZoneLootCountEntries = (zone) => {
+  const counts = getZoneLootRewardCounts(zone);
+  const entries = [];
+  if (counts.common > 0) entries.push({ quality: 1, count: counts.common });
+  if (counts.uncommon > 0) entries.push({ quality: 2, count: counts.uncommon });
+  if (counts.rare > 0) entries.push({ quality: 3, count: counts.rare });
+  return entries;
+};
+
+const getZoneEliteKeyRewardLabels = (zoneId) => {
+  if (!zoneId) return [];
+  const keyIds = new Set();
+  getZoneEliteQuestTemplates(zoneId).forEach((mission) => {
+    getMissionRewardKeys(mission).forEach((keyId) => {
+      if (keyId) keyIds.add(keyId);
+    });
+  });
+  return [...keyIds]
+    .map((keyId) => getKeyLabel(keyId))
+    .filter(Boolean);
+};
+
+const renderLootCountLabel = (entries, keyPrefix) => {
+  if (!Array.isArray(entries) || entries.length === 0) {
+    return <span className="text-gray-400">None</span>;
+  }
+  return entries.map((entry, index) => (
+    <React.Fragment key={`${keyPrefix}-${entry.quality}`}>
+      <span>{entry.count}x </span>
+      <span className={getQualityClass(entry.quality)}>
+        [{getQualityLabel(entry.quality)} item]
+      </span>
+      {index < entries.length - 1 && <span className="text-gray-500"> + </span>}
+    </React.Fragment>
+  ));
+};
+
 const roundDownToHundred = (value) => {
   const numeric = Number(value);
   if (!Number.isFinite(numeric) || numeric <= 0) return 0;
@@ -304,6 +347,7 @@ const MissionModal = ({
   roster,
   onDeploy,
   missionList,
+  showLegacyQuests = true,
   guildFaction = GUILD_FACTION.ALLIANCE,
   dungeonSuccessBonus = 0,
   guildExpMultiplier = 1,
@@ -328,13 +372,31 @@ const MissionModal = ({
   const [expandedDungeonGroups, setExpandedDungeonGroups] = useState({});
   const [isChainEnabled, setIsChainEnabled] = useState(false);
   const [selectedChainMissionIds, setSelectedChainMissionIds] = useState([]);
+  const [selectedZoneEliteQuestId, setSelectedZoneEliteQuestId] = useState(null);
   const [isLootAccordionOpen, setIsLootAccordionOpen] = useState(false);
+  const categoryFilterOptions = useMemo(() => {
+    const options = ["all"];
+    options.push("zone", "dungeon", "raid");
+    if (showLegacyQuests) {
+      options.push("legacy");
+    }
+    return options;
+  }, [showLegacyQuests]);
   const availableMissionList = useMemo(
     () =>
       Array.isArray(missionList)
-        ? missionList.filter((mission) => isRaidUnlocked || mission?.isRaid !== true)
+        ? missionList.filter((mission) => {
+            if (mission?.type === "zone") {
+              const zone = getZoneById(mission?.zoneId);
+              return Boolean(zone) && isZoneAccessibleForFaction(zone, guildFaction);
+            }
+            if (!isRaidUnlocked && mission?.isRaid === true) return false;
+            if (showLegacyQuests) return true;
+            const category = getMissionCategory(mission);
+            return category !== "legacy";
+          })
         : [],
-    [isRaidUnlocked, missionList],
+    [guildFaction, isRaidUnlocked, missionList, showLegacyQuests],
   );
 
   useEffect(() => {
@@ -353,6 +415,7 @@ const MissionModal = ({
     setExpandedDungeonGroups({});
     setIsChainEnabled(false);
     setSelectedChainMissionIds([]);
+    setSelectedZoneEliteQuestId(null);
     setIsLootAccordionOpen(false);
   }, [isOpen]);
 
@@ -361,6 +424,12 @@ const MissionModal = ({
       setSelectedCategory("all");
     }
   }, [isRaidUnlocked, selectedCategory]);
+
+  useEffect(() => {
+    if (!categoryFilterOptions.includes(selectedCategory)) {
+      setSelectedCategory("all");
+    }
+  }, [categoryFilterOptions, selectedCategory]);
 
   useEffect(() => {
     if (!isRaidUnlocked && selectedQuest?.isRaid) {
@@ -375,6 +444,20 @@ const MissionModal = ({
   }, [isRaidUnlocked, selectedQuest]);
 
   const handleSelectQuest = (quest) => {
+    if (quest?.type === "zone") {
+      const zone = getZoneById(quest?.zoneId);
+      if (zone && !isZoneAccessibleForFaction(zone, guildFaction)) {
+        if (typeof onNotify === "function") {
+          onNotify({
+            type: "error",
+            title: "Zone Locked",
+            message: `${zone.name} is restricted to ${zone.faction}.`,
+            durationMs: 3200,
+          });
+        }
+        return;
+      }
+    }
     if (quest?.isRaid && !isRaidUnlocked) {
       if (typeof onNotify === "function") {
         onNotify({
@@ -392,6 +475,7 @@ const MissionModal = ({
     setAutoAssignSummary("");
     setIsChainEnabled(false);
     setSelectedChainMissionIds([]);
+    setSelectedZoneEliteQuestId(null);
     setIsLootAccordionOpen(false);
   };
 
@@ -399,7 +483,7 @@ const MissionModal = ({
     setAutoAssignSummary("");
     setParty((prev) => {
       if (prev.includes(charId)) return prev.filter((id) => id !== charId);
-      if (prev.length >= selectedMissionPartySize) return prev;
+      if (!isSelectedZoneMission && prev.length >= selectedMissionPartySize) return prev;
       return [...prev, charId];
     });
   };
@@ -437,14 +521,49 @@ const MissionModal = ({
     isChainEnabled && selectedChainMissions.length > 0
       ? selectedChainMissions[0]
       : selectedQuest;
-
-  const minLevel = chainStartMission
-    ? chainStartMission.minLevel || Math.max(1, chainStartMission.level - 6)
-    : 1;
-  const selectedMissionPartySize = getMissionPartySize(chainStartMission || selectedQuest);
-  const selectedMissionMinPartySize = getMissionMinPartySize(
-    chainStartMission || selectedQuest,
+  const zoneEliteMissionOptions = useMemo(
+    () =>
+      selectedQuest?.type === "zone" ? getZoneEliteQuestTemplates(selectedQuest.zoneId) : [],
+    [selectedQuest],
   );
+  useEffect(() => {
+    if (selectedQuest?.type !== "zone") {
+      setSelectedZoneEliteQuestId(null);
+      return;
+    }
+    if (!selectedZoneEliteQuestId) return;
+    const stillValid = zoneEliteMissionOptions.some(
+      (mission) => mission.id === selectedZoneEliteQuestId,
+    );
+    if (!stillValid) setSelectedZoneEliteQuestId(null);
+  }, [selectedQuest, selectedZoneEliteQuestId, zoneEliteMissionOptions]);
+  const selectedZoneEliteQuest =
+    selectedQuest?.type === "zone"
+      ? zoneEliteMissionOptions.find((mission) => mission.id === selectedZoneEliteQuestId) ||
+        null
+      : null;
+  const activePrepMission = selectedZoneEliteQuest || chainStartMission || selectedQuest;
+  const isSelectedZoneMission = activePrepMission?.type === "zone";
+
+  const minLevel = activePrepMission
+    ? isSelectedZoneMission
+      ? 1
+      : activePrepMission.minLevel || Math.max(1, activePrepMission.level - 6)
+    : 1;
+  const selectedMissionPartySize = isSelectedZoneMission
+    ? 999
+    : getMissionPartySize(activePrepMission);
+  const selectedMissionMinPartySize = getMissionMinPartySize(
+    activePrepMission,
+  );
+  useEffect(() => {
+    if (isSelectedZoneMission) return;
+    setParty((prev) =>
+      prev.length <= selectedMissionPartySize
+        ? prev
+        : prev.slice(0, selectedMissionPartySize),
+    );
+  }, [isSelectedZoneMission, selectedMissionPartySize]);
 
   const idleRoster = roster.filter(
     (char) =>
@@ -546,10 +665,12 @@ const MissionModal = ({
 
   const selectedPartyMembers = roster.filter((char) => party.includes(char.id));
   const selectedMissionSequence =
-    isChainEnabled && selectedChainMissions.length > 0
+    selectedZoneEliteQuest
+      ? [selectedZoneEliteQuest]
+      : isChainEnabled && selectedChainMissions.length > 0
       ? selectedChainMissions
-      : selectedQuest
-        ? [selectedQuest]
+      : activePrepMission
+        ? [activePrepMission]
         : [];
   const selectedMissionKeyAccess = evaluateMissionKeyAccess({
     missions: selectedMissionSequence,
@@ -603,9 +724,9 @@ const MissionModal = ({
   const isKeyBlocked =
     selectedPartyMembers.length > 0 && !selectedMissionKeyAccess.canEnter;
   const isRaidPartySizeInvalid =
-    Boolean(chainStartMission?.isRaid) && party.length < selectedMissionMinPartySize;
-  const missionPreview = chainStartMission
-    ? getAdjustedMissionPreview(chainStartMission, selectedPartyMembers)
+    Boolean(activePrepMission?.isRaid) && party.length < selectedMissionMinPartySize;
+  const missionPreview = activePrepMission
+    ? getAdjustedMissionPreview(activePrepMission, selectedPartyMembers)
     : null;
   const selectedPartyRoleCounts = selectedPartyMembers.reduce(
     (acc, member) => {
@@ -618,21 +739,21 @@ const MissionModal = ({
     { Tank: 0, Healer: 0, DPS: 0 },
   );
   const selectedRaidRoleRequirement =
-    chainStartMission?.isRaid === true
+    activePrepMission?.isRaid === true
       ? {
-          Tank: Math.max(0, Number(chainStartMission?.raidRoleRequirement?.Tank) || 4),
+          Tank: Math.max(0, Number(activePrepMission?.raidRoleRequirement?.Tank) || 4),
           Healer: Math.max(
             0,
-            Number(chainStartMission?.raidRoleRequirement?.Healer) || 8,
+            Number(activePrepMission?.raidRoleRequirement?.Healer) || 8,
           ),
-          DPS: Math.max(0, Number(chainStartMission?.raidRoleRequirement?.DPS) || 18),
+          DPS: Math.max(0, Number(activePrepMission?.raidRoleRequirement?.DPS) || 18),
         }
       : null;
-  const selectedQuestEntryLevel = getMissionEntryLevel(selectedQuest);
-  const selectedMissionBonusDropNotes = getMissionBonusDropNotes(selectedQuest);
-  const selectedMissionRewardKeyLabels = getMissionRewardKeyLabels(selectedQuest);
+  const selectedQuestEntryLevel = getMissionEntryLevel(activePrepMission);
+  const selectedMissionBonusDropNotes = getMissionBonusDropNotes(activePrepMission);
+  const selectedMissionRewardKeyLabels = getMissionRewardKeyLabels(activePrepMission);
   const selectedDungeonLootSource =
-    selectedQuest?.type === "dungeon" ? getMissionLootSource(selectedQuest) : null;
+    activePrepMission?.type === "dungeon" ? getMissionLootSource(activePrepMission) : null;
   const selectedDungeonLootItems = useMemo(() => {
     if (!selectedDungeonLootSource) return [];
     return sortLootItems(
@@ -731,19 +852,11 @@ const MissionModal = ({
     selectedCategory === "all"
       ? [
           {
-            key: "quest",
-            title: "Quests",
-            icon: "📜",
+            key: "zone",
+            title: "Zones",
+            icon: "🧭",
             missions: filteredOrderedMissions.filter(
-              (mission) => getMissionCategory(mission) === "quest",
-            ),
-          },
-          {
-            key: "elite",
-            title: "Elite Quests",
-            icon: "⚔️",
-            missions: filteredOrderedMissions.filter(
-              (mission) => getMissionCategory(mission) === "elite",
+              (mission) => getMissionCategory(mission) === "zone",
             ),
           },
           {
@@ -762,7 +875,21 @@ const MissionModal = ({
               (mission) => getMissionCategory(mission) === "raid",
             ),
           },
-        ].filter((section) => section.missions.length > 0)
+          {
+            key: "legacy",
+            title: "Legacy",
+            icon: "📚",
+            missions: filteredOrderedMissions.filter(
+              (mission) => getMissionCategory(mission) === "legacy",
+            ),
+          },
+        ]
+          .filter((section) =>
+            showLegacyQuests
+              ? true
+              : section.key !== "legacy",
+          )
+          .filter((section) => section.missions.length > 0)
       : [
           {
             key: selectedCategory,
@@ -772,9 +899,11 @@ const MissionModal = ({
                 ? "🔥"
                 : selectedCategory === "dungeon"
                   ? "🏰"
-                  : selectedCategory === "elite"
-                  ? "⚔️"
-                  : "📜",
+                  : selectedCategory === "zone"
+                    ? "🧭"
+                    : selectedCategory === "legacy"
+                      ? "📚"
+                      : "📜",
             missions: filteredOrderedMissions.filter(
               (mission) => getMissionCategory(mission) === selectedCategory,
             ),
@@ -802,6 +931,16 @@ const MissionModal = ({
   };
 
   const renderMissionCard = (mission, showSetName = true) => {
+    const isZoneMissionCard = mission?.type === "zone";
+    const zone = isZoneMissionCard ? getZoneById(mission?.zoneId) : null;
+    const zoneLootEntries = isZoneMissionCard ? getZoneLootCountEntries(zone) : [];
+    const zoneKeyRewardLabels = isZoneMissionCard
+      ? getZoneEliteKeyRewardLabels(zone?.id)
+      : [];
+    const zoneFactionIconUrl =
+      zone?.faction && FACTION_MISSION_ICON[zone.faction]
+        ? getWowIconUrl(FACTION_MISSION_ICON[zone.faction])
+        : null;
     const eligibility = missionEligibilityById.get(mission.id) || {
       totalRoster: roster.length,
       inRangeCount: 0,
@@ -831,11 +970,31 @@ const MissionModal = ({
       <div
         key={mission.id}
         onClick={() => handleSelectQuest(mission)}
-        className={`p-4 rounded cursor-pointer flex justify-between items-center bg-gray-800 active:bg-gray-700 hover:translate-x-1 transition-transform border border-transparent hover:border-blue-500 ${mission.type === "dungeon" ? "border-l-4 border-l-blue-600" : ""}`}
+        className={`relative overflow-hidden p-4 rounded flex justify-between items-center bg-gray-800 transition-transform border cursor-pointer active:bg-gray-700 hover:translate-x-1 border-transparent hover:border-blue-500 ${mission.type === "dungeon" ? "border-l-4 border-l-blue-600" : mission.type === "zone" ? "border-l-4 border-l-emerald-600" : ""}`}
       >
+        {isZoneMissionCard &&
+          zone?.faction !== ZONE_FACTION.NEUTRAL &&
+          zoneFactionIconUrl && (
+            <div className="absolute inset-0 pointer-events-none flex items-center justify-center">
+              <img
+                src={zoneFactionIconUrl}
+                alt={zone.faction}
+                className="w-24 h-24 md:w-28 md:h-28 object-cover opacity-20"
+                onError={(event) => {
+                  event.currentTarget.src = getWowIconUrl("inv_misc_questionmark");
+                }}
+              />
+            </div>
+          )}
         <div className="flex items-center gap-3 min-w-0">
           <div className="text-2xl bg-gray-900 w-10 h-10 flex items-center justify-center rounded border border-gray-700">
-            {mission.type === "dungeon" ? "🏰" : mission.elite ? "⚔️" : "📜"}
+            {mission.type === "dungeon"
+              ? "🏰"
+              : mission.type === "zone"
+                ? "🧭"
+                : mission.elite
+                  ? "⚔️"
+                  : "📜"}
           </div>
           <div className="min-w-0">
             <div className={`font-bold text-lg ${mission.elite ? "text-yellow-500" : "text-gray-200"}`}>
@@ -845,9 +1004,11 @@ const MissionModal = ({
               <div className="text-[11px] text-blue-300/80 -mt-0.5 mb-0.5">{mission.dungeonSetName}</div>
             )}
             <div className="text-sm text-gray-500">{getMissionMetaText(mission)}</div>
-            <div className="text-xs text-red-300/80 mt-0.5">
-              Base fail chance: {getMissionBaseFailChance(mission)}%
-            </div>
+            {mission.type !== "zone" && (
+              <div className="text-xs text-red-300/80 mt-0.5">
+                Base fail chance: {getMissionBaseFailChance(mission)}%
+              </div>
+            )}
             {mission.type === "dungeon" && (
               <div className="text-xs text-amber-200/80 mt-0.5">
                 Attempts: {getMissionMaxAttempts(mission)}
@@ -858,17 +1019,29 @@ const MissionModal = ({
                 Wipe Cost: {missionWipeCost}g / wipe
               </div>
             )}
-            <div className="text-xs text-yellow-400 mt-1">
-              Rewards: {getMissionGoldReward(mission)}g • {missionExpLabel} XP / hero{" "}
-              {" • "}
-              Loot:{" "}
-              {getMissionRewardQualities(mission).map((quality, idx, arr) => (
-                <React.Fragment key={`${mission.id}-${quality}-${idx}`}>
-                  <span className={getQualityClass(quality)}>[{getQualityLabel(quality)}]</span>
-                  {idx < arr.length - 1 && <span className="text-gray-500"> + </span>}
-                </React.Fragment>
-              ))}
-            </div>
+            {isZoneMissionCard ? (
+              <div className="text-xs text-emerald-300 mt-1">
+                Zone rewards: up to {getMissionGoldReward(mission)}g • Loot:{" "}
+                {renderLootCountLabel(zoneLootEntries, `zone-card-loot-${mission.id}`)}
+              </div>
+            ) : (
+              <div className="text-xs text-yellow-400 mt-1">
+                Rewards: {getMissionGoldReward(mission)}g • {missionExpLabel} XP / hero{" "}
+                {" • "}
+                Loot:{" "}
+                {getMissionRewardQualities(mission).map((quality, idx, arr) => (
+                  <React.Fragment key={`${mission.id}-${quality}-${idx}`}>
+                    <span className={getQualityClass(quality)}>[{getQualityLabel(quality)}]</span>
+                    {idx < arr.length - 1 && <span className="text-gray-500"> + </span>}
+                  </React.Fragment>
+                ))}
+              </div>
+            )}
+            {isZoneMissionCard && zoneKeyRewardLabels.length > 0 && (
+              <div className="text-xs text-amber-300 mt-0.5">
+                Zone key quest available: [{zoneKeyRewardLabels.join("] + [")}]
+              </div>
+            )}
             {rewardKeyLabels.length > 0 && (
               <div className="text-xs text-amber-300 mt-0.5">
                 Key Reward:{" "}
@@ -967,14 +1140,22 @@ const MissionModal = ({
   };
 
   const handleAutoSelectParty = () => {
-    if (!chainStartMission) return;
+    if (!activePrepMission) return;
+    if (isSelectedZoneMission) {
+      const zoneSelection = [...new Set(keyEligibleRoster.map((member) => member.id))];
+      setParty(zoneSelection);
+      setAutoAssignSummary(
+        `${AUTO_SELECT_MODE_LABEL[autoSelectMode]} • ${zoneSelection.length} heroes selected for zone assignment`,
+      );
+      return;
+    }
 
     const getSupportScore = (member) =>
       member.level * 3 + getCharacterAverageItemLevel(member);
     const compareMembersByMode = (left, right) => {
       const expDiff =
-        getMissionExpForMember(chainStartMission, right) -
-        getMissionExpForMember(chainStartMission, left);
+        getMissionExpForMember(activePrepMission, right) -
+        getMissionExpForMember(activePrepMission, left);
       const supportDiff = getSupportScore(right) - getSupportScore(left);
 
       if (autoSelectMode === AUTO_SELECT_MODES.MAX_SUCCESS) {
@@ -993,7 +1174,7 @@ const MissionModal = ({
       return (Number(right.level) || 1) - (Number(left.level) || 1);
     };
 
-    const missionBounds = getMissionProgressionBounds(chainStartMission);
+    const missionBounds = getMissionProgressionBounds(activePrepMission);
     const inRangeEligibleRoster = keyEligibleRoster.filter((member) => {
       const level = Number(member?.level) || 1;
       return level >= missionBounds.minLevel && level <= missionBounds.maxLevel;
@@ -1044,9 +1225,9 @@ const MissionModal = ({
         else inRangeSelection[inRangeSelection.length - 1] = keyHolderInRange;
       }
 
-      const preview = getAdjustedMissionPreview(chainStartMission, inRangeSelection);
+      const preview = getAdjustedMissionPreview(activePrepMission, inRangeSelection);
       const expValues = inRangeSelection.map((member) =>
-        getMissionExpForMember(chainStartMission, member),
+        getMissionExpForMember(activePrepMission, member),
       );
       const totalExp = expValues.reduce((sum, exp) => sum + exp, 0);
       const expEligibleCount = expValues.filter((exp) => exp > 0).length;
@@ -1065,7 +1246,7 @@ const MissionModal = ({
       return;
     }
 
-    if (chainStartMission?.isRaid === true || selectedMissionPartySize > 5) {
+    if (activePrepMission?.isRaid === true || selectedMissionPartySize > 5) {
       const targetPartySize = Math.min(selectedMissionPartySize, keyEligibleRoster.length);
       if (targetPartySize <= 0) {
         setParty([]);
@@ -1084,9 +1265,9 @@ const MissionModal = ({
       };
 
       const raidRequirement = {
-        Tank: Math.max(0, Number(chainStartMission?.raidRoleRequirement?.Tank) || 4),
-        Healer: Math.max(0, Number(chainStartMission?.raidRoleRequirement?.Healer) || 8),
-        DPS: Math.max(0, Number(chainStartMission?.raidRoleRequirement?.DPS) || 18),
+        Tank: Math.max(0, Number(activePrepMission?.raidRoleRequirement?.Tank) || 4),
+        Healer: Math.max(0, Number(activePrepMission?.raidRoleRequirement?.Healer) || 8),
+        DPS: Math.max(0, Number(activePrepMission?.raidRoleRequirement?.DPS) || 18),
       };
       ["Tank", "Healer", "DPS"].forEach((role) => {
         const rolePool = rankedPool.filter((member) => member.role === role);
@@ -1126,9 +1307,9 @@ const MissionModal = ({
         }
       }
 
-      const preview = getAdjustedMissionPreview(chainStartMission, selectedMembers);
+      const preview = getAdjustedMissionPreview(activePrepMission, selectedMembers);
       const memberExpValues = selectedMembers.map((member) =>
-        getMissionExpForMember(chainStartMission, member),
+        getMissionExpForMember(activePrepMission, member),
       );
       const expEligibleCount = memberExpValues.filter((exp) => exp > 0).length;
       const totalExp = memberExpValues.reduce((sum, exp) => sum + exp, 0);
@@ -1143,8 +1324,8 @@ const MissionModal = ({
 
     const byExp = [...keyEligibleRoster].sort((left, right) => {
       const expDiff =
-        getMissionExpForMember(chainStartMission, right) -
-        getMissionExpForMember(chainStartMission, left);
+        getMissionExpForMember(activePrepMission, right) -
+        getMissionExpForMember(activePrepMission, left);
       if (expDiff !== 0) return expDiff;
       return getSupportScore(right) - getSupportScore(left);
     });
@@ -1152,8 +1333,8 @@ const MissionModal = ({
     const byLowLevel = [...keyEligibleRoster].sort((left, right) => {
       if (left.level !== right.level) return left.level - right.level;
       const expDiff =
-        getMissionExpForMember(chainStartMission, right) -
-        getMissionExpForMember(chainStartMission, left);
+        getMissionExpForMember(activePrepMission, right) -
+        getMissionExpForMember(activePrepMission, left);
       if (expDiff !== 0) return expDiff;
       return getSupportScore(right) - getSupportScore(left);
     });
@@ -1186,9 +1367,9 @@ const MissionModal = ({
     const evaluateSelection = (members) => {
       if (members.length === 0) return;
 
-      const preview = getAdjustedMissionPreview(chainStartMission, members);
+      const preview = getAdjustedMissionPreview(activePrepMission, members);
       const memberExpValues = members.map((member) =>
-        getMissionExpForMember(chainStartMission, member),
+        getMissionExpForMember(activePrepMission, member),
       );
       const expEligibleCount = memberExpValues.filter((exp) => exp > 0).length;
       const totalExp = memberExpValues.reduce((sum, exp) => sum + exp, 0);
@@ -1319,6 +1500,9 @@ const MissionModal = ({
     );
   };
 
+  const prepSummaryHeightClass =
+    selectedQuest?.type === "zone" ? "md:max-h-[36vh]" : "md:max-h-[44vh]";
+
   return (
     <BaseModal
       isOpen={isOpen}
@@ -1341,7 +1525,7 @@ const MissionModal = ({
         <div className="flex-1 flex flex-col min-h-0">
           <div className="px-4 pt-3 pb-2 border-b border-gray-700 bg-gray-900/80">
             <div className="flex items-center gap-2 flex-wrap">
-              {CATEGORY_FILTER_OPTIONS.map((category) => {
+              {categoryFilterOptions.map((category) => {
                 const isRaidCategory = category === "raid";
                 const isLocked = isRaidCategory && !isRaidUnlocked;
                 return (
@@ -1481,8 +1665,10 @@ const MissionModal = ({
         </div>
       )}
       {view === "prep" && selectedQuest && (
-        <div className="flex-1 flex flex-col min-h-0 bg-gray-800">
-          <div className="bg-gray-900 p-4 md:p-6 border-b border-gray-700 flex-none shadow-md max-h-[52vh] overflow-y-auto custom-scrollbar">
+        <div className="flex-1 flex flex-col min-h-0 bg-gray-800 overflow-y-auto md:overflow-hidden">
+          <div
+            className={`bg-gray-900 p-4 md:p-6 border-b border-gray-700 flex-none shadow-md ${prepSummaryHeightClass} md:overflow-y-auto custom-scrollbar`}
+          >
             <div className="flex justify-between items-start mb-2">
               <div>
                 <h2
@@ -1501,10 +1687,54 @@ const MissionModal = ({
                 <p className="text-xs text-amber-100/80 mt-2 max-w-2xl leading-relaxed">
                   {selectedQuest.type === "dungeon"
                     ? getDungeonBriefingText(selectedQuest)
+                    : selectedQuest.type === "zone"
+                      ? "Zone briefing: assign heroes to this region. They keep normal leveling, earn checkpoint gold at 25/50/75/100%, and receive checkpoint world-drop rewards based on zone tier."
                     : selectedQuest.elite
                       ? "Elite briefing: high-risk target with dangerous resistance. Bring appropriate levels and roles."
                       : "Quest briefing: a standard operation suited for steady progression and resource gains."}
                 </p>
+                {selectedQuest.type === "zone" && zoneEliteMissionOptions.length > 0 && (
+                  <div className="mt-3 rounded border border-emerald-900/70 bg-emerald-950/20 p-2">
+                    <div className="text-[11px] uppercase tracking-wide text-emerald-200 font-bold">
+                      Zone Operations
+                    </div>
+                    <div className="mt-2 flex flex-wrap gap-2">
+                      <button
+                        type="button"
+                        onClick={() => setSelectedZoneEliteQuestId(null)}
+                        className={`px-2 py-1 rounded border text-[11px] font-semibold transition-colors ${
+                          selectedZoneEliteQuest
+                            ? "border-gray-700 bg-gray-800 text-gray-300 hover:bg-gray-700"
+                            : "border-emerald-600 bg-emerald-900/40 text-emerald-100"
+                        }`}
+                      >
+                        Zone Leveling
+                      </button>
+                      {zoneEliteMissionOptions.map((mission) => {
+                        const isSelected = selectedZoneEliteQuestId === mission.id;
+                        return (
+                          <button
+                            key={mission.id}
+                            type="button"
+                            onClick={() => setSelectedZoneEliteQuestId(mission.id)}
+                            className={`px-2 py-1 rounded border text-[11px] font-semibold transition-colors ${
+                              isSelected
+                                ? "border-amber-500 bg-amber-900/30 text-amber-100"
+                                : "border-gray-700 bg-gray-800 text-gray-300 hover:bg-gray-700"
+                            }`}
+                          >
+                            {mission.name}
+                          </button>
+                        );
+                      })}
+                    </div>
+                    <div className="mt-2 text-[11px] text-emerald-100/90">
+                      {selectedZoneEliteQuest
+                        ? `Selected: ${selectedZoneEliteQuest.name} • Lvl ${selectedZoneEliteQuest.recommended || selectedZoneEliteQuest.level} • ${selectedZoneEliteQuest.gold}g`
+                        : "Selected: Zone leveling (assignment only)."}
+                    </div>
+                  </div>
+                )}
                 {canChainSetDungeons && selectedQuest.type === "dungeon" && (
                   <div className="mt-3 rounded border border-indigo-900/70 bg-indigo-950/20 p-2">
                     <div className="flex flex-wrap items-center justify-between gap-2">
@@ -1651,7 +1881,7 @@ const MissionModal = ({
                 )}
                 <div className="flex flex-wrap gap-2 mt-2 text-[11px]">
                   {(() => {
-                    const rewardMission = chainStartMission || selectedQuest;
+                    const rewardMission = activePrepMission;
                     const inRangeBounds = getMissionProgressionBounds(rewardMission);
                     const inRangeReferenceLevel = Math.max(
                       inRangeBounds.minLevel,
@@ -1668,12 +1898,44 @@ const MissionModal = ({
                       { level: inRangeReferenceLevel },
                     );
                     const expLabel = `${formatXpRewardText(inRangeMissionExpPerHero)} / hero`;
+                    if (rewardMission?.type === "zone") {
+                      const rewardZone = getZoneById(rewardMission?.zoneId);
+                      const zoneLootEntries = getZoneLootCountEntries(rewardZone);
+                      const zoneKeyRewardLabels = getZoneEliteKeyRewardLabels(
+                        rewardMission?.zoneId,
+                      );
+                      return (
+                        <>
+                          <span className="px-2 py-1 rounded border border-emerald-700 bg-emerald-950/30 text-emerald-200">
+                            Zone Range: Lvl {rewardMission.recommended || rewardMission.level}
+                          </span>
+                          <span className="px-2 py-1 rounded border border-gray-700 bg-gray-800 text-gray-300">
+                            Minimum to Join: Lvl 1
+                          </span>
+                          <span className="px-2 py-1 rounded border border-yellow-800 bg-yellow-950/30 text-yellow-200">
+                            Expected Gold: up to {getMissionGoldReward(rewardMission)}g total
+                          </span>
+                          <span className="px-2 py-1 rounded border border-emerald-900 bg-emerald-950/20 text-emerald-100">
+                            Loot:{" "}
+                            {renderLootCountLabel(
+                              zoneLootEntries,
+                              `zone-prep-loot-${rewardMission.id}`,
+                            )}
+                          </span>
+                          {zoneKeyRewardLabels.length > 0 && (
+                            <span className="px-2 py-1 rounded border border-amber-800 bg-amber-950/30 text-amber-200">
+                              Key quest in zone: [{zoneKeyRewardLabels.join("] + [")}]
+                            </span>
+                          )}
+                        </>
+                      );
+                    }
                     return (
                       <>
                   <span className="px-2 py-1 rounded border border-gray-700 bg-gray-800 text-gray-300">
-                    Recommended: Lvl {selectedQuest.recommended || selectedQuest.level}
+                    Recommended: Lvl {rewardMission.recommended || rewardMission.level}
                   </span>
-                  {selectedQuest.type === "dungeon" &&
+                  {rewardMission.type === "dungeon" &&
                     selectedQuestEntryLevel !== null &&
                     selectedQuestEntryLevel !== minLevel && (
                       <span className="px-2 py-1 rounded border border-blue-800 bg-blue-950/30 text-blue-200">
@@ -1683,15 +1945,15 @@ const MissionModal = ({
                   <span className="px-2 py-1 rounded border border-gray-700 bg-gray-800 text-gray-300">
                     Minimum to Join: Lvl {minLevel}
                   </span>
-                {(chainStartMission || selectedQuest)?.type === "dungeon" && (
+                {rewardMission?.type === "dungeon" && (
                   <span className="px-2 py-1 rounded border border-amber-800 bg-amber-950/30 text-amber-200">
-                    Attempts: {getMissionMaxAttempts(chainStartMission || selectedQuest)}
+                    Attempts: {getMissionMaxAttempts(rewardMission)}
                   </span>
                 )}
-                {(chainStartMission || selectedQuest)?.type === "dungeon" &&
-                  getMissionWipeCost(chainStartMission || selectedQuest) > 0 && (
+                {rewardMission?.type === "dungeon" &&
+                  getMissionWipeCost(rewardMission) > 0 && (
                     <span className="px-2 py-1 rounded border border-rose-800 bg-rose-950/30 text-rose-200">
-                      Wipe Cost: {getMissionWipeCost(chainStartMission || selectedQuest)}g
+                      Wipe Cost: {getMissionWipeCost(rewardMission)}g
                     </span>
                   )}
                 {selectedMissionRequiredKeyLabels.length > 0 && (
@@ -1711,11 +1973,11 @@ const MissionModal = ({
                     </span>
                   )}
                   <span className="px-2 py-1 rounded border border-gray-700 bg-gray-800 text-yellow-300">
-                    Rewards: {getMissionGoldReward(selectedQuest)}g • {expLabel} XP •{" "}
-                    {getMissionRewardQualities(selectedQuest).map(
+                    Rewards: {getMissionGoldReward(rewardMission)}g • {expLabel} XP •{" "}
+                    {getMissionRewardQualities(rewardMission).map(
                       (quality, idx, arr) => (
                         <React.Fragment
-                          key={`${selectedQuest.id}-prep-${quality}-${idx}`}
+                          key={`${rewardMission.id}-prep-${quality}-${idx}`}
                         >
                           <span className={getQualityClass(quality)}>
                             [{getQualityLabel(quality)}]
@@ -1732,7 +1994,7 @@ const MissionModal = ({
                   })()}
                   {selectedMissionRewardKeyLabels.map((label, index) => (
                     <span
-                      key={`${selectedQuest.id}-prep-key-${index}`}
+                      key={`${activePrepMission?.id || selectedQuest?.id || "mission"}-prep-key-${index}`}
                       className="px-2 py-1 rounded border border-amber-800 bg-amber-950/30 text-amber-200"
                     >
                       Key Reward: [{label}]
@@ -1741,10 +2003,10 @@ const MissionModal = ({
                   {selectedMissionRewardKeyLabels.length > 0 && (
                     <span className="px-2 py-1 rounded border border-amber-700 bg-amber-950/40 text-amber-100 font-semibold">
                       Primary Reward: [{selectedMissionRewardKeyLabels.join("] + [")}] +{" "}
-                      {getMissionRewardQualities(selectedQuest).map(
+                      {getMissionRewardQualities(activePrepMission).map(
                         (quality, idx, arr) => (
                           <React.Fragment
-                            key={`${selectedQuest.id}-prep-key-primary-${quality}-${idx}`}
+                            key={`${activePrepMission?.id || selectedQuest?.id || "mission"}-prep-key-primary-${quality}-${idx}`}
                           >
                             <span className={getQualityClass(quality)}>
                               [{getQualityLabel(quality)} item]
@@ -1759,7 +2021,7 @@ const MissionModal = ({
                   )}
                   {selectedMissionBonusDropNotes.map((note, index) => (
                     <span
-                      key={`${selectedQuest.id}-prep-bonus-drop-${index}`}
+                      key={`${activePrepMission?.id || selectedQuest?.id || "mission"}-prep-bonus-drop-${index}`}
                       className="px-2 py-1 rounded border border-purple-800 bg-purple-950/30 text-purple-200"
                     >
                       Bonus Drop: {note}
@@ -1801,12 +2063,12 @@ const MissionModal = ({
                         Key holder detected in squad.
                       </span>
                     )}
-                  {missionPreview && selectedPartyMembers.length === 0 && (
+                  {missionPreview && !isSelectedZoneMission && selectedPartyMembers.length === 0 && (
                     <span className="px-2 py-1 rounded border border-gray-700 bg-gray-800 text-gray-300">
                       Select heroes to calculate success chance
                     </span>
                   )}
-                  {missionPreview && selectedPartyMembers.length > 0 && (
+                  {missionPreview && !isSelectedZoneMission && selectedPartyMembers.length > 0 && (
                     <>
                       <span className="px-2 py-1 rounded border border-green-800 bg-green-950/30 text-green-300">
                         Success: {missionPreview.successChance}%
@@ -1826,7 +2088,7 @@ const MissionModal = ({
                       </span>
                       <span
                         className={`px-2 py-1 rounded border ${
-                          chainStartMission?.isRaid
+                          activePrepMission?.isRaid
                             ? missionPreview.hasRaidRoleCoverage
                               ? "border-emerald-700 bg-emerald-950/30 text-emerald-300"
                               : "border-gray-700 bg-gray-800 text-gray-400"
@@ -1835,7 +2097,7 @@ const MissionModal = ({
                               : "border-gray-700 bg-gray-800 text-gray-400"
                         }`}
                       >
-                        {chainStartMission?.isRaid ? (
+                        {activePrepMission?.isRaid ? (
                           <>
                             Raid comp bonus:{" "}
                             {missionPreview.hasRaidRoleCoverage
@@ -1856,7 +2118,7 @@ const MissionModal = ({
                           Guild focus bonus: +{missionPreview.focusSuccessBonus}% Success
                         </span>
                       )}
-                      {chainStartMission?.type === "dungeon" && (
+                      {activePrepMission?.type === "dungeon" && (
                         <span
                           className={`px-2 py-1 rounded border ${
                             missionPreview.veteranSuccessBonus > 0
@@ -1881,7 +2143,9 @@ const MissionModal = ({
               <div className="text-right flex-none">
                 <div className="text-xs md:text-sm text-gray-400 mb-1">Squad</div>
                 <div className="text-xl font-bold text-white">
-                  {party.length}/{selectedMissionPartySize}
+                  {isSelectedZoneMission
+                    ? `${party.length} selected`
+                    : `${party.length}/${selectedMissionPartySize}`}
                 </div>
                 <select
                   value={autoSelectMode}
@@ -1998,7 +2262,7 @@ const MissionModal = ({
               </span>
             </div>
           </div>
-          <div className="flex-1 min-h-[260px] overflow-y-auto p-4 bg-gray-800 grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-3 custom-scrollbar">
+          <div className="flex-1 min-h-0 md:min-h-[240px] overflow-visible md:overflow-y-auto p-4 bg-gray-800 grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-3 custom-scrollbar">
             {tacticalCharacterRoster.length === 0 && (
               <div className="text-center text-gray-500 italic py-10 col-span-full">
                 No heroes match this tactical filter.
@@ -2094,12 +2358,13 @@ const MissionModal = ({
             <button
               onClick={() => {
                 if (isKeyBlocked) return;
+                const missionToDeploy = selectedZoneEliteQuest || selectedQuest;
                 const chainMissionIds =
-                  isChainEnabled && selectedChainMissions.length > 1
+                  !selectedZoneEliteQuest && isChainEnabled && selectedChainMissions.length > 1
                     ? selectedChainMissions.map((mission) => mission.id)
                     : null;
                 onDeploy(
-                  selectedQuest,
+                  missionToDeploy,
                   party,
                   chainMissionIds ? { chainMissionIds } : undefined,
                 );
@@ -2108,7 +2373,11 @@ const MissionModal = ({
               disabled={party.length === 0 || isKeyBlocked || isRaidPartySizeInvalid}
               className="btn-quest px-6 md:px-10 py-3 rounded text-blue-100 font-bold disabled:opacity-50 disabled:cursor-not-allowed text-sm md:text-base"
             >
-              {isChainEnabled && selectedChainMissions.length > 1
+              {selectedQuest?.type === "zone" && selectedZoneEliteQuest
+                ? "Deploy Zone Elite"
+                : isSelectedZoneMission
+                ? "Assign Zone"
+                : isChainEnabled && selectedChainMissions.length > 1
                 ? `Start Chain (${selectedChainMissions.length})`
                 : "Deploy"}
             </button>

@@ -78,6 +78,21 @@ import {
 } from "./missions/missionHelpers";
 import { createMissionRewardProcessor } from "./missions/missionRewards";
 import {
+  ZONE_PROGRESS_CHECKPOINTS,
+  getZoneById,
+  getStarterZoneIdForRace,
+  getZoneExpMultiplier,
+  getZoneOverlevel,
+  getZoneProgressPerTick,
+  getZoneCheckpointGoldReward,
+  getZoneCheckpointLootQualities,
+  pickNextZoneForCharacter,
+  mergeZoneMissionsIntoList,
+  isZoneMission,
+  isZoneAccessibleForFaction,
+  getCanonicalZoneId,
+} from "./zones/zoneDefinitions";
+import {
   getRecruitmentCapacity,
   resolveRecruitmentResult,
 } from "./recruitment/recruitmentLogic";
@@ -112,6 +127,8 @@ const callGemini = async (prompt, isJson = false) => {
 
 const FAILED_MISSION_EXP_FACTOR = 0.2;
 const LEVELING_TICK_EXP_MULTIPLIER = 1;
+const ENABLE_ZONE_QUESTING = true;
+const SHOW_LEGACY_QUESTS = true;
 const GUILD_ACTIVITY_MODES = ["Leveling", "Professions", "Auto"];
 const MEMBER_RANKING_MODES = {
   STANDARD: "standard",
@@ -162,6 +179,10 @@ const WORLD_TICK_COMMON_DROP_CHANCE = 0.08;
 const WORLD_TICK_UNCOMMON_DROP_CHANCE = 0.01;
 const WORLD_TICK_EPIC_DROP_CHANCE = 0.0001; // 0.01%
 const WORLD_TICK_EPIC_MIN_LEVEL = 40;
+const STARTER_ZONE_DURATION_VARIANCE_MIN = 0.9;
+const STARTER_ZONE_DURATION_VARIANCE_MAX = 1.1;
+const ZONE_OVERLEVEL_MOVE_THRESHOLD_MIN = 2;
+const ZONE_OVERLEVEL_MOVE_THRESHOLD_MAX = 4;
 const FACTION_EMBLEM_ICON = {
   [GUILD_FACTION.ALLIANCE]: "inv_bannerpvp_02",
   [GUILD_FACTION.HORDE]: "inv_bannerpvp_01",
@@ -189,6 +210,249 @@ const getLevelingTickExpGain = (level, totalExpMultiplier = 1) => {
     1,
     Math.floor(baseExpPerTick * LEVELING_TICK_EXP_MULTIPLIER * totalExpMultiplier),
   );
+};
+
+const getClampedZoneProgress = (value) =>
+  Math.max(0, Math.min(100, Number(value) || 0));
+
+const getRandomStarterZoneDurationVariance = () =>
+  STARTER_ZONE_DURATION_VARIANCE_MIN +
+  Math.random() *
+    (STARTER_ZONE_DURATION_VARIANCE_MAX - STARTER_ZONE_DURATION_VARIANCE_MIN);
+
+const getRandomZoneOverlevelMoveThreshold = () =>
+  ZONE_OVERLEVEL_MOVE_THRESHOLD_MIN +
+  Math.floor(
+    Math.random() *
+      (ZONE_OVERLEVEL_MOVE_THRESHOLD_MAX - ZONE_OVERLEVEL_MOVE_THRESHOLD_MIN + 1),
+  );
+
+const normalizeZoneOverlevelMoveThreshold = (value) => {
+  const numericValue = Number(value);
+  if (!Number.isFinite(numericValue)) return null;
+  const roundedValue = Math.floor(numericValue);
+  if (
+    roundedValue < ZONE_OVERLEVEL_MOVE_THRESHOLD_MIN ||
+    roundedValue > ZONE_OVERLEVEL_MOVE_THRESHOLD_MAX
+  ) {
+    return null;
+  }
+  return roundedValue;
+};
+
+const resolveZoneAutoTransition = ({
+  faction,
+  level,
+  currentZoneId,
+  currentZoneProgress,
+  zoneProgressById,
+  zonesCleared,
+  zoneCheckpointRewardsClaimedByZone,
+  zoneManualOverride,
+  zoneOverlevelMoveThreshold,
+  forceAdvance = false,
+}) => {
+  const currentZone = currentZoneId ? getZoneById(currentZoneId, level) : null;
+  const safeThreshold =
+    normalizeZoneOverlevelMoveThreshold(zoneOverlevelMoveThreshold) ??
+    ZONE_OVERLEVEL_MOVE_THRESHOLD_MIN;
+
+  if (!currentZone) {
+    return {
+      currentZoneId: currentZoneId || null,
+      currentZoneProgress: getClampedZoneProgress(currentZoneProgress),
+      zoneProgressById,
+      zonesCleared,
+      zoneCheckpointRewardsClaimedByZone,
+      zoneManualOverride: Boolean(zoneManualOverride),
+      zoneOverlevelMoveThreshold: safeThreshold,
+      currentZone: null,
+    };
+  }
+
+  const shouldAdvanceByOverlevel = getZoneOverlevel(level, currentZone) >= safeThreshold;
+  if (!forceAdvance && !shouldAdvanceByOverlevel) {
+    return {
+      currentZoneId: currentZone.id,
+      currentZoneProgress: getClampedZoneProgress(currentZoneProgress),
+      zoneProgressById,
+      zonesCleared,
+      zoneCheckpointRewardsClaimedByZone,
+      zoneManualOverride: Boolean(zoneManualOverride),
+      zoneOverlevelMoveThreshold: safeThreshold,
+      currentZone,
+    };
+  }
+
+  const nextZone = pickNextZoneForCharacter({
+    faction,
+    level,
+    zonesCleared,
+    currentZoneId: currentZone.id,
+  });
+  if (!nextZone?.id || nextZone.id === currentZone.id) {
+    return {
+      currentZoneId: currentZone.id,
+      currentZoneProgress: getClampedZoneProgress(currentZoneProgress),
+      zoneProgressById,
+      zonesCleared,
+      zoneCheckpointRewardsClaimedByZone,
+      zoneManualOverride: Boolean(zoneManualOverride),
+      zoneOverlevelMoveThreshold: safeThreshold,
+      currentZone,
+    };
+  }
+
+  const nextZoneProgressById = {
+    ...(zoneProgressById && typeof zoneProgressById === "object" ? zoneProgressById : {}),
+  };
+  const nextZoneProgress = getClampedZoneProgress(nextZoneProgressById[nextZone.id] ?? 0);
+  nextZoneProgressById[nextZone.id] = Math.max(
+    nextZoneProgressById[nextZone.id] || 0,
+    nextZoneProgress,
+  );
+
+  const nextCheckpointMap = {
+    ...(zoneCheckpointRewardsClaimedByZone &&
+    typeof zoneCheckpointRewardsClaimedByZone === "object"
+      ? zoneCheckpointRewardsClaimedByZone
+      : {}),
+  };
+  if (!Array.isArray(nextCheckpointMap[nextZone.id])) {
+    nextCheckpointMap[nextZone.id] = [];
+  }
+
+  return {
+    currentZoneId: nextZone.id,
+    currentZoneProgress: nextZoneProgress,
+    zoneProgressById: nextZoneProgressById,
+    zonesCleared,
+    zoneCheckpointRewardsClaimedByZone: nextCheckpointMap,
+    zoneManualOverride: false,
+    zoneOverlevelMoveThreshold: getRandomZoneOverlevelMoveThreshold(),
+    currentZone: nextZone,
+  };
+};
+
+const normalizeZoneIdList = (value, characterLevel = 1) =>
+  [...new Set(
+    (Array.isArray(value) ? value : [])
+      .map((zoneId) => getCanonicalZoneId(zoneId, characterLevel))
+      .map((zoneId) => String(zoneId || "").trim()),
+  )]
+    .filter(Boolean)
+    .filter((zoneId) => Boolean(getZoneById(zoneId)));
+
+const normalizeZoneProgressMap = (value, characterLevel = 1) => {
+  const source = value && typeof value === "object" ? value : {};
+  return Object.entries(source).reduce((acc, [zoneId, progress]) => {
+    const canonicalZoneId = getCanonicalZoneId(zoneId, characterLevel);
+    if (!getZoneById(canonicalZoneId)) return acc;
+    acc[canonicalZoneId] = Math.max(
+      getClampedZoneProgress(acc[canonicalZoneId]),
+      getClampedZoneProgress(progress),
+    );
+    return acc;
+  }, {});
+};
+
+const normalizeZoneCheckpointMap = (value, characterLevel = 1) => {
+  const source = value && typeof value === "object" ? value : {};
+  return Object.entries(source).reduce((acc, [zoneId, checkpointValues]) => {
+    const canonicalZoneId = getCanonicalZoneId(zoneId, characterLevel);
+    if (!getZoneById(canonicalZoneId)) return acc;
+    const checkpoints = [...new Set(
+      [
+        ...(Array.isArray(acc[canonicalZoneId]) ? acc[canonicalZoneId] : []),
+        ...(Array.isArray(checkpointValues) ? checkpointValues : []),
+      ]
+        .map((checkpoint) => Number(checkpoint))
+        .filter((checkpoint) => ZONE_PROGRESS_CHECKPOINTS.includes(checkpoint)),
+    )].sort((left, right) => left - right);
+    if (checkpoints.length > 0) {
+      acc[canonicalZoneId] = checkpoints;
+    }
+    return acc;
+  }, {});
+};
+
+const normalizeCharacterZoneState = (char, fallbackFaction = GUILD_FACTION.ALLIANCE) => {
+  const characterLevel = Math.max(1, Number(char?.level) || 1);
+  const rawClearedZoneIds = (Array.isArray(char?.zonesCleared) ? char.zonesCleared : [])
+    .map((zoneId) => String(zoneId || "").trim())
+    .filter(Boolean);
+  const zoneProgressById = normalizeZoneProgressMap(char?.zoneProgressById, characterLevel);
+  const zonesCleared = normalizeZoneIdList(rawClearedZoneIds, characterLevel);
+  if (rawClearedZoneIds.includes("stranglethorn_vale")) {
+    if (!zonesCleared.includes("stranglethorn_vale_north")) {
+      zonesCleared.push("stranglethorn_vale_north");
+    }
+    if (!zonesCleared.includes("stranglethorn_vale_south")) {
+      zonesCleared.push("stranglethorn_vale_south");
+    }
+  }
+  const zoneCheckpointRewardsClaimedByZone = normalizeZoneCheckpointMap(
+    char?.zoneCheckpointRewardsClaimedByZone,
+    characterLevel,
+  );
+
+  const explicitCurrentZoneId = getCanonicalZoneId(char?.currentZoneId, characterLevel);
+  const starterZoneId = getStarterZoneIdForRace(char?.race);
+  const pickedZoneId = pickNextZoneForCharacter({
+    faction: fallbackFaction,
+    level: char?.level,
+    zonesCleared,
+    currentZoneId: starterZoneId,
+  })?.id;
+  const currentZoneId = getZoneById(explicitCurrentZoneId)
+    ? explicitCurrentZoneId
+    : starterZoneId || pickedZoneId || null;
+  const currentZone = getZoneById(currentZoneId);
+
+  const legacyZoneProgress = getClampedZoneProgress(char?.zoneProgress);
+  const currentZoneProgress = getClampedZoneProgress(
+    char?.currentZoneProgress ??
+      (currentZoneId ? zoneProgressById[currentZoneId] : legacyZoneProgress) ??
+      legacyZoneProgress,
+  );
+
+  if (currentZoneId) {
+    zoneProgressById[currentZoneId] = Math.max(
+      zoneProgressById[currentZoneId] || 0,
+      currentZoneProgress,
+    );
+    if (!zoneCheckpointRewardsClaimedByZone[currentZoneId]) {
+      zoneCheckpointRewardsClaimedByZone[currentZoneId] = [];
+    }
+  }
+
+  const normalizedDurationVariance = Number(char?.zoneDurationVariance);
+  const zoneDurationVariance =
+    Number.isFinite(normalizedDurationVariance) &&
+    normalizedDurationVariance >= 0.85 &&
+    normalizedDurationVariance <= 1.2
+      ? normalizedDurationVariance
+      : getRandomStarterZoneDurationVariance();
+  const zoneOverlevelMoveThreshold =
+    normalizeZoneOverlevelMoveThreshold(char?.zoneOverlevelMoveThreshold) ??
+    getRandomZoneOverlevelMoveThreshold();
+
+  return {
+    ...char,
+    currentZoneId: currentZone?.id || null,
+    currentZoneProgress,
+    zoneProgressById,
+    zonesCleared,
+    zoneCheckpointRewardsClaimedByZone,
+    zoneDurationVariance,
+    zoneOverlevelMoveThreshold,
+    zoneManualOverride: Boolean(char?.zoneManualOverride),
+  };
+};
+
+const getZoneProgressLabel = (zone, progress) => {
+  if (!zone) return "";
+  return `${zone.name} (${Math.floor(getClampedZoneProgress(progress))}%)`;
 };
 
 const getFactionDefaultGuildName = (faction) =>
@@ -491,13 +755,18 @@ const advanceDungeonMission = (mission, now, instant = false) => {
   return { mission: resolvedMission, stepLogs };
 };
 
-const generateWorldTickLoot = (char, quality) => {
+const generateWorldLootForCharacter = ({
+  char,
+  quality,
+  minLevel,
+  maxLevel,
+}) => {
   const classInfo = DB_CLASSES[char.charClass];
   if (!classInfo) return null;
 
   const allowedTypes = getClassArmorTypes(char.charClass, char.level);
-  const minLevel = Math.max(1, char.level - 6);
-  const maxLevel = char.level;
+  const safeMinLevel = Math.max(1, Number(minLevel) || 1);
+  const safeMaxLevel = Math.max(safeMinLevel, Number(maxLevel) || safeMinLevel);
 
   const possibleItems = DB_ITEMS.filter((item) => {
     if (
@@ -507,13 +776,70 @@ const generateWorldTickLoot = (char, quality) => {
       return false;
     }
     if (item.quality !== quality) return false;
-    if (item.minLevel < minLevel || item.minLevel > maxLevel) return false;
+    if (item.minLevel < safeMinLevel || item.minLevel > safeMaxLevel) return false;
     if (!isItemUsableByClass(item, char.charClass)) return false;
     return item.type === "Generic" || allowedTypes.includes(item.type);
   });
 
   if (possibleItems.length === 0) return null;
   return possibleItems[Math.floor(Math.random() * possibleItems.length)];
+};
+
+const generateWorldTickLoot = (char, quality) =>
+  generateWorldLootForCharacter({
+    char,
+    quality,
+    minLevel: Math.max(1, char.level - 6),
+    maxLevel: char.level,
+  });
+
+const generateZoneCheckpointLoot = (char, zone, quality) => {
+  if (!zone) return null;
+  return generateWorldLootForCharacter({
+    char,
+    quality,
+    minLevel: Math.max(1, Number(zone?.minLevel) || 1),
+    maxLevel: Math.max(1, Number(zone?.maxLevel) || 1),
+  });
+};
+
+const applyLootRewardToCharacter = ({
+  char,
+  lootItem,
+  logCollector,
+  missionName,
+  bossName = null,
+  updateStatusText = false,
+  logDiscarded = false,
+}) => {
+  if (!lootItem) return char;
+
+  const currentItem = char.equipment?.[lootItem.slot];
+  const currentItemLevel = getItemEffectiveLevel(currentItem);
+  const newItemLevel = getItemEffectiveLevel(lootItem);
+  const willEquip = !currentItem || newItemLevel > currentItemLevel;
+
+  if (willEquip || logDiscarded) {
+    logCollector.push({
+      type: "loot",
+      characterName: char.name,
+      itemName: lootItem.name,
+      itemQuality: lootItem.quality,
+      missionName,
+      bossName,
+      equipped: willEquip,
+    });
+  }
+
+  if (!willEquip) return char;
+  const nextEquipment = { ...char.equipment, [lootItem.slot]: lootItem };
+  return {
+    ...char,
+    equipment: nextEquipment,
+    statusText: updateStatusText
+      ? `Found [${lootItem.name}] while adventuring.`
+      : char.statusText,
+  };
 };
 
 const normalizeGuildSetup = (value, payloadData = {}) => {
@@ -606,6 +932,9 @@ const cloneMissionTemplate = (mission) => ({
       ? { ...mission.raidRoleRequirement }
       : mission.raidRoleRequirement,
 });
+
+const getMissionListWithZones = (missions) =>
+  ENABLE_ZONE_QUESTING ? mergeZoneMissionsIntoList(missions) : missions;
 
 // --- Local Components ---
 
@@ -751,7 +1080,9 @@ const App = () => {
   );
   const [roster, setRoster] = useState([]);
   const [activeMissions, setActiveMissions] = useState([]);
-  const [missionList, setMissionList] = useState(INITIAL_MISSIONS);
+  const [missionList, setMissionList] = useState(() =>
+    getMissionListWithZones(INITIAL_MISSIONS.map(cloneMissionTemplate)),
+  );
   const [guildLog, setGuildLog] = useState([]);
   const [guildGold, setGuildGold] = useState(0);
   const [guildProgress, setGuildProgress] = useState(() =>
@@ -869,6 +1200,43 @@ const App = () => {
     [],
   );
 
+  const normalizeRosterZones = useCallback(
+    (rosterSnapshot, fallbackFaction = guildSetupRef.current?.faction || GUILD_FACTION.ALLIANCE) =>
+      (Array.isArray(rosterSnapshot) ? rosterSnapshot : []).map((member) =>
+        normalizeCharacterZoneState(member, fallbackFaction),
+      ),
+    [],
+  );
+
+  const assignZoneToRoster = useCallback((rosterSnapshot, memberIds, zoneId) => {
+    const zone = getZoneById(zoneId);
+    if (!zone) return rosterSnapshot;
+
+    const targetMemberIds = new Set(
+      (Array.isArray(memberIds) ? memberIds : []).map((memberId) => String(memberId || "")),
+    );
+    if (targetMemberIds.size === 0) return rosterSnapshot;
+
+    return rosterSnapshot.map((char) => {
+      if (!targetMemberIds.has(String(char?.id || ""))) return char;
+      const normalizedChar = normalizeCharacterZoneState(
+        char,
+        guildSetupRef.current?.faction || GUILD_FACTION.ALLIANCE,
+      );
+      const existingProgress = getClampedZoneProgress(
+        normalizedChar.zoneProgressById?.[zone.id] ?? 0,
+      );
+      return {
+        ...normalizedChar,
+        currentZoneId: zone.id,
+        currentZoneProgress: existingProgress,
+        statusText: `🧭 Zone: ${getZoneProgressLabel(zone, existingProgress)}`,
+        zoneOverlevelMoveThreshold: getRandomZoneOverlevelMoveThreshold(),
+        zoneManualOverride: true,
+      };
+    });
+  }, []);
+
   const guildDerivedStats = getGuildDerivedStats(guildProgress);
   const guildFocusBonuses = useMemo(
     () => getGuildFocusBonuses(guildSetup.focus),
@@ -958,6 +1326,7 @@ const App = () => {
   const handleUpgradeGuildTalent = useCallback(
     (talentKey) => {
       let upgradeSummary = null;
+      let blockedSummary = null;
       setGuildProgress((prev) => {
         const result = upgradeGuildTalent(prev, talentKey);
         if (result.upgraded && result.talent) {
@@ -966,6 +1335,13 @@ const App = () => {
             suffix: result.talent.suffix,
             spentCost: result.spentCost,
             nextValue: result.nextValue,
+          };
+        } else if (result.talent) {
+          blockedSummary = {
+            title: result.talent.title,
+            blockedByPrerequisite: Boolean(result.blockedByPrerequisite),
+            blockers: Array.isArray(result.blockers) ? result.blockers : [],
+            missingCost: Number(result.missingCost) || 0,
           };
         }
         return result.guildProgress;
@@ -978,6 +1354,21 @@ const App = () => {
         );
         appendGuildRenownLog(
           `${upgradeSummary.title} upgraded for ${upgradeSummary.spentCost} ${GUILD_POINT_LABEL}.`,
+        );
+      } else if (blockedSummary) {
+        const blockerText =
+          blockedSummary.blockers.length > 0
+            ? blockedSummary.blockers[0]
+            : blockedSummary.missingCost > 0
+              ? `Need ${blockedSummary.missingCost} more ${GUILD_POINT_LABEL}.`
+              : "No further upgrades available.";
+        pushNotification(
+          {
+            type: blockedSummary.blockedByPrerequisite ? "error" : "info",
+            title: blockedSummary.title,
+            message: blockerText,
+            durationMs: 3200,
+          },
         );
       }
     },
@@ -1048,27 +1439,14 @@ const App = () => {
     if (!targetQuality) return char;
 
     const lootItem = generateWorldTickLoot(char, targetQuality);
-    if (!lootItem) return char;
-
-    const currentItem = char.equipment?.[lootItem.slot];
-    const currentItemLevel = getItemEffectiveLevel(currentItem);
-    const newItemLevel = getItemEffectiveLevel(lootItem);
-
-    if (newItemLevel <= currentItemLevel) return char;
-
-    logCollector.push({
-      type: "loot",
-      characterName: char.name,
-      itemName: lootItem.name,
-      itemQuality: lootItem.quality,
+    return applyLootRewardToCharacter({
+      char,
+      lootItem,
+      logCollector,
       missionName: "World Drop",
+      updateStatusText: true,
+      logDiscarded: false,
     });
-
-    return {
-      ...char,
-      equipment: { ...char.equipment, [lootItem.slot]: lootItem },
-      statusText: `Found [${lootItem.name}] while adventuring.`,
-    };
   };
 
   const applyMissionWipeCosts = useCallback((mission, stepLogs, availableGold) => {
@@ -1391,15 +1769,18 @@ const App = () => {
     [],
   );
 
-  const processMissionRewards = (mission, currentRoster) =>
-    missionRewardProcessor({
-      mission,
-      currentRoster,
-      activeGuildStats: getGuildDerivedStats(guildProgressRef.current),
-      activeFocusBonuses: getGuildFocusBonuses(guildSetupRef.current?.focus),
-      levelCap: CONFIG.LEVEL_CAP,
-      failedMissionExpFactor: FAILED_MISSION_EXP_FACTOR,
-    });
+  const processMissionRewards = useCallback(
+    (mission, currentRoster) =>
+      missionRewardProcessor({
+        mission,
+        currentRoster,
+        activeGuildStats: getGuildDerivedStats(guildProgressRef.current),
+        activeFocusBonuses: getGuildFocusBonuses(guildSetupRef.current?.focus),
+        levelCap: CONFIG.LEVEL_CAP,
+        failedMissionExpFactor: FAILED_MISSION_EXP_FACTOR,
+      }),
+    [missionRewardProcessor],
+  );
 
   // --- GAME LOOP ---
   useEffect(() => {
@@ -1418,7 +1799,9 @@ const App = () => {
 
       if (isPaused) return;
 
-      const currentRoster = rosterRef.current;
+      const currentFaction =
+        guildSetupRef.current?.faction || GUILD_FACTION.ALLIANCE;
+      const currentRoster = normalizeRosterZones(rosterRef.current, currentFaction);
       const currentMissions = missionsRef.current;
       const currentGold = goldRef.current;
       const currentGuildStats = getGuildDerivedStats(guildProgressRef.current);
@@ -1516,42 +1899,43 @@ const App = () => {
 
       // 3. Process Character Status (Idle/Professions)
       newRoster = newRoster.map((char) => {
-        if (char.status === "Questing") return char;
+        const normalizedChar = normalizeCharacterZoneState(char, currentFaction);
+        if (normalizedChar.status === "Questing") return normalizedChar;
 
         let statusText = "Resting...";
         let gainXP = false;
         let gainSkill = false;
 
-        const hardCap = getSkillCap(char.level);
-        const autoTarget = getAutoSkillTarget(char.level);
-        const canGainSkill = char.professions.some((p) => p.skill < hardCap);
-        const needsAutoSkill = char.professions.some(
+        const hardCap = getSkillCap(normalizedChar.level);
+        const autoTarget = getAutoSkillTarget(normalizedChar.level);
+        const canGainSkill = normalizedChar.professions.some((p) => p.skill < hardCap);
+        const needsAutoSkill = normalizedChar.professions.some(
           (p) => p.skill < autoTarget,
         );
-        const isCheckpointLevel = char.level % 5 === 0;
+        const isCheckpointLevel = normalizedChar.level % 5 === 0;
 
-        if (char.activityMode === "Leveling") {
-          if (char.level < CONFIG.LEVEL_CAP) {
+        if (normalizedChar.activityMode === "Leveling") {
+          if (normalizedChar.level < CONFIG.LEVEL_CAP) {
             gainXP = true;
             statusText = "⚔️ Grinding XP...";
           } else {
             statusText = "Max Level Reached";
           }
-        } else if (char.activityMode === "Professions") {
+        } else if (normalizedChar.activityMode === "Professions") {
           if (canGainSkill) {
             gainSkill = true;
           } else {
             statusText =
-              "Skills Capped (Need Level " + getNextTierLevel(char.level) + ")";
+              "Skills Capped (Need Level " + getNextTierLevel(normalizedChar.level) + ")";
           }
-        } else if (char.activityMode === "Auto") {
+        } else if (normalizedChar.activityMode === "Auto") {
           if (isCheckpointLevel && needsAutoSkill) {
             gainSkill = true;
             statusText = "🤖 Auto: Skilling to " + autoTarget + "...";
-          } else if (char.level < CONFIG.LEVEL_CAP) {
+          } else if (normalizedChar.level < CONFIG.LEVEL_CAP) {
             gainXP = true;
             statusText = "⚔️ Auto: Leveling...";
-          } else if (canGainSkill && char.level >= CONFIG.LEVEL_CAP) {
+          } else if (canGainSkill && normalizedChar.level >= CONFIG.LEVEL_CAP) {
             // At max level, just skill to hard cap
             gainSkill = true;
             statusText = "🤖 Auto: Max Level Skilling...";
@@ -1561,12 +1945,21 @@ const App = () => {
         }
 
         if (gainXP) {
+          const activeZone =
+            ENABLE_ZONE_QUESTING && normalizedChar.currentZoneId
+              ? getZoneById(normalizedChar.currentZoneId)
+              : null;
+          const zoneExpMultiplier = activeZone
+            ? getZoneExpMultiplier(normalizedChar.level, activeZone)
+            : 1;
           const expGain = getLevelingTickExpGain(
-            char.level,
-            currentGuildStats.expMultiplier * currentFocusBonuses.expMultiplier,
+            normalizedChar.level,
+            currentGuildStats.expMultiplier *
+              currentFocusBonuses.expMultiplier *
+              zoneExpMultiplier,
           );
-          let newExp = char.exp + expGain;
-          let newLevel = char.level;
+          let newExp = normalizedChar.exp + expGain;
+          let newLevel = normalizedChar.level;
           let maxExp = getReqExp(newLevel);
           let leveledUp = false;
           while (newExp >= maxExp && newLevel < CONFIG.LEVEL_CAP) {
@@ -1579,25 +1972,186 @@ const App = () => {
             newLevel = CONFIG.LEVEL_CAP;
             newExp = maxExp;
           }
+
+          let currentZoneId = activeZone?.id || null;
+          let currentZoneProgress = getClampedZoneProgress(
+            normalizedChar.currentZoneProgress,
+          );
+          let zoneManualOverride = normalizedChar.zoneManualOverride;
+          let zoneOverlevelMoveThreshold = normalizedChar.zoneOverlevelMoveThreshold;
+          let zoneProgressById = { ...normalizedChar.zoneProgressById };
+          let zonesCleared = [...normalizedChar.zonesCleared];
+          let zoneCheckpointRewardsClaimedByZone = {
+            ...normalizedChar.zoneCheckpointRewardsClaimedByZone,
+          };
+          const checkpointLootRewardEntries = [];
+
+          let forceZoneAdvance = false;
+          if (activeZone) {
+            const storedProgress = getClampedZoneProgress(
+              zoneProgressById[activeZone.id] ?? currentZoneProgress,
+            );
+            const progressGain = getZoneProgressPerTick({
+              zone: activeZone,
+              characterLevel: normalizedChar.level,
+              durationVariance: normalizedChar.zoneDurationVariance,
+            });
+            const nextProgress = getClampedZoneProgress(storedProgress + progressGain);
+            currentZoneProgress = nextProgress;
+            zoneProgressById[activeZone.id] = nextProgress;
+
+            const zoneAlreadyCleared = zonesCleared.includes(activeZone.id);
+            const claimedSet = new Set(
+              Array.isArray(zoneCheckpointRewardsClaimedByZone[activeZone.id])
+                ? zoneCheckpointRewardsClaimedByZone[activeZone.id]
+                    .map((checkpoint) => Number(checkpoint))
+                    .filter((checkpoint) => ZONE_PROGRESS_CHECKPOINTS.includes(checkpoint))
+                : [],
+            );
+
+            if (!zoneAlreadyCleared) {
+              ZONE_PROGRESS_CHECKPOINTS.forEach((checkpoint) => {
+                if (nextProgress < checkpoint || claimedSet.has(checkpoint)) return;
+                claimedSet.add(checkpoint);
+
+                const checkpointGold = getZoneCheckpointGoldReward(activeZone, checkpoint);
+                const openGoldSpace = Math.max(0, currentGuildStats.goldCap - newGold);
+                const gainedGold = Math.max(
+                  0,
+                  Math.min(checkpointGold, openGoldSpace),
+                );
+                if (gainedGold > 0) {
+                  newGold += gainedGold;
+                  newLogs.push({
+                    type: "zone-gold",
+                    amount: gainedGold,
+                    missionName: activeZone.name,
+                    checkpoint,
+                  });
+                }
+
+                const checkpointLootQualities = getZoneCheckpointLootQualities(
+                  activeZone,
+                  checkpoint,
+                );
+                checkpointLootQualities.forEach((quality) => {
+                  checkpointLootRewardEntries.push({
+                    quality,
+                    checkpoint,
+                    zoneId: activeZone.id,
+                  });
+                });
+
+                if (checkpoint >= 100) {
+                  zonesCleared = [...zonesCleared, activeZone.id];
+                  newLogs.push({
+                    type: "zone-clear",
+                    characterName: normalizedChar.name,
+                    missionName: activeZone.name,
+                  });
+                }
+              });
+            }
+            if (nextProgress >= 100 && !zonesCleared.includes(activeZone.id)) {
+              zonesCleared = [...zonesCleared, activeZone.id];
+              if (!claimedSet.has(100)) {
+                claimedSet.add(100);
+              }
+              newLogs.push({
+                type: "zone-clear",
+                characterName: normalizedChar.name,
+                missionName: activeZone.name,
+              });
+            }
+            forceZoneAdvance = nextProgress >= 100;
+
+            zoneCheckpointRewardsClaimedByZone[activeZone.id] = [...claimedSet].sort(
+              (left, right) => left - right,
+            );
+          }
+
+          const transitionedZoneState = resolveZoneAutoTransition({
+            faction: currentFaction,
+            level: newLevel,
+            currentZoneId,
+            currentZoneProgress,
+            zoneProgressById,
+            zonesCleared,
+            zoneCheckpointRewardsClaimedByZone,
+            zoneManualOverride,
+            zoneOverlevelMoveThreshold,
+            forceAdvance: forceZoneAdvance,
+          });
+          currentZoneId = transitionedZoneState.currentZoneId;
+          currentZoneProgress = transitionedZoneState.currentZoneProgress;
+          zoneProgressById = transitionedZoneState.zoneProgressById;
+          zonesCleared = transitionedZoneState.zonesCleared;
+          zoneCheckpointRewardsClaimedByZone =
+            transitionedZoneState.zoneCheckpointRewardsClaimedByZone;
+          zoneManualOverride = transitionedZoneState.zoneManualOverride;
+          zoneOverlevelMoveThreshold = transitionedZoneState.zoneOverlevelMoveThreshold;
+
+          const currentZone = transitionedZoneState.currentZone;
+          const zoneStatusLabel = getZoneProgressLabel(currentZone, currentZoneProgress);
           const leveledChar = {
-            ...char,
+            ...normalizedChar,
             level: newLevel,
             exp: newExp,
             maxExp,
-            statusText,
-            lastLevelUp: leveledUp ? Date.now() : char.lastLevelUp,
+            statusText: zoneStatusLabel ? `🧭 Zone: ${zoneStatusLabel}` : statusText,
+            lastLevelUp: leveledUp ? Date.now() : normalizedChar.lastLevelUp,
+            currentZoneId,
+            currentZoneProgress,
+            zoneProgress: currentZoneProgress,
+            zoneManualOverride,
+            zoneProgressById,
+            zonesCleared,
+            zoneCheckpointRewardsClaimedByZone,
+            zoneOverlevelMoveThreshold,
           };
-          return tryApplyWorldTickLoot(leveledChar, newLogs);
+          let zoneRewardedChar = leveledChar;
+          checkpointLootRewardEntries.forEach((entry) => {
+            const rewardZone = getZoneById(entry.zoneId);
+            if (!rewardZone) return;
+            const lootItem = generateZoneCheckpointLoot(
+              { ...zoneRewardedChar, level: newLevel },
+              rewardZone,
+              entry.quality,
+            );
+            zoneRewardedChar = applyLootRewardToCharacter({
+              char: zoneRewardedChar,
+              lootItem,
+              logCollector: newLogs,
+              missionName: rewardZone.name,
+              bossName: `${entry.checkpoint}% checkpoint`,
+              updateStatusText: false,
+              logDiscarded: true,
+            });
+          });
+          return tryApplyWorldTickLoot(zoneRewardedChar, newLogs);
         }
+
+        const transitionedZoneState = resolveZoneAutoTransition({
+          faction: currentFaction,
+          level: normalizedChar.level,
+          currentZoneId: normalizedChar.currentZoneId,
+          currentZoneProgress: normalizedChar.currentZoneProgress,
+          zoneProgressById: normalizedChar.zoneProgressById,
+          zonesCleared: normalizedChar.zonesCleared,
+          zoneCheckpointRewardsClaimedByZone:
+            normalizedChar.zoneCheckpointRewardsClaimedByZone,
+          zoneManualOverride: normalizedChar.zoneManualOverride,
+          zoneOverlevelMoveThreshold: normalizedChar.zoneOverlevelMoveThreshold,
+        });
 
         if (gainSkill) {
           // Determine cap based on mode
           const currentLimit =
-            char.activityMode === "Auto" && isCheckpointLevel && needsAutoSkill
+            normalizedChar.activityMode === "Auto" && isCheckpointLevel && needsAutoSkill
               ? autoTarget
               : hardCap;
 
-          const uncappedProfs = char.professions.filter(
+          const uncappedProfs = normalizedChar.professions.filter(
             (p) => p.skill < currentLimit && p.skill < 300,
           );
 
@@ -1605,24 +2159,50 @@ const App = () => {
             const targetProfIndex = Math.floor(
               Math.random() * uncappedProfs.length,
             );
-            const realIndex = char.professions.indexOf(
+            const realIndex = normalizedChar.professions.indexOf(
               uncappedProfs[targetProfIndex],
             );
-            const pName = char.professions[realIndex].name;
+            const pName = normalizedChar.professions[realIndex].name;
             statusText = PROF_ACTIONS[pName] || `Working on ${pName}...`;
 
             if (Math.random() > 0.3) {
-              const newProfs = [...char.professions];
+              const newProfs = [...normalizedChar.professions];
               newProfs[realIndex] = {
                 ...newProfs[realIndex],
                 skill: newProfs[realIndex].skill + 1,
               };
-              return { ...char, professions: newProfs, statusText };
+              return {
+                ...normalizedChar,
+                professions: newProfs,
+                statusText,
+                currentZoneId: transitionedZoneState.currentZoneId,
+                currentZoneProgress: transitionedZoneState.currentZoneProgress,
+                zoneProgress: transitionedZoneState.currentZoneProgress,
+                zoneProgressById: transitionedZoneState.zoneProgressById,
+                zonesCleared: transitionedZoneState.zonesCleared,
+                zoneCheckpointRewardsClaimedByZone:
+                  transitionedZoneState.zoneCheckpointRewardsClaimedByZone,
+                zoneManualOverride: transitionedZoneState.zoneManualOverride,
+                zoneOverlevelMoveThreshold:
+                  transitionedZoneState.zoneOverlevelMoveThreshold,
+              };
             }
           }
         }
 
-        return { ...char, statusText };
+        return {
+          ...normalizedChar,
+          statusText,
+          currentZoneId: transitionedZoneState.currentZoneId,
+          currentZoneProgress: transitionedZoneState.currentZoneProgress,
+          zoneProgress: transitionedZoneState.currentZoneProgress,
+          zoneProgressById: transitionedZoneState.zoneProgressById,
+          zonesCleared: transitionedZoneState.zonesCleared,
+          zoneCheckpointRewardsClaimedByZone:
+            transitionedZoneState.zoneCheckpointRewardsClaimedByZone,
+          zoneManualOverride: transitionedZoneState.zoneManualOverride,
+          zoneOverlevelMoveThreshold: transitionedZoneState.zoneOverlevelMoveThreshold,
+        };
       });
 
       setRoster(newRoster);
@@ -1644,6 +2224,8 @@ const App = () => {
     applyMissionWipeCosts,
     gameSpeed,
     isPaused,
+    normalizeRosterZones,
+    processMissionRewards,
     pushNotification,
     resolveDungeonChainContinuation,
     registerDungeonClearMilestones,
@@ -1670,9 +2252,10 @@ const App = () => {
       return;
     }
 
-    rosterRef.current = updatedRoster;
+    const zoneReadyRoster = normalizeRosterZones(updatedRoster);
+    rosterRef.current = zoneReadyRoster;
     goldRef.current = updatedGold;
-    setRoster(updatedRoster);
+    setRoster(zoneReadyRoster);
     setGuildGold(updatedGold);
     pushNotification({
       type: "info",
@@ -1750,8 +2333,8 @@ const App = () => {
   const handleStartGuild = () => {
     const normalizedName = String(guildSetup.name || "").trim();
     if (!normalizedName) return;
-    const starterRoster = generateCharacters(
-      STARTING_GUILD_MEMBERS,
+    const starterRoster = normalizeRosterZones(
+      generateCharacters(STARTING_GUILD_MEMBERS, guildSetup.faction),
       guildSetup.faction,
     );
     const starterGold = STARTING_GUILD_GOLD;
@@ -1762,7 +2345,7 @@ const App = () => {
     goldRef.current = starterGold;
     setRoster(starterRoster);
     setActiveMissions([]);
-    setMissionList(INITIAL_MISSIONS);
+    setMissionList(getMissionListWithZones(INITIAL_MISSIONS.map(cloneMissionTemplate)));
     setGuildLog([]);
     setGuildGold(starterGold);
     setGuildSetup((prev) => ({ ...prev, name: normalizedName, hasStarted: true }));
@@ -1789,6 +2372,30 @@ const App = () => {
   const handleDeploy = (quest, ids, options = {}) => {
     const memberIds = Array.isArray(ids) ? ids.filter(Boolean) : [];
     if (!quest || memberIds.length === 0) return;
+    if (isZoneMission(quest)) {
+      const zone = getZoneById(quest.zoneId);
+      if (!zone) return;
+      if (!isZoneAccessibleForFaction(zone, guildSetupRef.current?.faction)) {
+        pushNotification({
+          type: "error",
+          title: "Zone Locked",
+          message: `${zone.name} is restricted to ${zone.faction}.`,
+        });
+        return;
+      }
+      setRoster((prev) => {
+        const withZoneState = normalizeRosterZones(prev);
+        const assigned = assignZoneToRoster(withZoneState, memberIds, zone.id);
+        rosterRef.current = assigned;
+        return assigned;
+      });
+      pushNotification({
+        type: "info",
+        title: "Zone Assigned",
+        message: `${memberIds.length} hero${memberIds.length === 1 ? "" : "es"} sent to ${zone.name}.`,
+      });
+      return;
+    }
     const recommendedPartySize = Math.max(
       1,
       Number(quest?.requiredPartySize) || (quest?.isRaid ? 40 : 5),
@@ -2065,7 +2672,7 @@ const App = () => {
       roleOrder: preset.roleOrder,
       guaranteedKeys: preset.guaranteedKeys,
     });
-    const updatedRoster = [...rosterRef.current, ...debugParty];
+    const updatedRoster = normalizeRosterZones([...rosterRef.current, ...debugParty], faction);
     rosterRef.current = updatedRoster;
     setRoster(updatedRoster);
     pushNotification({
@@ -2077,7 +2684,7 @@ const App = () => {
   };
 
   const handleDebugReloadDatabase = () => {
-    setMissionList(INITIAL_MISSIONS.map(cloneMissionTemplate));
+    setMissionList(getMissionListWithZones(INITIAL_MISSIONS.map(cloneMissionTemplate)));
     pushNotification({
       type: "info",
       title: "Database Reloaded",
@@ -2131,7 +2738,7 @@ const App = () => {
           loadedProgression,
         } = hydrateSessionData({
           payloadData,
-          initialMissions: INITIAL_MISSIONS,
+          initialMissions: getMissionListWithZones(INITIAL_MISSIONS),
           normalizeGuildProgress,
           normalizeGuildSetup,
           getGuildDerivedStats,
@@ -2142,15 +2749,20 @@ const App = () => {
           defaultGuildSetup: DEFAULT_GUILD_SETUP,
         });
 
+        const zoneReadyRoster = normalizeRosterZones(
+          normalizedRoster,
+          loadedGuildSetup?.faction || GUILD_FACTION.ALLIANCE,
+        );
+
         rewardedMissionIdsRef.current = new Set();
-        rosterRef.current = normalizedRoster;
+        rosterRef.current = zoneReadyRoster;
         missionsRef.current = loadedActiveMissions;
         goldRef.current = loadedGuildGold;
         guildProgressRef.current = loadedGuildProgress;
         guildSetupRef.current = loadedGuildSetup;
-        setRoster(normalizedRoster);
+        setRoster(zoneReadyRoster);
         setActiveMissions(loadedActiveMissions);
-        setMissionList(loadedMissionList);
+        setMissionList(getMissionListWithZones(loadedMissionList));
         setGuildLog(loadedGuildLog);
         setGuildGold(loadedGuildGold);
         setGuildProgress(loadedGuildProgress);
@@ -2643,6 +3255,7 @@ const App = () => {
         roster={roster}
         onDeploy={handleDeploy}
         missionList={missionList}
+        showLegacyQuests={SHOW_LEGACY_QUESTS}
         guildFaction={guildSetup.faction}
         dungeonSuccessBonus={guildFocusBonuses.dungeonSuccessBonus}
         guildExpMultiplier={

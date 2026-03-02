@@ -85,6 +85,14 @@ const GuildLogModal = ({ isOpen, onClose, logs }) => {
                   <span className="text-yellow-400">
                     Guild earned {log.amount} gold from {log.missionName}.
                   </span>
+                ) : log.type === "zone-gold" ? (
+                  <span className="text-yellow-400">
+                    Guild earned {log.amount} gold from {log.missionName} ({log.checkpoint}% checkpoint).
+                  </span>
+                ) : log.type === "zone-clear" ? (
+                  <span className="text-emerald-300">
+                    <strong>{log.characterName}</strong> cleared {log.missionName}.
+                  </span>
                 ) : log.type === "key" ? (
                   <span className="text-amber-300">
                     <strong>{log.characterName}</strong> obtained{" "}

@@ -120,6 +120,32 @@ export const GUILD_TALENT_CATEGORY_META = {
   },
 };
 
+export const GUILD_TALENT_TREE_TIERS = Object.freeze([
+  Object.freeze([
+    Object.freeze({ id: "wc1", talentKey: "rosterCap", targetRank: 1, label: "War Council I" }),
+    Object.freeze({ id: "dd1", talentKey: "expBoost", targetRank: 1, label: "Drill Doctrine I" }),
+    Object.freeze({ id: "ve1", talentKey: "goldCap", targetRank: 1, label: "Vault Expansion I" }),
+  ]),
+  Object.freeze([
+    Object.freeze({ id: "wc2", talentKey: "rosterCap", targetRank: 2, label: "War Council II" }),
+    Object.freeze({ id: "dd2", talentKey: "expBoost", targetRank: 2, label: "Drill Doctrine II" }),
+    Object.freeze({ id: "tn1", talentKey: "goldGain", targetRank: 1, label: "Trade Network I" }),
+  ]),
+  Object.freeze([
+    Object.freeze({ id: "wc3", talentKey: "rosterCap", targetRank: 3, label: "War Council III" }),
+    Object.freeze({ id: "dd3", talentKey: "expBoost", targetRank: 3, label: "Drill Doctrine III" }),
+    Object.freeze({ id: "ve2", talentKey: "goldCap", targetRank: 2, label: "Vault Expansion II" }),
+    Object.freeze({ id: "tn2", talentKey: "goldGain", targetRank: 2, label: "Trade Network II" }),
+  ]),
+  Object.freeze([
+    Object.freeze({ id: "ve3", talentKey: "goldCap", targetRank: 3, label: "Vault Expansion III" }),
+    Object.freeze({ id: "tn3", talentKey: "goldGain", targetRank: 3, label: "Trade Network III" }),
+  ]),
+  Object.freeze([
+    Object.freeze({ id: "ra1", talentKey: "raidAttunement", targetRank: 1, label: "Raid Attunement" }),
+  ]),
+]);
+
 const createLevelMilestoneMap = () =>
   Object.fromEntries(GUILD_LEVEL_MILESTONES.map((level) => [level, false]));
 
@@ -277,6 +303,148 @@ export const clampTalentRank = (talentKey, rank) => {
   const numericRank = Number(rank);
   if (!Number.isFinite(numericRank)) return 0;
   return Math.max(0, Math.min(talentDef.ranks.length, Math.floor(numericRank)));
+};
+
+const getTalentTitle = (talentKey) =>
+  GUILD_TALENT_DEFS[talentKey]?.title || talentKey;
+
+const hasTalentRank = (talents, talentKey, minRank) =>
+  clampTalentRank(talentKey, talents?.[talentKey] || 0) >= Math.max(1, Number(minRank) || 1);
+
+const getPrerequisiteStatusForUpgrade = (talents, talentKey, targetRank) => {
+  const blockers = [];
+  const addBlocker = (text) => {
+    if (!text) return;
+    blockers.push(text);
+  };
+
+  if (talentKey === "rosterCap" && targetRank === 2) {
+    if (!hasTalentRank(talents, "expBoost", 1)) {
+      addBlocker("Requires Drill Doctrine I.");
+    }
+  }
+  if (talentKey === "expBoost" && targetRank === 3) {
+    if (!hasTalentRank(talents, "rosterCap", 2)) {
+      addBlocker("Requires War Council II.");
+    }
+  }
+  if (talentKey === "goldGain" && targetRank === 1) {
+    if (!hasTalentRank(talents, "goldCap", 1)) {
+      addBlocker("Requires Vault Expansion I.");
+    }
+  }
+  if (talentKey === "goldCap" && targetRank === 2) {
+    if (!hasTalentRank(talents, "goldGain", 1)) {
+      addBlocker("Requires Trade Network I.");
+    }
+  }
+  if (talentKey === "goldCap" && targetRank === 3) {
+    if (!hasTalentRank(talents, "goldGain", 2)) {
+      addBlocker("Requires Trade Network II.");
+    }
+  }
+  if (talentKey === "goldGain" && targetRank === 3) {
+    if (!hasTalentRank(talents, "goldCap", 2)) {
+      addBlocker("Requires Vault Expansion II.");
+    }
+  }
+  if (talentKey === "raidAttunement" && targetRank === 1) {
+    const hasMidTier = hasTalentRank(talents, "rosterCap", 2) || hasTalentRank(talents, "expBoost", 2);
+    const hasDeepTier = hasTalentRank(talents, "rosterCap", 3) || hasTalentRank(talents, "expBoost", 3);
+    if (!hasMidTier) {
+      addBlocker("Requires War Council II or Drill Doctrine II.");
+    }
+    if (!hasDeepTier) {
+      addBlocker("Requires War Council III or Drill Doctrine III.");
+    }
+  }
+
+  return {
+    meets: blockers.length === 0,
+    blockers,
+  };
+};
+
+export const getGuildTalentUpgradeStatus = (guildProgress, talentKey) => {
+  const normalized = normalizeGuildProgress(guildProgress);
+  const talentDef = GUILD_TALENT_DEFS[talentKey];
+
+  if (!talentDef) {
+    return {
+      talent: null,
+      currentRank: 0,
+      nextRankData: null,
+      canUpgrade: false,
+      blockedByPrerequisite: false,
+      blockers: ["Unknown talent."],
+      missingCost: 0,
+    };
+  }
+
+  const currentRank = clampTalentRank(talentKey, normalized.talents[talentKey]);
+  const nextRankData = talentDef.ranks[currentRank] || null;
+  if (!nextRankData) {
+    return {
+      talent: talentDef,
+      currentRank,
+      nextRankData: null,
+      canUpgrade: false,
+      blockedByPrerequisite: false,
+      blockers: [],
+      missingCost: 0,
+    };
+  }
+
+  const targetRank = currentRank + 1;
+  const prerequisiteStatus = getPrerequisiteStatusForUpgrade(
+    normalized.talents,
+    talentKey,
+    targetRank,
+  );
+  const missingCost = Math.max(0, (nextRankData.cost || 0) - normalized.renownPoints);
+  const canUpgrade = prerequisiteStatus.meets && missingCost <= 0;
+
+  return {
+    talent: talentDef,
+    currentRank,
+    nextRankData,
+    canUpgrade,
+    blockedByPrerequisite: !prerequisiteStatus.meets,
+    blockers: prerequisiteStatus.blockers,
+    missingCost,
+  };
+};
+
+export const getGuildTalentTreeNodeStatus = (guildProgress, node) => {
+  const normalized = normalizeGuildProgress(guildProgress);
+  const talentDef = GUILD_TALENT_DEFS[node?.talentKey];
+  if (!talentDef) {
+    return {
+      unlocked: false,
+      isCurrentTarget: false,
+      canUnlockNow: false,
+      blockers: ["Unknown talent."],
+      cost: 0,
+      title: node?.label || "Talent",
+    };
+  }
+
+  const currentRank = clampTalentRank(node.talentKey, normalized.talents[node.talentKey]);
+  const unlocked = currentRank >= node.targetRank;
+  const isCurrentTarget = currentRank + 1 === node.targetRank;
+  const nextStatus = getGuildTalentUpgradeStatus(normalized, node.talentKey);
+  const canUnlockNow = isCurrentTarget && nextStatus.canUpgrade;
+  const blockers = isCurrentTarget ? nextStatus.blockers : [];
+  const cost = isCurrentTarget ? nextStatus.nextRankData?.cost || 0 : 0;
+
+  return {
+    unlocked,
+    isCurrentTarget,
+    canUnlockNow,
+    blockers,
+    cost,
+    title: node.label || `${getTalentTitle(node.talentKey)} ${node.targetRank}`,
+  };
 };
 
 export const getTalentCurrentValue = (guildProgress, talentKey) => {
@@ -706,39 +874,24 @@ export const applyDungeonWipeMilestone = (guildProgress) => {
 
 export const upgradeGuildTalent = (guildProgress, talentKey) => {
   const normalized = normalizeGuildProgress(guildProgress);
-  const talentDef = GUILD_TALENT_DEFS[talentKey];
+  const upgradeStatus = getGuildTalentUpgradeStatus(normalized, talentKey);
+  const talentDef = upgradeStatus.talent;
+  const nextRankData = upgradeStatus.nextRankData;
 
-  if (!talentDef) {
+  if (!talentDef || !nextRankData || !upgradeStatus.canUpgrade) {
     return {
       upgraded: false,
       guildProgress: guildProgress || normalized,
-      talent: null,
+      talent: talentDef || null,
       spentCost: 0,
       nextValue: 0,
+      blockedByPrerequisite: Boolean(upgradeStatus?.blockedByPrerequisite),
+      blockers: Array.isArray(upgradeStatus?.blockers) ? upgradeStatus.blockers : [],
+      missingCost: upgradeStatus?.missingCost || 0,
     };
   }
 
-  const currentRank = clampTalentRank(talentKey, normalized.talents[talentKey]);
-  if (currentRank >= talentDef.ranks.length) {
-    return {
-      upgraded: false,
-      guildProgress: guildProgress || normalized,
-      talent: talentDef,
-      spentCost: 0,
-      nextValue: 0,
-    };
-  }
-
-  const nextRankData = talentDef.ranks[currentRank];
-  if (!nextRankData || normalized.renownPoints < nextRankData.cost) {
-    return {
-      upgraded: false,
-      guildProgress: guildProgress || normalized,
-      talent: talentDef,
-      spentCost: 0,
-      nextValue: 0,
-    };
-  }
+  const currentRank = upgradeStatus.currentRank;
 
   return {
     upgraded: true,
@@ -753,6 +906,9 @@ export const upgradeGuildTalent = (guildProgress, talentKey) => {
     talent: talentDef,
     spentCost: nextRankData.cost,
     nextValue: nextRankData.value,
+    blockedByPrerequisite: false,
+    blockers: [],
+    missingCost: 0,
   };
 };
 

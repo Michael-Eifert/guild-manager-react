@@ -19,6 +19,7 @@ import {
   getSkillCap,
   getWowIconUrl,
 } from "../../utils";
+import { ZONE_DEFINITIONS, getZoneById } from "../../zones/zoneDefinitions";
 import BaseModal from "./BaseModal";
 
 const ItemSlot = ({ slotName, item }) => {
@@ -149,6 +150,52 @@ const DetailModal = ({
   const historyStart = currentPage * HISTORY_PAGE_SIZE;
   const historyEnd = historyStart + HISTORY_PAGE_SIZE;
   const visibleHistory = historyEntries.slice(historyStart, historyEnd);
+  const zoneProgressByIdRaw =
+    char?.zoneProgressById && typeof char.zoneProgressById === "object"
+      ? char.zoneProgressById
+      : {};
+  const zoneProgressById = Object.entries(zoneProgressByIdRaw).reduce((acc, [zoneId, progress]) => {
+    const zone = getZoneById(zoneId);
+    if (!zone) return acc;
+    acc[zone.id] = Math.max(0, Math.min(100, Number(progress) || 0));
+    return acc;
+  }, {});
+  const currentZone = getZoneById(char?.currentZoneId);
+  const currentZoneProgress = Math.max(
+    0,
+    Math.min(
+      100,
+      Number(
+        char?.currentZoneProgress ??
+          (currentZone ? zoneProgressById[currentZone.id] : 0) ??
+          0,
+      ) || 0,
+    ),
+  );
+  if (currentZone) {
+    zoneProgressById[currentZone.id] = Math.max(
+      zoneProgressById[currentZone.id] || 0,
+      currentZoneProgress,
+    );
+  }
+  const zonesClearedSet = new Set(
+    (Array.isArray(char?.zonesCleared) ? char.zonesCleared : [])
+      .map((zoneId) => String(zoneId || "").trim())
+      .filter(Boolean),
+  );
+  const zoneRows = [...ZONE_DEFINITIONS]
+    .filter((zone) => {
+      if (zone.id === currentZone?.id) return true;
+      if (zonesClearedSet.has(zone.id)) return true;
+      return (zoneProgressById[zone.id] || 0) > 0;
+    })
+    .sort((left, right) => {
+      if (left.id === currentZone?.id) return -1;
+      if (right.id === currentZone?.id) return 1;
+      if (left.minLevel !== right.minLevel) return left.minLevel - right.minLevel;
+      if (left.maxLevel !== right.maxLevel) return left.maxLevel - right.maxLevel;
+      return left.name.localeCompare(right.name);
+    });
 
   useEffect(() => {
     if (isOpen && char) {
@@ -218,6 +265,12 @@ const DetailModal = ({
             className={`flex-1 py-3 text-sm font-bold uppercase tracking-wider hover:bg-gray-700 ${tab === "profs" ? "text-white border-b-2 border-yellow-500 bg-gray-700" : "text-gray-500"}`}
           >
             Professions
+          </button>
+          <button
+            onClick={() => setTab("zones")}
+            className={`flex-1 py-3 text-sm font-bold uppercase tracking-wider hover:bg-gray-700 ${tab === "zones" ? "text-white border-b-2 border-emerald-500 bg-gray-700" : "text-gray-500"}`}
+          >
+            Zones
           </button>
           <button
             onClick={() => setTab("achievements")}
@@ -502,6 +555,83 @@ const DetailModal = ({
                   </div>
                 ))}
               </div>
+            </div>
+          )}
+
+          {tab === "zones" && (
+            <div className="space-y-4">
+              <div className="rounded border border-emerald-900/60 bg-emerald-950/10 px-3 py-2 text-xs text-emerald-100">
+                {currentZone ? (
+                  <div className="space-y-2">
+                    <div className="flex items-center justify-between gap-2">
+                      <span className="font-semibold">Current Zone</span>
+                      <span className="text-emerald-200">
+                        {currentZone.name} ({Math.floor(currentZoneProgress)}%)
+                      </span>
+                    </div>
+                    <div className="w-full h-2 rounded-full overflow-hidden bg-gray-800 border border-emerald-900/50">
+                      <div
+                        className="h-full bg-emerald-500"
+                        style={{ width: `${Math.floor(currentZoneProgress)}%` }}
+                      ></div>
+                    </div>
+                    <div className="text-[11px] text-emerald-200/80">
+                      Recommended: Lvl {currentZone.minLevel}-{currentZone.maxLevel}
+                    </div>
+                  </div>
+                ) : (
+                  <div className="text-gray-300">No active zone assigned.</div>
+                )}
+              </div>
+
+              {zoneRows.length === 0 ? (
+                <div className="text-xs text-gray-500 italic">
+                  No zone progress tracked yet.
+                </div>
+              ) : (
+                <div className="space-y-2">
+                  {zoneRows.map((zone) => {
+                    const progress = Math.max(
+                      0,
+                      Math.min(100, Number(zoneProgressById[zone.id] || 0)),
+                    );
+                    const isCleared = zonesClearedSet.has(zone.id);
+                    const isCurrent = zone.id === currentZone?.id;
+                    return (
+                      <div
+                        key={`${char.id}-zone-${zone.id}`}
+                        className={`rounded border p-2 ${
+                          isCurrent
+                            ? "border-emerald-700 bg-emerald-950/20"
+                            : isCleared
+                              ? "border-yellow-700 bg-yellow-950/20"
+                              : "border-gray-700 bg-gray-900/40"
+                        }`}
+                      >
+                        <div className="flex items-center justify-between gap-2">
+                          <span className="text-xs font-semibold text-gray-100">{zone.name}</span>
+                          <span className="text-[11px] text-gray-300">
+                            Lvl {zone.minLevel}-{zone.maxLevel}
+                          </span>
+                        </div>
+                        <div className="mt-1 w-full h-1.5 rounded-full overflow-hidden bg-gray-800 border border-gray-700">
+                          <div
+                            className={`h-full ${isCleared ? "bg-yellow-500" : "bg-emerald-500"}`}
+                            style={{ width: `${Math.floor(progress)}%` }}
+                          ></div>
+                        </div>
+                        <div className="mt-1 text-[11px] text-gray-400">
+                          {isCurrent
+                            ? `In progress: ${Math.floor(progress)}%`
+                            : isCleared
+                              ? "Cleared"
+                              : `${Math.floor(progress)}% explored`}
+                        </div>
+                      </div>
+                    );
+                  })}
+                </div>
+              )}
             </div>
           )}
 

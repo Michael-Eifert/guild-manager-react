@@ -153,6 +153,14 @@ const DUNGEON_MISSION_DEFINITIONS = [
       ],
       endboss: [{ quality: 3, chance: 100 }],
     },
+    dungeonBosses: [
+      "Roogug",
+      "Jargba",
+      "Overlord Ramtusk",
+      "Agathelos",
+      "Earthcaller Halmgar",
+      "Charlga Razorflank",
+    ],
     elite: true,
   },
   {

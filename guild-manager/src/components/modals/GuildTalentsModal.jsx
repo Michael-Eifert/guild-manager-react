@@ -1,11 +1,13 @@
-import React, { useState } from "react";
+import React from "react";
 import BaseModal from "./BaseModal";
 import {
   GUILD_POINT_LABEL,
   GUILD_TALENT_DEFS,
-  GUILD_TALENT_CATEGORY_META,
+  GUILD_TALENT_TREE_TIERS,
   buildGuildAchievementEntries,
   clampTalentRank,
+  getGuildTalentUpgradeStatus,
+  getGuildTalentTreeNodeStatus,
 } from "../../guildProgression";
 
 const GuildTalentsModal = ({
@@ -15,26 +17,17 @@ const GuildTalentsModal = ({
   guildDerivedStats,
   onUpgradeTalent,
 }) => {
-  const [category, setCategory] = useState("roster");
-  const handleClose = () => {
-    setCategory("roster");
-    onClose();
-  };
-
   if (!isOpen) return null;
 
   const achievementEntries = buildGuildAchievementEntries(guildProgress);
   const unlockedAchievements = achievementEntries.filter(
     (achievement) => achievement.unlocked,
   ).length;
-  const talentDefs = Object.values(GUILD_TALENT_DEFS).filter(
-    (talent) => talent.category === category,
-  );
 
   return (
     <BaseModal
       isOpen={isOpen}
-      onClose={handleClose}
+      onClose={onClose}
       overlayClassName="bg-black/85 backdrop-blur-sm p-0 md:p-4"
       panelClassName="wow-modal-panel bg-gray-900 border-x-0 border-y-0 md:border-2 border-amber-800 rounded-none md:rounded-lg w-full max-w-4xl h-full md:h-[80vh] flex flex-col relative shadow-2xl"
     >
@@ -52,27 +45,11 @@ const GuildTalentsModal = ({
           </div>
         </div>
         <button
-          onClick={handleClose}
+          onClick={onClose}
           className="text-gray-500 hover:text-white text-3xl px-2"
         >
           &times;
         </button>
-      </div>
-
-      <div className="px-4 py-3 border-b border-gray-700 bg-gray-800/80 flex flex-wrap gap-2">
-        {Object.entries(GUILD_TALENT_CATEGORY_META).map(([key, meta]) => (
-          <button
-            key={key}
-            onClick={() => setCategory(key)}
-            className={`px-3 py-1 text-xs rounded border transition-colors ${
-              category === key
-                ? "border-amber-500 bg-amber-900/40 text-amber-200"
-                : "border-gray-600 bg-gray-800 text-gray-300 hover:bg-gray-700"
-            }`}
-          >
-            {meta.title}
-          </button>
-        ))}
       </div>
 
       <div className="flex-1 overflow-y-auto custom-scrollbar p-4 space-y-4">
@@ -121,71 +98,102 @@ const GuildTalentsModal = ({
           </div>
         </div>
 
-        <div className="text-xs text-gray-400">
-          {GUILD_TALENT_CATEGORY_META[category].subtitle}
-        </div>
+        <div className="rounded border border-gray-700 bg-gray-800/60 p-3 space-y-3">
+          <div className="flex items-center justify-between">
+            <h3 className="text-xs uppercase tracking-wider text-amber-200 font-bold">
+              Guild Talent Tree
+            </h3>
+            <span className="text-[11px] text-gray-400">
+              Raid path is independent from economy path
+            </span>
+          </div>
 
-        <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-          {talentDefs.map((talent) => {
-            const rank = clampTalentRank(talent.key, guildProgress.talents[talent.key]);
-            const currentValue = rank > 0 ? talent.ranks[rank - 1].value : 0;
-            const nextRank = talent.ranks[rank];
-            const canUpgrade =
-              Boolean(nextRank) &&
-              guildProgress.renownPoints >= (nextRank?.cost || 0);
-
-            return (
-              <div
-                key={talent.key}
-                className="rounded border border-gray-700 bg-gray-800/70 p-4 space-y-3"
+          <div className="space-y-3">
+            {GUILD_TALENT_TREE_TIERS.map((tierNodes, tierIndex) => (
+              <section
+                key={`talent-tier-${tierIndex + 1}`}
+                className="rounded border border-gray-700 bg-gray-900/40 p-2"
               >
-                <div>
-                  <h3 className="text-sm font-bold text-amber-200">{talent.title}</h3>
-                  <p className="text-xs text-gray-400 mt-1">{talent.description}</p>
+                <div className="text-[11px] uppercase tracking-wide text-gray-400 font-bold mb-2">
+                  Tier {tierIndex + 1}
                 </div>
+                <div
+                  className="grid gap-2"
+                  style={{
+                    gridTemplateColumns: `repeat(${Math.max(1, tierNodes.length)}, minmax(0, 1fr))`,
+                  }}
+                >
+                  {tierNodes.map((node) => {
+                    const talent = GUILD_TALENT_DEFS[node.talentKey];
+                    const currentRank = clampTalentRank(
+                      node.talentKey,
+                      guildProgress?.talents?.[node.talentKey],
+                    );
+                    const nodeStatus = getGuildTalentTreeNodeStatus(guildProgress, node);
+                    const upgradeStatus = getGuildTalentUpgradeStatus(
+                      guildProgress,
+                      node.talentKey,
+                    );
+                    const targetRankData = talent?.ranks?.[node.targetRank - 1];
+                    const targetValue = targetRankData?.displayValue ?? targetRankData?.value ?? 0;
 
-                <div className="text-xs text-gray-300">
-                  Current:{" "}
-                  <span className="text-white font-bold">
-                    +{currentValue} {talent.suffix}
-                  </span>
-                </div>
+                    const cardClass = nodeStatus.unlocked
+                      ? "border-emerald-700 bg-emerald-950/35"
+                      : nodeStatus.isCurrentTarget && nodeStatus.canUnlockNow
+                        ? "border-amber-700 bg-amber-950/35"
+                        : nodeStatus.isCurrentTarget
+                          ? "border-red-800 bg-red-950/25"
+                          : "border-gray-700 bg-gray-900/60";
 
-                <div className="flex items-center gap-2">
-                  {talent.ranks.map((rankData, index) => {
-                    const achieved = index < rank;
-                    const next = index === rank;
                     return (
                       <div
-                        key={`${talent.key}-rank-${index + 1}`}
-                        className={`flex-1 rounded border px-2 py-2 text-center text-[11px] ${
-                          achieved
-                            ? "border-emerald-700 bg-emerald-950/40 text-emerald-300"
-                            : next
-                              ? "border-amber-700 bg-amber-950/40 text-amber-300"
-                              : "border-gray-700 bg-gray-900/70 text-gray-500"
-                        }`}
+                        key={node.id}
+                        className={`rounded border p-2 text-xs space-y-2 ${cardClass}`}
                       >
-                        <div className="font-bold">T{index + 1}</div>
-                        <div>+{rankData.displayValue ?? rankData.value}</div>
-                        <div>{rankData.cost} pt</div>
+                        <div className="font-bold text-amber-100 truncate">{node.label}</div>
+                        <div className="text-[11px] text-gray-300">
+                          {talent?.title} • Rank {node.targetRank}
+                        </div>
+                        <div className="text-[11px] text-gray-300">
+                          +{targetValue} {talent?.suffix}
+                        </div>
+
+                        {nodeStatus.unlocked ? (
+                          <div className="text-[11px] text-emerald-300 font-semibold">Unlocked</div>
+                        ) : nodeStatus.isCurrentTarget ? (
+                          <div className="space-y-1">
+                            {nodeStatus.blockers.length > 0 && (
+                              <div className="text-[11px] text-red-300">
+                                {nodeStatus.blockers[0]}
+                              </div>
+                            )}
+                            {upgradeStatus.missingCost > 0 && (
+                              <div className="text-[11px] text-gray-300">
+                                Need {upgradeStatus.missingCost} more {GUILD_POINT_LABEL}.
+                              </div>
+                            )}
+                            <button
+                              onClick={() => onUpgradeTalent(node.talentKey)}
+                              disabled={!nodeStatus.canUnlockNow}
+                              className="w-full px-2 py-1 rounded border border-amber-700 bg-amber-900/40 text-amber-100 text-[11px] font-bold disabled:opacity-40 disabled:cursor-not-allowed hover:bg-amber-800/50"
+                            >
+                              Unlock ({nodeStatus.cost} {GUILD_POINT_LABEL})
+                            </button>
+                          </div>
+                        ) : (
+                          <div className="text-[11px] text-gray-500">
+                            {currentRank + 1 < node.targetRank
+                              ? "Requires previous rank."
+                              : "Locked by prerequisites."}
+                          </div>
+                        )}
                       </div>
                     );
                   })}
                 </div>
-
-                <button
-                  onClick={() => onUpgradeTalent(talent.key)}
-                  disabled={!nextRank || !canUpgrade}
-                  className="w-full px-3 py-2 rounded border border-amber-700 bg-amber-900/40 text-amber-100 text-xs font-bold disabled:opacity-40 disabled:cursor-not-allowed hover:bg-amber-800/50"
-                >
-                  {nextRank
-                    ? `Upgrade (${nextRank.cost} ${GUILD_POINT_LABEL})`
-                    : "Max Rank"}
-                </button>
-              </div>
-            );
-          })}
+              </section>
+            ))}
+          </div>
         </div>
       </div>
     </BaseModal>
