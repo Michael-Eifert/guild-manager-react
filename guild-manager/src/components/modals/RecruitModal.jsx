@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from "react";
+import React, { useEffect, useMemo, useState } from "react";
 import { DB_CLASSES, GUILD_FACTION } from "../../constants";
 import { generateCharacters, getRoleIcon, getRacePortraitUrl, getWowIconUrl } from "../../utils";
 import BaseModal from "./BaseModal";
@@ -12,11 +12,30 @@ const RecruitModal = ({
   affordableSlots,
   recruitCostGold,
   guildFaction = GUILD_FACTION.ALLIANCE,
+  existingNames = [],
 }) => {
   const [candidates, setCandidates] = useState([]);
   const [isLoading, setIsLoading] = useState(true);
   const [selectedIds, setSelectedIds] = useState([]);
   const [limitWarning, setLimitWarning] = useState(false);
+  const selectedRecruitCostGold = Math.max(0, selectedIds.length - 1) * recruitCostGold;
+  const existingNamesSignature = useMemo(() => {
+    const source = Array.isArray(existingNames) ? existingNames : [];
+    const normalized = [...new Set(
+      source
+        .map((name) => String(name || "").trim())
+        .filter(Boolean),
+    )].sort((left, right) => left.localeCompare(right));
+    return JSON.stringify(normalized);
+  }, [existingNames]);
+  const stableExistingNames = useMemo(() => {
+    try {
+      const parsed = JSON.parse(existingNamesSignature);
+      return Array.isArray(parsed) ? parsed : [];
+    } catch {
+      return [];
+    }
+  }, [existingNamesSignature]);
 
   useEffect(() => {
     if (!isOpen) return undefined;
@@ -25,11 +44,13 @@ const RecruitModal = ({
     setSelectedIds([]);
     setLimitWarning(false);
     const timer = setTimeout(() => {
-      setCandidates(generateCharacters(3, guildFaction));
+      setCandidates(
+        generateCharacters(3, guildFaction, { usedNames: stableExistingNames }),
+      );
       setIsLoading(false);
     }, 1000);
     return () => clearTimeout(timer);
-  }, [guildFaction, isOpen]);
+  }, [guildFaction, isOpen, stableExistingNames]);
 
   const toggleCandidate = (candidateId) => {
     setSelectedIds((prev) => {
@@ -138,17 +159,13 @@ const RecruitModal = ({
                 <div className="text-xs text-red-400 border border-red-900/60 bg-red-950/30 px-3 py-1 rounded">
                   Member limit reached. Dismiss heroes to recruit more.
                 </div>
-              ) : affordableSlots <= 0 ? (
-                <div className="text-xs text-yellow-300 border border-yellow-900/60 bg-yellow-950/30 px-3 py-1 rounded">
-                  Not enough gold. Recruiting costs {recruitCostGold}g per hero.
-                </div>
               ) : limitWarning ? (
                 <div className="text-xs text-yellow-300 border border-yellow-900/60 bg-yellow-950/30 px-3 py-1 rounded">
                   Selection limit reached. Max selectable right now: {availableSlots}.
                 </div>
               ) : (
                 <div className="text-xs text-gray-500">
-                  Open slots: {openSlots} • Affordable now: {affordableSlots}
+                  Open slots: {openSlots} • First recruit free • Additional affordable: {affordableSlots}
                 </div>
               )}
               <div className="flex flex-col md:flex-row items-center justify-center gap-3">
@@ -157,7 +174,7 @@ const RecruitModal = ({
                   disabled={selectedIds.length === 0 || availableSlots <= 0}
                   className="px-4 py-2 border border-green-700 rounded text-xs uppercase tracking-wider text-green-300 hover:bg-green-900/40 disabled:opacity-50 disabled:cursor-not-allowed"
                 >
-                  Recruit Selected ({selectedIds.length}) • {selectedIds.length * recruitCostGold}g
+                  Recruit Selected ({selectedIds.length}) • {selectedRecruitCostGold}g
                 </button>
                 <button
                   onClick={onClose}

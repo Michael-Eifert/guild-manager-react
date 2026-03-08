@@ -1,4 +1,4 @@
-import React, { useCallback, useEffect, useMemo, useState } from "react";
+import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { CONFIG, DB_CLASSES, DB_ITEMS, GUILD_FACTION } from "../../constants";
 import {
   getCharacterAverageItemLevel,
@@ -374,6 +374,8 @@ const MissionModal = ({
   const [selectedChainMissionIds, setSelectedChainMissionIds] = useState([]);
   const [selectedZoneEliteQuestId, setSelectedZoneEliteQuestId] = useState(null);
   const [isLootAccordionOpen, setIsLootAccordionOpen] = useState(false);
+  const [isAutoSelectMenuOpen, setIsAutoSelectMenuOpen] = useState(false);
+  const autoSelectMenuRef = useRef(null);
   const categoryFilterOptions = useMemo(() => {
     const options = ["all"];
     options.push("zone", "dungeon", "raid");
@@ -417,7 +419,22 @@ const MissionModal = ({
     setSelectedChainMissionIds([]);
     setSelectedZoneEliteQuestId(null);
     setIsLootAccordionOpen(false);
+    setIsAutoSelectMenuOpen(false);
   }, [isOpen]);
+
+  useEffect(() => {
+    if (!isAutoSelectMenuOpen) return undefined;
+    const handlePointerDown = (event) => {
+      if (autoSelectMenuRef.current?.contains(event.target)) return;
+      setIsAutoSelectMenuOpen(false);
+    };
+    document.addEventListener("mousedown", handlePointerDown);
+    document.addEventListener("touchstart", handlePointerDown);
+    return () => {
+      document.removeEventListener("mousedown", handlePointerDown);
+      document.removeEventListener("touchstart", handlePointerDown);
+    };
+  }, [isAutoSelectMenuOpen]);
 
   useEffect(() => {
     if (selectedCategory === "raid" && !isRaidUnlocked) {
@@ -728,6 +745,7 @@ const MissionModal = ({
   const missionPreview = activePrepMission
     ? getAdjustedMissionPreview(activePrepMission, selectedPartyMembers)
     : null;
+  const shouldShowTacticalOdds = Boolean(missionPreview) && !isSelectedZoneMission;
   const selectedPartyRoleCounts = selectedPartyMembers.reduce(
     (acc, member) => {
       const role = member?.role;
@@ -1501,7 +1519,9 @@ const MissionModal = ({
   };
 
   const prepSummaryHeightClass =
-    selectedQuest?.type === "zone" ? "md:max-h-[36vh]" : "md:max-h-[44vh]";
+    selectedQuest?.type === "zone"
+      ? "max-h-[34vh] md:max-h-[36vh]"
+      : "max-h-[38vh] md:max-h-[44vh]";
 
   return (
     <BaseModal
@@ -1665,12 +1685,12 @@ const MissionModal = ({
         </div>
       )}
       {view === "prep" && selectedQuest && (
-        <div className="flex-1 flex flex-col min-h-0 bg-gray-800 overflow-y-auto md:overflow-hidden">
+        <div className="flex-1 flex flex-col min-h-0 bg-gray-800 overflow-hidden">
           <div
-            className={`bg-gray-900 p-4 md:p-6 border-b border-gray-700 flex-none shadow-md ${prepSummaryHeightClass} md:overflow-y-auto custom-scrollbar`}
+            className={`bg-gray-900 p-4 md:p-6 border-b border-gray-700 flex-none shadow-md ${prepSummaryHeightClass} overflow-y-auto custom-scrollbar`}
           >
-            <div className="flex justify-between items-start mb-2">
-              <div>
+            <div className="flex justify-between items-start gap-3 md:gap-6 mb-2">
+              <div className="min-w-0 flex-1">
                 <h2
                   className={`text-xl md:text-2xl fantasy-font ${selectedQuest.elite ? "text-yellow-500" : "text-white"}`}
                 >
@@ -1684,6 +1704,47 @@ const MissionModal = ({
                 <div className="text-xs text-gray-400 mt-1">
                   {getMissionMetaText(selectedQuest)}
                 </div>
+                {shouldShowTacticalOdds && (
+                  <div
+                    className={`mt-2 rounded border px-3 py-2 ${
+                      selectedPartyMembers.length === 0
+                        ? "border-gray-700 bg-gray-900/70"
+                        : missionPreview.successChance >= 75
+                          ? "border-emerald-700/80 bg-emerald-950/20"
+                          : missionPreview.successChance >= 45
+                            ? "border-amber-700/80 bg-amber-950/20"
+                            : "border-rose-700/80 bg-rose-950/20"
+                    }`}
+                  >
+                    <div className="text-[10px] uppercase tracking-wider text-gray-400 font-bold">
+                      Mission Outcome
+                    </div>
+                    {selectedPartyMembers.length === 0 ? (
+                      <div className="mt-1 text-xs text-gray-300">
+                        Select heroes to preview success and fail chance.
+                      </div>
+                    ) : (
+                      <div className="mt-1 grid grid-cols-2 gap-2">
+                        <div className="rounded border border-emerald-800 bg-emerald-950/35 px-2 py-1.5">
+                          <div className="text-[10px] uppercase tracking-wide text-emerald-200/80">
+                            Success
+                          </div>
+                          <div className="text-lg md:text-xl font-bold text-emerald-200 leading-tight">
+                            {missionPreview.successChance}%
+                          </div>
+                        </div>
+                        <div className="rounded border border-rose-800 bg-rose-950/35 px-2 py-1.5">
+                          <div className="text-[10px] uppercase tracking-wide text-rose-200/80">
+                            Fail
+                          </div>
+                          <div className="text-lg md:text-xl font-bold text-rose-200 leading-tight">
+                            {missionPreview.failChance}%
+                          </div>
+                        </div>
+                      </div>
+                    )}
+                  </div>
+                )}
                 <p className="text-xs text-amber-100/80 mt-2 max-w-2xl leading-relaxed">
                   {selectedQuest.type === "dungeon"
                     ? getDungeonBriefingText(selectedQuest)
@@ -2063,19 +2124,8 @@ const MissionModal = ({
                         Key holder detected in squad.
                       </span>
                     )}
-                  {missionPreview && !isSelectedZoneMission && selectedPartyMembers.length === 0 && (
-                    <span className="px-2 py-1 rounded border border-gray-700 bg-gray-800 text-gray-300">
-                      Select heroes to calculate success chance
-                    </span>
-                  )}
                   {missionPreview && !isSelectedZoneMission && selectedPartyMembers.length > 0 && (
                     <>
-                      <span className="px-2 py-1 rounded border border-green-800 bg-green-950/30 text-green-300">
-                        Success: {missionPreview.successChance}%
-                      </span>
-                      <span className="px-2 py-1 rounded border border-red-900 bg-red-950/30 text-red-300">
-                        Fail: {missionPreview.failChance}%
-                      </span>
                       <span className="px-2 py-1 rounded border border-gray-700 bg-gray-800 text-gray-300">
                         Team Avg Lvl: {missionPreview.averagePartyLevel.toFixed(1)}
                       </span>
@@ -2140,27 +2190,48 @@ const MissionModal = ({
                   )}
                 </div>
               </div>
-              <div className="text-right flex-none">
+              <div className="text-right flex-none md:pl-2">
                 <div className="text-xs md:text-sm text-gray-400 mb-1">Squad</div>
                 <div className="text-xl font-bold text-white">
                   {isSelectedZoneMission
                     ? `${party.length} selected`
                     : `${party.length}/${selectedMissionPartySize}`}
                 </div>
-                <select
-                  value={autoSelectMode}
-                  onChange={(event) => {
-                    setAutoSelectMode(event.target.value);
-                    setAutoAssignSummary("");
-                  }}
-                  className="mt-2 w-full bg-gray-800 border border-gray-600 rounded px-2 py-1 text-[11px] text-gray-200 focus:outline-none focus:border-emerald-500"
-                >
-                  {AUTO_SELECT_MODE_OPTIONS.map((option) => (
-                    <option key={option.value} value={option.value}>
-                      {option.label}
-                    </option>
-                  ))}
-                </select>
+                <div className="relative mt-2" ref={autoSelectMenuRef}>
+                  <button
+                    type="button"
+                    onClick={() => setIsAutoSelectMenuOpen((prev) => !prev)}
+                    className="w-full bg-gray-800 border border-gray-600 rounded px-2 py-1 text-xs text-gray-200 focus:outline-none focus:border-emerald-500 inline-flex items-center justify-between gap-2"
+                  >
+                    <span>{AUTO_SELECT_MODE_LABEL[autoSelectMode]}</span>
+                    <span className="text-gray-400">{isAutoSelectMenuOpen ? "▴" : "▾"}</span>
+                  </button>
+                  {isAutoSelectMenuOpen && (
+                    <div className="absolute left-0 top-full mt-1 w-full min-w-[148px] rounded border border-gray-600 bg-gray-900 shadow-2xl z-30 overflow-hidden">
+                      {AUTO_SELECT_MODE_OPTIONS.map((option) => {
+                        const isSelected = option.value === autoSelectMode;
+                        return (
+                          <button
+                            key={option.value}
+                            type="button"
+                            onClick={() => {
+                              setAutoSelectMode(option.value);
+                              setAutoAssignSummary("");
+                              setIsAutoSelectMenuOpen(false);
+                            }}
+                            className={`w-full text-left px-2 py-1.5 text-xs transition-colors ${
+                              isSelected
+                                ? "bg-emerald-900/45 text-emerald-100 font-semibold"
+                                : "text-gray-200 hover:bg-gray-800"
+                            }`}
+                          >
+                            {option.label}
+                          </button>
+                        );
+                      })}
+                    </div>
+                  )}
+                </div>
                 <div className="mt-2 rounded border border-gray-700 bg-gray-900/60 px-2 py-1 text-[10px] text-left text-gray-300">
                   <div className="text-gray-400 uppercase tracking-wide mb-0.5">
                     Selected Roles
@@ -2262,7 +2333,7 @@ const MissionModal = ({
               </span>
             </div>
           </div>
-          <div className="flex-1 min-h-0 md:min-h-[240px] overflow-visible md:overflow-y-auto p-4 bg-gray-800 grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-3 custom-scrollbar">
+          <div className="flex-1 min-h-0 md:min-h-[240px] overflow-y-auto p-4 bg-gray-800 grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-3 custom-scrollbar">
             {tacticalCharacterRoster.length === 0 && (
               <div className="text-center text-gray-500 italic py-10 col-span-full">
                 No heroes match this tactical filter.
@@ -2348,7 +2419,7 @@ const MissionModal = ({
               );
             })}
           </div>
-          <div className="p-4 border-t border-gray-700 bg-gray-900 flex justify-between items-center flex-none">
+          <div className="p-4 border-t border-gray-700 bg-gray-900 flex justify-between items-center flex-none relative z-10">
             <button
               onClick={() => setView("list")}
               className="text-gray-400 hover:text-white text-sm md:text-base"

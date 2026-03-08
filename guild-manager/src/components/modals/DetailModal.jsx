@@ -65,26 +65,13 @@ const DetailModal = ({
   onDismiss,
   onLevelChange,
   onRoleChange,
-  onUpdateBackstory,
-  onGenerateBackstory,
   onProfChange,
   onModeChange,
 }) => {
   const [tab, setTab] = useState("stats");
-  const [isGenerating, setIsGenerating] = useState(false);
   const [historyPage, setHistoryPage] = useState(0);
   const HISTORY_PAGE_SIZE = 8;
   const classData = DB_CLASSES[char?.charClass];
-
-  const handleGenBackstory = async () => {
-    if (!char) return;
-    setIsGenerating(true);
-    const story = await onGenerateBackstory(char);
-    if (story) {
-      onUpdateBackstory(char.id, story);
-    }
-    setIsGenerating(false);
-  };
 
   const hardCap = getSkillCap(char?.level || 1);
   const averageItemLevel = getCharacterAverageItemLevel(char);
@@ -212,45 +199,61 @@ const DetailModal = ({
       overlayClassName="bg-black/85 backdrop-blur-sm p-0 md:p-4"
       panelClassName="wow-modal-panel bg-gray-900 border-x-0 border-y-0 md:border-2 border-gray-600 rounded-none md:rounded-lg w-full max-w-4xl h-full md:h-[80vh] flex flex-col relative shadow-2xl"
     >
-        <div className="p-4 border-b border-gray-700 flex justify-between items-center bg-gray-900 z-10">
-          <div className="flex items-center gap-3 min-w-0">
-            <img
-              src={getRacePortraitUrl(char.race, char.gender)}
-              alt={`${char.race} ${char.gender}`}
-              className="w-12 h-12 rounded border border-gray-600 object-cover flex-none"
-              onError={(event) => {
-                event.currentTarget.src = getWowIconUrl("inv_misc_questionmark");
-              }}
-            />
-            <div className="min-w-0">
-              <h2 className="text-xl md:text-2xl font-bold text-white flex items-center gap-2">
-                {char.name}{" "}
-                <span className="text-lg text-gray-500">{char.gender === "Male" ? "♂️" : "♀️"}</span>
-              </h2>
-              <div className="text-sm text-gray-400">
-                {char.race}{" "}
-                <span className="inline-flex items-center gap-1" style={{ color: classData.color }}>
-                  {classData.icon && (
-                    <img
-                      src={classData.icon}
-                      alt={char.charClass}
-                      className="w-4 h-4 rounded-sm border border-gray-600"
-                      onError={(e) => {
-                        e.currentTarget.style.display = "none";
-                      }}
-                    />
-                  )}
-                  {char.charClass}
-                </span>
-              </div>
-              <div className="text-xs text-gray-500 mt-1">
-                Can wear: {getClassArmorText(char.charClass, char.level)}
+        <div className="p-4 border-b border-gray-700 bg-gray-900 z-10">
+          <div className="flex justify-between items-start gap-3">
+            <div className="flex items-center gap-3 min-w-0">
+              <img
+                src={getRacePortraitUrl(char.race, char.gender)}
+                alt={`${char.race} ${char.gender}`}
+                className="w-12 h-12 rounded border border-gray-600 object-cover flex-none"
+                onError={(event) => {
+                  event.currentTarget.src = getWowIconUrl("inv_misc_questionmark");
+                }}
+              />
+              <div className="min-w-0">
+                <h2 className="text-xl md:text-2xl font-bold text-white flex items-center gap-2">
+                  {char.name}{" "}
+                  <span className="text-lg text-gray-500">{char.gender === "Male" ? "♂️" : "♀️"}</span>
+                </h2>
+                <div className="text-sm text-gray-400">
+                  {char.race}{" "}
+                  <span className="inline-flex items-center gap-1" style={{ color: classData.color }}>
+                    {classData.icon && (
+                      <img
+                        src={classData.icon}
+                        alt={char.charClass}
+                        className="w-4 h-4 rounded-sm border border-gray-600"
+                        onError={(e) => {
+                          e.currentTarget.style.display = "none";
+                        }}
+                      />
+                    )}
+                    {char.charClass}
+                  </span>
+                </div>
+                <div className="text-xs text-gray-500 mt-1">
+                  Can wear: {getClassArmorText(char.charClass, char.level)}
+                </div>
               </div>
             </div>
+            <button onClick={onClose} className="text-gray-500 hover:text-white text-3xl px-2">
+              &times;
+            </button>
           </div>
-          <button onClick={onClose} className="text-gray-500 hover:text-white text-3xl px-2">
-            &times;
-          </button>
+
+          <div className="mt-3 flex justify-center">
+            <div className="inline-flex flex-wrap justify-center gap-1">
+              {classData.allowedRoles.map((role) => (
+                <button
+                  key={role}
+                  onClick={() => onRoleChange(char.id, role)}
+                  className={`px-3 py-1.5 text-xs md:text-sm uppercase rounded border transition-colors ${char.role === role ? "bg-blue-600 border-blue-400 text-white" : "bg-gray-800 border-gray-600 text-gray-400 hover:bg-gray-700"}`}
+                >
+                  {getRoleIcon(role)} {role}
+                </button>
+              ))}
+            </div>
+          </div>
         </div>
 
         <div className="flex border-b border-gray-700 bg-gray-800">
@@ -285,25 +288,12 @@ const DetailModal = ({
             <div className="space-y-6">
               <div className="flex flex-col sm:flex-row gap-6">
                 <div className="w-full">
-                  <div className="flex justify-between items-start gap-2 mb-2">
-                    <div>
-                      <div className="text-base md:text-lg font-bold text-gray-200 flex items-center gap-2">
-                        <span>Level {char.level}</span>
-                        <span className="inline-flex text-xs px-2 py-1 rounded whitespace-nowrap border border-amber-700 bg-amber-950/35 text-amber-200 font-bold">
-                          iLvl {averageItemLevel.toFixed(1)}
-                        </span>
-                      </div>
-                    </div>
-                    <div className="flex gap-1">
-                      {classData.allowedRoles.map((role) => (
-                        <button
-                          key={role}
-                          onClick={() => onRoleChange(char.id, role)}
-                          className={`px-3 py-1.5 text-xs md:text-sm uppercase rounded border transition-colors ${char.role === role ? "bg-blue-600 border-blue-400 text-white" : "bg-gray-800 border-gray-600 text-gray-400 hover:bg-gray-700"}`}
-                        >
-                          {getRoleIcon(role)} {role}
-                        </button>
-                      ))}
+                  <div className="mb-2">
+                    <div className="text-base md:text-lg font-bold text-gray-200 flex items-center gap-2">
+                      <span>Level {char.level}</span>
+                      <span className="inline-flex text-xs px-2 py-1 rounded whitespace-nowrap border border-amber-700 bg-amber-950/35 text-amber-200 font-bold">
+                        iLvl {averageItemLevel.toFixed(1)}
+                      </span>
                     </div>
                   </div>
                   <div className="w-full bg-gray-700 h-4 rounded-full overflow-hidden border border-gray-600">
@@ -339,23 +329,6 @@ const DetailModal = ({
                 {Object.keys(char.equipment).map((slot) => (
                   <ItemSlot key={slot} slotName={slot} item={char.equipment[slot]} />
                 ))}
-              </div>
-
-              <div className="mt-4 bg-gray-800/50 p-3 rounded border border-purple-900/50 relative">
-                <h3 className="text-[10px] text-purple-400 uppercase tracking-widest mb-1 font-bold">
-                  Biography
-                </h3>
-                {char.backstory ? (
-                  <p className="text-sm text-gray-300 italic">"{char.backstory}"</p>
-                ) : (
-                  <button
-                    onClick={handleGenBackstory}
-                    disabled={isGenerating}
-                    className="text-xs bg-purple-900/40 hover:bg-purple-800 text-purple-300 border border-purple-700 px-2 py-1 rounded transition-colors"
-                  >
-                    {isGenerating ? "..." : "✨ Uncover Past"}
-                  </button>
-                )}
               </div>
 
               <div className="mt-4 bg-gray-800/50 p-3 rounded border border-amber-900/50">

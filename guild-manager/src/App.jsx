@@ -128,7 +128,7 @@ const callGemini = async (prompt, isJson = false) => {
 const FAILED_MISSION_EXP_FACTOR = 0.2;
 const LEVELING_TICK_EXP_MULTIPLIER = 1;
 const ENABLE_ZONE_QUESTING = true;
-const SHOW_LEGACY_QUESTS = true;
+const SHOW_LEGACY_QUESTS = false;
 const GUILD_ACTIVITY_MODES = ["Leveling", "Professions", "Auto"];
 const MEMBER_RANKING_MODES = {
   STANDARD: "standard",
@@ -173,7 +173,15 @@ const DEFAULT_DUNGEON_LOOT_TABLE = {
   ],
 };
 const STARTING_GUILD_MEMBERS = 5;
-const STARTING_GUILD_GOLD = 5;
+const STARTING_GUILD_ROLE_PLAN = Object.freeze([
+  "Tank",
+  "DPS",
+  "DPS",
+  "DPS",
+  "Healer",
+]);
+const STARTING_GUILD_GOLD = 10;
+const RECRUIT_SCOUT_COST_GOLD = 10;
 const RECRUIT_COST_GOLD = 5;
 const WORLD_TICK_COMMON_DROP_CHANCE = 0.08;
 const WORLD_TICK_UNCOMMON_DROP_CHANCE = 0.01;
@@ -1327,13 +1335,15 @@ const App = () => {
     (talentKey) => {
       let upgradeSummary = null;
       let blockedSummary = null;
+      const availableGold = Math.max(0, Number(goldRef.current) || 0);
       setGuildProgress((prev) => {
-        const result = upgradeGuildTalent(prev, talentKey);
+        const result = upgradeGuildTalent(prev, talentKey, { guildGold: availableGold });
         if (result.upgraded && result.talent) {
           upgradeSummary = {
             title: result.talent.title,
             suffix: result.talent.suffix,
             spentCost: result.spentCost,
+            spentGold: result.spentGold,
             nextValue: result.nextValue,
           };
         } else if (result.talent) {
@@ -1342,25 +1352,36 @@ const App = () => {
             blockedByPrerequisite: Boolean(result.blockedByPrerequisite),
             blockers: Array.isArray(result.blockers) ? result.blockers : [],
             missingCost: Number(result.missingCost) || 0,
+            missingGold: Number(result.missingGold) || 0,
           };
         }
         return result.guildProgress;
       });
 
       if (upgradeSummary) {
+        const updatedGold = Math.max(
+          0,
+          (Number(goldRef.current) || 0) - Math.max(0, Number(upgradeSummary.spentGold) || 0),
+        );
+        goldRef.current = updatedGold;
+        setGuildGold(updatedGold);
         pushNotification(
           `${upgradeSummary.title} upgraded to +${upgradeSummary.nextValue} ${upgradeSummary.suffix}.`,
           "info",
         );
         appendGuildRenownLog(
-          `${upgradeSummary.title} upgraded for ${upgradeSummary.spentCost} ${GUILD_POINT_LABEL}.`,
+          `${upgradeSummary.title} upgraded for ${upgradeSummary.spentCost} ${GUILD_POINT_LABEL} and ${upgradeSummary.spentGold}g.`,
         );
       } else if (blockedSummary) {
         const blockerText =
           blockedSummary.blockers.length > 0
             ? blockedSummary.blockers[0]
+            : blockedSummary.missingCost > 0 && blockedSummary.missingGold > 0
+              ? `Need ${blockedSummary.missingCost} more ${GUILD_POINT_LABEL} and ${blockedSummary.missingGold}g.`
             : blockedSummary.missingCost > 0
               ? `Need ${blockedSummary.missingCost} more ${GUILD_POINT_LABEL}.`
+              : blockedSummary.missingGold > 0
+                ? `Need ${blockedSummary.missingGold}g more.`
               : "No further upgrades available.";
         pushNotification(
           {
@@ -2232,6 +2253,36 @@ const App = () => {
     registerDungeonWipeMilestone,
   ]);
 
+  const handleOpenRecruit = () => {
+    const openSlots = Math.max(0, guildDerivedStats.maxRoster - rosterRef.current.length);
+    if (openSlots <= 0) {
+      pushNotification({
+        type: "error",
+        title: "Recruitment Blocked",
+        message: "Member limit reached. Dismiss heroes to recruit more.",
+      });
+      return;
+    }
+    const currentGold = Math.max(0, Number(goldRef.current) || 0);
+    if (currentGold < RECRUIT_SCOUT_COST_GOLD) {
+      pushNotification({
+        type: "error",
+        title: "Recruitment Blocked",
+        message: `Need ${RECRUIT_SCOUT_COST_GOLD}g to scout new applicants.`,
+      });
+      return;
+    }
+    const updatedGold = Math.max(0, currentGold - RECRUIT_SCOUT_COST_GOLD);
+    goldRef.current = updatedGold;
+    setGuildGold(updatedGold);
+    setShowRecruit(true);
+    pushNotification({
+      type: "info",
+      title: "Recruitment Scouted",
+      message: `Scouting cost paid: ${RECRUIT_SCOUT_COST_GOLD}g. First recruit is free, additional recruits cost ${RECRUIT_COST_GOLD}g each.`,
+    });
+  };
+
   const handleRecruit = (chars) => {
     const { recruits, spentGold, updatedGold, updatedRoster } =
       resolveRecruitmentResult({
@@ -2246,7 +2297,7 @@ const App = () => {
       pushNotification({
         type: "error",
         title: "Recruitment Blocked",
-        message: `Need ${RECRUIT_COST_GOLD}g per hero and free roster slots.`,
+        message: "Need free roster slots to recruit heroes.",
       });
       setShowRecruit(false);
       return;
@@ -2260,7 +2311,7 @@ const App = () => {
     pushNotification({
       type: "info",
       title: "Recruitment Complete",
-      message: `${recruits.length} hero${recruits.length > 1 ? "es" : ""} recruited for ${spentGold}g.`,
+      message: `${recruits.length} hero${recruits.length > 1 ? "es" : ""} recruited. Additional recruitment cost: ${spentGold}g.`,
     });
     setShowRecruit(false);
   };
@@ -2334,7 +2385,11 @@ const App = () => {
     const normalizedName = String(guildSetup.name || "").trim();
     if (!normalizedName) return;
     const starterRoster = normalizeRosterZones(
-      generateCharacters(STARTING_GUILD_MEMBERS, guildSetup.faction),
+      generateCharacters(
+        STARTING_GUILD_MEMBERS,
+        guildSetup.faction,
+        STARTING_GUILD_ROLE_PLAN,
+      ),
       guildSetup.faction,
     );
     const starterGold = STARTING_GUILD_GOLD;
@@ -2671,6 +2726,7 @@ const App = () => {
       count: preset.count,
       roleOrder: preset.roleOrder,
       guaranteedKeys: preset.guaranteedKeys,
+      usedNames: rosterRef.current.map((member) => member?.name).filter(Boolean),
     });
     const updatedRoster = normalizeRosterZones([...rosterRef.current, ...debugParty], faction);
     rosterRef.current = updatedRoster;
@@ -2913,6 +2969,10 @@ const App = () => {
     guildGold,
     recruitCostGold: RECRUIT_COST_GOLD,
   });
+  const activeCharacterNames = useMemo(
+    () => roster.map((member) => member?.name).filter(Boolean),
+    [roster],
+  );
 
   if (!guildSetup.hasStarted) {
     return (
@@ -2990,11 +3050,11 @@ const App = () => {
 
       <div className="flex overflow-x-auto gap-3 mb-6 pb-2 no-scrollbar snap-x">
         <button
-          onClick={() => setShowRecruit(true)}
-          disabled={openRecruitSlots <= 0 || affordableRecruitSlots <= 0}
+          onClick={handleOpenRecruit}
+          disabled={openRecruitSlots <= 0 || guildGold < RECRUIT_SCOUT_COST_GOLD}
           className="flex-none snap-start btn-recruit text-yellow-100 font-bold py-3 px-6 rounded border border-yellow-900 shadow-lg flex items-center gap-2 select-none disabled:opacity-50 whitespace-nowrap"
         >
-          <span className="text-xl">📜</span> Recruit ({RECRUIT_COST_GOLD}g)
+          <span className="text-xl">📜</span> Recruit ({RECRUIT_SCOUT_COST_GOLD}g)
         </button>
         <button
           onClick={() => setShowGuildTalents(true)}
@@ -3241,11 +3301,13 @@ const App = () => {
         affordableSlots={affordableRecruitSlots}
         recruitCostGold={RECRUIT_COST_GOLD}
         guildFaction={guildSetup.faction}
+        existingNames={activeCharacterNames}
       />
       <GuildTalentsModal
         isOpen={showGuildTalents}
         onClose={() => setShowGuildTalents(false)}
         guildProgress={guildProgress}
+        guildGold={guildGold}
         guildDerivedStats={guildDerivedStats}
         onUpgradeTalent={handleUpgradeGuildTalent}
       />

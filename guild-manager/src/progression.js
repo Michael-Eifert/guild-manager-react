@@ -1,12 +1,14 @@
 export const GAME_SPEED_NORMAL = 1;
 export const GAME_SPEED_FAST = 2;
 export const GAME_SPEED_VERY_FAST = 4;
+export const GAME_SPEED_ULTRA_FAST = 8;
 export const DEFAULT_GAME_SPEED = GAME_SPEED_NORMAL;
 
 const GAME_SPEED_SEQUENCE = [
   GAME_SPEED_NORMAL,
   GAME_SPEED_FAST,
   GAME_SPEED_VERY_FAST,
+  GAME_SPEED_ULTRA_FAST,
 ];
 
 export const clampGameSpeed = (speed) =>

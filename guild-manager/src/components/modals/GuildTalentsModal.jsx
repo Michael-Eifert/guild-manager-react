@@ -14,6 +14,7 @@ const GuildTalentsModal = ({
   isOpen,
   onClose,
   guildProgress,
+  guildGold,
   guildDerivedStats,
   onUpgradeTalent,
 }) => {
@@ -42,6 +43,9 @@ const GuildTalentsModal = ({
               {guildProgress.renownPoints}
             </span>{" "}
             (earned {guildProgress.totalRenown})
+          </div>
+          <div className="text-xs text-gray-400 mt-1">
+            Guild Gold: <span className="text-yellow-300 font-bold">{guildGold}</span>
           </div>
         </div>
         <button
@@ -134,6 +138,12 @@ const GuildTalentsModal = ({
                       guildProgress,
                       node.talentKey,
                     );
+                    const missingGold = Math.max(
+                      0,
+                      (Number(upgradeStatus.goldCost) || 0) - (Number(guildGold) || 0),
+                    );
+                    const canUnlockWithGold =
+                      nodeStatus.canUnlockNow && missingGold <= 0;
                     const targetRankData = talent?.ranks?.[node.targetRank - 1];
                     const targetValue = targetRankData?.displayValue ?? targetRankData?.value ?? 0;
 
@@ -172,12 +182,17 @@ const GuildTalentsModal = ({
                                 Need {upgradeStatus.missingCost} more {GUILD_POINT_LABEL}.
                               </div>
                             )}
+                            {missingGold > 0 && (
+                              <div className="text-[11px] text-yellow-300">
+                                Need {missingGold}g more.
+                              </div>
+                            )}
                             <button
                               onClick={() => onUpgradeTalent(node.talentKey)}
-                              disabled={!nodeStatus.canUnlockNow}
+                              disabled={!canUnlockWithGold}
                               className="w-full px-2 py-1 rounded border border-amber-700 bg-amber-900/40 text-amber-100 text-[11px] font-bold disabled:opacity-40 disabled:cursor-not-allowed hover:bg-amber-800/50"
                             >
-                              Unlock ({nodeStatus.cost} {GUILD_POINT_LABEL})
+                              Unlock ({nodeStatus.cost} {GUILD_POINT_LABEL} + {nodeStatus.goldCost}g)
                             </button>
                           </div>
                         ) : (

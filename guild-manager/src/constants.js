@@ -7476,6 +7476,11 @@ export const DB_NAMES = {
       "Uther",
       "Edwin",
       "Taevon",
+      "Rassaf",
+      "Souls",
+      "Khadgar",
+      "Medivh",
+      "Tirion",
     ],
     Female: [
       "Jaina",
@@ -7493,6 +7498,8 @@ export const DB_NAMES = {
       "Katherine",
       "Lysa",
       "Annetta",
+      "Aegwynn",
+      "Katrana",
     ],
   },
   "Night Elf": {
@@ -7512,6 +7519,7 @@ export const DB_NAMES = {
       "Thalan",
       "Cenarius",
       "Lethon",
+      "Ravencrest",
     ],
     Female: [
       "Tyrande",
@@ -7529,6 +7537,8 @@ export const DB_NAMES = {
       "Serelis",
       "Nymara",
       "Velira",
+      "Moonraven",
+      "Dista",
     ],
   },
   Dwarf: {
@@ -7548,6 +7558,7 @@ export const DB_NAMES = {
       "Hargin",
       "Gimlor",
       "Durnan",
+      "Thaurissan",
     ],
     Female: [
       "Moira",
@@ -7565,6 +7576,7 @@ export const DB_NAMES = {
       "Sigrid",
       "Torga",
       "Runa",
+      "Modgud",
     ],
   },
   Gnome: {
@@ -7584,6 +7596,7 @@ export const DB_NAMES = {
       "Gearwin",
       "Zapster",
       "Bixby",
+      "Ezaron",
     ],
     Female: [
       "Kinndy",
@@ -7601,6 +7614,7 @@ export const DB_NAMES = {
       "Poppi",
       "Zippi",
       "Riveta",
+      "Sapphronetta",
     ],
   },
   Orc: {
@@ -7620,6 +7634,8 @@ export const DB_NAMES = {
       "Malkor",
       "Grimtoof",
       "Drek",
+      "Nerzhul",
+      "Blackhand",
     ],
     Female: [
       "Draka",
@@ -7637,6 +7653,8 @@ export const DB_NAMES = {
       "Nazgra",
       "Rukha",
       "Thura",
+      "Garona",
+      "Zaela",
     ],
   },
   Undead: {
@@ -7656,6 +7674,7 @@ export const DB_NAMES = {
       "Cadell",
       "Aldren",
       "Rathis",
+      "Koltira",
     ],
     Female: [
       "Sylvanas",
@@ -7695,6 +7714,7 @@ export const DB_NAMES = {
     ],
     Female: [
       "Mayla",
+      "Magatha",
       "Aponi",
       "Nara",
       "Hamuula",
@@ -7714,6 +7734,7 @@ export const DB_NAMES = {
   Troll: {
     Male: [
       "Voljin",
+      "Rastakhan",
       "Rokhan",
       "Senjin",
       "Zuljin",
@@ -7731,6 +7752,7 @@ export const DB_NAMES = {
     ],
     Female: [
       "Talanji",
+      "Yazma",
       "Hexx",
       "Zekhania",
       "Shadra",
@@ -7775,4 +7797,5 @@ export const DB_FUNNY_NAMES = [
   "ResPls",
   "FearWardWho",
   "WindfuryWhen",
+  "Fuu",
 ];

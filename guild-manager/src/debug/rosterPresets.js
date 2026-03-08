@@ -121,22 +121,22 @@ const buildDebugReadyCharacter = (char, targetLevel, targetRole) => {
   };
 };
 
-const pickDebugCharacterForRole = (faction, role) => {
+const pickDebugCharacterForRole = (faction, role, usedNameKeys) => {
   const maxAttempts = 300;
   for (let attempt = 0; attempt < maxAttempts; attempt += 1) {
-    const candidate = generateCharacter(faction);
+    const candidate = generateCharacter(faction, null, { usedNameKeys });
     if (candidate?.role === role) return candidate;
   }
 
   for (let attempt = 0; attempt < maxAttempts; attempt += 1) {
-    const fallback = generateCharacter(faction);
+    const fallback = generateCharacter(faction, null, { usedNameKeys });
     const allowedRoles = DB_CLASSES?.[fallback?.charClass]?.allowedRoles || [];
     if (allowedRoles.includes(role)) {
       return { ...fallback, role };
     }
   }
 
-  return { ...generateCharacter(faction), role };
+  return { ...generateCharacter(faction, null, { usedNameKeys }), role };
 };
 
 export const buildDebugRosterPreset = ({
@@ -145,17 +145,23 @@ export const buildDebugRosterPreset = ({
   count,
   roleOrder,
   guaranteedKeys = [],
+  usedNames = [],
 }) => {
   const safeCount = Math.max(1, Math.floor(Number(count) || 1));
   const rolePattern =
     Array.isArray(roleOrder) && roleOrder.length > 0
       ? roleOrder
       : DEBUG_PARTY_ROLE_ORDER;
+  const usedNameKeys = new Set(
+    (Array.isArray(usedNames) ? usedNames : [])
+      .map((name) => String(name || "").trim().toLocaleLowerCase())
+      .filter(Boolean),
+  );
 
   return Array.from({ length: safeCount }, (_, index) => {
     const role = rolePattern[index % rolePattern.length];
     const seeded = buildDebugReadyCharacter(
-      pickDebugCharacterForRole(faction, role),
+      pickDebugCharacterForRole(faction, role, usedNameKeys),
       level,
       role,
     );

@@ -46,16 +46,16 @@ const DebugModal = ({
             </h3>
             <div className="grid grid-cols-2 gap-3">
               <button
-                onClick={() => onBulkLevel(1)}
-                className="bg-gray-800 hover:bg-gray-700 border border-gray-600 rounded py-2 px-4 text-green-400 font-bold text-sm"
-              >
-                +1 Level All
-              </button>
-              <button
                 onClick={() => onBulkLevel(5)}
                 className="bg-gray-800 hover:bg-gray-700 border border-gray-600 rounded py-2 px-4 text-green-400 font-bold text-sm"
               >
                 +5 Level All
+              </button>
+              <button
+                onClick={() => onBulkLevel(1)}
+                className="bg-gray-800 hover:bg-gray-700 border border-gray-600 rounded py-2 px-4 text-green-400 font-bold text-sm"
+              >
+                +1 Level All
               </button>
               <button
                 onClick={() => onBulkLevel(-5)}

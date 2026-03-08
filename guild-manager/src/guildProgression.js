@@ -146,6 +146,29 @@ export const GUILD_TALENT_TREE_TIERS = Object.freeze([
   ]),
 ]);
 
+const GUILD_TALENT_NODE_TIER_BY_KEY = (() => {
+  const entries = [];
+  GUILD_TALENT_TREE_TIERS.forEach((tierNodes, tierIndex) => {
+    const tier = tierIndex + 1;
+    tierNodes.forEach((node) => {
+      if (!node?.talentKey || !Number.isFinite(node?.targetRank)) return;
+      entries.push([`${node.talentKey}:${node.targetRank}`, tier]);
+    });
+  });
+  return new Map(entries);
+})();
+
+const getGuildTalentNodeTier = (talentKey, targetRank) =>
+  Math.max(
+    1,
+    Number(GUILD_TALENT_NODE_TIER_BY_KEY.get(`${talentKey}:${targetRank}`)) || 1,
+  );
+
+export const getGuildTalentTierGoldCost = (tier) => {
+  const safeTier = Math.max(1, Math.floor(Number(tier) || 1));
+  return safeTier * 10;
+};
+
 const createLevelMilestoneMap = () =>
   Object.fromEntries(GUILD_LEVEL_MILESTONES.map((level) => [level, false]));
 
@@ -378,6 +401,8 @@ export const getGuildTalentUpgradeStatus = (guildProgress, talentKey) => {
       blockedByPrerequisite: false,
       blockers: ["Unknown talent."],
       missingCost: 0,
+      tier: 0,
+      goldCost: 0,
     };
   }
 
@@ -392,10 +417,14 @@ export const getGuildTalentUpgradeStatus = (guildProgress, talentKey) => {
       blockedByPrerequisite: false,
       blockers: [],
       missingCost: 0,
+      tier: 0,
+      goldCost: 0,
     };
   }
 
   const targetRank = currentRank + 1;
+  const tier = getGuildTalentNodeTier(talentKey, targetRank);
+  const goldCost = getGuildTalentTierGoldCost(tier);
   const prerequisiteStatus = getPrerequisiteStatusForUpgrade(
     normalized.talents,
     talentKey,
@@ -412,6 +441,8 @@ export const getGuildTalentUpgradeStatus = (guildProgress, talentKey) => {
     blockedByPrerequisite: !prerequisiteStatus.meets,
     blockers: prerequisiteStatus.blockers,
     missingCost,
+    tier,
+    goldCost,
   };
 };
 
@@ -425,6 +456,7 @@ export const getGuildTalentTreeNodeStatus = (guildProgress, node) => {
       canUnlockNow: false,
       blockers: ["Unknown talent."],
       cost: 0,
+      goldCost: 0,
       title: node?.label || "Talent",
     };
   }
@@ -436,6 +468,7 @@ export const getGuildTalentTreeNodeStatus = (guildProgress, node) => {
   const canUnlockNow = isCurrentTarget && nextStatus.canUpgrade;
   const blockers = isCurrentTarget ? nextStatus.blockers : [];
   const cost = isCurrentTarget ? nextStatus.nextRankData?.cost || 0 : 0;
+  const goldCost = isCurrentTarget ? nextStatus.goldCost || 0 : 0;
 
   return {
     unlocked,
@@ -443,6 +476,7 @@ export const getGuildTalentTreeNodeStatus = (guildProgress, node) => {
     canUnlockNow,
     blockers,
     cost,
+    goldCost,
     title: node.label || `${getTalentTitle(node.talentKey)} ${node.targetRank}`,
   };
 };
@@ -872,22 +906,32 @@ export const applyDungeonWipeMilestone = (guildProgress) => {
   };
 };
 
-export const upgradeGuildTalent = (guildProgress, talentKey) => {
+export const upgradeGuildTalent = (guildProgress, talentKey, options = {}) => {
   const normalized = normalizeGuildProgress(guildProgress);
+  const safeGoldRaw = Number(options?.guildGold);
+  const hasGoldConstraint = Number.isFinite(safeGoldRaw);
+  const availableGold = hasGoldConstraint ? Math.max(0, Math.floor(safeGoldRaw)) : 0;
   const upgradeStatus = getGuildTalentUpgradeStatus(normalized, talentKey);
   const talentDef = upgradeStatus.talent;
   const nextRankData = upgradeStatus.nextRankData;
+  const goldCost = Math.max(0, Math.floor(Number(upgradeStatus.goldCost) || 0));
+  const missingGold = hasGoldConstraint
+    ? Math.max(0, goldCost - availableGold)
+    : 0;
 
-  if (!talentDef || !nextRankData || !upgradeStatus.canUpgrade) {
+  if (!talentDef || !nextRankData || !upgradeStatus.canUpgrade || missingGold > 0) {
     return {
       upgraded: false,
       guildProgress: guildProgress || normalized,
       talent: talentDef || null,
       spentCost: 0,
+      spentGold: 0,
       nextValue: 0,
       blockedByPrerequisite: Boolean(upgradeStatus?.blockedByPrerequisite),
       blockers: Array.isArray(upgradeStatus?.blockers) ? upgradeStatus.blockers : [],
       missingCost: upgradeStatus?.missingCost || 0,
+      missingGold,
+      goldCost,
     };
   }
 
@@ -905,10 +949,13 @@ export const upgradeGuildTalent = (guildProgress, talentKey) => {
     },
     talent: talentDef,
     spentCost: nextRankData.cost,
+    spentGold: goldCost,
     nextValue: nextRankData.value,
     blockedByPrerequisite: false,
     blockers: [],
     missingCost: 0,
+    missingGold: 0,
+    goldCost,
   };
 };
 

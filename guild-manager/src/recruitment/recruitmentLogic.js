@@ -11,7 +11,8 @@ export const getRecruitmentCapacity = ({
 
   const openSlots = Math.max(0, safeMaxRoster - safeRosterSize);
   const affordableSlots = Math.max(0, Math.floor(safeGuildGold / safeRecruitCost));
-  const availableSlots = Math.min(openSlots, affordableSlots);
+  const freeRecruitSlots = openSlots > 0 ? 1 : 0;
+  const availableSlots = Math.min(openSlots, freeRecruitSlots + affordableSlots);
 
   return {
     openSlots,
@@ -40,7 +41,7 @@ export const resolveRecruitmentResult = ({
   });
 
   const recruits = candidateList.slice(0, availableSlots);
-  const spentGold = recruits.length * safeRecruitCost;
+  const spentGold = Math.max(0, recruits.length - 1) * safeRecruitCost;
   const updatedGold = Math.max(0, safeGold - spentGold);
   const updatedRoster = [...rosterList, ...recruits];
 

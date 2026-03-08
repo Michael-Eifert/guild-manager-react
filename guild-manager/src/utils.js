@@ -678,15 +678,295 @@ export const getStarterGear = (charClass) => {
   return gear;
 };
 
-export const generateCharacter = (faction = GUILD_FACTION.ALLIANCE) => {
+const ROLE_POOL = Object.freeze(["Tank", "Healer", "DPS"]);
+const ACCENT_VARIANTS = Object.freeze({
+  a: ["a", "á", "à"],
+  e: ["e", "é", "è"],
+  i: ["i", "í", "ì"],
+  o: ["o", "ó", "ò"],
+  u: ["u", "ú", "ù"],
+  y: ["y", "ý", "ỳ"],
+});
+const DEFAULT_NAME_SYLLABLES = Object.freeze({
+  Male: Object.freeze({
+    start: Object.freeze(["Ar", "Bel", "Cor", "Dor", "Fen", "Gar", "Tor"]),
+    mid: Object.freeze(["a", "e", "i", "o", "an", "en", "or"]),
+    end: Object.freeze(["an", "ar", "en", "or", "ric", "th", "us"]),
+  }),
+  Female: Object.freeze({
+    start: Object.freeze(["Al", "Ca", "El", "Li", "Ma", "Na", "Va"]),
+    mid: Object.freeze(["ra", "la", "na", "ri", "ly", "el"]),
+    end: Object.freeze(["a", "ia", "ra", "la", "elle", "yn"]),
+  }),
+});
+const RACE_NAME_SYLLABLES = Object.freeze({
+  Human: Object.freeze({
+    Male: Object.freeze({
+      start: Object.freeze(["Ar", "Bol", "Dan", "Mar", "Rol", "Tur", "Var"]),
+      mid: Object.freeze(["a", "e", "en", "or", "al", "ri"]),
+      end: Object.freeze(["an", "ard", "don", "ric", "th", "ion"]),
+    }),
+    Female: Object.freeze({
+      start: Object.freeze(["Ali", "Bry", "Cal", "Ela", "Jai", "Katha", "Tae"]),
+      mid: Object.freeze(["ra", "la", "na", "ri", "ly", "el"]),
+      end: Object.freeze(["a", "ia", "ra", "elle", "yn"]),
+    }),
+  }),
+  "Night Elf": Object.freeze({
+    Male: Object.freeze({
+      start: Object.freeze(["Ala", "Cena", "Del", "Illa", "Malf", "Neri", "Tha"]),
+      mid: Object.freeze(["ra", "ri", "la", "ne", "the", "dra"]),
+      end: Object.freeze(["dor", "ion", "thus", "riel", "ndar", "mir"]),
+    }),
+    Female: Object.freeze({
+      start: Object.freeze(["Ari", "Elyn", "Lyr", "Mai", "Nai", "Sha", "Tyr"]),
+      mid: Object.freeze(["ra", "la", "ri", "the", "dra", "lyn"]),
+      end: Object.freeze(["a", "ra", "elle", "is", "iel", "wyn"]),
+    }),
+  }),
+  Dwarf: Object.freeze({
+    Male: Object.freeze({
+      start: Object.freeze(["Bra", "Dur", "Fal", "Gim", "Kur", "Mur", "Thra"]),
+      mid: Object.freeze(["a", "o", "ur", "ar", "or"]),
+      end: Object.freeze(["din", "gar", "grim", "rik", "sson", "thor"]),
+    }),
+    Female: Object.freeze({
+      start: Object.freeze(["Bry", "Fen", "Hel", "Kil", "Mor", "Sig", "Tor"]),
+      mid: Object.freeze(["a", "i", "ra", "ri", "ga"]),
+      end: Object.freeze(["a", "da", "dis", "ga", "hild", "ra"]),
+    }),
+  }),
+  Gnome: Object.freeze({
+    Male: Object.freeze({
+      start: Object.freeze(["Bix", "Cog", "Fizz", "Gel", "Nub", "Raz", "Tink"]),
+      mid: Object.freeze(["a", "i", "o", "ik", "oz", "er"]),
+      end: Object.freeze(["bin", "bot", "fix", "gon", "ik", "zo"]),
+    }),
+    Female: Object.freeze({
+      start: Object.freeze(["Bub", "Fizz", "Gad", "Kin", "Nix", "Pip", "Zip"]),
+      mid: Object.freeze(["a", "i", "ee", "la", "ri"]),
+      end: Object.freeze(["a", "ette", "i", "ika", "la", "zi"]),
+    }),
+  }),
+  Orc: Object.freeze({
+    Male: Object.freeze({
+      start: Object.freeze(["Brox", "Dra", "Gar", "Grom", "Karg", "Naz", "Thr"]),
+      mid: Object.freeze(["a", "o", "or", "ug", "ar"]),
+      end: Object.freeze(["ash", "gar", "gul", "ok", "rak", "th"]),
+    }),
+    Female: Object.freeze({
+      start: Object.freeze(["Agg", "Dra", "Gar", "Geya", "Kor", "Naz", "Zae"]),
+      mid: Object.freeze(["a", "ra", "ga", "ka", "za"]),
+      end: Object.freeze(["a", "ga", "ra", "sha", "za"]),
+    }),
+  }),
+  Undead: Object.freeze({
+    Male: Object.freeze({
+      start: Object.freeze(["Al", "Bel", "Dar", "Hel", "Mor", "Nath", "Var"]),
+      mid: Object.freeze(["a", "e", "or", "ul", "en"]),
+      end: Object.freeze(["den", "grim", "mar", "reth", "voss", "wyn"]),
+    }),
+    Female: Object.freeze({
+      start: Object.freeze(["Ama", "Lili", "Mor", "Nyx", "Rave", "Syl", "Velo"]),
+      mid: Object.freeze(["a", "e", "ra", "ri", "ve"]),
+      end: Object.freeze(["a", "elle", "ia", "ra", "voss", "wyn"]),
+    }),
+  }),
+  Tauren: Object.freeze({
+    Male: Object.freeze({
+      start: Object.freeze(["Bai", "Cair", "Ham", "Kar", "Rath", "Tal", "Tor"]),
+      mid: Object.freeze(["a", "o", "u", "an", "or"]),
+      end: Object.freeze(["ak", "an", "horn", "ok", "totem", "ul"]),
+    }),
+    Female: Object.freeze({
+      start: Object.freeze(["Apo", "Kaya", "Mag", "May", "Nara", "Tama", "Tora"]),
+      mid: Object.freeze(["a", "e", "ra", "la", "na"]),
+      end: Object.freeze(["a", "ha", "la", "na", "ra"]),
+    }),
+  }),
+  Troll: Object.freeze({
+    Male: Object.freeze({
+      start: Object.freeze(["Bwom", "Jin", "Ras", "Rok", "Tal", "Vol", "Zul"]),
+      mid: Object.freeze(["a", "i", "o", "an", "ok"]),
+      end: Object.freeze(["do", "jin", "kan", "mon", "rok", "zan"]),
+    }),
+    Female: Object.freeze({
+      start: Object.freeze(["Hex", "Loti", "Noka", "Talan", "Yaz", "Zeka", "Zul"]),
+      mid: Object.freeze(["a", "i", "ra", "li", "za"]),
+      end: Object.freeze(["a", "ji", "la", "na", "ra"]),
+    }),
+  }),
+});
+
+const normalizePreferredRole = (preferredRole) => {
+  const safeRole = String(preferredRole || "").trim();
+  return ROLE_POOL.includes(safeRole) ? safeRole : null;
+};
+
+const normalizeNameValue = (value) => String(value || "").trim();
+const normalizeNameKey = (value) => normalizeNameValue(value).toLocaleLowerCase();
+
+const buildUsedNameKeySet = (usedNames) => {
+  if (usedNames instanceof Set) {
+    const normalizedSet = new Set();
+    usedNames.forEach((name) => {
+      const key = normalizeNameKey(name);
+      if (key) normalizedSet.add(key);
+    });
+    return normalizedSet;
+  }
+  if (!Array.isArray(usedNames)) return new Set();
+  return new Set(
+    usedNames
+      .map((name) => normalizeNameKey(name))
+      .filter(Boolean),
+  );
+};
+
+const pickRandomEntry = (entries, fallback = "") => {
+  if (!Array.isArray(entries) || entries.length === 0) return fallback;
+  return entries[Math.floor(Math.random() * entries.length)] || fallback;
+};
+
+const buildNameVariants = (baseName) => {
+  const source = normalizeNameValue(baseName);
+  if (!source) return [];
+  const variants = new Set([source]);
+  const vowelMatch = source.match(/[aeiouy]/i);
+  if (vowelMatch?.index != null) {
+    const vowelIndex = vowelMatch.index;
+    const originalChar = source[vowelIndex];
+    const lowerOriginal = originalChar.toLocaleLowerCase();
+    const accentOptions = ACCENT_VARIANTS[lowerOriginal] || [];
+    accentOptions.forEach((option) => {
+      if (option === lowerOriginal) return;
+      const casedOption =
+        originalChar === originalChar.toUpperCase()
+          ? option.toUpperCase()
+          : option;
+      variants.add(`${source.slice(0, vowelIndex)}${casedOption}${source.slice(vowelIndex + 1)}`);
+    });
+    if (vowelIndex > 1) {
+      variants.add(`${source.slice(0, vowelIndex)}'${source.slice(vowelIndex)}`);
+    }
+  }
+  return [...variants];
+};
+
+const buildProceduralName = (race, gender) => {
+  const raceBank = RACE_NAME_SYLLABLES[race] || DEFAULT_NAME_SYLLABLES;
+  const genderBank =
+    raceBank[gender] || raceBank.Male || raceBank.Female || DEFAULT_NAME_SYLLABLES.Male;
+  const start = pickRandomEntry(genderBank.start, "Ar");
+  const mid = pickRandomEntry(genderBank.mid, "a");
+  const end = pickRandomEntry(genderBank.end, "an");
+  const includeMiddle = Math.random() < 0.65;
+  const raw = `${start}${includeMiddle ? mid : ""}${end}`.replace(/[^A-Za-z]/g, "");
+  if (!raw) return "Adventurer";
+  const normalized = raw.length > 12 ? raw.slice(0, 12) : raw;
+  return `${normalized.charAt(0).toUpperCase()}${normalized.slice(1)}`;
+};
+
+const pickUniqueCharacterName = ({
+  race,
+  gender,
+  curatedPool,
+  fallbackPool,
+  usedNameKeys,
+}) => {
+  const reserveIfAvailable = (candidate) => {
+    const cleanCandidate = normalizeNameValue(candidate);
+    if (!cleanCandidate) return null;
+    const key = normalizeNameKey(cleanCandidate);
+    if (!key || usedNameKeys.has(key)) return null;
+    usedNameKeys.add(key);
+    return cleanCandidate;
+  };
+
+  const selectedPool = Array.isArray(curatedPool) && curatedPool.length > 0
+    ? curatedPool
+    : fallbackPool;
+  const poolAttempts = Math.max(30, (selectedPool?.length || 0) * 3);
+  for (let attempt = 0; attempt < poolAttempts; attempt += 1) {
+    const baseName = pickRandomEntry(selectedPool, "Adventurer");
+    const variants = buildNameVariants(baseName);
+    for (const variant of variants) {
+      const reserved = reserveIfAvailable(variant);
+      if (reserved) return reserved;
+    }
+  }
+
+  const proceduralAttempts = 220;
+  for (let attempt = 0; attempt < proceduralAttempts; attempt += 1) {
+    const generatedName = buildProceduralName(race, gender);
+    const variants = buildNameVariants(generatedName);
+    for (const variant of variants) {
+      const reserved = reserveIfAvailable(variant);
+      if (reserved) return reserved;
+    }
+  }
+
+  const hardFallbackBase = "Adventurer";
+  for (let suffix = 1; suffix < 10000; suffix += 1) {
+    const candidate = suffix === 1 ? hardFallbackBase : `${hardFallbackBase}${suffix}`;
+    const reserved = reserveIfAvailable(candidate);
+    if (reserved) return reserved;
+  }
+
+  return `${hardFallbackBase}${createId().slice(0, 6)}`;
+};
+
+export const generateCharacter = (
+  faction = GUILD_FACTION.ALLIANCE,
+  preferredRoleOrOptions = null,
+  maybeOptions = {},
+) => {
+  const preferredRole =
+    typeof preferredRoleOrOptions === "string" || preferredRoleOrOptions == null
+      ? preferredRoleOrOptions
+      : null;
+  const options =
+    preferredRoleOrOptions &&
+    typeof preferredRoleOrOptions === "object" &&
+    !Array.isArray(preferredRoleOrOptions)
+      ? preferredRoleOrOptions
+      : maybeOptions;
+  const usedNameKeys =
+    options?.usedNameKeys instanceof Set
+      ? options.usedNameKeys
+      : buildUsedNameKeySet(options?.usedNames);
   const races = getFactionRaces(faction).filter((race) =>
     Object.prototype.hasOwnProperty.call(DB_RACES, race),
   );
   const candidateRaces = races.length > 0 ? races : Object.keys(DB_RACES);
+  const normalizedPreferredRole = normalizePreferredRole(preferredRole);
+  const roleEligibleCombinations =
+    normalizedPreferredRole === null
+      ? []
+      : candidateRaces.flatMap((race) =>
+          (Array.isArray(DB_RACES[race]) ? DB_RACES[race] : []).flatMap((charClass) => {
+            const classRoles = Array.isArray(DB_CLASSES?.[charClass]?.allowedRoles)
+              ? DB_CLASSES[charClass].allowedRoles
+              : [];
+            return classRoles.includes(normalizedPreferredRole)
+              ? [{ race, charClass }]
+              : [];
+          }),
+        );
+  const selectedCombination =
+    roleEligibleCombinations.length > 0
+      ? roleEligibleCombinations[
+          Math.floor(Math.random() * roleEligibleCombinations.length)
+        ]
+      : null;
   const selectedRace =
+    selectedCombination?.race ||
     candidateRaces[Math.floor(Math.random() * candidateRaces.length)];
-  const allowedClasses = DB_RACES[selectedRace];
+  const allowedClasses = Array.isArray(DB_RACES[selectedRace])
+    ? DB_RACES[selectedRace]
+    : [];
   const charClass =
+    selectedCombination?.charClass ||
     allowedClasses[Math.floor(Math.random() * allowedClasses.length)];
   const gender = Math.random() > 0.5 ? "Male" : "Female";
   const raceNames = DB_NAMES[selectedRace] || DB_NAMES["Human"];
@@ -705,10 +985,20 @@ export const generateCharacter = (faction = GUILD_FACTION.ALLIANCE) => {
     : namesList.length > 0
       ? namesList
       : fallbackPool;
-  const firstName =
-    selectedPool[Math.floor(Math.random() * selectedPool.length)] || "Adventurer";
-  const allowedRoles = DB_CLASSES[charClass].allowedRoles;
-  const role = allowedRoles[Math.floor(Math.random() * allowedRoles.length)];
+  const firstName = pickUniqueCharacterName({
+    race: selectedRace,
+    gender,
+    curatedPool: selectedPool,
+    fallbackPool,
+    usedNameKeys,
+  });
+  const allowedRoles = Array.isArray(DB_CLASSES?.[charClass]?.allowedRoles)
+    ? DB_CLASSES[charClass].allowedRoles
+    : ["DPS"];
+  const role =
+    normalizedPreferredRole && allowedRoles.includes(normalizedPreferredRole)
+      ? normalizedPreferredRole
+      : allowedRoles[Math.floor(Math.random() * allowedRoles.length)];
 
   const starterProfs = PROF_PAIRS[charClass] || DEFAULT_PROF_PAIR;
   const professions = starterProfs.map((p) => ({ name: p, skill: 1 }));
@@ -736,7 +1026,29 @@ export const generateCharacter = (faction = GUILD_FACTION.ALLIANCE) => {
   };
 };
 
-export const generateCharacters = (count = 1, faction = GUILD_FACTION.ALLIANCE) => {
+export const generateCharacters = (
+  count = 1,
+  faction = GUILD_FACTION.ALLIANCE,
+  rolePlanOrOptions = [],
+  maybeOptions = {},
+) => {
   const safeCount = Math.max(0, Math.floor(Number(count) || 0));
-  return Array.from({ length: safeCount }, () => generateCharacter(faction));
+  const safeRolePlan = Array.isArray(rolePlanOrOptions) ? rolePlanOrOptions : [];
+  const options =
+    rolePlanOrOptions &&
+    typeof rolePlanOrOptions === "object" &&
+    !Array.isArray(rolePlanOrOptions)
+      ? rolePlanOrOptions
+      : maybeOptions;
+  const usedNameKeys =
+    options?.usedNameKeys instanceof Set
+      ? options.usedNameKeys
+      : buildUsedNameKeySet(options?.usedNames);
+  return Array.from({ length: safeCount }, (_, index) =>
+    generateCharacter(
+      faction,
+      safeRolePlan[index] || null,
+      { ...options, usedNameKeys },
+    ),
+  );
 };

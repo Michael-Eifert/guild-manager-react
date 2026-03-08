@@ -232,6 +232,25 @@ const ZONE_ELITE_TITLE_POOL = Object.freeze([
   "Silence the Warlord",
 ]);
 const SPECIAL_ZONE_ELITE_QUESTS = Object.freeze({
+  elwynn_forest: Object.freeze([
+    Object.freeze({
+      id: "zone_elite:elwynn_forest:hogger",
+      type: "quest",
+      typeLabel: "Zone Elite",
+      name: "Elwynn Forest Elite: Hogger",
+      zoneId: "elwynn_forest",
+      isZoneElite: true,
+      level: 11,
+      minLevel: 6,
+      recommended: "8-11",
+      duration: 55,
+      exp: 560,
+      gold: 3,
+      rewardQualities: [1, 2],
+      elite: true,
+      requiredPartySize: 5,
+    }),
+  ]),
   western_plaguelands: Object.freeze([
     Object.freeze({
       id: "zone_elite:western_plaguelands:scholomance_key",
