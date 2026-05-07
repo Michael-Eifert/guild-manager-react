@@ -35,15 +35,20 @@ import {
   DEFAULT_GAME_SPEED,
   normalizeProgressionState,
 } from "../progression";
+import { INITIAL_MISSIONS } from "../constants";
+import { isItemUsableByClass } from "../utils";
 import {
   CALENDAR_DAY_MS,
   CALENDAR_STATUS,
+  CALENDAR_TIME_OF_DAY,
   buildCalendarEvent,
   buildCalendarSeries,
   createInitialCalendarState,
   getCalendarDate,
   getCalendarDayIndex,
   getCalendarDayProgress,
+  getCalendarTimeOfDayOption,
+  getDungeonMissionPreemption,
   materializeCalendarSeriesEvents,
   refreshCalendarState,
 } from "../calendar/calendarLogic";
@@ -53,6 +58,15 @@ import {
   MOLTEN_CORE_ITEMS,
   unsupportedMoltenCoreDrops,
 } from "../data/imports/moltenCoreLootManifest";
+import {
+  LOWER_BLACKROCK_SPIRE_ACTIVE_LOOT_MANIFEST,
+  LOWER_BLACKROCK_SPIRE_ITEMS,
+} from "../data/imports/lowerBlackrockSpireLootManifest";
+import {
+  UPPER_BLACKROCK_SPIRE_ACTIVE_LOOT_MANIFEST,
+  UPPER_BLACKROCK_SPIRE_ITEMS,
+  unsupportedUpperBlackrockSpireDrops,
+} from "../data/imports/upperBlackrockSpireLootManifest";
 
 afterEach(() => {
   vi.restoreAllMocks();
@@ -229,6 +243,7 @@ describe("session persistence", () => {
           title: "Thursday MC",
           missionId: 62,
           weekday: 3,
+          scheduledTimeOfDay: CALENDAR_TIME_OF_DAY.MIDDAY,
           startsOnDayIndex: 0,
         }),
       ],
@@ -272,6 +287,10 @@ describe("calendar logic", () => {
     expect(getCalendarDayProgress(1000 + CALENDAR_DAY_MS * 1.5, 1000)).toBe(
       0.5,
     );
+    expect(getCalendarTimeOfDayOption(CALENDAR_TIME_OF_DAY.MORNING)).toMatchObject({
+      label: "Morning",
+      dayProgress: 0.25,
+    });
     expect(getCalendarDate(0)).toMatchObject({
       weekdayName: "Monday",
       monthName: "January",
@@ -298,6 +317,7 @@ describe("calendar logic", () => {
           title: "Thursday MC",
           missionId: 62,
           weekday: 3,
+          scheduledTimeOfDay: CALENDAR_TIME_OF_DAY.MIDDAY,
           startsOnDayIndex: 0,
         }),
       ],
@@ -319,7 +339,39 @@ describe("calendar logic", () => {
       3,
       10,
     ]);
+    expect(first.calendarEvents[0].scheduledTimeOfDay).toBe(
+      CALENDAR_TIME_OF_DAY.MIDDAY,
+    );
     expect(second.calendarEvents).toHaveLength(first.calendarEvents.length);
+  });
+
+  it("preempts dungeon missions that contain raid members", () => {
+    const result = getDungeonMissionPreemption({
+      activeMissions: [
+        {
+          instanceId: "dungeon-1",
+          type: "dungeon",
+          name: "Blackrock Spire",
+          memberIds: ["tank", "dps"],
+        },
+        {
+          instanceId: "quest-1",
+          type: "zone",
+          name: "Ashenvale",
+          memberIds: ["scout"],
+        },
+      ],
+      memberIds: ["dps"],
+    });
+
+    expect(result.canceledMissions).toEqual([
+      {
+        missionKey: "dungeon-1",
+        missionName: "Blackrock Spire",
+        memberIds: ["tank", "dps"],
+      },
+    ]);
+    expect(result.affectedMemberIds).toEqual(["tank", "dps"]);
   });
 
   it("readies events and auto-signs eligible attuned characters", () => {
@@ -685,6 +737,177 @@ describe("Molten Core loot manifest", () => {
     const activeWowheadIds = new Set(moltenCoreItems.map((item) => item.wowheadId));
     expect(unsupportedMoltenCoreDrops.length).toBeGreaterThan(0);
     unsupportedMoltenCoreDrops.forEach((item) => {
+      expect(activeWowheadIds.has(item.wowheadId)).toBe(false);
+    });
+  });
+});
+
+describe("Lower Blackrock Spire integration", () => {
+  const lbrsMission = INITIAL_MISSIONS.find(
+    (mission) => mission.dungeonWing === "Lower Blackrock Spire",
+  );
+  const lbrsItems = DB_ITEMS.filter(
+    (item) =>
+      item.dungeonSetId === "blackrock_spire" &&
+      item.dungeonWing === "Lower Blackrock Spire",
+  );
+
+  it("adds LBRS as an unlocked late-game dungeon with harder tuning", () => {
+    expect(lbrsMission).toBeTruthy();
+    expect(lbrsMission.name).toBe("Blackrock Spire");
+    expect(lbrsMission.requiredPartySize).toBe(5);
+    expect(lbrsMission.requiresKey).toBe(false);
+    expect(lbrsMission.rewardKeys).toEqual(["seal_of_ascension"]);
+    expect(lbrsMission.baseFailChance).toBe(30);
+    expect(lbrsMission.recommended).toBe("57 - 60");
+    expect(lbrsMission.dungeonBosses).toEqual([
+      "Highlord Omokk",
+      "Shadow Hunter Vosh'gajin",
+      "War Master Voone",
+      "Mother Smolderweb",
+      "Urok Doomhowl",
+      "Quartermaster Zigris",
+      "Halycon",
+      "Gizrul the Slavener",
+      "Overlord Wyrmthalak",
+    ]);
+  });
+
+  it("converts active LBRS manifest entries into valid database items", () => {
+    expect(LOWER_BLACKROCK_SPIRE_ACTIVE_LOOT_MANIFEST.length).toBeGreaterThan(20);
+    expect(LOWER_BLACKROCK_SPIRE_ITEMS.length).toBe(
+      LOWER_BLACKROCK_SPIRE_ACTIVE_LOOT_MANIFEST.length,
+    );
+    LOWER_BLACKROCK_SPIRE_ITEMS.forEach((item) => {
+      expect(item.wowheadId).toBeTypeOf("number");
+      expect(item.icon).toContain("wow/icons/large/");
+      expect(item.dungeonSetId).toBe("blackrock_spire");
+      expect(item.dungeonSetName).toBe("Blackrock Spire");
+      expect(item.dungeonWing).toBe("Lower Blackrock Spire");
+      expect(item.slot).toBeTruthy();
+      expect(item.quality).toBe(3);
+      expect(item.sourceBosses.length).toBeGreaterThan(0);
+    });
+  });
+
+  it("adds class-restricted Tier 0 pieces to the LBRS reward pool", () => {
+    const shadowcraftGloves = lbrsItems.find(
+      (item) => item.name === "Shadowcraft Gloves",
+    );
+    const wildheartBoots = lbrsItems.find(
+      (item) => item.name === "Wildheart Boots",
+    );
+    const beaststalkerGloves = lbrsItems.find(
+      (item) => item.name === "Beaststalker's Gloves",
+    );
+
+    expect(shadowcraftGloves?.setId).toBe("t0_shadowcraft_armor");
+    expect(wildheartBoots?.setId).toBe("t0_wildheart_raiment");
+    expect(beaststalkerGloves?.setId).toBe("t0_beaststalker_armor");
+    expect(isItemUsableByClass(shadowcraftGloves, "Rogue")).toBe(true);
+    expect(isItemUsableByClass(shadowcraftGloves, "Mage")).toBe(false);
+    expect(isItemUsableByClass(wildheartBoots, "Druid")).toBe(true);
+    expect(isItemUsableByClass(beaststalkerGloves, "Hunter")).toBe(true);
+  });
+});
+
+describe("Upper Blackrock Spire integration", () => {
+  const ubrsMission = INITIAL_MISSIONS.find(
+    (mission) => mission.dungeonWing === "Upper Blackrock Spire",
+  );
+  const ubrsItems = DB_ITEMS.filter(
+    (item) =>
+      item.dungeonSetId === "blackrock_spire" &&
+      item.dungeonWing === "Upper Blackrock Spire",
+  );
+
+  it("adds UBRS as the second Blackrock Spire wing with one-key access", () => {
+    expect(ubrsMission).toBeTruthy();
+    expect(ubrsMission.name).toBe("Blackrock Spire");
+    expect(ubrsMission.requiredPartySize).toBe(10);
+    expect(ubrsMission.requiresKey).toBe(true);
+    expect(ubrsMission.requiresKeyForAllMembers).toBe(false);
+    expect(ubrsMission.keyId).toBe("seal_of_ascension");
+    expect(ubrsMission.baseFailChance).toBe(30);
+    expect(ubrsMission.dungeonBosses).toEqual([
+      "Pyroguard Emberseer",
+      "Solakar Flamewreath",
+      "Goraluk Anvilcrack",
+      "Jed Runewatcher",
+      "Gyth",
+      "Warchief Rend Blackhand",
+      "The Beast",
+      "General Drakkisath",
+    ]);
+  });
+
+  it("allows UBRS when one selected member has the Seal of Ascension", () => {
+    const result = evaluateMissionKeyAccess({
+      missions: [ubrsMission],
+      partyMembers: [
+        { id: "tank", keys: ["seal_of_ascension"] },
+        { id: "healer", keys: [] },
+        { id: "dps", keys: [] },
+      ],
+    });
+
+    expect(result.canEnter).toBe(true);
+    expect(result.partyHasAnyRequiredKey).toBe(true);
+  });
+
+  it("unlocks UBRS for the full party when LBRS is chained first", () => {
+    const lbrsMission = INITIAL_MISSIONS.find(
+      (mission) => mission.dungeonWing === "Lower Blackrock Spire",
+    );
+    const result = evaluateMissionKeyAccess({
+      missions: [lbrsMission, ubrsMission],
+      partyMembers: [
+        { id: "tank", keys: [] },
+        { id: "healer", keys: [] },
+        { id: "dps", keys: [] },
+      ],
+    });
+
+    expect(result.canEnter).toBe(true);
+    expect(result.unlockedDuringSequence).toEqual(["seal_of_ascension"]);
+  });
+
+  it("converts active UBRS manifest entries into valid wing-specific items", () => {
+    expect(UPPER_BLACKROCK_SPIRE_ACTIVE_LOOT_MANIFEST.length).toBeGreaterThan(25);
+    expect(UPPER_BLACKROCK_SPIRE_ITEMS.length).toBe(
+      UPPER_BLACKROCK_SPIRE_ACTIVE_LOOT_MANIFEST.length,
+    );
+    UPPER_BLACKROCK_SPIRE_ITEMS.forEach((item) => {
+      expect(item.wowheadId).toBeTypeOf("number");
+      expect(item.icon).toContain("wow/icons/large/");
+      expect(item.dungeonSetId).toBe("blackrock_spire");
+      expect(item.dungeonSetName).toBe("Blackrock Spire");
+      expect(item.dungeonWing).toBe("Upper Blackrock Spire");
+      expect(item.slot).toBeTruthy();
+      expect(item.quality).toBeGreaterThan(0);
+      expect(item.sourceBosses.length).toBeGreaterThan(0);
+    });
+  });
+
+  it("adds UBRS Tier 0 chest pieces to the reward pool", () => {
+    const magistersRobes = ubrsItems.find(
+      (item) => item.name === "Magister's Robes",
+    );
+    const breastplateOfValor = ubrsItems.find(
+      (item) => item.name === "Breastplate of Valor",
+    );
+
+    expect(magistersRobes?.setId).toBe("t0_magisters_regalia");
+    expect(breastplateOfValor?.setId).toBe("t0_battlegear_of_valor");
+    expect(isItemUsableByClass(magistersRobes, "Mage")).toBe(true);
+    expect(isItemUsableByClass(magistersRobes, "Warlock")).toBe(false);
+    expect(isItemUsableByClass(breastplateOfValor, "Warrior")).toBe(true);
+  });
+
+  it("keeps unsupported UBRS drops out of active reward items", () => {
+    const activeWowheadIds = new Set(ubrsItems.map((item) => item.wowheadId));
+    expect(unsupportedUpperBlackrockSpireDrops.length).toBeGreaterThan(0);
+    unsupportedUpperBlackrockSpireDrops.forEach((item) => {
       expect(activeWowheadIds.has(item.wowheadId)).toBe(false);
     });
   });

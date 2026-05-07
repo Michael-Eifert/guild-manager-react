@@ -74,6 +74,15 @@ const ITEM_SET_BONUS_TIERS = Object.freeze([
   { pieces: 2, bonus: 5 },
 ]);
 const SET_CLASS_RESTRICTIONS = Object.freeze({
+  t0_wildheart_raiment: ["Druid"],
+  t0_beaststalker_armor: ["Hunter"],
+  t0_magisters_regalia: ["Mage"],
+  t0_lightforge_armor: ["Paladin"],
+  t0_vestments_of_the_devout: ["Priest"],
+  t0_shadowcraft_armor: ["Rogue"],
+  t0_the_elements: ["Shaman"],
+  t0_dreadmist_raiment: ["Warlock"],
+  t0_battlegear_of_valor: ["Warrior"],
   t1_cenarion_raiment: ["Druid"],
   t1_giantstalker_armor: ["Hunter"],
   t1_arcanist_regalia: ["Mage"],

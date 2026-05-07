@@ -80,6 +80,12 @@ export const KEY_DEFINITIONS = Object.freeze({
     name: "Shadowforge Key",
     icon: wowItemIcon("INV_Misc_Key_11"),
   },
+  seal_of_ascension: {
+    id: "seal_of_ascension",
+    name: "Seal of Ascension",
+    icon: wowItemIcon("INV_Jewelry_Ring_15"),
+    sourceQuest: "Lower Blackrock Spire - Seal of Ascension",
+  },
 });
 
 export { DB_CLASSES } from './data/classes';

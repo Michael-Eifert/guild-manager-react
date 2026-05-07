@@ -77,6 +77,12 @@ export const createMissionRewardProcessor = ({
     ]);
   };
 
+  const isMatchingDungeonWing = (item, mission) => {
+    const itemWingKey = normalizeDungeonKey(item?.dungeonWing);
+    if (!itemWingKey) return true;
+    return itemWingKey === normalizeDungeonKey(mission?.dungeonWing);
+  };
+
   const getMissionLootCandidatesForCharacter = (mission, char, quality) => {
     const classInfo = dbClasses?.[char?.charClass];
     if (!classInfo) return [];
@@ -101,6 +107,7 @@ export const createMissionRewardProcessor = ({
             missionKeys.has(key),
           );
           if (!isMatchingDungeonLoot) return false;
+          if (!isMatchingDungeonWing(item, mission)) return false;
         }
         return true;
       }
@@ -126,7 +133,9 @@ export const createMissionRewardProcessor = ({
           missionKeys.has(key),
         );
         if (worldOnly) return itemDungeonKeys.length === 0;
-        if (itemDungeonKeys.length > 0) return isMatchingDungeonLoot;
+        if (itemDungeonKeys.length > 0) {
+          return isMatchingDungeonLoot && isMatchingDungeonWing(item, mission);
+        }
         if (dungeonOnly) return false;
         return includeWorldDrops;
       }

@@ -7,6 +7,16 @@ export const CALENDAR_STATUS = Object.freeze({
   COMPLETED: "completed",
   CANCELLED: "cancelled",
 });
+export const CALENDAR_TIME_OF_DAY = Object.freeze({
+  MORNING: "morning",
+  MIDDAY: "midday",
+  EVENING: "evening",
+});
+export const CALENDAR_TIME_OF_DAY_OPTIONS = Object.freeze([
+  { value: CALENDAR_TIME_OF_DAY.MORNING, label: "Morning", dayProgress: 0.25 },
+  { value: CALENDAR_TIME_OF_DAY.MIDDAY, label: "Midday", dayProgress: 0.5 },
+  { value: CALENDAR_TIME_OF_DAY.EVENING, label: "Evening", dayProgress: 0.75 },
+]);
 export const CALENDAR_WEEKDAYS = Object.freeze([
   "Monday",
   "Tuesday",
@@ -48,6 +58,22 @@ const normalizeStatus = (status) =>
   Object.values(CALENDAR_STATUS).includes(status)
     ? status
     : CALENDAR_STATUS.SCHEDULED;
+
+export const normalizeCalendarTimeOfDay = (value) =>
+  CALENDAR_TIME_OF_DAY_OPTIONS.some((option) => option.value === value)
+    ? value
+    : CALENDAR_TIME_OF_DAY.EVENING;
+
+export const getCalendarTimeOfDayOption = (value) =>
+  CALENDAR_TIME_OF_DAY_OPTIONS.find(
+    (option) => option.value === normalizeCalendarTimeOfDay(value),
+  ) || CALENDAR_TIME_OF_DAY_OPTIONS[2];
+
+export const getMissionInstanceKey = (mission) =>
+  String(
+    mission?.instanceId ||
+      `${mission?.questId || mission?.id || "mission"}-${mission?.startTime || 0}`,
+  );
 
 export const getCalendarDayIndex = (gameTimeMs, calendarEpochGameTimeMs) => {
   const gameTime = Number(gameTimeMs);
@@ -169,6 +195,8 @@ export const normalizeCalendarState = (rawState, fallbackEpochGameTimeMs = Date.
           title: String(event?.title || "Raid Event").trim(),
           missionId: event?.missionId,
           scheduledDayIndex,
+          scheduledTimeOfDay: normalizeCalendarTimeOfDay(event?.scheduledTimeOfDay),
+          autoStart: event?.autoStart !== false,
           status: normalizeStatus(event?.status),
           registrations: normalizeIdList(event?.registrations),
           approvedRosterIds: normalizeIdList(event?.approvedRosterIds),
@@ -190,6 +218,8 @@ export const normalizeCalendarState = (rawState, fallbackEpochGameTimeMs = Date.
           title: String(series?.title || "Weekly Raid").trim(),
           missionId: series?.missionId,
           weekday: Math.max(0, Math.min(6, Number.isFinite(weekday) ? weekday : 0)),
+          scheduledTimeOfDay: normalizeCalendarTimeOfDay(series?.scheduledTimeOfDay),
+          autoStart: series?.autoStart !== false,
           active: series?.active !== false,
           startsOnDayIndex: Math.max(0, Math.floor(Number(series?.startsOnDayIndex) || 0)),
         };
@@ -325,6 +355,8 @@ export const buildCalendarEvent = ({
   title,
   missionId,
   scheduledDayIndex,
+  scheduledTimeOfDay = CALENDAR_TIME_OF_DAY.EVENING,
+  autoStart = true,
   createdAtDayIndex,
   seriesId = null,
 }) => ({
@@ -332,6 +364,8 @@ export const buildCalendarEvent = ({
   title,
   missionId,
   scheduledDayIndex: Math.max(0, Math.floor(Number(scheduledDayIndex) || 0)),
+  scheduledTimeOfDay: normalizeCalendarTimeOfDay(scheduledTimeOfDay),
+  autoStart: autoStart !== false,
   status: CALENDAR_STATUS.SCHEDULED,
   registrations: [],
   approvedRosterIds: [],
@@ -347,12 +381,16 @@ export const buildCalendarSeries = ({
   title,
   missionId,
   weekday,
+  scheduledTimeOfDay = CALENDAR_TIME_OF_DAY.EVENING,
+  autoStart = true,
   startsOnDayIndex,
 }) => ({
   id,
   title,
   missionId,
   weekday: Math.max(0, Math.min(6, Math.floor(Number(weekday) || 0))),
+  scheduledTimeOfDay: normalizeCalendarTimeOfDay(scheduledTimeOfDay),
+  autoStart: autoStart !== false,
   active: true,
   startsOnDayIndex: Math.max(0, Math.floor(Number(startsOnDayIndex) || 0)),
 });
@@ -397,6 +435,8 @@ export const materializeCalendarSeriesEvents = ({
             title: series.title,
             missionId: series.missionId,
             scheduledDayIndex: dayIndex,
+            scheduledTimeOfDay: series.scheduledTimeOfDay,
+            autoStart: series.autoStart,
             createdAtDayIndex: startDay,
             seriesId: series.id,
           }),
@@ -466,5 +506,28 @@ export const refreshCalendarState = ({
       calendarEvents: nextEvents,
     },
     newlyReadyEvents,
+  };
+};
+
+export const getDungeonMissionPreemption = ({ activeMissions, memberIds }) => {
+  const selectedMemberIds = new Set(normalizeIdList(memberIds));
+  const canceledMissions = [];
+  const affectedMemberIds = new Set();
+
+  (Array.isArray(activeMissions) ? activeMissions : []).forEach((mission) => {
+    if (mission?.type !== "dungeon") return;
+    const missionMemberIds = normalizeIdList(mission?.memberIds);
+    if (!missionMemberIds.some((memberId) => selectedMemberIds.has(memberId))) return;
+    canceledMissions.push({
+      missionKey: getMissionInstanceKey(mission),
+      missionName: String(mission?.name || "Dungeon"),
+      memberIds: missionMemberIds,
+    });
+    missionMemberIds.forEach((memberId) => affectedMemberIds.add(memberId));
+  });
+
+  return {
+    canceledMissions,
+    affectedMemberIds: [...affectedMemberIds],
   };
 };

@@ -1,4 +1,6 @@
 import { MOLTEN_CORE_ITEMS } from './imports/moltenCoreLootManifest';
+import { LOWER_BLACKROCK_SPIRE_ITEMS } from './imports/lowerBlackrockSpireLootManifest';
+import { UPPER_BLACKROCK_SPIRE_ITEMS } from './imports/upperBlackrockSpireLootManifest';
 
 const wowItemIcon = (iconCode) =>
   `https://wow.zamimg.com/images/wow/icons/large/${iconCode.toLowerCase()}.jpg`;
@@ -5785,36 +5787,48 @@ export const DB_ITEMS = [
     id: 776,
     name: "Magister's Boots",
     slot: "feet",
-    quality: 2,
+    quality: 3,
     type: "Cloth",
     minLevel: 56,
     dungeonSetId: "stratholme",
     dungeonSetName: "Stratholme",
     icon: wowItemIcon("INV_Boots_07"),
+    allowedClasses: ["Mage"],
+    wowheadId: 16682,
+    setId: "t0_magisters_regalia",
+    setName: "Magister's Regalia",
     stats: { intellect: 11, spirit: 10, stamina: 8 },
   },
   {
     id: 777,
     name: "Dreadmist Sandals",
     slot: "feet",
-    quality: 2,
+    quality: 3,
     type: "Cloth",
     minLevel: 56,
     dungeonSetId: "stratholme",
     dungeonSetName: "Stratholme",
     icon: wowItemIcon("INV_Boots_07"),
+    allowedClasses: ["Warlock"],
+    wowheadId: 16704,
+    setId: "t0_dreadmist_raiment",
+    setName: "Dreadmist Raiment",
     stats: { intellect: 11, spirit: 9, stamina: 8 },
   },
   {
     id: 778,
     name: "Devout Sandals",
     slot: "feet",
-    quality: 2,
+    quality: 3,
     type: "Cloth",
     minLevel: 56,
     dungeonSetId: "stratholme",
     dungeonSetName: "Stratholme",
     icon: wowItemIcon("INV_Boots_07"),
+    allowedClasses: ["Priest"],
+    wowheadId: 16691,
+    setId: "t0_vestments_of_the_devout",
+    setName: "Vestments of the Devout",
     stats: { intellect: 11, spirit: 10, stamina: 8 },
   },
   {
@@ -5973,6 +5987,10 @@ export const DB_ITEMS = [
     icon: wowItemIcon("INV_Boots_Plate_03"),
     stats: { strength: 15, stamina: 12 },
   },
+  // Lower Blackrock Spire loot is generated from the real-loot manifest.
+  ...LOWER_BLACKROCK_SPIRE_ITEMS,
+  // Upper Blackrock Spire loot is generated from the real-loot manifest.
+  ...UPPER_BLACKROCK_SPIRE_ITEMS,
   // Molten Core raid loot is generated from the real-loot manifest.
   ...MOLTEN_CORE_ITEMS,
 ];

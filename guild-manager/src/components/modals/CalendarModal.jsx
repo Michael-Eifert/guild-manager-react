@@ -3,9 +3,11 @@ import { DB_CLASSES } from "../../constants";
 import {
   CALENDAR_MONTHS,
   CALENDAR_STATUS,
+  CALENDAR_TIME_OF_DAY_OPTIONS,
   CALENDAR_WEEKDAYS,
   formatCalendarDate,
   getCalendarDate,
+  getCalendarTimeOfDayOption,
   getCalendarMonthGrid,
 } from "../../calendar/calendarLogic";
 import { getCharacterAverageItemLevel, getRoleIcon } from "../../utils";
@@ -62,6 +64,7 @@ const CalendarModal = ({
   const [selectedDayIndex, setSelectedDayIndex] = useState(currentDayIndex);
   const [selectedMissionId, setSelectedMissionId] = useState(defaultMissionId);
   const [selectedWeekday, setSelectedWeekday] = useState(currentDate.weekdayIndex);
+  const [selectedTimeOfDay, setSelectedTimeOfDay] = useState("evening");
   const [eventTitle, setEventTitle] = useState("");
   const [selectedEventId, setSelectedEventId] = useState(null);
 
@@ -72,6 +75,7 @@ const CalendarModal = ({
     setSelectedDayIndex(currentDayIndex);
     setSelectedMissionId(defaultMissionId);
     setSelectedWeekday(currentDate.weekdayIndex);
+    setSelectedTimeOfDay("evening");
     setEventTitle("");
     setSelectedEventId(null);
   }, [
@@ -187,6 +191,7 @@ const CalendarModal = ({
     onCreateEvent({
       missionId: selectedMissionId,
       scheduledDayIndex: selectedDayIndex,
+      scheduledTimeOfDay: selectedTimeOfDay,
       title: eventTitle.trim() || mission?.name || "Raid Event",
     });
     setEventTitle("");
@@ -200,6 +205,7 @@ const CalendarModal = ({
     onCreateSeries({
       missionId: selectedMissionId,
       weekday: selectedWeekday,
+      scheduledTimeOfDay: selectedTimeOfDay,
       startsOnDayIndex: startDay,
       title:
         eventTitle.trim() ||
@@ -334,6 +340,20 @@ const CalendarModal = ({
                   placeholder="Molten Core Raid"
                 />
               </label>
+              <label className="text-xs text-gray-300">
+                <span className="block mb-1 text-gray-500 uppercase tracking-wide">Start</span>
+                <select
+                  value={selectedTimeOfDay}
+                  onChange={(event) => setSelectedTimeOfDay(event.target.value)}
+                  className="w-full bg-gray-800 border border-gray-600 rounded px-2 py-2 text-gray-100"
+                >
+                  {CALENDAR_TIME_OF_DAY_OPTIONS.map((option) => (
+                    <option key={option.value} value={option.value}>
+                      {option.label}
+                    </option>
+                  ))}
+                </select>
+              </label>
             </div>
             <div className="flex flex-wrap items-end gap-2">
               <div className="text-xs text-gray-400">
@@ -401,7 +421,8 @@ const CalendarModal = ({
                       </span>
                     </div>
                     <div className="text-xs text-gray-400">
-                      {formatCalendarDate(event.scheduledDayIndex)}
+                      {formatCalendarDate(event.scheduledDayIndex)} -{" "}
+                      {getCalendarTimeOfDayOption(event.scheduledTimeOfDay).label}
                     </div>
                   </button>
                 ))
@@ -415,7 +436,8 @@ const CalendarModal = ({
                 <div>
                   <h3 className="font-bold text-amber-100">{selectedEvent.title}</h3>
                   <div className="text-xs text-gray-400">
-                    {formatCalendarDate(selectedEvent.scheduledDayIndex)}
+                    {formatCalendarDate(selectedEvent.scheduledDayIndex)} -{" "}
+                    {getCalendarTimeOfDayOption(selectedEvent.scheduledTimeOfDay).label}
                   </div>
                 </div>
                 <span className={`text-xs uppercase ${getEventStatusClass(selectedEvent.status)}`}>
@@ -434,6 +456,11 @@ const CalendarModal = ({
                     {approvedMembers.length}/{maxPartySize}
                   </div>
                 </div>
+              </div>
+              <div className="mt-3 rounded border border-cyan-900/60 bg-cyan-950/20 p-2 text-xs text-cyan-100/80">
+                Auto-start: {getCalendarTimeOfDayOption(selectedEvent.scheduledTimeOfDay).label}
+                {selectedEvent.autoStart === false ? " disabled" : ""}. Lock the roster before
+                that time and the raid will start automatically.
               </div>
 
               <div className="mt-3 rounded border border-gray-700 bg-gray-900/70 p-2 text-xs">

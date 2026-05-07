@@ -100,15 +100,18 @@ import {
 import { advanceActiveMissionsForTick } from "./game/gameTickEngine";
 import {
   CALENDAR_STATUS,
+  getCalendarTimeOfDayOption,
   buildCalendarEvent,
   buildCalendarSeries,
   createInitialCalendarState,
+  getDungeonMissionPreemption,
   formatCalendarDate,
   getCalendarDate,
   getCalendarDayIndex,
   getCalendarDayProgress,
   normalizeCalendarState,
   refreshCalendarState,
+  getMissionInstanceKey,
 } from "./calendar/calendarLogic";
 
 const RecruitModal = lazy(() => import("./components/modals/RecruitModal"));
@@ -117,7 +120,9 @@ const LootTableModal = lazy(() => import("./components/modals/LootTableModal"));
 const GuildLogModal = lazy(() => import("./components/modals/GuildLogModal"));
 const DebugModal = lazy(() => import("./components/modals/DebugModal"));
 const WorldMapModal = lazy(() => import("./components/modals/WorldMapModal"));
-const GuildTalentsModal = lazy(() => import("./components/modals/GuildTalentsModal"));
+const GuildTalentsModal = lazy(
+  () => import("./components/modals/GuildTalentsModal"),
+);
 const MissionModal = lazy(() => import("./components/modals/MissionModal"));
 const OptionsModal = lazy(() => import("./components/modals/OptionsModal"));
 const CalendarModal = lazy(() => import("./components/modals/CalendarModal"));
@@ -176,14 +181,19 @@ const getGuildMemberSearchScore = (member, searchTerm) => {
   const name = normalizeGuildMemberSearch(member?.name);
   if (!query || !name) return 0;
   if (name === query) return 1000;
-  if (name.startsWith(query)) return 850 - Math.max(0, name.length - query.length);
+  if (name.startsWith(query))
+    return 850 - Math.max(0, name.length - query.length);
 
   const includesAt = name.indexOf(query);
   if (includesAt >= 0) return 700 - includesAt * 10;
 
   let queryIndex = 0;
   let gaps = 0;
-  for (let nameIndex = 0; nameIndex < name.length && queryIndex < query.length; nameIndex += 1) {
+  for (
+    let nameIndex = 0;
+    nameIndex < name.length && queryIndex < query.length;
+    nameIndex += 1
+  ) {
     if (name[nameIndex] === query[queryIndex]) {
       queryIndex += 1;
     } else if (queryIndex > 0) {
@@ -212,8 +222,9 @@ const DEFAULT_GUILD_SETUP = {
   faction: GUILD_FACTION.ALLIANCE,
   server: GUILD_SERVER.EVERLOOK,
   serverStyle:
-    GUILD_SERVER_OPTIONS.find((option) => option.value === GUILD_SERVER.EVERLOOK)?.style ||
-    "PvE",
+    GUILD_SERVER_OPTIONS.find(
+      (option) => option.value === GUILD_SERVER.EVERLOOK,
+    )?.style || "PvE",
   focus: GUILD_FOCUS.LEVELING,
   hasStarted: false,
 };
@@ -271,7 +282,9 @@ const getLevelingTickExpGain = (level, totalExpMultiplier = 1) => {
   const baseExpPerTick = reqExp / targetSeconds;
   return Math.max(
     1,
-    Math.floor(baseExpPerTick * LEVELING_TICK_EXP_MULTIPLIER * totalExpMultiplier),
+    Math.floor(
+      baseExpPerTick * LEVELING_TICK_EXP_MULTIPLIER * totalExpMultiplier,
+    ),
   );
 };
 
@@ -287,7 +300,9 @@ const getRandomZoneOverlevelMoveThreshold = () =>
   ZONE_OVERLEVEL_MOVE_THRESHOLD_MIN +
   Math.floor(
     Math.random() *
-      (ZONE_OVERLEVEL_MOVE_THRESHOLD_MAX - ZONE_OVERLEVEL_MOVE_THRESHOLD_MIN + 1),
+      (ZONE_OVERLEVEL_MOVE_THRESHOLD_MAX -
+        ZONE_OVERLEVEL_MOVE_THRESHOLD_MIN +
+        1),
   );
 
 const normalizeZoneOverlevelMoveThreshold = (value) => {
@@ -333,7 +348,8 @@ const resolveZoneAutoTransition = ({
     };
   }
 
-  const shouldAdvanceByOverlevel = getZoneOverlevel(level, currentZone) >= safeThreshold;
+  const shouldAdvanceByOverlevel =
+    getZoneOverlevel(level, currentZone) >= safeThreshold;
   if (!forceAdvance && !shouldAdvanceByOverlevel) {
     return {
       currentZoneId: currentZone.id,
@@ -367,9 +383,13 @@ const resolveZoneAutoTransition = ({
   }
 
   const nextZoneProgressById = {
-    ...(zoneProgressById && typeof zoneProgressById === "object" ? zoneProgressById : {}),
+    ...(zoneProgressById && typeof zoneProgressById === "object"
+      ? zoneProgressById
+      : {}),
   };
-  const nextZoneProgress = getClampedZoneProgress(nextZoneProgressById[nextZone.id] ?? 0);
+  const nextZoneProgress = getClampedZoneProgress(
+    nextZoneProgressById[nextZone.id] ?? 0,
+  );
   nextZoneProgressById[nextZone.id] = Math.max(
     nextZoneProgressById[nextZone.id] || 0,
     nextZoneProgress,
@@ -398,11 +418,13 @@ const resolveZoneAutoTransition = ({
 };
 
 const normalizeZoneIdList = (value, characterLevel = 1) =>
-  [...new Set(
-    (Array.isArray(value) ? value : [])
-      .map((zoneId) => getCanonicalZoneId(zoneId, characterLevel))
-      .map((zoneId) => String(zoneId || "").trim()),
-  )]
+  [
+    ...new Set(
+      (Array.isArray(value) ? value : [])
+        .map((zoneId) => getCanonicalZoneId(zoneId, characterLevel))
+        .map((zoneId) => String(zoneId || "").trim()),
+    ),
+  ]
     .filter(Boolean)
     .filter((zoneId) => Boolean(getZoneById(zoneId)));
 
@@ -424,14 +446,18 @@ const normalizeZoneCheckpointMap = (value, characterLevel = 1) => {
   return Object.entries(source).reduce((acc, [zoneId, checkpointValues]) => {
     const canonicalZoneId = getCanonicalZoneId(zoneId, characterLevel);
     if (!getZoneById(canonicalZoneId)) return acc;
-    const checkpoints = [...new Set(
-      [
-        ...(Array.isArray(acc[canonicalZoneId]) ? acc[canonicalZoneId] : []),
-        ...(Array.isArray(checkpointValues) ? checkpointValues : []),
-      ]
-        .map((checkpoint) => Number(checkpoint))
-        .filter((checkpoint) => ZONE_PROGRESS_CHECKPOINTS.includes(checkpoint)),
-    )].sort((left, right) => left - right);
+    const checkpoints = [
+      ...new Set(
+        [
+          ...(Array.isArray(acc[canonicalZoneId]) ? acc[canonicalZoneId] : []),
+          ...(Array.isArray(checkpointValues) ? checkpointValues : []),
+        ]
+          .map((checkpoint) => Number(checkpoint))
+          .filter((checkpoint) =>
+            ZONE_PROGRESS_CHECKPOINTS.includes(checkpoint),
+          ),
+      ),
+    ].sort((left, right) => left - right);
     if (checkpoints.length > 0) {
       acc[canonicalZoneId] = checkpoints;
     }
@@ -439,12 +465,20 @@ const normalizeZoneCheckpointMap = (value, characterLevel = 1) => {
   }, {});
 };
 
-const normalizeCharacterZoneState = (char, fallbackFaction = GUILD_FACTION.ALLIANCE) => {
+const normalizeCharacterZoneState = (
+  char,
+  fallbackFaction = GUILD_FACTION.ALLIANCE,
+) => {
   const characterLevel = Math.max(1, Number(char?.level) || 1);
-  const rawClearedZoneIds = (Array.isArray(char?.zonesCleared) ? char.zonesCleared : [])
+  const rawClearedZoneIds = (
+    Array.isArray(char?.zonesCleared) ? char.zonesCleared : []
+  )
     .map((zoneId) => String(zoneId || "").trim())
     .filter(Boolean);
-  const zoneProgressById = normalizeZoneProgressMap(char?.zoneProgressById, characterLevel);
+  const zoneProgressById = normalizeZoneProgressMap(
+    char?.zoneProgressById,
+    characterLevel,
+  );
   const zonesCleared = normalizeZoneIdList(rawClearedZoneIds, characterLevel);
   if (rawClearedZoneIds.includes("stranglethorn_vale")) {
     if (!zonesCleared.includes("stranglethorn_vale_north")) {
@@ -459,7 +493,10 @@ const normalizeCharacterZoneState = (char, fallbackFaction = GUILD_FACTION.ALLIA
     characterLevel,
   );
 
-  const explicitCurrentZoneId = getCanonicalZoneId(char?.currentZoneId, characterLevel);
+  const explicitCurrentZoneId = getCanonicalZoneId(
+    char?.currentZoneId,
+    characterLevel,
+  );
   const starterZoneId = getStarterZoneIdForRace(char?.race);
   const pickedZoneId = pickNextZoneForCharacter({
     faction: fallbackFaction,
@@ -533,8 +570,10 @@ const getGuildServerStyle = (serverValue) =>
 
 const getGuildServerLabel = (serverValue, serverStyle) => {
   const option = getServerOptionByValue(serverValue);
-  const resolvedStyle = serverStyle || option?.style || DEFAULT_GUILD_SETUP.serverStyle;
-  const resolvedServer = serverValue || option?.value || DEFAULT_GUILD_SETUP.server;
+  const resolvedStyle =
+    serverStyle || option?.style || DEFAULT_GUILD_SETUP.serverStyle;
+  const resolvedServer =
+    serverValue || option?.value || DEFAULT_GUILD_SETUP.server;
   return `${resolvedServer} (${resolvedStyle})`;
 };
 
@@ -554,7 +593,8 @@ const parseDungeonStepLootConfig = (entry) => {
         : undefined,
     dungeonOnly:
       typeof entry.dungeonOnly === "boolean" ? entry.dungeonOnly : undefined,
-    worldOnly: typeof entry.worldOnly === "boolean" ? entry.worldOnly : undefined,
+    worldOnly:
+      typeof entry.worldOnly === "boolean" ? entry.worldOnly : undefined,
   };
 };
 
@@ -564,11 +604,23 @@ const resolveDungeonDropSource = (stepConfig, isEndboss) => {
 
   let sourceOptions;
   if (source === "dungeon") {
-    sourceOptions = { includeWorldDrops: false, dungeonOnly: true, worldOnly: false };
+    sourceOptions = {
+      includeWorldDrops: false,
+      dungeonOnly: true,
+      worldOnly: false,
+    };
   } else if (source === "world") {
-    sourceOptions = { includeWorldDrops: true, dungeonOnly: false, worldOnly: true };
+    sourceOptions = {
+      includeWorldDrops: true,
+      dungeonOnly: false,
+      worldOnly: true,
+    };
   } else {
-    sourceOptions = { includeWorldDrops: true, dungeonOnly: false, worldOnly: false };
+    sourceOptions = {
+      includeWorldDrops: true,
+      dungeonOnly: false,
+      worldOnly: false,
+    };
   }
 
   if (typeof stepConfig.includeWorldDrops === "boolean") {
@@ -593,15 +645,22 @@ const getDungeonStepLootConfig = (mission, stepIndex) => {
   const isEndboss = stepIndex === bossCount - 1;
 
   const stepOverrides = Array.isArray(table.steps) ? table.steps : [];
-  const explicitStepConfig = parseDungeonStepLootConfig(stepOverrides[stepIndex]);
-  if (Array.isArray(explicitStepConfig.weights) && explicitStepConfig.weights.length > 0) {
+  const explicitStepConfig = parseDungeonStepLootConfig(
+    stepOverrides[stepIndex],
+  );
+  if (
+    Array.isArray(explicitStepConfig.weights) &&
+    explicitStepConfig.weights.length > 0
+  ) {
     return {
       weights: explicitStepConfig.weights,
       ...resolveDungeonDropSource(explicitStepConfig, isEndboss),
     };
   }
 
-  const phaseConfig = parseDungeonStepLootConfig(isEndboss ? table.endboss : table.boss);
+  const phaseConfig = parseDungeonStepLootConfig(
+    isEndboss ? table.endboss : table.boss,
+  );
   if (Array.isArray(phaseConfig.weights) && phaseConfig.weights.length > 0) {
     return {
       weights: phaseConfig.weights,
@@ -657,7 +716,9 @@ const getDungeonStepQualityPriority = (mission, stepIndex) => {
     .filter((entry) => entry.quality !== rolledQuality)
     .sort((a, b) => b.chance - a.chance)
     .map((entry) => entry.quality);
-  return [...new Set([rolledQuality, ...configuredFallbacks, ...fallbackOrder])];
+  return [
+    ...new Set([rolledQuality, ...configuredFallbacks, ...fallbackOrder]),
+  ];
 };
 
 // --- Loot Logic moved to /missions/missionRewards.js ---
@@ -676,7 +737,9 @@ const generateWorldLootForCharacter = ({
   const safeMinLevel = Math.max(1, Number(minLevel) || 1);
   const safeMaxLevel = Math.max(safeMinLevel, Number(maxLevel) || safeMinLevel);
 
-  const possibleItems = (Array.isArray(itemDatabase) ? itemDatabase : []).filter((item) => {
+  const possibleItems = (
+    Array.isArray(itemDatabase) ? itemDatabase : []
+  ).filter((item) => {
     if (
       (typeof item.dungeon === "string" && item.dungeon.trim()) ||
       (typeof item.dungeonSetId === "string" && item.dungeonSetId.trim())
@@ -684,7 +747,8 @@ const generateWorldLootForCharacter = ({
       return false;
     }
     if (item.quality !== quality) return false;
-    if (item.minLevel < safeMinLevel || item.minLevel > safeMaxLevel) return false;
+    if (item.minLevel < safeMinLevel || item.minLevel > safeMaxLevel)
+      return false;
     if (!isItemUsableByClass(item, char.charClass)) return false;
     return item.type === "Generic" || allowedTypes.includes(item.type);
   });
@@ -782,7 +846,9 @@ const normalizeGuildSetup = (value, payloadData = {}) => {
     ...DEFAULT_GUILD_SETUP,
     name:
       normalizedName ||
-      (hasStarted ? getFactionDefaultGuildName(normalizedFaction) : DEFAULT_GUILD_SETUP.name),
+      (hasStarted
+        ? getFactionDefaultGuildName(normalizedFaction)
+        : DEFAULT_GUILD_SETUP.name),
     faction: normalizedFaction,
     server: normalizedServer,
     serverStyle: normalizedServerStyle,
@@ -838,7 +904,8 @@ const cloneMissionTemplate = (mission) => ({
     ? JSON.parse(JSON.stringify(mission.bonusDrops))
     : mission.bonusDrops,
   raidRoleRequirement:
-    mission.raidRoleRequirement && typeof mission.raidRoleRequirement === "object"
+    mission.raidRoleRequirement &&
+    typeof mission.raidRoleRequirement === "object"
       ? { ...mission.raidRoleRequirement }
       : mission.raidRoleRequirement,
 });
@@ -899,13 +966,15 @@ const ActiveMissionCard = ({ mission, onFinish, gameTimeMs }) => {
       </div>
       {chainContext && chainTotal > 1 && (
         <div className="text-[11px] text-indigo-200/80">
-          Chain: {chainContext.setName || "Dungeon Set"} ({Math.max(1, chainPosition)}/{chainTotal})
+          Chain: {chainContext.setName || "Dungeon Set"} (
+          {Math.max(1, chainPosition)}/{chainTotal})
         </div>
       )}
       {mission.type === "dungeon" && (
         <>
           <div className="text-[11px] text-gray-300">
-            Cleared: {dungeonProgress?.clearedSteps || 0}/{dungeonBossCount} bosses
+            Cleared: {dungeonProgress?.clearedSteps || 0}/{dungeonBossCount}{" "}
+            bosses
           </div>
           {maxAttempts > 0 && (
             <div className="text-[11px] text-amber-200/80">
@@ -929,15 +998,20 @@ const ActiveMissionCard = ({ mission, onFinish, gameTimeMs }) => {
           >
             {dungeonBossNames.map((label, index) => {
               const stepAttemptResults = stepResultsByStep.get(index + 1) || [];
-              const latestStepResult = stepAttemptResults[stepAttemptResults.length - 1];
+              const latestStepResult =
+                stepAttemptResults[stepAttemptResults.length - 1];
               const hasResolved = stepAttemptResults.length > 0;
               const failedAttempts = stepAttemptResults.filter(
                 (result) => result?.outcome === "failed",
               ).length;
-              const failed = hasResolved && latestStepResult?.outcome === "failed";
-              const cleared = hasResolved && latestStepResult?.outcome === "cleared";
+              const failed =
+                hasResolved && latestStepResult?.outcome === "failed";
+              const cleared =
+                hasResolved && latestStepResult?.outcome === "cleared";
               const isActive =
-                !dungeonProgress?.finished && !hasResolved && index === activeStepIndex;
+                !dungeonProgress?.finished &&
+                !hasResolved &&
+                index === activeStepIndex;
               const isRetryingAfterWipe =
                 !dungeonProgress?.finished &&
                 index === activeStepIndex &&
@@ -1019,8 +1093,10 @@ const App = () => {
     MEMBER_RANKING_MODES.STANDARD,
   );
   const [guildMemberSearch, setGuildMemberSearch] = useState("");
-  const [guildMemberMinLevelFilter, setGuildMemberMinLevelFilter] = useState("");
-  const [guildMemberMaxLevelFilter, setGuildMemberMaxLevelFilter] = useState("");
+  const [guildMemberMinLevelFilter, setGuildMemberMinLevelFilter] =
+    useState("");
+  const [guildMemberMaxLevelFilter, setGuildMemberMaxLevelFilter] =
+    useState("");
   const [guildMemberSortMode, setGuildMemberSortMode] = useState(
     GUILD_MEMBER_SORT.LEVEL_DESC,
   );
@@ -1060,38 +1136,45 @@ const App = () => {
     }
   }, []);
 
-  const pushNotification = useCallback((payload, fallbackType = "info", fallbackDurationMs = 4200) => {
-    const normalized =
-      typeof payload === "string"
-        ? { message: payload, type: fallbackType, durationMs: fallbackDurationMs }
-        : {
-            message: payload?.message || "",
-            title: payload?.title || "",
-            type: payload?.type || fallbackType,
-            durationMs: payload?.durationMs ?? fallbackDurationMs,
-          };
-    if (!normalized.message) return;
+  const pushNotification = useCallback(
+    (payload, fallbackType = "info", fallbackDurationMs = 4200) => {
+      const normalized =
+        typeof payload === "string"
+          ? {
+              message: payload,
+              type: fallbackType,
+              durationMs: fallbackDurationMs,
+            }
+          : {
+              message: payload?.message || "",
+              title: payload?.title || "",
+              type: payload?.type || fallbackType,
+              durationMs: payload?.durationMs ?? fallbackDurationMs,
+            };
+      if (!normalized.message) return;
 
-    const notificationId = createId();
-    setNotifications((prev) =>
-      [
-        ...prev,
-        {
-          id: notificationId,
-          message: normalized.message,
-          title: normalized.title,
-          type: normalized.type,
-        },
-      ].slice(-4),
-    );
-    const timerId = window.setTimeout(() => {
+      const notificationId = createId();
       setNotifications((prev) =>
-        prev.filter((notification) => notification.id !== notificationId),
+        [
+          ...prev,
+          {
+            id: notificationId,
+            message: normalized.message,
+            title: normalized.title,
+            type: normalized.type,
+          },
+        ].slice(-4),
       );
-      notificationTimersRef.current.delete(notificationId);
-    }, normalized.durationMs);
-    notificationTimersRef.current.set(notificationId, timerId);
-  }, []);
+      const timerId = window.setTimeout(() => {
+        setNotifications((prev) =>
+          prev.filter((notification) => notification.id !== notificationId),
+        );
+        notificationTimersRef.current.delete(notificationId);
+      }, normalized.durationMs);
+      notificationTimersRef.current.set(notificationId, timerId);
+    },
+    [],
+  );
 
   useEffect(() => {
     rosterRef.current = roster;
@@ -1131,41 +1214,50 @@ const App = () => {
   );
 
   const normalizeRosterZones = useCallback(
-    (rosterSnapshot, fallbackFaction = guildSetupRef.current?.faction || GUILD_FACTION.ALLIANCE) =>
+    (
+      rosterSnapshot,
+      fallbackFaction = guildSetupRef.current?.faction ||
+        GUILD_FACTION.ALLIANCE,
+    ) =>
       (Array.isArray(rosterSnapshot) ? rosterSnapshot : []).map((member) =>
         normalizeCharacterZoneState(member, fallbackFaction),
       ),
     [],
   );
 
-  const assignZoneToRoster = useCallback((rosterSnapshot, memberIds, zoneId) => {
-    const zone = getZoneById(zoneId);
-    if (!zone) return rosterSnapshot;
+  const assignZoneToRoster = useCallback(
+    (rosterSnapshot, memberIds, zoneId) => {
+      const zone = getZoneById(zoneId);
+      if (!zone) return rosterSnapshot;
 
-    const targetMemberIds = new Set(
-      (Array.isArray(memberIds) ? memberIds : []).map((memberId) => String(memberId || "")),
-    );
-    if (targetMemberIds.size === 0) return rosterSnapshot;
+      const targetMemberIds = new Set(
+        (Array.isArray(memberIds) ? memberIds : []).map((memberId) =>
+          String(memberId || ""),
+        ),
+      );
+      if (targetMemberIds.size === 0) return rosterSnapshot;
 
-    return rosterSnapshot.map((char) => {
-      if (!targetMemberIds.has(String(char?.id || ""))) return char;
-      const normalizedChar = normalizeCharacterZoneState(
-        char,
-        guildSetupRef.current?.faction || GUILD_FACTION.ALLIANCE,
-      );
-      const existingProgress = getClampedZoneProgress(
-        normalizedChar.zoneProgressById?.[zone.id] ?? 0,
-      );
-      return {
-        ...normalizedChar,
-        currentZoneId: zone.id,
-        currentZoneProgress: existingProgress,
-        statusText: `🧭 Zone: ${getZoneProgressLabel(zone, existingProgress)}`,
-        zoneOverlevelMoveThreshold: getRandomZoneOverlevelMoveThreshold(),
-        zoneManualOverride: true,
-      };
-    });
-  }, []);
+      return rosterSnapshot.map((char) => {
+        if (!targetMemberIds.has(String(char?.id || ""))) return char;
+        const normalizedChar = normalizeCharacterZoneState(
+          char,
+          guildSetupRef.current?.faction || GUILD_FACTION.ALLIANCE,
+        );
+        const existingProgress = getClampedZoneProgress(
+          normalizedChar.zoneProgressById?.[zone.id] ?? 0,
+        );
+        return {
+          ...normalizedChar,
+          currentZoneId: zone.id,
+          currentZoneProgress: existingProgress,
+          statusText: `🧭 Zone: ${getZoneProgressLabel(zone, existingProgress)}`,
+          zoneOverlevelMoveThreshold: getRandomZoneOverlevelMoveThreshold(),
+          zoneManualOverride: true,
+        };
+      });
+    },
+    [],
+  );
 
   const guildDerivedStats = getGuildDerivedStats(guildProgress);
   const guildFocusBonuses = useMemo(
@@ -1185,12 +1277,15 @@ const App = () => {
     currentCalendarDayProgress * 100,
   );
   const factionMissionIconUrl = getWowIconUrl(
-    FACTION_EMBLEM_ICON[guildSetup.faction] || FACTION_EMBLEM_ICON[GUILD_FACTION.ALLIANCE],
+    FACTION_EMBLEM_ICON[guildSetup.faction] ||
+      FACTION_EMBLEM_ICON[GUILD_FACTION.ALLIANCE],
   );
 
   const appendGuildRenownLog = useCallback((message) => {
     const time = new Date().toLocaleTimeString();
-    setGuildLog((prev) => [{ time, type: "guild-renown", message }, ...prev].slice(0, 50));
+    setGuildLog((prev) =>
+      [{ time, type: "guild-renown", message }, ...prev].slice(0, 50),
+    );
   }, []);
 
   const appendAchievementLog = useCallback((label, reward, context = "") => {
@@ -1223,14 +1318,12 @@ const App = () => {
       });
 
       unlockedMilestones.forEach((milestone) => {
-        pushNotification(
-          {
-            type: "achievement",
-            title: "Achievement Unlocked",
-            message: `${milestone.label}: +${milestone.reward} ${GUILD_POINT_LABEL} (${missionName})`,
-            durationMs: 5200,
-          },
-        );
+        pushNotification({
+          type: "achievement",
+          title: "Achievement Unlocked",
+          message: `${milestone.label}: +${milestone.reward} ${GUILD_POINT_LABEL} (${missionName})`,
+          durationMs: 5200,
+        });
         appendAchievementLog(milestone.label, milestone.reward, missionName);
       });
     },
@@ -1247,14 +1340,12 @@ const App = () => {
       });
 
       if (unlockedMilestone) {
-        pushNotification(
-          {
-            type: "achievement",
-            title: "Achievement Unlocked",
-            message: `${unlockedMilestone.label}: +${unlockedMilestone.reward} ${GUILD_POINT_LABEL} (${missionName})`,
-            durationMs: 5200,
-          },
-        );
+        pushNotification({
+          type: "achievement",
+          title: "Achievement Unlocked",
+          message: `${unlockedMilestone.label}: +${unlockedMilestone.reward} ${GUILD_POINT_LABEL} (${missionName})`,
+          durationMs: 5200,
+        });
         appendAchievementLog(
           unlockedMilestone.label,
           unlockedMilestone.reward,
@@ -1271,7 +1362,9 @@ const App = () => {
       let blockedSummary = null;
       const availableGold = Math.max(0, Number(goldRef.current) || 0);
       setGuildProgress((prev) => {
-        const result = upgradeGuildTalent(prev, talentKey, { guildGold: availableGold });
+        const result = upgradeGuildTalent(prev, talentKey, {
+          guildGold: availableGold,
+        });
         if (result.upgraded && result.talent) {
           upgradeSummary = {
             title: result.talent.title,
@@ -1295,7 +1388,8 @@ const App = () => {
       if (upgradeSummary) {
         const updatedGold = Math.max(
           0,
-          (Number(goldRef.current) || 0) - Math.max(0, Number(upgradeSummary.spentGold) || 0),
+          (Number(goldRef.current) || 0) -
+            Math.max(0, Number(upgradeSummary.spentGold) || 0),
         );
         goldRef.current = updatedGold;
         setGuildGold(updatedGold);
@@ -1312,19 +1406,17 @@ const App = () => {
             ? blockedSummary.blockers[0]
             : blockedSummary.missingCost > 0 && blockedSummary.missingGold > 0
               ? `Need ${blockedSummary.missingCost} more ${GUILD_POINT_LABEL} and ${blockedSummary.missingGold}g.`
-            : blockedSummary.missingCost > 0
-              ? `Need ${blockedSummary.missingCost} more ${GUILD_POINT_LABEL}.`
-              : blockedSummary.missingGold > 0
-                ? `Need ${blockedSummary.missingGold}g more.`
-              : "No further upgrades available.";
-        pushNotification(
-          {
-            type: blockedSummary.blockedByPrerequisite ? "error" : "info",
-            title: blockedSummary.title,
-            message: blockerText,
-            durationMs: 3200,
-          },
-        );
+              : blockedSummary.missingCost > 0
+                ? `Need ${blockedSummary.missingCost} more ${GUILD_POINT_LABEL}.`
+                : blockedSummary.missingGold > 0
+                  ? `Need ${blockedSummary.missingGold}g more.`
+                  : "No further upgrades available.";
+        pushNotification({
+          type: blockedSummary.blockedByPrerequisite ? "error" : "info",
+          title: blockedSummary.title,
+          message: blockerText,
+          durationMs: 3200,
+        });
       }
     },
     [appendGuildRenownLog, pushNotification],
@@ -1377,71 +1469,82 @@ const App = () => {
     };
   };
 
-  const tryApplyWorldTickLoot = useCallback((char, logCollector) => {
-    const roll = Math.random();
-    const epicEligible = (Number(char?.level) || 1) >= WORLD_TICK_EPIC_MIN_LEVEL;
-    const epicThreshold = epicEligible ? WORLD_TICK_EPIC_DROP_CHANCE : 0;
-    const uncommonThreshold = epicThreshold + WORLD_TICK_UNCOMMON_DROP_CHANCE;
-    const commonThreshold = uncommonThreshold + WORLD_TICK_COMMON_DROP_CHANCE;
-    const targetQuality =
-      roll < epicThreshold
-        ? 4
-        : roll < uncommonThreshold
-          ? 2
-          : roll < commonThreshold
-            ? 1
-            : null;
-    if (!targetQuality) return char;
+  const tryApplyWorldTickLoot = useCallback(
+    (char, logCollector) => {
+      const roll = Math.random();
+      const epicEligible =
+        (Number(char?.level) || 1) >= WORLD_TICK_EPIC_MIN_LEVEL;
+      const epicThreshold = epicEligible ? WORLD_TICK_EPIC_DROP_CHANCE : 0;
+      const uncommonThreshold = epicThreshold + WORLD_TICK_UNCOMMON_DROP_CHANCE;
+      const commonThreshold = uncommonThreshold + WORLD_TICK_COMMON_DROP_CHANCE;
+      const targetQuality =
+        roll < epicThreshold
+          ? 4
+          : roll < uncommonThreshold
+            ? 2
+            : roll < commonThreshold
+              ? 1
+              : null;
+      if (!targetQuality) return char;
 
-    const lootItem = generateWorldTickLoot(char, targetQuality, itemDatabase);
-    return applyLootRewardToCharacter({
-      char,
-      lootItem,
-      logCollector,
-      missionName: "World Drop",
-      updateStatusText: true,
-      logDiscarded: false,
-    });
-  }, [itemDatabase]);
+      const lootItem = generateWorldTickLoot(char, targetQuality, itemDatabase);
+      return applyLootRewardToCharacter({
+        char,
+        lootItem,
+        logCollector,
+        missionName: "World Drop",
+        updateStatusText: true,
+        logDiscarded: false,
+      });
+    },
+    [itemDatabase],
+  );
 
-  const applyMissionWipeCosts = useCallback((mission, stepLogs, availableGold) => {
-    if (mission?.type !== "dungeon") {
-      return { updatedGold: availableGold, wipeCostLog: null };
-    }
-    const wipeEvents = (Array.isArray(stepLogs) ? stepLogs : []).filter(
-      (log) => log?.type === "mission-attempt",
-    );
-    if (wipeEvents.length === 0) {
-      return { updatedGold: availableGold, wipeCostLog: null };
-    }
+  const applyMissionWipeCosts = useCallback(
+    (mission, stepLogs, availableGold) => {
+      if (mission?.type !== "dungeon") {
+        return { updatedGold: availableGold, wipeCostLog: null };
+      }
+      const wipeEvents = (Array.isArray(stepLogs) ? stepLogs : []).filter(
+        (log) => log?.type === "mission-attempt",
+      );
+      if (wipeEvents.length === 0) {
+        return { updatedGold: availableGold, wipeCostLog: null };
+      }
 
-    const wipeCost = getMissionWipeCost(mission);
-    if (wipeCost <= 0) {
-      return { updatedGold: availableGold, wipeCostLog: null };
-    }
+      const wipeCost = getMissionWipeCost(mission);
+      if (wipeCost <= 0) {
+        return { updatedGold: availableGold, wipeCostLog: null };
+      }
 
-    const totalCost = wipeCost * wipeEvents.length;
-    const paidAmount = Math.max(0, Math.min(Math.floor(availableGold), totalCost));
-    const unpaidAmount = Math.max(0, totalCost - paidAmount);
+      const totalCost = wipeCost * wipeEvents.length;
+      const paidAmount = Math.max(
+        0,
+        Math.min(Math.floor(availableGold), totalCost),
+      );
+      const unpaidAmount = Math.max(0, totalCost - paidAmount);
 
-    return {
-      updatedGold: Math.max(0, availableGold - paidAmount),
-      wipeCostLog:
-        paidAmount > 0 || unpaidAmount > 0
-          ? {
-              type: "wipe-cost",
-              missionName: mission?.name || "Dungeon",
-              wipeCount: wipeEvents.length,
-              wipeCost,
-              amount: paidAmount,
-              unpaidAmount,
-            }
-          : null,
-    };
-  }, []);
+      return {
+        updatedGold: Math.max(0, availableGold - paidAmount),
+        wipeCostLog:
+          paidAmount > 0 || unpaidAmount > 0
+            ? {
+                type: "wipe-cost",
+                missionName: mission?.name || "Dungeon",
+                wipeCount: wipeEvents.length,
+                wipeCost,
+                amount: paidAmount,
+                unpaidAmount,
+              }
+            : null,
+      };
+    },
+    [],
+  );
 
   const getMissionInstanceId = (mission) =>
-    mission.instanceId || `${mission.questId || mission.id}-${mission.startTime || 0}`;
+    mission.instanceId ||
+    `${mission.questId || mission.id}-${mission.startTime || 0}`;
 
   const getAdjustedMissionSuccessPreview = useCallback((mission, members) => {
     const preview = getMissionSuccessPreview(mission, members);
@@ -1477,10 +1580,13 @@ const App = () => {
 
   const buildMissionRun = useCallback(
     (quest, ids, startTime, rosterSnapshot, chainContext = null) => {
-      const selectedMembers = (Array.isArray(rosterSnapshot) ? rosterSnapshot : rosterRef.current).filter(
-        (c) => ids.includes(c.id),
+      const selectedMembers = (
+        Array.isArray(rosterSnapshot) ? rosterSnapshot : rosterRef.current
+      ).filter((c) => ids.includes(c.id));
+      const missionPreview = getAdjustedMissionSuccessPreview(
+        quest,
+        selectedMembers,
       );
-      const missionPreview = getAdjustedMissionSuccessPreview(quest, selectedMembers);
       const totalDuration = quest.duration * 1000;
       const dungeonProgress =
         quest.type === "dungeon"
@@ -1510,7 +1616,9 @@ const App = () => {
         chainContext: chainContext
           ? {
               ...chainContext,
-              remainingMissionIds: Array.isArray(chainContext.remainingMissionIds)
+              remainingMissionIds: Array.isArray(
+                chainContext.remainingMissionIds,
+              )
                 ? [...chainContext.remainingMissionIds]
                 : [],
             }
@@ -1550,7 +1658,9 @@ const App = () => {
         1,
         Math.min(totalMissions, Number(chainContext?.currentPosition) || 1),
       );
-      const remainingMissionIds = Array.isArray(chainContext?.remainingMissionIds)
+      const remainingMissionIds = Array.isArray(
+        chainContext?.remainingMissionIds,
+      )
         ? chainContext.remainingMissionIds
         : [];
 
@@ -1596,9 +1706,10 @@ const App = () => {
       }
 
       const missionLookup = new Map(
-        (Array.isArray(missionListRef.current) ? missionListRef.current : []).map(
-          (missionEntry) => [missionEntry.id, missionEntry],
-        ),
+        (Array.isArray(missionListRef.current)
+          ? missionListRef.current
+          : []
+        ).map((missionEntry) => [missionEntry.id, missionEntry]),
       );
       const nextMissionTemplate = missionLookup.get(remainingMissionIds[0]);
       if (!nextMissionTemplate || nextMissionTemplate.type !== "dungeon") {
@@ -1673,7 +1784,11 @@ const App = () => {
 
       const updatedRoster = rosterSnapshot.map((char) =>
         mission.memberIds.includes(char.id)
-          ? { ...char, status: "Questing", statusText: `Chain: ${nextMissionTemplate.name}` }
+          ? {
+              ...char,
+              status: "Questing",
+              statusText: `Chain: ${nextMissionTemplate.name}`,
+            }
           : char,
       );
 
@@ -1753,7 +1868,11 @@ const App = () => {
       const nextActiveMissions = [...activeMissions];
       const nextFinishedMissions = [...finishedMissions];
       const allMissions = [
-        ...nextActiveMissions.map((mission, index) => ({ mission, index, bucket: "active" })),
+        ...nextActiveMissions.map((mission, index) => ({
+          mission,
+          index,
+          bucket: "active",
+        })),
         ...nextFinishedMissions.map((mission, index) => ({
           mission,
           index,
@@ -1768,7 +1887,10 @@ const App = () => {
 
         const matchingMission = allMissions.find(({ mission }) => {
           const logInstanceId = String(log?.missionInstanceId || "");
-          if (logInstanceId && getMissionInstanceId(mission) === logInstanceId) {
+          if (
+            logInstanceId &&
+            getMissionInstanceId(mission) === logInstanceId
+          ) {
             return true;
           }
           return (
@@ -1817,17 +1939,20 @@ const App = () => {
     setCalendarState(normalized);
   }, []);
 
-  const updateCalendarEvent = useCallback((eventId, updater) => {
-    if (!eventId || typeof updater !== "function") return;
-    const currentState = calendarStateRef.current;
-    const nextState = {
-      ...currentState,
-      calendarEvents: currentState.calendarEvents.map((event) =>
-        event.id === eventId ? updater(event) : event,
-      ),
-    };
-    commitCalendarState(nextState);
-  }, [commitCalendarState]);
+  const updateCalendarEvent = useCallback(
+    (eventId, updater) => {
+      if (!eventId || typeof updater !== "function") return;
+      const currentState = calendarStateRef.current;
+      const nextState = {
+        ...currentState,
+        calendarEvents: currentState.calendarEvents.map((event) =>
+          event.id === eventId ? updater(event) : event,
+        ),
+      };
+      commitCalendarState(nextState);
+    },
+    [commitCalendarState],
+  );
 
   const completeCalendarEvent = useCallback(
     ({ eventId, missionName, missionSucceeded }) => {
@@ -1837,7 +1962,9 @@ const App = () => {
         calendarStateRef.current.calendarEpochGameTimeMs,
       );
       const currentState = calendarStateRef.current;
-      const event = currentState.calendarEvents.find((entry) => entry.id === eventId);
+      const event = currentState.calendarEvents.find(
+        (entry) => entry.id === eventId,
+      );
       if (!event || event.status === CALENDAR_STATUS.COMPLETED) return;
 
       commitCalendarState({
@@ -1888,17 +2015,26 @@ const App = () => {
 
       const currentFaction =
         guildSetupRef.current?.faction || GUILD_FACTION.ALLIANCE;
-      const currentRoster = normalizeRosterZones(rosterRef.current, currentFaction);
-      const currentMissions = missionsRef.current;
+      const currentRoster = normalizeRosterZones(
+        rosterRef.current,
+        currentFaction,
+      );
       const currentGold = goldRef.current;
       const currentGuildStats = getGuildDerivedStats(guildProgressRef.current);
-      const currentFocusBonuses = getGuildFocusBonuses(guildSetupRef.current?.focus);
+      const currentFocusBonuses = getGuildFocusBonuses(
+        guildSetupRef.current?.focus,
+      );
       const calendarDayIndex = getCalendarDayIndex(
+        now,
+        calendarStateRef.current.calendarEpochGameTimeMs,
+      );
+      const calendarDayProgress = getCalendarDayProgress(
         now,
         calendarStateRef.current.calendarEpochGameTimeMs,
       );
 
       let newRoster = [...currentRoster];
+      let currentMissions = [...missionsRef.current];
       let newMissions = [];
       let finishedMissions = [];
       let newLogs = [];
@@ -1931,6 +2067,80 @@ const App = () => {
           durationMs: 5200,
         });
       });
+
+      refreshedCalendar.state.calendarEvents
+        .filter(
+          (event) =>
+            event.status === CALENDAR_STATUS.READY &&
+            event.autoStart !== false &&
+            event.scheduledDayIndex === calendarDayIndex &&
+            getCalendarTimeOfDayOption(event.scheduledTimeOfDay).dayProgress <=
+              calendarDayProgress &&
+            Array.isArray(event.approvedRosterIds) &&
+            event.approvedRosterIds.length > 0,
+        )
+        .forEach((event) => {
+          const mission = missionListRef.current.find(
+            (entry) => String(entry?.id) === String(event.missionId),
+          );
+          if (!mission) return;
+          const approvedRosterIds = event.approvedRosterIds.filter(Boolean);
+          const selectedMembers = newRoster.filter((member) =>
+            approvedRosterIds.includes(member.id),
+          );
+          if (selectedMembers.length !== approvedRosterIds.length) return;
+          const keyAccess = evaluateMissionKeyAccess({
+            missions: [mission],
+            partyMembers: selectedMembers,
+          });
+          if (!keyAccess.canEnter) return;
+          const deployed = handleDeploy(mission, approvedRosterIds, {
+            calendarEventId: event.id,
+          });
+          if (!deployed) return;
+          newRoster = Array.isArray(rosterRef.current)
+            ? [...rosterRef.current]
+            : newRoster;
+          currentMissions = Array.isArray(missionsRef.current)
+            ? [...missionsRef.current]
+            : currentMissions;
+          calendarStateRef.current = {
+            ...calendarStateRef.current,
+            calendarEvents: calendarStateRef.current.calendarEvents.map(
+              (entry) =>
+                entry.id === event.id
+                  ? {
+                      ...entry,
+                      status: CALENDAR_STATUS.RUNNING,
+                      runningMissionInstanceId: missionRun.instanceId || null,
+                    }
+                  : entry,
+            ),
+            calendarEventHistory: [
+              {
+                id: createId(),
+                eventId: event.id,
+                type: "auto-started",
+                missionName: mission.name,
+                dayIndex: calendarDayIndex,
+                scheduledTimeOfDay: event.scheduledTimeOfDay,
+                approvedRosterIds: [...event.approvedRosterIds],
+                benchedIds: [...event.benchedIds],
+              },
+              ...calendarStateRef.current.calendarEventHistory,
+            ].slice(0, 100),
+          };
+          setCalendarState(calendarStateRef.current);
+          newLogs.push({
+            type: "calendar",
+            message: `${event.title} auto-started at ${getCalendarTimeOfDayOption(event.scheduledTimeOfDay).label}.`,
+          });
+          pushNotification({
+            type: "info",
+            title: "Raid Auto-Started",
+            message: `${event.title} started with ${approvedRosterIds.length} heroes.`,
+          });
+        });
 
       // 1. Advance missions and separate finished/active
       const missionTick = advanceActiveMissionsForTick({
@@ -2019,7 +2229,10 @@ const App = () => {
 
       // 3. Process Character Status (Idle/Professions)
       newRoster = newRoster.map((char) => {
-        const normalizedChar = normalizeCharacterZoneState(char, currentFaction);
+        const normalizedChar = normalizeCharacterZoneState(
+          char,
+          currentFaction,
+        );
         if (normalizedChar.status === "Questing") return normalizedChar;
 
         let statusText = "Resting...";
@@ -2028,7 +2241,9 @@ const App = () => {
 
         const hardCap = getSkillCap(normalizedChar.level);
         const autoTarget = getAutoSkillTarget(normalizedChar.level);
-        const canGainSkill = normalizedChar.professions.some((p) => p.skill < hardCap);
+        const canGainSkill = normalizedChar.professions.some(
+          (p) => p.skill < hardCap,
+        );
         const needsAutoSkill = normalizedChar.professions.some(
           (p) => p.skill < autoTarget,
         );
@@ -2046,7 +2261,9 @@ const App = () => {
             gainSkill = true;
           } else {
             statusText =
-              "Skills Capped (Need Level " + getNextTierLevel(normalizedChar.level) + ")";
+              "Skills Capped (Need Level " +
+              getNextTierLevel(normalizedChar.level) +
+              ")";
           }
         } else if (normalizedChar.activityMode === "Auto") {
           if (isCheckpointLevel && needsAutoSkill) {
@@ -2098,7 +2315,8 @@ const App = () => {
             normalizedChar.currentZoneProgress,
           );
           let zoneManualOverride = normalizedChar.zoneManualOverride;
-          let zoneOverlevelMoveThreshold = normalizedChar.zoneOverlevelMoveThreshold;
+          let zoneOverlevelMoveThreshold =
+            normalizedChar.zoneOverlevelMoveThreshold;
           let zoneProgressById = { ...normalizedChar.zoneProgressById };
           let zonesCleared = [...normalizedChar.zonesCleared];
           let zoneCheckpointRewardsClaimedByZone = {
@@ -2116,7 +2334,9 @@ const App = () => {
               characterLevel: normalizedChar.level,
               durationVariance: normalizedChar.zoneDurationVariance,
             });
-            const nextProgress = getClampedZoneProgress(storedProgress + progressGain);
+            const nextProgress = getClampedZoneProgress(
+              storedProgress + progressGain,
+            );
             currentZoneProgress = nextProgress;
             zoneProgressById[activeZone.id] = nextProgress;
 
@@ -2125,17 +2345,26 @@ const App = () => {
               Array.isArray(zoneCheckpointRewardsClaimedByZone[activeZone.id])
                 ? zoneCheckpointRewardsClaimedByZone[activeZone.id]
                     .map((checkpoint) => Number(checkpoint))
-                    .filter((checkpoint) => ZONE_PROGRESS_CHECKPOINTS.includes(checkpoint))
+                    .filter((checkpoint) =>
+                      ZONE_PROGRESS_CHECKPOINTS.includes(checkpoint),
+                    )
                 : [],
             );
 
             if (!zoneAlreadyCleared) {
               ZONE_PROGRESS_CHECKPOINTS.forEach((checkpoint) => {
-                if (nextProgress < checkpoint || claimedSet.has(checkpoint)) return;
+                if (nextProgress < checkpoint || claimedSet.has(checkpoint))
+                  return;
                 claimedSet.add(checkpoint);
 
-                const checkpointGold = getZoneCheckpointGoldReward(activeZone, checkpoint);
-                const openGoldSpace = Math.max(0, currentGuildStats.goldCap - newGold);
+                const checkpointGold = getZoneCheckpointGoldReward(
+                  activeZone,
+                  checkpoint,
+                );
+                const openGoldSpace = Math.max(
+                  0,
+                  currentGuildStats.goldCap - newGold,
+                );
                 const gainedGold = Math.max(
                   0,
                   Math.min(checkpointGold, openGoldSpace),
@@ -2185,9 +2414,9 @@ const App = () => {
             }
             forceZoneAdvance = nextProgress >= 100;
 
-            zoneCheckpointRewardsClaimedByZone[activeZone.id] = [...claimedSet].sort(
-              (left, right) => left - right,
-            );
+            zoneCheckpointRewardsClaimedByZone[activeZone.id] = [
+              ...claimedSet,
+            ].sort((left, right) => left - right);
           }
 
           const transitionedZoneState = resolveZoneAutoTransition({
@@ -2209,16 +2438,22 @@ const App = () => {
           zoneCheckpointRewardsClaimedByZone =
             transitionedZoneState.zoneCheckpointRewardsClaimedByZone;
           zoneManualOverride = transitionedZoneState.zoneManualOverride;
-          zoneOverlevelMoveThreshold = transitionedZoneState.zoneOverlevelMoveThreshold;
+          zoneOverlevelMoveThreshold =
+            transitionedZoneState.zoneOverlevelMoveThreshold;
 
           const currentZone = transitionedZoneState.currentZone;
-          const zoneStatusLabel = getZoneProgressLabel(currentZone, currentZoneProgress);
+          const zoneStatusLabel = getZoneProgressLabel(
+            currentZone,
+            currentZoneProgress,
+          );
           const leveledChar = {
             ...normalizedChar,
             level: newLevel,
             exp: newExp,
             maxExp,
-            statusText: zoneStatusLabel ? `🧭 Zone: ${zoneStatusLabel}` : statusText,
+            statusText: zoneStatusLabel
+              ? `🧭 Zone: ${zoneStatusLabel}`
+              : statusText,
             lastLevelUp: leveledUp ? Date.now() : normalizedChar.lastLevelUp,
             currentZoneId,
             currentZoneProgress,
@@ -2268,7 +2503,9 @@ const App = () => {
         if (gainSkill) {
           // Determine cap based on mode
           const currentLimit =
-            normalizedChar.activityMode === "Auto" && isCheckpointLevel && needsAutoSkill
+            normalizedChar.activityMode === "Auto" &&
+            isCheckpointLevel &&
+            needsAutoSkill
               ? autoTarget
               : hardCap;
 
@@ -2322,7 +2559,8 @@ const App = () => {
           zoneCheckpointRewardsClaimedByZone:
             transitionedZoneState.zoneCheckpointRewardsClaimedByZone,
           zoneManualOverride: transitionedZoneState.zoneManualOverride,
-          zoneOverlevelMoveThreshold: transitionedZoneState.zoneOverlevelMoveThreshold,
+          zoneOverlevelMoveThreshold:
+            transitionedZoneState.zoneOverlevelMoveThreshold,
         };
       });
 
@@ -2344,6 +2582,7 @@ const App = () => {
   }, [
     applyDungeonStepLootAwards,
     applyMissionWipeCosts,
+    buildMissionRun,
     completeCalendarEvent,
     gameSpeed,
     isPaused,
@@ -2358,7 +2597,10 @@ const App = () => {
   ]);
 
   const handleOpenRecruit = () => {
-    const openSlots = Math.max(0, guildDerivedStats.maxRoster - rosterRef.current.length);
+    const openSlots = Math.max(
+      0,
+      guildDerivedStats.maxRoster - rosterRef.current.length,
+    );
     if (openSlots <= 0) {
       pushNotification({
         type: "error",
@@ -2466,7 +2708,9 @@ const App = () => {
       if (field === "focus") {
         return {
           ...prev,
-          focus: GUILD_FOCUS_OPTIONS.includes(value) ? value : GUILD_FOCUS.LEVELING,
+          focus: GUILD_FOCUS_OPTIONS.includes(value)
+            ? value
+            : GUILD_FOCUS.LEVELING,
         };
       }
       if (field === "server") {
@@ -2507,10 +2751,16 @@ const App = () => {
     setRoster(starterRoster);
     setActiveMissions([]);
     setCalendarState(calendarStart);
-    setMissionList(getMissionListWithZones(INITIAL_MISSIONS.map(cloneMissionTemplate)));
+    setMissionList(
+      getMissionListWithZones(INITIAL_MISSIONS.map(cloneMissionTemplate)),
+    );
     setGuildLog([]);
     setGuildGold(starterGold);
-    setGuildSetup((prev) => ({ ...prev, name: normalizedName, hasStarted: true }));
+    setGuildSetup((prev) => ({
+      ...prev,
+      name: normalizedName,
+      hasStarted: true,
+    }));
     pushNotification({
       type: "info",
       title: "Guild Founded",
@@ -2527,190 +2777,334 @@ const App = () => {
       const prompt = `Write a short, engaging 2-sentence fantasy backstory for a level ${char.level} ${char.race} ${char.charClass} named ${char.name}. They are a member of the '${guildName}' guild.`;
       return await callGemini(prompt, false);
     } catch {
-      alert("Oracle is meditating. Configure VITE_GEMINI_PROXY_URL and try again.");
+      alert(
+        "Oracle is meditating. Configure VITE_GEMINI_PROXY_URL and try again.",
+      );
       return null;
     }
   };
-  const handleDeploy = useCallback((quest, ids, options = {}) => {
-    const memberIds = Array.isArray(ids) ? ids.filter(Boolean) : [];
-    if (!quest || memberIds.length === 0) return false;
-    if (isZoneMission(quest)) {
-      const zone = getZoneById(quest.zoneId);
-      if (!zone) return false;
-      if (!isZoneAccessibleForFaction(zone, guildSetupRef.current?.faction)) {
+  const preemptDungeonMissionsForRaid = useCallback(
+    ({ raidMemberIds, raidName }) => {
+      const preemption = getDungeonMissionPreemption({
+        activeMissions: missionsRef.current,
+        memberIds: raidMemberIds,
+      });
+      if (preemption.canceledMissions.length === 0) return null;
+
+      const affectedMemberIdSet = new Set(preemption.affectedMemberIds);
+      const nextRoster = rosterRef.current.map((char) => {
+        if (!affectedMemberIdSet.has(String(char?.id || ""))) return char;
+        const normalizedChar = normalizeCharacterZoneState(
+          char,
+          guildSetupRef.current?.faction || GUILD_FACTION.ALLIANCE,
+        );
+        return {
+          ...normalizedChar,
+          status: "Idle",
+          statusText: "Resting...",
+        };
+      });
+      const canceledMissionKeys = new Set(
+        preemption.canceledMissions.map((mission) => mission.missionKey),
+      );
+      const nextMissions = missionsRef.current.filter(
+        (mission) => !canceledMissionKeys.has(getMissionInstanceKey(mission)),
+      );
+      const canceledMissionNames = [
+        ...new Set(
+          preemption.canceledMissions.map((mission) => mission.missionName),
+        ),
+      ];
+
+      rosterRef.current = nextRoster;
+      missionsRef.current = nextMissions;
+      setRoster(nextRoster);
+      setActiveMissions(nextMissions);
+
+      const time = new Date().toLocaleTimeString();
+      const message = `${raidName} cancelled ${canceledMissionNames.join(", ")} so the raid can start.`;
+      setGuildLog((prev) =>
+        [
+          {
+            time,
+            type: "calendar",
+            message,
+          },
+          ...prev,
+        ].slice(0, 50),
+      );
+      pushNotification({
+        type: "info",
+        title: "Dungeon Cancelled",
+        message,
+      });
+
+      return {
+        ...preemption,
+        nextRoster,
+        nextMissions,
+      };
+    },
+    [pushNotification],
+  );
+
+  const handleDeploy = useCallback(
+    (quest, ids, options = {}) => {
+      const memberIds = Array.isArray(ids) ? ids.filter(Boolean) : [];
+      if (!quest || memberIds.length === 0) return false;
+      let rosterSnapshot = Array.isArray(rosterRef.current)
+        ? rosterRef.current
+        : roster;
+      if (isZoneMission(quest)) {
+        const zone = getZoneById(quest.zoneId);
+        if (!zone) return false;
+        if (!isZoneAccessibleForFaction(zone, guildSetupRef.current?.faction)) {
+          pushNotification({
+            type: "error",
+            title: "Zone Locked",
+            message: `${zone.name} is restricted to ${zone.faction}.`,
+          });
+          return false;
+        }
+        setRoster((prev) => {
+          const withZoneState = normalizeRosterZones(prev);
+          const assigned = assignZoneToRoster(
+            withZoneState,
+            memberIds,
+            zone.id,
+          );
+          rosterRef.current = assigned;
+          return assigned;
+        });
+        pushNotification({
+          type: "info",
+          title: "Zone Assigned",
+          message: `${memberIds.length} hero${memberIds.length === 1 ? "" : "es"} sent to ${zone.name}.`,
+        });
+        return true;
+      }
+      const recommendedPartySize = Math.max(
+        1,
+        Number(quest?.requiredPartySize) || (quest?.isRaid ? 40 : 5),
+      );
+      const minimumPartySize = quest?.isRaid
+        ? Math.max(1, Number(quest?.minPartySize) || 5)
+        : 1;
+      if (quest?.isRaid && memberIds.length < minimumPartySize) {
         pushNotification({
           type: "error",
-          title: "Zone Locked",
-          message: `${zone.name} is restricted to ${zone.faction}.`,
+          title: "Raid Setup Incomplete",
+          message: `${quest.name} requires at least ${minimumPartySize} heroes (recommended: ${recommendedPartySize}).`,
         });
         return false;
       }
-      setRoster((prev) => {
-        const withZoneState = normalizeRosterZones(prev);
-        const assigned = assignZoneToRoster(withZoneState, memberIds, zone.id);
-        rosterRef.current = assigned;
-        return assigned;
-      });
-      pushNotification({
-        type: "info",
-        title: "Zone Assigned",
-        message: `${memberIds.length} hero${memberIds.length === 1 ? "" : "es"} sent to ${zone.name}.`,
-      });
-      return true;
-    }
-    const recommendedPartySize = Math.max(
-      1,
-      Number(quest?.requiredPartySize) || (quest?.isRaid ? 40 : 5),
-    );
-    const minimumPartySize = quest?.isRaid
-      ? Math.max(1, Number(quest?.minPartySize) || 5)
-      : 1;
-    if (quest?.isRaid && memberIds.length < minimumPartySize) {
-      pushNotification({
-        type: "error",
-        title: "Raid Setup Incomplete",
-        message: `${quest.name} requires at least ${minimumPartySize} heroes (recommended: ${recommendedPartySize}).`,
-      });
-      return false;
-    }
-    const rosterSnapshot = Array.isArray(rosterRef.current)
-      ? rosterRef.current
-      : roster;
+      const requestedChainMissionIds = Array.isArray(options?.chainMissionIds)
+        ? [...new Set(options.chainMissionIds)]
+        : [];
+      const canBuildChain =
+        quest.type === "dungeon" &&
+        typeof quest.dungeonSetId === "string" &&
+        quest.dungeonSetId.trim() &&
+        requestedChainMissionIds.length > 1;
 
-    const requestedChainMissionIds = Array.isArray(options?.chainMissionIds)
-      ? [...new Set(options.chainMissionIds)]
-      : [];
-    const canBuildChain =
-      quest.type === "dungeon" &&
-      typeof quest.dungeonSetId === "string" &&
-      quest.dungeonSetId.trim() &&
-      requestedChainMissionIds.length > 1;
+      let chainMissions = [];
+      if (canBuildChain) {
+        const missionLookup = new Map(
+          (Array.isArray(missionListRef.current)
+            ? missionListRef.current
+            : []
+          ).map((missionEntry) => [missionEntry.id, missionEntry]),
+        );
+        chainMissions = requestedChainMissionIds
+          .map((missionId) => missionLookup.get(missionId))
+          .filter(
+            (missionEntry) =>
+              missionEntry &&
+              missionEntry.type === "dungeon" &&
+              missionEntry.dungeonSetId === quest.dungeonSetId,
+          )
+          .sort(sortDungeonChainMissions);
+      }
 
-    let chainMissions = [];
-    if (canBuildChain) {
-      const missionLookup = new Map(
-        (Array.isArray(missionListRef.current) ? missionListRef.current : []).map(
-          (missionEntry) => [missionEntry.id, missionEntry],
-        ),
+      const hasDungeonChain = chainMissions.length > 1;
+      const missionSequenceForAccess = hasDungeonChain
+        ? chainMissions
+        : [quest];
+      const selectedMembers = rosterSnapshot.filter((char) =>
+        memberIds.includes(char.id),
       );
-      chainMissions = requestedChainMissionIds
-        .map((missionId) => missionLookup.get(missionId))
-        .filter(
-          (missionEntry) =>
-            missionEntry &&
-            missionEntry.type === "dungeon" &&
-            missionEntry.dungeonSetId === quest.dungeonSetId,
-        )
-        .sort(sortDungeonChainMissions);
-    }
-
-    const hasDungeonChain = chainMissions.length > 1;
-    const missionSequenceForAccess = hasDungeonChain ? chainMissions : [quest];
-    const selectedMembers = rosterSnapshot.filter((char) =>
-      memberIds.includes(char.id),
-    );
-    const missionKeyAccess = evaluateMissionKeyAccess({
-      missions: missionSequenceForAccess,
-      partyMembers: selectedMembers,
-    });
-    if (!missionKeyAccess.canEnter) {
-      const blockingRequirement = missionKeyAccess.firstBlockingRequirement;
-      const missingKeyLabel = missionKeyAccess.missingKeyIds
-        .map((keyId) => getKeyLabel(keyId) || keyId)
-        .join(", ");
-      const blockedMissionName = blockingRequirement?.missionName || quest.name;
-      const requiresAllMembers = Boolean(
-        blockingRequirement?.requiresAllMembers ||
+      const missionKeyAccess = evaluateMissionKeyAccess({
+        missions: missionSequenceForAccess,
+        partyMembers: selectedMembers,
+      });
+      if (!missionKeyAccess.canEnter) {
+        const blockingRequirement = missionKeyAccess.firstBlockingRequirement;
+        const missingKeyLabel = missionKeyAccess.missingKeyIds
+          .map((keyId) => getKeyLabel(keyId) || keyId)
+          .join(", ");
+        const blockedMissionName =
+          blockingRequirement?.missionName || quest.name;
+        const requiresAllMembers = Boolean(
+          blockingRequirement?.requiresAllMembers ||
           (Array.isArray(missionSequenceForAccess) &&
             missionSequenceForAccess.some(
               (missionEntry) => missionEntry?.requiresKeyForAllMembers === true,
             )),
-      );
-      pushNotification({
-        type: "error",
-        title: "Key Required",
-        message: requiresAllMembers
-          ? `${blockedMissionName} needs ${missingKeyLabel} on every selected hero.`
+        );
+        pushNotification({
+          type: "error",
+          title: "Key Required",
+          message: requiresAllMembers
+            ? `${blockedMissionName} needs ${missingKeyLabel} on every selected hero.`
             : `${blockedMissionName} needs ${missingKeyLabel}. Add a key holder or include a key-rewarding wing first.`,
-      });
-      return false;
-    }
+        });
+        return false;
+      }
 
-    const openingMission = hasDungeonChain ? chainMissions[0] : quest;
-    const chainContext = hasDungeonChain
-      ? {
-          chainId: createId(),
-          setId: quest.dungeonSetId,
-          setName: quest.dungeonSetName || quest.name,
-          totalMissions: chainMissions.length,
-          currentPosition: 1,
-          remainingMissionIds: chainMissions.slice(1).map((missionEntry) => missionEntry.id),
+      const selectedMemberIdSet = new Set(memberIds.map((id) => String(id)));
+      const activeMissionMemberIds = new Set();
+      const activeNonDungeonMemberIds = new Set();
+      (Array.isArray(missionsRef.current) ? missionsRef.current : []).forEach(
+        (missionRun) => {
+          const missionMemberIds = Array.isArray(missionRun?.memberIds)
+            ? missionRun.memberIds.map((id) => String(id || "")).filter(Boolean)
+            : [];
+          const overlapsRaidTeam = missionMemberIds.some((id) =>
+            selectedMemberIdSet.has(id),
+          );
+          if (!overlapsRaidTeam) return;
+          missionMemberIds.forEach((id) => activeMissionMemberIds.add(id));
+          if (missionRun?.type !== "dungeon") {
+            missionMemberIds.forEach((id) => activeNonDungeonMemberIds.add(id));
+          }
+        },
+      );
+      if (activeNonDungeonMemberIds.size > 0) {
+        pushNotification({
+          type: "error",
+          title: "Raid Setup Incomplete",
+          message:
+            "Some selected heroes are already busy outside a dungeon and cannot be moved to the raid.",
+        });
+        return false;
+      }
+
+      if (quest?.isRaid === true) {
+        const preemption = preemptDungeonMissionsForRaid({
+          raidMemberIds: memberIds,
+          raidName: quest.dungeonWing || quest.dungeonSetName || quest.name,
+        });
+        if (preemption) {
+          rosterSnapshot = preemption.nextRoster;
         }
-      : null;
+      }
 
-    const startTime = gameTimeRef.current;
-    const missionRun = buildMissionRun(
-      openingMission,
-      memberIds,
-      startTime,
-      rosterSnapshot,
-      chainContext,
-    );
-    const missionRunWithCalendar = options?.calendarEventId
-      ? { ...missionRun, calendarEventId: options.calendarEventId }
-      : missionRun;
+      const activeMissionIds = new Set(
+        (Array.isArray(missionsRef.current) ? missionsRef.current : []).flatMap(
+          (missionRun) =>
+            Array.isArray(missionRun.memberIds) ? missionRun.memberIds : [],
+        ),
+      );
+      const selectedMembersAfterPreemption = rosterSnapshot.filter((char) =>
+        memberIds.includes(char.id),
+      );
+      if (
+        selectedMembersAfterPreemption.some((member) =>
+          activeMissionIds.has(member.id),
+        )
+      ) {
+        pushNotification({
+          type: "error",
+          title: "Raid Setup Incomplete",
+          message:
+            "Some selected heroes are still busy and cannot join the raid yet.",
+        });
+        return false;
+      }
 
-    setRoster((prev) =>
-      prev.map((c) =>
-        memberIds.includes(c.id)
-          ? {
-              ...c,
-              status: "Questing",
-              statusText: hasDungeonChain
-                ? `Chain: ${openingMission.name}`
-                : "On Mission",
-            }
-          : c,
-      ),
-    );
-    missionsRef.current = [...missionsRef.current, missionRunWithCalendar];
-    setActiveMissions((prev) => [...prev, missionRunWithCalendar]);
+      const openingMission = hasDungeonChain ? chainMissions[0] : quest;
+      const chainContext = hasDungeonChain
+        ? {
+            chainId: createId(),
+            setId: quest.dungeonSetId,
+            setName: quest.dungeonSetName || quest.name,
+            totalMissions: chainMissions.length,
+            currentPosition: 1,
+            remainingMissionIds: chainMissions
+              .slice(1)
+              .map((missionEntry) => missionEntry.id),
+          }
+        : null;
 
-    if (hasDungeonChain) {
-      pushNotification({
-        type: "info",
-        title: "Dungeon Chain Started",
-        message: `${chainContext.setName}: ${chainMissions.length} wings queued.`,
+      const startTime = gameTimeRef.current;
+      const missionRun = buildMissionRun(
+        openingMission,
+        memberIds,
+        startTime,
+        rosterSnapshot,
+        chainContext,
+      );
+      const missionRunWithCalendar = options?.calendarEventId
+        ? { ...missionRun, calendarEventId: options.calendarEventId }
+        : missionRun;
+
+      setRoster((prev) =>
+        prev.map((c) =>
+          memberIds.includes(c.id)
+            ? {
+                ...c,
+                status: "Questing",
+                statusText: hasDungeonChain
+                  ? `Chain: ${openingMission.name}`
+                  : "On Mission",
+              }
+            : c,
+        ),
+      );
+      missionsRef.current = [...missionsRef.current, missionRunWithCalendar];
+      setActiveMissions((prev) => [...prev, missionRunWithCalendar]);
+
+      if (hasDungeonChain) {
+        pushNotification({
+          type: "info",
+          title: "Dungeon Chain Started",
+          message: `${chainContext.setName}: ${chainMissions.length} wings queued.`,
+        });
+      }
+      return true;
+    },
+    [
+      assignZoneToRoster,
+      buildMissionRun,
+      normalizeRosterZones,
+      preemptDungeonMissionsForRaid,
+      pushNotification,
+      roster,
+    ],
+  );
+
+  const refreshCalendarStateNow = useCallback(
+    (nextState) => {
+      const currentDayIndex = getCalendarDayIndex(
+        gameTimeRef.current,
+        nextState.calendarEpochGameTimeMs,
+      );
+      const refreshed = refreshCalendarState({
+        state: nextState,
+        currentDayIndex,
+        roster: rosterRef.current,
+        activeMissions: missionsRef.current,
+        missionList: missionListRef.current,
+        createId,
       });
-    }
-    return true;
-  }, [
-    assignZoneToRoster,
-    buildMissionRun,
-    normalizeRosterZones,
-    pushNotification,
-    roster,
-  ]);
-
-  const refreshCalendarStateNow = useCallback((nextState) => {
-    const currentDayIndex = getCalendarDayIndex(
-      gameTimeRef.current,
-      nextState.calendarEpochGameTimeMs,
-    );
-    const refreshed = refreshCalendarState({
-      state: nextState,
-      currentDayIndex,
-      roster: rosterRef.current,
-      activeMissions: missionsRef.current,
-      missionList: missionListRef.current,
-      createId,
-    });
-    commitCalendarState(refreshed.state);
-    return refreshed.state;
-  }, [commitCalendarState]);
+      commitCalendarState(refreshed.state);
+      return refreshed.state;
+    },
+    [commitCalendarState],
+  );
 
   const handleCreateCalendarEvent = useCallback(
-    ({ missionId, scheduledDayIndex, title }) => {
+    ({ missionId, scheduledDayIndex, scheduledTimeOfDay, title }) => {
       const currentDayIndex = getCalendarDayIndex(
         gameTimeRef.current,
         calendarStateRef.current.calendarEpochGameTimeMs,
@@ -2724,6 +3118,7 @@ const App = () => {
         title: title || mission.name,
         missionId: mission.id,
         scheduledDayIndex,
+        scheduledTimeOfDay,
         createdAtDayIndex: currentDayIndex,
       });
       refreshCalendarStateNow({
@@ -2740,7 +3135,7 @@ const App = () => {
   );
 
   const handleCreateCalendarSeries = useCallback(
-    ({ missionId, weekday, title, startsOnDayIndex }) => {
+    ({ missionId, weekday, scheduledTimeOfDay, title, startsOnDayIndex }) => {
       const mission = missionListRef.current.find(
         (entry) => String(entry?.id) === String(missionId),
       );
@@ -2750,6 +3145,7 @@ const App = () => {
         title: title || `${mission.name} Raid Day`,
         missionId: mission.id,
         weekday,
+        scheduledTimeOfDay,
         startsOnDayIndex,
       });
       refreshCalendarStateNow({
@@ -2778,7 +3174,9 @@ const App = () => {
         return {
           ...event,
           approvedRosterIds: approved,
-          benchedIds: event.registrations.filter((id) => !approved.includes(id)),
+          benchedIds: event.registrations.filter(
+            (id) => !approved.includes(id),
+          ),
         };
       });
     },
@@ -2932,7 +3330,13 @@ const App = () => {
     const time = new Date().toLocaleTimeString();
     const extraLogs =
       gainedGold > 0
-        ? [{ type: "gold", amount: gainedGold, missionName: missionToResolve.name }]
+        ? [
+            {
+              type: "gold",
+              amount: gainedGold,
+              missionName: missionToResolve.name,
+            },
+          ]
         : [];
     const manualFinishLogs = [
       // Put reward logs first so loot entries are kept even when many wipe/step logs are generated.
@@ -2978,7 +3382,10 @@ const App = () => {
     const safeAmount = Math.max(0, Number(amount) || 0);
     if (safeAmount <= 0) return;
 
-    const cappedGold = Math.min(guildDerivedStats.goldCap, goldRef.current + safeAmount);
+    const cappedGold = Math.min(
+      guildDerivedStats.goldCap,
+      goldRef.current + safeAmount,
+    );
     goldRef.current = cappedGold;
     setGuildGold(cappedGold);
   };
@@ -3004,11 +3411,13 @@ const App = () => {
   };
 
   const handleDebugAddPresetParty = async (presetValue) => {
-    const { buildDebugRosterPreset, resolveDebugPreset } = await import(
-      "./debug/rosterPresets"
-    );
+    const { buildDebugRosterPreset, resolveDebugPreset } =
+      await import("./debug/rosterPresets");
     const preset = resolveDebugPreset(presetValue);
-    const openSlots = Math.max(0, guildDerivedStats.maxRoster - rosterRef.current.length);
+    const openSlots = Math.max(
+      0,
+      guildDerivedStats.maxRoster - rosterRef.current.length,
+    );
     if (openSlots < preset.count) {
       pushNotification({
         type: "error",
@@ -3025,9 +3434,14 @@ const App = () => {
       count: preset.count,
       roleOrder: preset.roleOrder,
       guaranteedKeys: preset.guaranteedKeys,
-      usedNames: rosterRef.current.map((member) => member?.name).filter(Boolean),
+      usedNames: rosterRef.current
+        .map((member) => member?.name)
+        .filter(Boolean),
     });
-    const updatedRoster = normalizeRosterZones([...rosterRef.current, ...debugParty], faction);
+    const updatedRoster = normalizeRosterZones(
+      [...rosterRef.current, ...debugParty],
+      faction,
+    );
     rosterRef.current = updatedRoster;
     setRoster(updatedRoster);
     pushNotification({
@@ -3092,7 +3506,9 @@ const App = () => {
   };
 
   const handleDebugReloadDatabase = () => {
-    setMissionList(getMissionListWithZones(INITIAL_MISSIONS.map(cloneMissionTemplate)));
+    setMissionList(
+      getMissionListWithZones(INITIAL_MISSIONS.map(cloneMissionTemplate)),
+    );
     pushNotification({
       type: "info",
       title: "Database Reloaded",
@@ -3224,86 +3640,88 @@ const App = () => {
     : null;
   const hasAnyGuildMemberLevelFilter =
     hasGuildMemberMinLevelFilter || hasGuildMemberMaxLevelFilter;
-  const normalizedGuildMemberSearch = normalizeGuildMemberSearch(guildMemberSearch);
+  const normalizedGuildMemberSearch =
+    normalizeGuildMemberSearch(guildMemberSearch);
   const hasGuildMemberSearch = normalizedGuildMemberSearch.length > 0;
-  const rankedRoster = useMemo(
-    () => {
-      const levelBounds =
-        normalizedGuildMemberMinLevel !== null &&
-        normalizedGuildMemberMaxLevel !== null
-          ? {
-              min: Math.min(
-                normalizedGuildMemberMinLevel,
-                normalizedGuildMemberMaxLevel,
-              ),
-              max: Math.max(
-                normalizedGuildMemberMinLevel,
-                normalizedGuildMemberMaxLevel,
-              ),
-            }
-          : {
-              min: normalizedGuildMemberMinLevel ?? 1,
-              max: normalizedGuildMemberMaxLevel ?? Number.POSITIVE_INFINITY,
-            };
-
-      const filteredRoster = roster.filter((member) => {
-        if (!hasAnyGuildMemberLevelFilter) return true;
-        const level = Number(member?.level) || 1;
-        return level >= levelBounds.min && level <= levelBounds.max;
-      });
-
-      const sortedRoster = [...filteredRoster].sort((left, right) => {
-        const leftLevel = Number(left?.level) || 1;
-        const rightLevel = Number(right?.level) || 1;
-        const leftItemLevel = getCharacterAverageItemLevel(left);
-        const rightItemLevel = getCharacterAverageItemLevel(right);
-
-        if (guildMemberSortMode === GUILD_MEMBER_SORT.LEVEL_ASC) {
-          if (leftLevel !== rightLevel) return leftLevel - rightLevel;
-          if (rightItemLevel !== leftItemLevel) return rightItemLevel - leftItemLevel;
-        } else if (guildMemberSortMode === GUILD_MEMBER_SORT.ILVL_DESC) {
-          if (rightItemLevel !== leftItemLevel) return rightItemLevel - leftItemLevel;
-          if (rightLevel !== leftLevel) return rightLevel - leftLevel;
-        } else if (guildMemberSortMode === GUILD_MEMBER_SORT.ILVL_ASC) {
-          if (leftItemLevel !== rightItemLevel) return leftItemLevel - rightItemLevel;
-          if (leftLevel !== rightLevel) return leftLevel - rightLevel;
-        } else {
-          if (rightLevel !== leftLevel) return rightLevel - leftLevel;
-          if (rightItemLevel !== leftItemLevel) return rightItemLevel - leftItemLevel;
-        }
-
-        return String(left?.name || "").localeCompare(String(right?.name || ""));
-      });
-
-      if (!hasGuildMemberSearch) return sortedRoster;
-
-      return sortedRoster
-        .map((member, index) => ({
-          member,
-          index,
-          searchScore: getGuildMemberSearchScore(
-            member,
-            normalizedGuildMemberSearch,
-          ),
-        }))
-        .sort((left, right) => {
-          if (right.searchScore !== left.searchScore) {
-            return right.searchScore - left.searchScore;
+  const rankedRoster = useMemo(() => {
+    const levelBounds =
+      normalizedGuildMemberMinLevel !== null &&
+      normalizedGuildMemberMaxLevel !== null
+        ? {
+            min: Math.min(
+              normalizedGuildMemberMinLevel,
+              normalizedGuildMemberMaxLevel,
+            ),
+            max: Math.max(
+              normalizedGuildMemberMinLevel,
+              normalizedGuildMemberMaxLevel,
+            ),
           }
-          return left.index - right.index;
-        })
-        .map((entry) => entry.member);
-    },
-    [
-      guildMemberSortMode,
-      hasGuildMemberSearch,
-      hasAnyGuildMemberLevelFilter,
-      normalizedGuildMemberMaxLevel,
-      normalizedGuildMemberMinLevel,
-      normalizedGuildMemberSearch,
-      roster,
-    ],
-  );
+        : {
+            min: normalizedGuildMemberMinLevel ?? 1,
+            max: normalizedGuildMemberMaxLevel ?? Number.POSITIVE_INFINITY,
+          };
+
+    const filteredRoster = roster.filter((member) => {
+      if (!hasAnyGuildMemberLevelFilter) return true;
+      const level = Number(member?.level) || 1;
+      return level >= levelBounds.min && level <= levelBounds.max;
+    });
+
+    const sortedRoster = [...filteredRoster].sort((left, right) => {
+      const leftLevel = Number(left?.level) || 1;
+      const rightLevel = Number(right?.level) || 1;
+      const leftItemLevel = getCharacterAverageItemLevel(left);
+      const rightItemLevel = getCharacterAverageItemLevel(right);
+
+      if (guildMemberSortMode === GUILD_MEMBER_SORT.LEVEL_ASC) {
+        if (leftLevel !== rightLevel) return leftLevel - rightLevel;
+        if (rightItemLevel !== leftItemLevel)
+          return rightItemLevel - leftItemLevel;
+      } else if (guildMemberSortMode === GUILD_MEMBER_SORT.ILVL_DESC) {
+        if (rightItemLevel !== leftItemLevel)
+          return rightItemLevel - leftItemLevel;
+        if (rightLevel !== leftLevel) return rightLevel - leftLevel;
+      } else if (guildMemberSortMode === GUILD_MEMBER_SORT.ILVL_ASC) {
+        if (leftItemLevel !== rightItemLevel)
+          return leftItemLevel - rightItemLevel;
+        if (leftLevel !== rightLevel) return leftLevel - rightLevel;
+      } else {
+        if (rightLevel !== leftLevel) return rightLevel - leftLevel;
+        if (rightItemLevel !== leftItemLevel)
+          return rightItemLevel - leftItemLevel;
+      }
+
+      return String(left?.name || "").localeCompare(String(right?.name || ""));
+    });
+
+    if (!hasGuildMemberSearch) return sortedRoster;
+
+    return sortedRoster
+      .map((member, index) => ({
+        member,
+        index,
+        searchScore: getGuildMemberSearchScore(
+          member,
+          normalizedGuildMemberSearch,
+        ),
+      }))
+      .sort((left, right) => {
+        if (right.searchScore !== left.searchScore) {
+          return right.searchScore - left.searchScore;
+        }
+        return left.index - right.index;
+      })
+      .map((entry) => entry.member);
+  }, [
+    guildMemberSortMode,
+    hasGuildMemberSearch,
+    hasAnyGuildMemberLevelFilter,
+    normalizedGuildMemberMaxLevel,
+    normalizedGuildMemberMinLevel,
+    normalizedGuildMemberSearch,
+    roster,
+  ]);
   const bestGuildMemberSearchScore =
     hasGuildMemberSearch && rankedRoster.length > 0
       ? getGuildMemberSearchScore(rankedRoster[0], normalizedGuildMemberSearch)
@@ -3319,7 +3737,9 @@ const App = () => {
           if ((left?.level || 0) !== (right?.level || 0)) {
             return (left?.level || 0) - (right?.level || 0);
           }
-          return String(left?.name || "").localeCompare(String(right?.name || ""));
+          return String(left?.name || "").localeCompare(
+            String(right?.name || ""),
+          );
         })
         .map((mission) => ({
           id: mission.id,
@@ -3383,12 +3803,13 @@ const App = () => {
       <header className="wow-header flex justify-between items-center mb-6 border-b border-gray-700 pb-4 px-2 rounded-md">
         <div>
           <h1 className="wow-header-title fantasy-font text-xl md:text-3xl font-bold truncate">
-            {guildSetup.name || getFactionFallbackManagerName(guildSetup.faction)}
+            {guildSetup.name ||
+              getFactionFallbackManagerName(guildSetup.faction)}
           </h1>
           <p className="text-amber-100/70 text-xs md:text-sm tracking-wide">
             {guildSetup.faction} Command • Server:{" "}
-            {getGuildServerLabel(guildSetup.server, guildSetup.serverStyle)} • Focus:{" "}
-            {guildSetup.focus}
+            {getGuildServerLabel(guildSetup.server, guildSetup.serverStyle)} •
+            Focus: {guildSetup.focus}
           </p>
           <p className="text-cyan-100/70 text-[11px] md:text-xs tracking-wide mt-1">
             {currentCalendarDate.weekdayName}, {currentCalendarDate.monthName}{" "}
@@ -3412,7 +3833,9 @@ const App = () => {
             Mem:{" "}
             <span
               className={
-                roster.length >= guildDerivedStats.maxRoster ? "text-red-500" : ""
+                roster.length >= guildDerivedStats.maxRoster
+                  ? "text-red-500"
+                  : ""
               }
             >
               {roster.length}
@@ -3440,13 +3863,16 @@ const App = () => {
         </div>
       </header>
 
-            <div className="flex flex-wrap gap-2 md:gap-3 mb-6 pb-2">
+      <div className="flex flex-wrap gap-2 md:gap-3 mb-6 pb-2">
         <button
           onClick={handleOpenRecruit}
-          disabled={openRecruitSlots <= 0 || guildGold < RECRUIT_SCOUT_COST_GOLD}
+          disabled={
+            openRecruitSlots <= 0 || guildGold < RECRUIT_SCOUT_COST_GOLD
+          }
           className="flex-none snap-start btn-recruit text-yellow-100 font-bold py-3 px-6 rounded border border-yellow-900 shadow-lg flex items-center gap-2 select-none disabled:opacity-50 whitespace-nowrap"
         >
-          <span className="text-xl">📜</span> Recruit ({RECRUIT_SCOUT_COST_GOLD}g)
+          <span className="text-xl">📜</span> Recruit ({RECRUIT_SCOUT_COST_GOLD}
+          g)
         </button>
         <button
           onClick={() => setShowGuildTalents(true)}
@@ -3468,22 +3894,20 @@ const App = () => {
           />
           Missions
         </button>
-              <button
-                onClick={() => setShowCalendar(true)}
-                className="wow-command flex-none px-4 py-3 rounded bg-gray-800 border border-indigo-700 text-indigo-200 hover:bg-gray-700 shadow flex items-center gap-2 whitespace-nowrap"
-              >
-                <img
-                  src={getWowIconUrl("inv_misc_note_05")}
-                  alt=""
-                  className="w-5 h-5 rounded-sm border border-indigo-900/60 object-cover"
-                  onError={(event) => {
-                    event.currentTarget.src = getWowIconUrl(
-                      "inv_misc_questionmark"
-                    );
-                  }}
-                />
-                Calendar
-              </button>
+        <button
+          onClick={() => setShowCalendar(true)}
+          className="wow-command flex-none px-4 py-3 rounded bg-gray-800 border border-indigo-700 text-indigo-200 hover:bg-gray-700 shadow flex items-center gap-2 whitespace-nowrap"
+        >
+          <img
+            src={getWowIconUrl("inv_misc_note_05")}
+            alt=""
+            className="w-5 h-5 rounded-sm border border-indigo-900/60 object-cover"
+            onError={(event) => {
+              event.currentTarget.src = getWowIconUrl("inv_misc_questionmark");
+            }}
+          />
+          Calendar
+        </button>
         <button
           onClick={() => setShowMap(true)}
           className="wow-command flex-none snap-start px-4 py-3 rounded bg-gray-800 border border-cyan-800 text-cyan-200 hover:bg-gray-700 shadow flex items-center gap-2 whitespace-nowrap"
@@ -3600,7 +4024,9 @@ const App = () => {
                 className="bg-gray-800 text-gray-100 text-xs border border-gray-600 rounded px-2 py-1 focus:outline-none focus:border-amber-500"
               >
                 <option value={MEMBER_RANKING_MODES.STANDARD}>Standard</option>
-                <option value={MEMBER_RANKING_MODES.EQUIP_CHECK}>Equip Check</option>
+                <option value={MEMBER_RANKING_MODES.EQUIP_CHECK}>
+                  Equip Check
+                </option>
               </select>
             </label>
             <label className="text-[11px] text-gray-300">
@@ -3629,7 +4055,9 @@ const App = () => {
                 step="1"
                 inputMode="numeric"
                 value={guildMemberMinLevelFilter}
-                onChange={(event) => setGuildMemberMinLevelFilter(event.target.value)}
+                onChange={(event) =>
+                  setGuildMemberMinLevelFilter(event.target.value)
+                }
                 className="w-20 bg-gray-800 text-gray-100 text-xs border border-gray-600 rounded px-2 py-1 focus:outline-none focus:border-amber-500"
                 placeholder="Any"
               />
@@ -3644,7 +4072,9 @@ const App = () => {
                 step="1"
                 inputMode="numeric"
                 value={guildMemberMaxLevelFilter}
-                onChange={(event) => setGuildMemberMaxLevelFilter(event.target.value)}
+                onChange={(event) =>
+                  setGuildMemberMaxLevelFilter(event.target.value)
+                }
                 className="w-20 bg-gray-800 text-gray-100 text-xs border border-gray-600 rounded px-2 py-1 focus:outline-none focus:border-amber-500"
                 placeholder="Any"
               />
