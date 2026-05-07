@@ -130,7 +130,7 @@ const GuildLogModal = ({ isOpen, onClose, logs, missionList = [] }) => {
               No {LOG_FILTERS.find((filter) => filter.id === activeFilter)?.label} events yet.
             </div>
           ) : (
-            visibleLogs.map(({ log }, i) => (
+            visibleLogs.map(({ log, scenario }, i) => (
               <div
                 key={`${log.time || "log"}-${i}`}
                 className="border-l-2 border-gray-700 pl-3 py-1 text-gray-300"
@@ -209,6 +209,20 @@ const GuildLogModal = ({ isOpen, onClose, logs, missionList = [] }) => {
                   <span className="text-gray-400">
                     {log.missionName}: {log.count} drop
                     {log.count === 1 ? "" : "s"} discarded (no eligible recipient).
+                  </span>
+                ) : log.type === "loot" && scenario === "raid" ? (
+                  <span className="text-orange-100">
+                    {log.bossName || log.missionName}: dropped{" "}
+                    <span className={getQualityClass(log.itemQuality)}>
+                      [{log.itemName}]
+                    </span>
+                    {" - "}
+                    <strong>{log.characterName}</strong> received it
+                    {typeof log.equipped === "boolean"
+                      ? log.equipped
+                        ? " and equipped it."
+                        : " but kept their current item."
+                      : "."}
                   </span>
                 ) : (
                   <span>

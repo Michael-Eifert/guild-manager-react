@@ -96,6 +96,8 @@ export const advanceDungeonMission = (mission, now, instant = false) => {
     });
     stepLogs.push({
       type: "dungeon-step",
+      missionInstanceId: mission.instanceId,
+      missionId: mission.questId ?? mission.id,
       missionName: mission.name,
       bossName,
       step: stepIndex + 1,
@@ -115,6 +117,8 @@ export const advanceDungeonMission = (mission, now, instant = false) => {
         );
         stepLogs.push({
           type: "mission-attempt",
+          missionInstanceId: mission.instanceId,
+          missionId: mission.questId ?? mission.id,
           missionName: mission.name,
           bossName,
           step: stepIndex + 1,

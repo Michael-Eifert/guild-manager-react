@@ -1667,6 +1667,77 @@ const App = () => {
     [missionRewardProcessor],
   );
 
+  const applyDungeonStepLootAwards = useCallback(
+    ({ activeMissions, finishedMissions, rosterSnapshot, stepLogs }) => {
+      const awardDungeonStepLoot = missionRewardProcessor.awardDungeonStepLoot;
+      if (typeof awardDungeonStepLoot !== "function") {
+        return {
+          activeMissions,
+          finishedMissions,
+          roster: rosterSnapshot,
+          logs: stepLogs,
+        };
+      }
+
+      let nextRoster = rosterSnapshot;
+      const nextActiveMissions = [...activeMissions];
+      const nextFinishedMissions = [...finishedMissions];
+      const allMissions = [
+        ...nextActiveMissions.map((mission, index) => ({ mission, index, bucket: "active" })),
+        ...nextFinishedMissions.map((mission, index) => ({
+          mission,
+          index,
+          bucket: "finished",
+        })),
+      ];
+      const nextLogs = [];
+
+      (Array.isArray(stepLogs) ? stepLogs : []).forEach((log) => {
+        nextLogs.push(log);
+        if (log?.type !== "dungeon-step" || log.outcome !== "cleared") return;
+
+        const matchingMission = allMissions.find(({ mission }) => {
+          const logInstanceId = String(log?.missionInstanceId || "");
+          if (logInstanceId && getMissionInstanceId(mission) === logInstanceId) {
+            return true;
+          }
+          return (
+            !logInstanceId &&
+            mission?.name === log?.missionName &&
+            mission?.type === "dungeon"
+          );
+        });
+        if (!matchingMission) return;
+
+        const awardResult = awardDungeonStepLoot({
+          mission: matchingMission.mission,
+          currentRoster: nextRoster,
+          stepLog: log,
+        });
+        if (!awardResult?.mission) return;
+
+        matchingMission.mission = awardResult.mission;
+        if (matchingMission.bucket === "active") {
+          nextActiveMissions[matchingMission.index] = awardResult.mission;
+        } else {
+          nextFinishedMissions[matchingMission.index] = awardResult.mission;
+        }
+        nextRoster = awardResult.updatedRoster || nextRoster;
+        if (Array.isArray(awardResult.missionLogs)) {
+          nextLogs.push(...awardResult.missionLogs);
+        }
+      });
+
+      return {
+        activeMissions: nextActiveMissions,
+        finishedMissions: nextFinishedMissions,
+        roster: nextRoster,
+        logs: nextLogs,
+      };
+    },
+    [missionRewardProcessor],
+  );
+
   // --- GAME LOOP ---
   useEffect(() => {
     const tick = setInterval(() => {
@@ -1707,8 +1778,18 @@ const App = () => {
       });
       newMissions = missionTick.activeMissions;
       finishedMissions = missionTick.finishedMissions;
-      newLogs = [...newLogs, ...missionTick.stepLogs];
       newGold = missionTick.guildGold;
+
+      const stepLootAwards = applyDungeonStepLootAwards({
+        activeMissions: newMissions,
+        finishedMissions,
+        rosterSnapshot: newRoster,
+        stepLogs: missionTick.stepLogs,
+      });
+      newMissions = stepLootAwards.activeMissions;
+      finishedMissions = stepLootAwards.finishedMissions;
+      newRoster = stepLootAwards.roster;
+      newLogs = [...newLogs, ...stepLootAwards.logs];
 
       // 2. Process Finished Missions (Fixes "Stuck" Issue)
       finishedMissions.forEach((m) => {
@@ -2091,6 +2172,7 @@ const App = () => {
     }, CONFIG.TICK_RATE);
     return () => clearInterval(tick);
   }, [
+    applyDungeonStepLootAwards,
     applyMissionWipeCosts,
     gameSpeed,
     isPaused,
@@ -2450,9 +2532,20 @@ const App = () => {
     // Manually trigger the finish logic immediately (logic also exists in loop, but this is for instant feedback)
     // To avoid race conditions, we filter it out of activeMissions immediately
     setActiveMissions((prev) => prev.filter((mi) => mi !== m));
-    const result = processMissionRewards(missionToResolve, rosterRef.current);
+    const stepLootAwards = applyDungeonStepLootAwards({
+      activeMissions: [],
+      finishedMissions: [missionToResolve],
+      rosterSnapshot: rosterRef.current,
+      stepLogs: dungeonStepLogs,
+    });
+    const missionWithStepLoot =
+      stepLootAwards.finishedMissions[0] || missionToResolve;
+    const result = processMissionRewards(
+      missionWithStepLoot,
+      stepLootAwards.roster,
+    );
     const chainResolution = resolveDungeonChainContinuation({
-      mission: missionToResolve,
+      mission: missionWithStepLoot,
       missionSucceeded: result.missionSucceeded,
       rosterSnapshot: result.updatedRoster,
       startTime: now,
@@ -2466,11 +2559,11 @@ const App = () => {
     if (chainResolution.notification) {
       pushNotification(chainResolution.notification);
     }
-    if (missionToResolve.type === "dungeon") {
+    if (missionWithStepLoot.type === "dungeon") {
       if (result.missionSucceeded) {
-        registerDungeonClearMilestones(missionToResolve);
+        registerDungeonClearMilestones(missionWithStepLoot);
       } else {
-        registerDungeonWipeMilestone(missionToResolve.name);
+        registerDungeonWipeMilestone(missionWithStepLoot.name);
       }
     }
 
@@ -2491,11 +2584,11 @@ const App = () => {
         : [];
     const manualFinishLogs = [
       // Put reward logs first so loot entries are kept even when many wipe/step logs are generated.
+      ...stepLootAwards.logs,
       ...result.missionLogs,
       ...wipeCostLogs,
       ...extraLogs,
       ...chainResolution.chainLogs,
-      ...dungeonStepLogs,
     ];
     if (manualFinishLogs.length > 0) {
       setGuildLog((prev) =>

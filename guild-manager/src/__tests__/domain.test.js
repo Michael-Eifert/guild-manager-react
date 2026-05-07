@@ -366,6 +366,113 @@ describe("mission rewards", () => {
       ),
     ).toBe(true);
   });
+
+  it("awards boss loot when the boss step clears and skips it at final payout", () => {
+    vi.spyOn(Math, "random").mockReturnValue(0.5);
+    const processor = createMissionRewardProcessor({
+      dbItems: [
+        {
+          id: "lucifron-robe",
+          name: "Lucifron Robe",
+          slot: "chest",
+          quality: 4,
+          type: "Cloth",
+          minLevel: 60,
+          dungeonSetId: "molten_core",
+          dungeonSetName: "Molten Core",
+          sourceBosses: ["Lucifron"],
+        },
+      ],
+      dbClasses: { Mage: {} },
+      getClassArmorTypes: () => ["Cloth"],
+      isItemUsableByClass: () => true,
+      getKeyLabel: (keyId) => keyId,
+      getItemEffectiveLevel: (item) => Number(item?.minLevel || 0) + Number(item?.quality || 0),
+      getMissionLootLevelRange,
+      resolveMissionRewardQualities,
+      getDungeonStepLootConfig: () => ({
+        includeWorldDrops: false,
+        dungeonOnly: true,
+        worldOnly: false,
+      }),
+      getDungeonStepQualityPriority: () => [4],
+      getDungeonBossCount,
+      getDungeonQuarterExpMultiplier,
+      getDungeonOverlevelExpMultiplier,
+      getMissionLevelExpMultiplier,
+      getReqExp: () => 1000,
+      getMissionGoldReward,
+    });
+    const mission = {
+      id: "mc",
+      name: "Molten Core",
+      type: "dungeon",
+      memberIds: ["mage"],
+      recommended: "58 - 60",
+      minLevel: 56,
+      level: 60,
+      exp: 100,
+      gold: 0,
+      dungeonSetId: "molten_core",
+      dungeonSetName: "Molten Core",
+      dungeonBosses: ["Lucifron"],
+      dungeonProgress: { clearedSteps: 1 },
+    };
+    const roster = [
+      {
+        id: "mage",
+        name: "Mage",
+        charClass: "Mage",
+        level: 60,
+        exp: 0,
+        keys: [],
+        clearedMissionIds: [],
+        history: [],
+        equipment: {
+          chest: { slot: "chest", quality: 1, type: "Cloth", minLevel: 1 },
+        },
+      },
+    ];
+
+    const stepReward = processor.awardDungeonStepLoot({
+      mission,
+      currentRoster: roster,
+      stepLog: {
+        type: "dungeon-step",
+        outcome: "cleared",
+        step: 1,
+        bossName: "Lucifron",
+      },
+    });
+
+    expect(stepReward.updatedRoster[0].equipment.chest.name).toBe("Lucifron Robe");
+    expect(stepReward.missionLogs).toEqual([
+      expect.objectContaining({
+        type: "loot",
+        characterName: "Mage",
+        itemName: "Lucifron Robe",
+        bossName: "Lucifron",
+      }),
+    ]);
+    expect(stepReward.mission.dungeonProgress.lootAwardedSteps).toEqual([1]);
+
+    const finalReward = processor({
+      mission: {
+        ...stepReward.mission,
+        dungeonProgress: {
+          ...stepReward.mission.dungeonProgress,
+          finished: true,
+        },
+      },
+      currentRoster: stepReward.updatedRoster,
+      activeGuildStats: { expMultiplier: 1, goldMultiplier: 1 },
+      activeFocusBonuses: { expMultiplier: 1, fullPartyGoldMultiplier: 1 },
+      levelCap: 60,
+      failedMissionExpFactor: 0.2,
+    });
+
+    expect(finalReward.missionLogs.filter((log) => log.type === "loot")).toEqual([]);
+  });
 });
 
 describe("Molten Core loot manifest", () => {

@@ -272,10 +272,34 @@ export const createMissionRewardProcessor = ({
     return { lootMap, discardedDrops: 0 };
   };
 
-  const buildDungeonBossLootMap = (mission, partyMembers, clearedSteps) => {
+  const getAwardedDungeonLootSteps = (mission) =>
+    new Set(
+      (Array.isArray(mission?.dungeonProgress?.lootAwardedSteps)
+        ? mission.dungeonProgress.lootAwardedSteps
+        : [])
+        .map((step) => Math.floor(Number(step) || 0))
+        .filter((step) => step > 0),
+    );
+
+  const buildDungeonBossLootMap = (mission, partyMembers, lootOptions = {}) => {
     const lootMap = new Map(partyMembers.map((member) => [member.id, []]));
     const dungeonBossCount = getDungeonBossCount(mission);
+    const options =
+      lootOptions && typeof lootOptions === "object"
+        ? lootOptions
+        : { clearedSteps: lootOptions };
+    const clearedSteps = Number(options.clearedSteps);
     const safeClearedSteps = Math.max(0, Math.min(dungeonBossCount, clearedSteps));
+    const explicitStepIndexes = Array.isArray(options.stepIndexes)
+      ? new Set(
+          options.stepIndexes
+            .map((stepIndex) => Math.floor(Number(stepIndex)))
+            .filter((stepIndex) => stepIndex >= 0 && stepIndex < dungeonBossCount),
+        )
+      : null;
+    const awardedSteps = getAwardedDungeonLootSteps(mission);
+    const skipAwardedSteps = options.skipAwardedSteps === true;
+    const includeOnCompleteBonus = options.includeOnCompleteBonus !== false;
     let discardedDrops = 0;
 
     const applyDropResult = (dropResult, sourceContext = null) => {
@@ -352,6 +376,8 @@ export const createMissionRewardProcessor = ({
     };
 
     for (let stepIndex = 0; stepIndex < safeClearedSteps; stepIndex++) {
+      if (explicitStepIndexes && !explicitStepIndexes.has(stepIndex)) continue;
+      if (skipAwardedSteps && awardedSteps.has(stepIndex + 1)) continue;
       const bossName = getMissionBossName(mission, stepIndex);
       const sourceContext = {
         bossName,
@@ -391,7 +417,7 @@ export const createMissionRewardProcessor = ({
       });
     }
 
-    if (isFullDungeonClear) {
+    if (includeOnCompleteBonus && isFullDungeonClear) {
       bonusDrops.forEach((bonusDropConfig) => {
         if (!bonusDropConfig.onComplete) return;
         if (Math.random() >= bonusDropConfig.chance) return;
@@ -408,7 +434,56 @@ export const createMissionRewardProcessor = ({
     return { lootMap, discardedDrops };
   };
 
-  return ({
+  const createLootLogsAndRosterUpdate = ({
+    currentRoster,
+    lootMap,
+    missionName,
+  }) => {
+    const missionLogs = [];
+    const updatedRoster = currentRoster.map((char) => {
+      const awardedLootItems = lootMap.get(char.id) || [];
+      if (awardedLootItems.length === 0) return char;
+
+      const newEquipment = { ...char.equipment };
+      awardedLootItems.forEach((lootEntry) => {
+        const lootItem = lootEntry?.item || lootEntry;
+        if (!lootItem) return;
+        const sourceBossName =
+          typeof lootEntry?.sourceBossName === "string"
+            ? lootEntry.sourceBossName
+            : null;
+        const sourceBossStep = Number.isFinite(lootEntry?.sourceBossStep)
+          ? Number(lootEntry.sourceBossStep)
+          : null;
+        const currentItem = newEquipment[lootItem.slot];
+        const currentItemLevel = getItemEffectiveLevel(currentItem);
+        const newItemLevel = getItemEffectiveLevel(lootItem);
+        const willEquip = !currentItem || newItemLevel > currentItemLevel;
+
+        if (willEquip) newEquipment[lootItem.slot] = lootItem;
+
+        missionLogs.push({
+          type: "loot",
+          characterName: char.name,
+          itemName: lootItem.name,
+          itemQuality: lootItem.quality,
+          missionName,
+          bossName: sourceBossName,
+          bossStep: sourceBossStep,
+          equipped: willEquip,
+        });
+      });
+
+      return {
+        ...char,
+        equipment: newEquipment,
+      };
+    });
+
+    return { updatedRoster, missionLogs };
+  };
+
+  const processMissionRewards = ({
     mission,
     currentRoster,
     activeGuildStats,
@@ -433,7 +508,11 @@ export const createMissionRewardProcessor = ({
     const missionClearKey = mission?.questId ?? mission?.id;
 
     const { lootMap: missionLootMap, discardedDrops } = isDungeon
-      ? buildDungeonBossLootMap(mission, partyMembers, dungeonClearedSteps)
+      ? buildDungeonBossLootMap(mission, partyMembers, {
+          clearedSteps: dungeonClearedSteps,
+          includeOnCompleteBonus: true,
+          skipAwardedSteps: true,
+        })
       : missionSucceeded
         ? buildMissionLootMap(mission, partyMembers)
         : { lootMap: new Map(), discardedDrops: 0 };
@@ -637,4 +716,73 @@ export const createMissionRewardProcessor = ({
 
     return { updatedRoster, missionLogs, missionGold, missionSucceeded };
   };
+
+  processMissionRewards.awardDungeonStepLoot = ({
+    mission,
+    currentRoster,
+    stepLog,
+  }) => {
+    if (mission?.type !== "dungeon" || stepLog?.outcome !== "cleared") {
+      return { mission, updatedRoster: currentRoster, missionLogs: [] };
+    }
+
+    const stepNumber = Math.floor(Number(stepLog?.step) || 0);
+    const dungeonBossCount = getDungeonBossCount(mission);
+    if (stepNumber <= 0 || stepNumber > dungeonBossCount) {
+      return { mission, updatedRoster: currentRoster, missionLogs: [] };
+    }
+
+    const awardedSteps = getAwardedDungeonLootSteps(mission);
+    if (awardedSteps.has(stepNumber)) {
+      return { mission, updatedRoster: currentRoster, missionLogs: [] };
+    }
+
+    const memberIds = Array.isArray(mission?.memberIds) ? mission.memberIds : [];
+    const partyMembers = currentRoster.filter((char) => memberIds.includes(char.id));
+    const { lootMap, discardedDrops } = buildDungeonBossLootMap(
+      mission,
+      partyMembers,
+      {
+        clearedSteps: stepNumber,
+        stepIndexes: [stepNumber - 1],
+        includeOnCompleteBonus: false,
+        skipAwardedSteps: false,
+      },
+    );
+    const { updatedRoster, missionLogs } = createLootLogsAndRosterUpdate({
+      currentRoster,
+      lootMap,
+      missionName: mission.name,
+    });
+    const nextAwardedSteps = [...awardedSteps, stepNumber].sort(
+      (left, right) => left - right,
+    );
+    const updatedMission = {
+      ...mission,
+      dungeonProgress: {
+        ...(mission.dungeonProgress || {}),
+        lootAwardedSteps: nextAwardedSteps,
+      },
+    };
+    const discardLogs =
+      discardedDrops > 0
+        ? [
+            {
+              type: "loot-discard",
+              missionName: mission.name,
+              bossName: stepLog.bossName || getMissionBossName(mission, stepNumber - 1),
+              bossStep: stepNumber,
+              count: discardedDrops,
+            },
+          ]
+        : [];
+
+    return {
+      mission: updatedMission,
+      updatedRoster,
+      missionLogs: [...discardLogs, ...missionLogs],
+    };
+  };
+
+  return processMissionRewards;
 };
