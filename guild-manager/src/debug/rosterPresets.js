@@ -1,4 +1,5 @@
-import { CONFIG, DB_CLASSES, DB_ITEMS } from "../constants";
+import { CONFIG, DB_CLASSES } from "../constants";
+import { DB_ITEMS } from "../data/items";
 import {
   generateCharacter,
   getClassArmorTypes,
@@ -10,6 +11,7 @@ import {
 const DEBUG_PARTY_ROLE_ORDER = ["Tank", "Healer", "DPS", "DPS", "DPS"];
 const DEBUG_PARTY_SIZE = 5;
 export const DEBUG_RAID_PRESET_ID = "raid-ready-60";
+export const DEBUG_MOLTEN_CORE_TEST_GUILD_ID = "molten-core-test-guild";
 const DEBUG_RAID_SIZE = 20;
 const DEBUG_RAID_ROLE_ORDER = [
   "Tank",
@@ -33,6 +35,49 @@ const DEBUG_RAID_ROLE_ORDER = [
   "DPS",
   "DPS",
 ];
+const DEBUG_MOLTEN_CORE_RAID_SIZE = 40;
+export const DEBUG_MOLTEN_CORE_ROLE_ORDER = Object.freeze([
+  "Tank",
+  "Tank",
+  "Tank",
+  "Tank",
+  "Healer",
+  "Healer",
+  "Healer",
+  "Healer",
+  "Healer",
+  "Healer",
+  "Healer",
+  "Healer",
+  "DPS",
+  "DPS",
+  "DPS",
+  "DPS",
+  "DPS",
+  "DPS",
+  "DPS",
+  "DPS",
+  "DPS",
+  "DPS",
+  "DPS",
+  "DPS",
+  "DPS",
+  "DPS",
+  "DPS",
+  "DPS",
+  "DPS",
+  "DPS",
+  "DPS",
+  "DPS",
+  "DPS",
+  "DPS",
+  "DPS",
+  "DPS",
+  "DPS",
+  "DPS",
+  "DPS",
+  "DPS",
+]);
 const DEBUG_GEAR_SLOTS = ["head", "chest", "legs", "feet", "hands", "mainHand"];
 const MAX_DEBUG_PRESET_ITEM_QUALITY = 3;
 const MOLTEN_CORE_ATTUNEMENT_KEY_ID = "molten_core_attunement";
@@ -203,6 +248,19 @@ export const resolveDebugPreset = (input) => {
       successMessage: (faction) =>
         `Added ${DEBUG_RAID_SIZE} level 60 heroes (${faction}) with raid-ready gear and Molten Core Attunement.`,
       blockedMessage: `Need ${DEBUG_RAID_SIZE} free guild slots to add the raid-ready roster.`,
+    };
+  }
+
+  if (raw === DEBUG_MOLTEN_CORE_TEST_GUILD_ID) {
+    return {
+      level: 60,
+      count: DEBUG_MOLTEN_CORE_RAID_SIZE,
+      roleOrder: DEBUG_MOLTEN_CORE_ROLE_ORDER,
+      guaranteedKeys: [MOLTEN_CORE_ATTUNEMENT_KEY_ID],
+      successTitle: "Molten Core Test Guild Ready",
+      successMessage: (faction) =>
+        `Prepared an 80-slot ${faction} guild with a full 40-player Molten Core raid team.`,
+      blockedMessage: "",
     };
   }
 

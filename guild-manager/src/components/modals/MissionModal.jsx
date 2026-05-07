@@ -1,5 +1,6 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { CONFIG, DB_CLASSES, DB_ITEMS, GUILD_FACTION } from "../../constants";
+import { CONFIG, DB_CLASSES, GUILD_FACTION } from "../../constants";
+import { DB_ITEMS } from "../../data/items";
 import {
   getCharacterAverageItemLevel,
   getItemEffectiveLevel,

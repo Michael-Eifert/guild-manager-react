@@ -1,7 +1,88 @@
+import { useMemo, useState } from "react";
 import { getQualityClass } from "../../utils";
 import BaseModal from "./BaseModal";
 
-const GuildLogModal = ({ isOpen, onClose, logs }) => {
+const LOG_FILTERS = Object.freeze([
+  { id: "all", label: "All" },
+  { id: "world", label: "World" },
+  { id: "dungeon", label: "Dungeon" },
+  { id: "raid", label: "Raid" },
+]);
+
+const normalizeLogSourceName = (value) =>
+  String(value || "")
+    .trim()
+    .replace(/^zone:\s*/i, "")
+    .toLowerCase();
+
+const getMissionScenario = (mission) => {
+  if (!mission) return null;
+  if (mission.isRaid === true) return "raid";
+  if (mission.type === "dungeon") return "dungeon";
+  if (mission.type === "quest" || mission.type === "zone") return "world";
+  return null;
+};
+
+const buildMissionScenarioLookup = (missionList) =>
+  (Array.isArray(missionList) ? missionList : []).reduce((lookup, mission) => {
+    const scenario = getMissionScenario(mission);
+    if (!scenario) return lookup;
+
+    const names = [mission.name];
+    if (mission.type === "zone" && mission.name?.startsWith("Zone: ")) {
+      names.push(mission.name.replace(/^Zone:\s*/i, ""));
+    }
+
+    names.forEach((name) => {
+      const key = normalizeLogSourceName(name);
+      if (key) lookup.set(key, scenario);
+    });
+
+    return lookup;
+  }, new Map());
+
+const getLogScenario = (log, missionScenarioLookup) => {
+  if (log?.type === "zone-clear" || log?.type === "zone-gold") return "world";
+  if (log?.missionName === "World Drop") return "world";
+
+  const missionKey = normalizeLogSourceName(log?.missionName);
+  return missionKey ? missionScenarioLookup.get(missionKey) || null : null;
+};
+
+const GuildLogModal = ({ isOpen, onClose, logs, missionList = [] }) => {
+  const [activeFilter, setActiveFilter] = useState("all");
+  const missionScenarioLookup = useMemo(
+    () => buildMissionScenarioLookup(missionList),
+    [missionList],
+  );
+  const logsWithScenario = useMemo(
+    () =>
+      logs.map((log) => ({
+        log,
+        scenario: getLogScenario(log, missionScenarioLookup),
+      })),
+    [logs, missionScenarioLookup],
+  );
+  const filterCounts = useMemo(
+    () =>
+      logsWithScenario.reduce(
+        (counts, entry) => {
+          counts.all += 1;
+          if (entry.scenario) counts[entry.scenario] += 1;
+          return counts;
+        },
+        { all: 0, world: 0, dungeon: 0, raid: 0 },
+      ),
+    [logsWithScenario],
+  );
+  const visibleLogs = useMemo(
+    () =>
+      activeFilter === "all"
+        ? logsWithScenario
+        : logsWithScenario.filter((entry) => entry.scenario === activeFilter),
+    [activeFilter, logsWithScenario],
+  );
+
   return (
     <BaseModal
       isOpen={isOpen}
@@ -20,13 +101,38 @@ const GuildLogModal = ({ isOpen, onClose, logs }) => {
             &times;
           </button>
         </div>
+        <div className="px-4 py-3 border-b border-gray-700 bg-gray-900/80">
+          <div className="flex items-center gap-2 flex-wrap">
+            {LOG_FILTERS.map((filter) => (
+              <button
+                key={filter.id}
+                type="button"
+                onClick={() => setActiveFilter(filter.id)}
+                className={`px-3 py-1 text-xs rounded border transition-colors ${
+                  activeFilter === filter.id
+                    ? "border-yellow-500 bg-yellow-900/40 text-yellow-200"
+                    : "border-gray-600 bg-gray-800 text-gray-300 hover:bg-gray-700"
+                }`}
+              >
+                {filter.label}
+                <span className="ml-1 text-[10px] text-gray-400">
+                  {filterCounts[filter.id]}
+                </span>
+              </button>
+            ))}
+          </div>
+        </div>
         <div className="flex-1 overflow-y-auto p-4 space-y-2 custom-scrollbar font-mono text-sm">
           {logs.length === 0 ? (
             <div className="text-gray-500 italic text-center py-10">No events yet.</div>
+          ) : visibleLogs.length === 0 ? (
+            <div className="text-gray-500 italic text-center py-10">
+              No {LOG_FILTERS.find((filter) => filter.id === activeFilter)?.label} events yet.
+            </div>
           ) : (
-            logs.map((log, i) => (
+            visibleLogs.map(({ log }, i) => (
               <div
-                key={i}
+                key={`${log.time || "log"}-${i}`}
                 className="border-l-2 border-gray-700 pl-3 py-1 text-gray-300"
               >
                 <span className="text-xs text-gray-500 block">{log.time}</span>

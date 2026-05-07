@@ -12,6 +12,7 @@ const DebugModal = ({
   onAddGold,
   onAddRenown,
   onAddPresetParty,
+  onPrepareMoltenCoreTestGuild,
   onReloadDatabase,
 }) => {
   const [selectedPreset, setSelectedPreset] = useState(
@@ -135,6 +136,23 @@ const DebugModal = ({
                 className="w-full bg-gray-800 hover:bg-gray-700 border border-indigo-700 rounded py-2 px-4 text-indigo-200 font-bold text-sm"
               >
                 Add Preset Roster
+              </button>
+            </div>
+          </div>
+          <div>
+            <h3 className="text-gray-400 text-sm uppercase tracking-wider mb-3">
+              Scenario Setup
+            </h3>
+            <div className="space-y-3">
+              <div className="text-[11px] text-orange-200/90 border border-orange-900/70 bg-orange-950/20 rounded px-2 py-1">
+                Unlocks 80 roster slots, raid missions, Molten Core attunement,
+                and a fresh 40-player raid team.
+              </div>
+              <button
+                onClick={onPrepareMoltenCoreTestGuild}
+                className="w-full bg-gray-800 hover:bg-gray-700 border border-orange-700 rounded py-2 px-4 text-orange-200 font-bold text-sm"
+              >
+                Setup MC Test Guild
               </button>
             </div>
           </div>

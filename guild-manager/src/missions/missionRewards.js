@@ -47,6 +47,20 @@ export const createMissionRewardProcessor = ({
     ),
   ];
 
+  const normalizeBossKey = (value) => normalizeDungeonKey(value);
+
+  const getItemSourceBossKeys = (item) =>
+    toNormalizedDungeonKeys(item?.sourceBosses);
+
+  const preferSourceBossCandidates = (items, sourceBossName) => {
+    const sourceBossKey = normalizeBossKey(sourceBossName);
+    if (!sourceBossKey || items.length === 0) return items;
+    const bossSpecificItems = items.filter((item) =>
+      getItemSourceBossKeys(item).includes(sourceBossKey),
+    );
+    return bossSpecificItems.length > 0 ? bossSpecificItems : items;
+  };
+
   const getItemDungeonKeys = (item) => {
     return toNormalizedDungeonKeys([
       item?.dungeon,
@@ -101,7 +115,7 @@ export const createMissionRewardProcessor = ({
     const worldOnly = options.worldOnly === true;
     const { minLevel, maxLevel } = getMissionLootLevelRange(mission);
 
-    return dbItems.filter((item) => {
+    const candidates = dbItems.filter((item) => {
       if (item.quality !== quality) return false;
       if (item.minLevel < minLevel || item.minLevel > maxLevel) return false;
 
@@ -119,6 +133,8 @@ export const createMissionRewardProcessor = ({
 
       return itemDungeonKeys.length === 0;
     });
+
+    return candidates;
   };
 
   const canCharacterUseItem = (char, item) => {
@@ -165,9 +181,20 @@ export const createMissionRewardProcessor = ({
       );
       if (qualityPool.length === 0) continue;
 
-      const usableItems = qualityPool.filter((item) =>
-        partyMembers.some((member) => canCharacterUseItem(member, item)),
+      const preferredQualityPool = preferSourceBossCandidates(
+        qualityPool,
+        options.sourceBossName,
       );
+      const findUsableItems = (items) =>
+        items.filter((item) =>
+          partyMembers.some((member) => canCharacterUseItem(member, item)),
+        );
+
+      let usableItems = findUsableItems(preferredQualityPool);
+      if (usableItems.length === 0 && preferredQualityPool !== qualityPool) {
+        usableItems = findUsableItems(qualityPool);
+      }
+
       if (usableItems.length === 0) continue;
 
       const upgradeItems = usableItems.filter((item) =>
@@ -342,6 +369,7 @@ export const createMissionRewardProcessor = ({
             includeWorldDrops: stepLootConfig.includeWorldDrops,
             dungeonOnly: stepLootConfig.dungeonOnly,
             worldOnly: stepLootConfig.worldOnly,
+            sourceBossName: bossName,
           },
         );
         applyDropResult(drop, sourceContext);
@@ -354,7 +382,10 @@ export const createMissionRewardProcessor = ({
           mission,
           partyMembers,
           bonusDropConfig.qualityPriority,
-          bonusDropConfig.options,
+          {
+            ...bonusDropConfig.options,
+            sourceBossName: bossName,
+          },
         );
         applyDropResult(bonusDrop, sourceContext);
       });

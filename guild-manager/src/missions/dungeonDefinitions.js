@@ -670,6 +670,8 @@ const DUNGEON_MISSION_DEFINITIONS = [
     durationReference: "3h00",
     durationFallback: 180,
     recommended: "58 - 60",
+    dungeonSetId: "molten_core",
+    dungeonSetName: "Molten Core",
     gold: 120,
     baseFailChance: 45,
     rewardQualities: [4, 5],

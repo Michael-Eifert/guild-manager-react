@@ -1,3 +1,4 @@
+import { useEffect, useState } from "react";
 import { CONFIG, DB_CLASSES } from "../constants";
 import {
   getCharacterAverageItemLevel,
@@ -7,12 +8,26 @@ import {
 } from "../utils";
 
 const CharacterCard = ({ char, onClick }) => {
+  const [now, setNow] = useState(() => Date.now());
   const classData = DB_CLASSES[char.charClass];
+
+  useEffect(() => {
+    if (!char.lastLevelUp) return undefined;
+    const remainingMs = Math.max(0, 1000 - (Date.now() - char.lastLevelUp));
+    if (remainingMs <= 0) {
+      setNow(Date.now());
+      return undefined;
+    }
+    setNow(Date.now());
+    const timerId = window.setTimeout(() => setNow(Date.now()), remainingMs);
+    return () => window.clearTimeout(timerId);
+  }, [char.lastLevelUp]);
+
   if (!classData) return null;
 
   const isMax = char.level >= CONFIG.LEVEL_CAP;
   const pct = Math.min(100, (char.exp / char.maxExp) * 100);
-  const isFlashing = Date.now() - char.lastLevelUp < 1000;
+  const isFlashing = now - char.lastLevelUp < 1000;
   const avgItemLevel = getCharacterAverageItemLevel(char);
 
   return (

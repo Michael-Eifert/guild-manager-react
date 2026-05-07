@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useState } from "react";
-import { DB_ITEMS, INITIAL_MISSIONS } from "../../constants";
+import { INITIAL_MISSIONS } from "../../constants";
+import { DB_ITEMS } from "../../data/items";
 import {
   formatItemStats,
   getItemAllowedClasses,
@@ -292,6 +293,12 @@ const LootTableModal = ({ isOpen, onClose }) => {
                                       )}
                                     </div>
                                   )}
+                                  {Array.isArray(item.sourceBosses) &&
+                                    item.sourceBosses.length > 0 && (
+                                      <div className="mt-0.5 text-[11px] text-orange-200/90 truncate">
+                                        Drops: {item.sourceBosses.join(" / ")}
+                                      </div>
+                                    )}
                                   <div className="text-xs text-gray-500 mt-0.5 min-w-0">
                                     Slot: {item.slot} • Type: {item.type} • {formatItemStats(item.stats) || "No stat line yet"}
                                     {item.wowheadId ? (

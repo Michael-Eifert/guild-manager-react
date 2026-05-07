@@ -188,7 +188,7 @@ const DetailModal = ({
     if (isOpen && char) {
       setHistoryPage(0);
     }
-  }, [isOpen, char?.id]);
+  }, [isOpen, char]);
 
   if (!isOpen || !char || !classData) return null;
 
