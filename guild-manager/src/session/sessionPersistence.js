@@ -1,8 +1,10 @@
 import { getMissionMaxAttempts } from "../missions/missionHelpers";
 import {
+  CALENDAR_DAY_MS,
   createInitialCalendarState,
   normalizeCalendarState,
 } from "../calendar/calendarLogic";
+import { normalizeRaidLockouts } from "../raids/raidLockouts";
 
 export const SESSION_FORMAT = "guild-manager-session";
 export const SESSION_VERSION = 5;
@@ -142,6 +144,7 @@ export const buildSessionPayload = ({
   guildProgress,
   guildSetup,
   calendarState,
+  raidLockouts,
   gameSpeed,
   isPaused,
   gameTimeMs,
@@ -173,6 +176,17 @@ export const buildSessionPayload = ({
       calendarState: normalizeCalendarState(
         calendarState || createInitialCalendarState(now),
         now,
+      ),
+      raidLockouts: normalizeRaidLockouts(
+        raidLockouts,
+        Math.max(
+          0,
+          Math.floor(
+            (now -
+              (calendarState?.calendarEpochGameTimeMs || now)) /
+              CALENDAR_DAY_MS,
+          ),
+        ),
       ),
       milestones: guildProgress?.milestones || null,
       achievements: guildProgress?.milestones || null,
@@ -255,6 +269,17 @@ export const hydrateSessionData = ({
   const loadedCalendarState = normalizeCalendarState(
     safePayload.calendarState,
     loadBaseTime,
+  );
+  const loadedCalendarDayIndex = Math.max(
+    0,
+    Math.floor(
+      (loadBaseTime - loadedCalendarState.calendarEpochGameTimeMs) /
+        CALENDAR_DAY_MS,
+    ),
+  );
+  const loadedRaidLockouts = normalizeRaidLockouts(
+    safePayload.raidLockouts,
+    loadedCalendarDayIndex,
   );
 
   const loadedActiveMissions = Array.isArray(safePayload.activeMissions)
@@ -342,5 +367,6 @@ export const hydrateSessionData = ({
     loadedGuildSetup,
     loadedProgression,
     loadedCalendarState,
+    loadedRaidLockouts,
   };
 };

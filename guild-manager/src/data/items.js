@@ -1,4 +1,5 @@
 import { MOLTEN_CORE_ITEMS } from './imports/moltenCoreLootManifest';
+import { ZUL_GURUB_ITEMS } from './imports/zulGurubLootManifest';
 import { LOWER_BLACKROCK_SPIRE_ITEMS } from './imports/lowerBlackrockSpireLootManifest';
 import { UPPER_BLACKROCK_SPIRE_ITEMS } from './imports/upperBlackrockSpireLootManifest';
 
@@ -5993,5 +5994,7 @@ export const DB_ITEMS = [
   ...UPPER_BLACKROCK_SPIRE_ITEMS,
   // Molten Core raid loot is generated from the real-loot manifest.
   ...MOLTEN_CORE_ITEMS,
+  // Zul'Gurub raid loot is generated from the real-loot manifest.
+  ...ZUL_GURUB_ITEMS,
 ];
 

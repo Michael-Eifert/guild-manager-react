@@ -36,6 +36,10 @@ import {
   groupByQuality,
   sortLootItems,
 } from "../../loot/lootTableHelpers";
+import {
+  formatRaidResetSchedule,
+  getRaidLockoutStatus,
+} from "../../raids/raidLockouts";
 import BaseModal from "./BaseModal";
 import {
   getZoneById,
@@ -353,6 +357,8 @@ const MissionModal = ({
   dungeonSuccessBonus = 0,
   guildExpMultiplier = 1,
   isRaidUnlocked = false,
+  raidLockouts = {},
+  currentDayIndex = 0,
   onNotify,
 }) => {
   const [view, setView] = useState("list");
@@ -743,6 +749,16 @@ const MissionModal = ({
     selectedPartyMembers.length > 0 && !selectedMissionKeyAccess.canEnter;
   const isRaidPartySizeInvalid =
     Boolean(activePrepMission?.isRaid) && party.length < selectedMissionMinPartySize;
+  const selectedRaidLockoutStatus = activePrepMission?.isRaid
+    ? getRaidLockoutStatus({
+        raidLockouts,
+        mission: activePrepMission,
+        currentDayIndex,
+      })
+    : null;
+  const isSelectedRaidCompletedLocked = Boolean(
+    selectedRaidLockoutStatus?.isCompletedLocked,
+  );
   const missionPreview = activePrepMission
     ? getAdjustedMissionPreview(activePrepMission, selectedPartyMembers)
     : null;
@@ -972,6 +988,16 @@ const MissionModal = ({
       .filter(Boolean);
     const requiredKeySourceLabels = getMissionRequiredKeySourceLabels(mission);
     const missionWipeCost = getMissionWipeCost(mission);
+    const raidLockoutStatus = mission?.isRaid
+      ? getRaidLockoutStatus({
+          raidLockouts,
+          mission,
+          currentDayIndex,
+        })
+      : null;
+    const isRaidCompletedLocked = Boolean(
+      raidLockoutStatus?.isCompletedLocked,
+    );
     const inRangeBounds = getMissionProgressionBounds(mission);
     const inRangeReferenceLevel = Math.max(
       inRangeBounds.minLevel,
@@ -988,8 +1014,10 @@ const MissionModal = ({
     return (
       <div
         key={mission.id}
-        onClick={() => handleSelectQuest(mission)}
-        className={`relative overflow-hidden p-4 rounded flex justify-between items-center bg-gray-800 transition-transform border cursor-pointer active:bg-gray-700 hover:translate-x-1 border-transparent hover:border-blue-500 ${mission.type === "dungeon" ? "border-l-4 border-l-blue-600" : mission.type === "zone" ? "border-l-4 border-l-emerald-600" : ""}`}
+        onClick={() => {
+          if (!isRaidCompletedLocked) handleSelectQuest(mission);
+        }}
+        className={`relative overflow-hidden p-4 rounded flex justify-between items-center bg-gray-800 transition-transform border border-transparent ${isRaidCompletedLocked ? "opacity-50 cursor-not-allowed grayscale" : "cursor-pointer active:bg-gray-700 hover:translate-x-1 hover:border-blue-500"} ${mission.type === "dungeon" ? "border-l-4 border-l-blue-600" : mission.type === "zone" ? "border-l-4 border-l-emerald-600" : ""}`}
       >
         {isZoneMissionCard &&
           zone?.faction !== ZONE_FACTION.NEUTRAL &&
@@ -1031,6 +1059,21 @@ const MissionModal = ({
             {mission.type === "dungeon" && (
               <div className="text-xs text-amber-200/80 mt-0.5">
                 Attempts: {getMissionMaxAttempts(mission)}
+              </div>
+            )}
+            {mission.isRaid && (
+              <div
+                className={`text-xs mt-0.5 ${
+                  isRaidCompletedLocked ? "text-gray-300" : "text-emerald-200/85"
+                }`}
+              >
+                {formatRaidResetSchedule(mission)}
+                {raidLockoutStatus?.clearedSteps > 0
+                  ? ` - Saved ID: ${raidLockoutStatus.clearedSteps}/${raidLockoutStatus.totalBosses} bosses cleared`
+                  : ""}
+                {isRaidCompletedLocked
+                  ? ` - cleared until day ${raidLockoutStatus.resetWindow.nextResetDayIndex}`
+                  : ""}
               </div>
             )}
             {mission.type === "dungeon" && missionWipeCost > 0 && (
@@ -1705,6 +1748,17 @@ const MissionModal = ({
                 <div className="text-xs text-gray-400 mt-1">
                   {getMissionMetaText(selectedQuest)}
                 </div>
+                {activePrepMission?.isRaid && (
+                  <div className="mt-2 rounded border border-amber-900/60 bg-amber-950/20 px-3 py-2 text-xs text-amber-100/85">
+                    {formatRaidResetSchedule(activePrepMission)}
+                    {selectedRaidLockoutStatus?.clearedSteps > 0
+                      ? ` - Saved ID: ${selectedRaidLockoutStatus.clearedSteps}/${selectedRaidLockoutStatus.totalBosses} bosses cleared`
+                      : ""}
+                    {isSelectedRaidCompletedLocked
+                      ? ` - cleared until day ${selectedRaidLockoutStatus.resetWindow.nextResetDayIndex}`
+                      : ""}
+                  </div>
+                )}
                 {shouldShowTacticalOdds && (
                   <div
                     className={`mt-2 rounded border px-3 py-2 ${
@@ -2442,7 +2496,12 @@ const MissionModal = ({
                 );
                 onClose();
               }}
-              disabled={party.length === 0 || isKeyBlocked || isRaidPartySizeInvalid}
+              disabled={
+                party.length === 0 ||
+                isKeyBlocked ||
+                isRaidPartySizeInvalid ||
+                isSelectedRaidCompletedLocked
+              }
               className="btn-quest px-6 md:px-10 py-3 rounded text-blue-100 font-bold disabled:opacity-50 disabled:cursor-not-allowed text-sm md:text-base"
             >
               {selectedQuest?.type === "zone" && selectedZoneEliteQuest

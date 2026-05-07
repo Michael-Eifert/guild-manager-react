@@ -791,6 +791,10 @@ const DUNGEON_MISSION_DEFINITIONS = [
     recommended: "58 - 60",
     dungeonSetId: "molten_core",
     dungeonSetName: "Molten Core",
+    raidReset: {
+      type: "weekly",
+      weekday: 2,
+    },
     gold: 120,
     baseFailChance: 45,
     rewardQualities: [4, 5],
@@ -842,6 +846,73 @@ const DUNGEON_MISSION_DEFINITIONS = [
           { quality: 4, chance: 99 },
           { quality: 5, chance: 1 },
         ],
+      ],
+    },
+    elite: true,
+  },
+  {
+    id: 63,
+    name: "Zul'Gurub",
+    level: 60,
+    minLevel: 58,
+    entryLevel: 58,
+    durationOverrideSeconds: 150,
+    durationReference: "2h30",
+    durationFallback: 150,
+    recommended: "58 - 60",
+    dungeonSetId: "zul_gurub",
+    dungeonSetName: "Zul'Gurub",
+    raidReset: {
+      type: "interval",
+      intervalDays: 3,
+      anchorDayIndex: 0,
+    },
+    gold: 90,
+    baseFailChance: 38,
+    rewardQualities: [4],
+    isRaid: true,
+    minPartySize: 5,
+    requiredPartySize: 20,
+    raidMaxAttempts: 8,
+    raidRoleRequirement: {
+      Tank: 2,
+      Healer: 5,
+      DPS: 13,
+      bonus: 18,
+    },
+    bossDropCountMin: 1,
+    bossDropCountMax: 2,
+    dungeonBosses: [
+      "High Priest Venoxis",
+      "High Priestess Jeklik",
+      "High Priestess Mar'li",
+      "High Priest Thekal",
+      "High Priestess Arlokk",
+      "Bloodlord Mandokir",
+      "Gahz'ranka",
+      "Jin'do the Hexxer",
+      "Hakkar",
+    ],
+    bonusDrops: [
+      {
+        chance: 0.01,
+        qualityPriority: [4],
+        includeWorldDrops: true,
+        dungeonOnly: false,
+        worldOnly: true,
+      },
+    ],
+    dungeonLootTable: {
+      steps: [
+        [{ quality: 4, chance: 100 }],
+        [{ quality: 4, chance: 100 }],
+        [{ quality: 4, chance: 100 }],
+        [{ quality: 4, chance: 100 }],
+        [{ quality: 4, chance: 100 }],
+        [{ quality: 4, chance: 100 }],
+        [{ quality: 4, chance: 100 }],
+        [{ quality: 4, chance: 100 }],
+        [{ quality: 4, chance: 100 }],
       ],
     },
     elite: true,
@@ -1061,6 +1132,10 @@ export const buildDungeonMissions = ({
         mission.raidRoleRequirement &&
         typeof mission.raidRoleRequirement === "object"
           ? { ...mission.raidRoleRequirement }
+          : undefined,
+      raidReset:
+        mission.raidReset && typeof mission.raidReset === "object"
+          ? { ...mission.raidReset }
           : undefined,
       bossDropCountMin: Number.isFinite(mission.bossDropCountMin)
         ? mission.bossDropCountMin

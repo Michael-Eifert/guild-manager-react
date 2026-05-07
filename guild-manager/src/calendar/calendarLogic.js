@@ -7,6 +7,10 @@ export const CALENDAR_STATUS = Object.freeze({
   COMPLETED: "completed",
   CANCELLED: "cancelled",
 });
+export const CALENDAR_SERIES_TYPE = Object.freeze({
+  WEEKLY: "weekly",
+  INTERVAL: "interval",
+});
 export const CALENDAR_TIME_OF_DAY = Object.freeze({
   MORNING: "morning",
   MIDDAY: "midday",
@@ -58,6 +62,11 @@ const normalizeStatus = (status) =>
   Object.values(CALENDAR_STATUS).includes(status)
     ? status
     : CALENDAR_STATUS.SCHEDULED;
+
+const normalizeSeriesType = (type) =>
+  Object.values(CALENDAR_SERIES_TYPE).includes(type)
+    ? type
+    : CALENDAR_SERIES_TYPE.WEEKLY;
 
 export const normalizeCalendarTimeOfDay = (value) =>
   CALENDAR_TIME_OF_DAY_OPTIONS.some((option) => option.value === value)
@@ -222,6 +231,8 @@ export const normalizeCalendarState = (rawState, fallbackEpochGameTimeMs = Date.
           autoStart: series?.autoStart !== false,
           active: series?.active !== false,
           startsOnDayIndex: Math.max(0, Math.floor(Number(series?.startsOnDayIndex) || 0)),
+          seriesType: normalizeSeriesType(series?.seriesType),
+          intervalDays: Math.max(1, Math.floor(Number(series?.intervalDays) || 7)),
         };
       })
       .filter((series) => series.id),
@@ -255,8 +266,10 @@ export const isCharacterEligibleForCalendarEvent = ({
   character,
   mission,
   activeMemberIds = new Set(),
+  raidLockoutStatus = null,
 }) => {
   if (!character || !mission) return false;
+  if (raidLockoutStatus?.isCompletedLocked) return false;
   if (activeMemberIds.has(character.id)) return false;
   if (character.status === "Questing") return false;
 
@@ -281,8 +294,14 @@ export const getCalendarEventSignups = ({
   missionList,
   roster,
   activeMissions,
+  getRaidLockoutStatus,
+  currentDayIndex,
 }) => {
   const mission = getMissionById(missionList, event?.missionId);
+  const raidLockoutStatus =
+    typeof getRaidLockoutStatus === "function"
+      ? getRaidLockoutStatus({ mission, event, currentDayIndex })
+      : null;
   const activeMemberIds = new Set(
     (Array.isArray(activeMissions) ? activeMissions : []).flatMap((missionRun) =>
       normalizeIdList(missionRun?.memberIds),
@@ -294,6 +313,7 @@ export const getCalendarEventSignups = ({
         character,
         mission,
         activeMemberIds,
+        raidLockoutStatus,
       }),
     )
     .map((character) => character.id);
@@ -384,6 +404,8 @@ export const buildCalendarSeries = ({
   scheduledTimeOfDay = CALENDAR_TIME_OF_DAY.EVENING,
   autoStart = true,
   startsOnDayIndex,
+  seriesType = CALENDAR_SERIES_TYPE.WEEKLY,
+  intervalDays = 7,
 }) => ({
   id,
   title,
@@ -393,6 +415,8 @@ export const buildCalendarSeries = ({
   autoStart: autoStart !== false,
   active: true,
   startsOnDayIndex: Math.max(0, Math.floor(Number(startsOnDayIndex) || 0)),
+  seriesType: normalizeSeriesType(seriesType),
+  intervalDays: Math.max(1, Math.floor(Number(intervalDays) || 7)),
 });
 
 export const materializeCalendarSeriesEvents = ({
@@ -420,7 +444,11 @@ export const materializeCalendarSeriesEvents = ({
         dayIndex <= endDay;
         dayIndex += 1
       ) {
-        if (getCalendarDate(dayIndex).weekdayIndex !== series.weekday) continue;
+        const isSeriesDay =
+          series.seriesType === CALENDAR_SERIES_TYPE.INTERVAL
+            ? (dayIndex - series.startsOnDayIndex) % series.intervalDays === 0
+            : getCalendarDate(dayIndex).weekdayIndex === series.weekday;
+        if (!isSeriesDay) continue;
         const seriesDayKey = `${series.id}:${dayIndex}`;
         if (existingSeriesDays.has(seriesDayKey)) continue;
         const stableId = `event:${series.id}:${dayIndex}`;
@@ -459,6 +487,7 @@ export const refreshCalendarState = ({
   activeMissions,
   missionList,
   createId,
+  getRaidLockoutStatus,
 }) => {
   const materialized = materializeCalendarSeriesEvents({
     state,
@@ -480,6 +509,8 @@ export const refreshCalendarState = ({
       missionList,
       roster,
       activeMissions,
+      getRaidLockoutStatus,
+      currentDayIndex,
     });
     const approvedRosterIds =
       event.approvedRosterIds.length > 0

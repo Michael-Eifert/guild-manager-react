@@ -2,6 +2,7 @@ import { useEffect, useMemo, useState } from "react";
 import { DB_CLASSES } from "../../constants";
 import {
   CALENDAR_MONTHS,
+  CALENDAR_SERIES_TYPE,
   CALENDAR_STATUS,
   CALENDAR_TIME_OF_DAY_OPTIONS,
   CALENDAR_WEEKDAYS,
@@ -10,6 +11,10 @@ import {
   getCalendarTimeOfDayOption,
   getCalendarMonthGrid,
 } from "../../calendar/calendarLogic";
+import {
+  formatRaidResetSchedule,
+  getRaidLockoutStatus,
+} from "../../raids/raidLockouts";
 import { getCharacterAverageItemLevel, getRoleIcon } from "../../utils";
 import BaseModal from "./BaseModal";
 
@@ -36,6 +41,24 @@ const getEventStatusClass = (status) => {
   return "border-yellow-700 text-yellow-200";
 };
 
+const getRaidResetShortLabel = (mission) => {
+  if (mission?.name === "Molten Core") return "MC Reset";
+  if (mission?.name === "Zul'Gurub") return "ZG Reset";
+  return `${mission?.name || "Raid"} Reset`;
+};
+
+const isRaidResetDay = (mission, dayIndex) => {
+  if (mission?.isRaid !== true) return false;
+  const schedule = mission.raidReset || {};
+  if (schedule.type === "interval") {
+    const intervalDays = Math.max(1, Math.floor(Number(schedule.intervalDays) || 1));
+    const anchorDayIndex = Math.max(0, Math.floor(Number(schedule.anchorDayIndex) || 0));
+    return dayIndex >= anchorDayIndex && (dayIndex - anchorDayIndex) % intervalDays === 0;
+  }
+  const weekday = Math.max(0, Math.min(6, Math.floor(Number(schedule.weekday) || 2)));
+  return getCalendarDate(dayIndex).weekdayIndex === weekday;
+};
+
 const CalendarModal = ({
   isOpen,
   onClose,
@@ -44,6 +67,7 @@ const CalendarModal = ({
   missionList,
   roster,
   activeMissions,
+  raidLockouts,
   onCreateEvent,
   onCreateSeries,
   onUpdateEventRoster,
@@ -136,11 +160,23 @@ const CalendarModal = ({
     });
     return grouped;
   }, [events]);
+  const raidResetLabelsByDay = useMemo(() => {
+    const grouped = new Map();
+    monthGrid.forEach((day) => {
+      if (!day) return;
+      const resetLabels = raidMissions
+        .filter((mission) => isRaidResetDay(mission, day.dayIndex))
+        .map(getRaidResetShortLabel);
+      if (resetLabels.length > 0) grouped.set(day.dayIndex, resetLabels);
+    });
+    return grouped;
+  }, [monthGrid, raidMissions]);
   const visibleEvents = [...events]
     .filter((event) => event.scheduledDayIndex >= currentDayIndex - 7)
     .sort((left, right) => left.scheduledDayIndex - right.scheduledDayIndex);
   const selectedEvent =
     events.find((event) => event.id === selectedEventId) || visibleEvents[0] || null;
+  const selectedCreateMission = missionLookup.get(String(selectedMissionId));
   const selectedEventMission = selectedEvent
     ? missionLookup.get(String(selectedEvent.missionId))
     : null;
@@ -169,6 +205,13 @@ const CalendarModal = ({
     roleCounts.Tank >= roleRequirement.Tank &&
     roleCounts.Healer >= roleRequirement.Healer &&
     roleCounts.DPS >= roleRequirement.DPS;
+  const selectedEventLockoutStatus = selectedEventMission
+    ? getRaidLockoutStatus({
+        raidLockouts,
+        mission: selectedEventMission,
+        currentDayIndex,
+      })
+    : null;
 
   const changeMonth = (delta) => {
     const nextMonth = viewMonthIndex + delta;
@@ -202,14 +245,21 @@ const CalendarModal = ({
     const mission = missionLookup.get(String(selectedMissionId));
     const startDay =
       selectedDayIndex >= currentDayIndex ? selectedDayIndex : currentDayIndex;
+    const isIntervalRaid = mission?.raidReset?.type === "interval";
     onCreateSeries({
       missionId: selectedMissionId,
       weekday: selectedWeekday,
       scheduledTimeOfDay: selectedTimeOfDay,
       startsOnDayIndex: startDay,
+      seriesType: isIntervalRaid
+        ? CALENDAR_SERIES_TYPE.INTERVAL
+        : CALENDAR_SERIES_TYPE.WEEKLY,
+      intervalDays: isIntervalRaid ? mission.raidReset.intervalDays : undefined,
       title:
         eventTitle.trim() ||
-        `${mission?.name || "Raid"} ${CALENDAR_WEEKDAYS[selectedWeekday]}`,
+        (isIntervalRaid
+          ? `${mission?.name || "Raid"} Reset`
+          : `${mission?.name || "Raid"} ${CALENDAR_WEEKDAYS[selectedWeekday]}`),
     });
     setEventTitle("");
   };
@@ -276,6 +326,7 @@ const CalendarModal = ({
                 return <div key={`empty-${index}`} className="aspect-square" />;
               }
               const dayEvents = eventsByDay.get(day.dayIndex) || [];
+              const dayResetLabels = raidResetLabelsByDay.get(day.dayIndex) || [];
               const isToday = day.dayIndex === currentDayIndex;
               const isSelected = day.dayIndex === selectedDayIndex;
               return (
@@ -293,6 +344,14 @@ const CalendarModal = ({
                 >
                   <div className="font-bold text-gray-100">{day.dayOfMonth}</div>
                   <div className="space-y-0.5 mt-1">
+                    {dayResetLabels.slice(0, 2).map((label) => (
+                      <div
+                        key={`${day.dayIndex}-${label}`}
+                        className="truncate rounded border border-amber-700/70 bg-amber-950/40 px-1 text-[10px] font-bold text-amber-100"
+                      >
+                        {label}
+                      </div>
+                    ))}
                     {dayEvents.slice(0, 2).map((event) => (
                       <div
                         key={event.id}
@@ -388,7 +447,12 @@ const CalendarModal = ({
                 disabled={!selectedMissionId}
                 className="px-3 py-2 rounded border border-indigo-700 bg-indigo-950/40 text-indigo-100 font-bold text-xs disabled:opacity-40"
               >
-                Create Weekly
+                {missionLookup.get(String(selectedMissionId))?.raidReset?.type === "interval"
+                  ? `Create Every ${
+                      missionLookup.get(String(selectedMissionId))?.raidReset
+                        ?.intervalDays || 3
+                    }d`
+                  : "Create Weekly"}
               </button>
             </div>
           </div>
@@ -462,6 +526,17 @@ const CalendarModal = ({
                 {selectedEvent.autoStart === false ? " disabled" : ""}. Lock the roster before
                 that time and the raid will start automatically.
               </div>
+              {selectedEventMission?.isRaid && (
+                <div className="mt-3 rounded border border-amber-900/60 bg-amber-950/20 p-2 text-xs text-amber-100/80">
+                  {formatRaidResetSchedule(selectedEventMission)}
+                  {selectedEventLockoutStatus?.clearedSteps > 0
+                    ? ` - Saved ID: ${selectedEventLockoutStatus.clearedSteps}/${selectedEventLockoutStatus.totalBosses} bosses cleared`
+                    : ""}
+                  {selectedEventLockoutStatus?.isCompletedLocked
+                    ? ` - cleared until day ${selectedEventLockoutStatus.resetWindow.nextResetDayIndex}`
+                    : ""}
+                </div>
+              )}
 
               <div className="mt-3 rounded border border-gray-700 bg-gray-900/70 p-2 text-xs">
                 <div className="text-gray-500 uppercase tracking-wide mb-1">Raid Comp</div>
@@ -482,6 +557,9 @@ const CalendarModal = ({
                   signupMembers.map((member) => {
                     const approved = selectedEvent.approvedRosterIds.includes(member.id);
                     const busy = activeMemberIds.has(member.id);
+                    const raidLocked = Boolean(
+                      selectedEventLockoutStatus?.isCompletedLocked,
+                    );
                     return (
                       <button
                         key={member.id}
@@ -511,7 +589,7 @@ const CalendarModal = ({
                           </span>
                         </span>
                         <span className="text-xs text-gray-300">
-                          {busy ? "Busy" : approved ? "Roster" : "Bench"}
+                          {raidLocked ? "Locked" : busy ? "Busy" : approved ? "Roster" : "Bench"}
                         </span>
                       </button>
                     );
@@ -537,7 +615,8 @@ const CalendarModal = ({
                   onClick={() => onStartEvent(selectedEvent.id)}
                   disabled={
                     selectedEvent.status !== CALENDAR_STATUS.READY ||
-                    !hasMinimumRoster
+                    !hasMinimumRoster ||
+                    selectedEventLockoutStatus?.isCompletedLocked
                   }
                   className="px-4 py-2 rounded border border-emerald-700 bg-emerald-950/40 text-emerald-100 text-xs font-bold disabled:opacity-40"
                 >

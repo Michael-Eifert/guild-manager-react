@@ -113,6 +113,13 @@ import {
   refreshCalendarState,
   getMissionInstanceKey,
 } from "./calendar/calendarLogic";
+import {
+  getRaidLockoutStatus,
+  getRaidResumeProgress,
+  normalizeRaidLockouts,
+  startRaidLockout,
+  updateRaidLockoutProgress,
+} from "./raids/raidLockouts";
 
 const RecruitModal = lazy(() => import("./components/modals/RecruitModal"));
 const DetailModal = lazy(() => import("./components/modals/DetailModal"));
@@ -1078,6 +1085,7 @@ const App = () => {
   const [calendarState, setCalendarState] = useState(() =>
     createInitialCalendarState(Date.now()),
   );
+  const [raidLockouts, setRaidLockouts] = useState({});
   const [showRecruit, setShowRecruit] = useState(false);
   const [showMissions, setShowMissions] = useState(false);
   const [showCalendar, setShowCalendar] = useState(false);
@@ -1105,11 +1113,14 @@ const App = () => {
   const rosterRef = useRef(roster);
   const missionsRef = useRef(activeMissions);
   const missionListRef = useRef(missionList);
+  const calendarEventStartLocksRef = useRef(new Set());
+  const startCalendarEventRef = useRef(() => false);
   const goldRef = useRef(guildGold);
   const guildProgressRef = useRef(guildProgress);
   const guildSetupRef = useRef(guildSetup);
   const gameTimeRef = useRef(gameTimeMs);
   const calendarStateRef = useRef(calendarState);
+  const raidLockoutsRef = useRef(raidLockouts);
   const lastRealTimeRef = useRef(Date.now());
   const rewardedMissionIdsRef = useRef(new Set());
   const notificationTimersRef = useRef(new Map());
@@ -1201,6 +1212,9 @@ const App = () => {
     calendarStateRef.current = calendarState;
   }, [calendarState]);
   useEffect(() => {
+    raidLockoutsRef.current = raidLockouts;
+  }, [raidLockouts]);
+  useEffect(() => {
     lastRealTimeRef.current = Date.now();
   }, [isPaused, gameSpeed]);
   useEffect(
@@ -1276,6 +1290,23 @@ const App = () => {
   const currentCalendarDayProgressPercent = Math.round(
     currentCalendarDayProgress * 100,
   );
+  const getCurrentCalendarDayIndex = useCallback(
+    () =>
+      getCalendarDayIndex(
+        gameTimeRef.current,
+        calendarStateRef.current.calendarEpochGameTimeMs,
+      ),
+    [],
+  );
+  const normalizeCurrentRaidLockouts = useCallback(() => {
+    const normalized = normalizeRaidLockouts(
+      raidLockoutsRef.current,
+      getCurrentCalendarDayIndex(),
+    );
+    raidLockoutsRef.current = normalized;
+    setRaidLockouts(normalized);
+    return normalized;
+  }, [getCurrentCalendarDayIndex]);
   const factionMissionIconUrl = getWowIconUrl(
     FACTION_EMBLEM_ICON[guildSetup.faction] ||
       FACTION_EMBLEM_ICON[GUILD_FACTION.ALLIANCE],
@@ -1592,6 +1623,36 @@ const App = () => {
         quest.type === "dungeon"
           ? getDefaultDungeonProgress(quest, startTime, totalDuration)
           : null;
+      let resumedDungeonProgress = dungeonProgress;
+      let adjustedTotalDuration = totalDuration;
+      let adjustedFinishTime = startTime + totalDuration;
+      if (quest?.isRaid === true && dungeonProgress) {
+        const resumeClearedSteps = getRaidResumeProgress({
+          raidLockouts: raidLockoutsRef.current,
+          mission: quest,
+          currentDayIndex: getCurrentCalendarDayIndex(),
+        });
+        const bossCount = getDungeonBossCount(quest);
+        const safeResumeSteps = Math.max(
+          0,
+          Math.min(bossCount - 1, resumeClearedSteps),
+        );
+        if (safeResumeSteps > 0) {
+          const remainingSteps = Math.max(1, bossCount - safeResumeSteps);
+          adjustedTotalDuration = dungeonProgress.stepDuration * remainingSteps;
+          adjustedFinishTime = startTime + adjustedTotalDuration;
+          resumedDungeonProgress = {
+            ...dungeonProgress,
+            currentStep: safeResumeSteps,
+            clearedSteps: safeResumeSteps,
+            lootAwardedSteps: Array.from(
+              { length: safeResumeSteps },
+              (_, index) => index + 1,
+            ),
+            nextStepAt: startTime + dungeonProgress.stepDuration,
+          };
+        }
+      }
       const missionSuccess =
         quest.type === "dungeon"
           ? undefined
@@ -1609,9 +1670,9 @@ const App = () => {
         missionPower: missionPreview.missionPower,
         questId: quest.id,
         startTime,
-        finishTime: startTime + totalDuration,
-        totalDuration,
-        dungeonProgress,
+        finishTime: adjustedFinishTime,
+        totalDuration: adjustedTotalDuration,
+        dungeonProgress: resumedDungeonProgress,
         memberIds: [...ids],
         chainContext: chainContext
           ? {
@@ -1625,7 +1686,7 @@ const App = () => {
           : null,
       };
     },
-    [getAdjustedMissionSuccessPreview],
+    [getAdjustedMissionSuccessPreview, getCurrentCalendarDayIndex],
   );
 
   const resolveDungeonChainContinuation = useCallback(
@@ -2028,6 +2089,17 @@ const App = () => {
         now,
         calendarStateRef.current.calendarEpochGameTimeMs,
       );
+      const normalizedRaidLockouts = normalizeRaidLockouts(
+        raidLockoutsRef.current,
+        calendarDayIndex,
+      );
+      if (
+        JSON.stringify(normalizedRaidLockouts) !==
+        JSON.stringify(raidLockoutsRef.current)
+      ) {
+        raidLockoutsRef.current = normalizedRaidLockouts;
+        setRaidLockouts(normalizedRaidLockouts);
+      }
       const calendarDayProgress = getCalendarDayProgress(
         now,
         calendarStateRef.current.calendarEpochGameTimeMs,
@@ -2047,6 +2119,12 @@ const App = () => {
         activeMissions: currentMissions,
         missionList: missionListRef.current,
         createId,
+        getRaidLockoutStatus: ({ mission }) =>
+          getRaidLockoutStatus({
+            raidLockouts: raidLockoutsRef.current,
+            mission,
+            currentDayIndex: calendarDayIndex,
+          }),
       });
       if (
         JSON.stringify(refreshedCalendar.state) !==
@@ -2068,6 +2146,7 @@ const App = () => {
         });
       });
 
+      const autoStartKeys = new Set();
       refreshedCalendar.state.calendarEvents
         .filter(
           (event) =>
@@ -2079,66 +2158,31 @@ const App = () => {
             Array.isArray(event.approvedRosterIds) &&
             event.approvedRosterIds.length > 0,
         )
+        .filter((event) => {
+          const eventKey = event.seriesId
+            ? `${event.seriesId}:${event.scheduledDayIndex}`
+            : event.id;
+          if (autoStartKeys.has(eventKey)) return false;
+          autoStartKeys.add(eventKey);
+          return true;
+        })
         .forEach((event) => {
-          const mission = missionListRef.current.find(
-            (entry) => String(entry?.id) === String(event.missionId),
-          );
-          if (!mission) return;
-          const approvedRosterIds = event.approvedRosterIds.filter(Boolean);
-          const selectedMembers = newRoster.filter((member) =>
-            approvedRosterIds.includes(member.id),
-          );
-          if (selectedMembers.length !== approvedRosterIds.length) return;
-          const keyAccess = evaluateMissionKeyAccess({
-            missions: [mission],
-            partyMembers: selectedMembers,
+          const started = startCalendarEventRef.current({
+            eventId: event.id,
+            source: "auto",
+            calendarDayIndex,
+            logAutoStart: true,
           });
-          if (!keyAccess.canEnter) return;
-          const deployed = handleDeploy(mission, approvedRosterIds, {
-            calendarEventId: event.id,
-          });
-          if (!deployed) return;
+          if (!started) return;
           newRoster = Array.isArray(rosterRef.current)
             ? [...rosterRef.current]
             : newRoster;
           currentMissions = Array.isArray(missionsRef.current)
             ? [...missionsRef.current]
             : currentMissions;
-          calendarStateRef.current = {
-            ...calendarStateRef.current,
-            calendarEvents: calendarStateRef.current.calendarEvents.map(
-              (entry) =>
-                entry.id === event.id
-                  ? {
-                      ...entry,
-                      status: CALENDAR_STATUS.RUNNING,
-                      runningMissionInstanceId: missionRun.instanceId || null,
-                    }
-                  : entry,
-            ),
-            calendarEventHistory: [
-              {
-                id: createId(),
-                eventId: event.id,
-                type: "auto-started",
-                missionName: mission.name,
-                dayIndex: calendarDayIndex,
-                scheduledTimeOfDay: event.scheduledTimeOfDay,
-                approvedRosterIds: [...event.approvedRosterIds],
-                benchedIds: [...event.benchedIds],
-              },
-              ...calendarStateRef.current.calendarEventHistory,
-            ].slice(0, 100),
-          };
-          setCalendarState(calendarStateRef.current);
           newLogs.push({
             type: "calendar",
             message: `${event.title} auto-started at ${getCalendarTimeOfDayOption(event.scheduledTimeOfDay).label}.`,
-          });
-          pushNotification({
-            type: "info",
-            title: "Raid Auto-Started",
-            message: `${event.title} started with ${approvedRosterIds.length} heroes.`,
           });
         });
 
@@ -2171,6 +2215,18 @@ const App = () => {
         rewardedMissionIdsRef.current.add(missionInstanceId);
 
         const result = processMissionRewards(m, newRoster);
+        if (m?.isRaid === true) {
+          const nextRaidLockouts = updateRaidLockoutProgress({
+            raidLockouts: raidLockoutsRef.current,
+            mission: m,
+            currentDayIndex: calendarDayIndex,
+            memberIds: m.memberIds,
+            clearedSteps: m.dungeonProgress?.clearedSteps || 0,
+            totalBosses: getDungeonBossCount(m),
+          });
+          raidLockoutsRef.current = nextRaidLockouts;
+          setRaidLockouts(nextRaidLockouts);
+        }
         newRoster = result.updatedRoster;
         newLogs = [...newLogs, ...result.missionLogs];
         if (m.type === "dungeon") {
@@ -2564,6 +2620,8 @@ const App = () => {
         };
       });
 
+      rosterRef.current = newRoster;
+      missionsRef.current = newMissions;
       setRoster(newRoster);
       setActiveMissions(newMissions);
       if (newGold !== currentGold) {
@@ -2748,9 +2806,11 @@ const App = () => {
     missionsRef.current = [];
     goldRef.current = starterGold;
     calendarStateRef.current = calendarStart;
+    raidLockoutsRef.current = {};
     setRoster(starterRoster);
     setActiveMissions([]);
     setCalendarState(calendarStart);
+    setRaidLockouts({});
     setMissionList(
       getMissionListWithZones(INITIAL_MISSIONS.map(cloneMissionTemplate)),
     );
@@ -2961,6 +3021,22 @@ const App = () => {
         return false;
       }
 
+      if (quest?.isRaid === true) {
+        const raidStatus = getRaidLockoutStatus({
+          raidLockouts: raidLockoutsRef.current,
+          mission: quest,
+          currentDayIndex: getCurrentCalendarDayIndex(),
+        });
+        if (raidStatus.isCompletedLocked) {
+          pushNotification({
+            type: "error",
+            title: "Raid Locked",
+            message: `${quest.name} is cleared until day ${raidStatus.resetWindow.nextResetDayIndex}.`,
+          });
+          return false;
+        }
+      }
+
       const selectedMemberIdSet = new Set(memberIds.map((id) => String(id)));
       const activeMissionMemberIds = new Set();
       const activeNonDungeonMemberIds = new Set();
@@ -3048,19 +3124,31 @@ const App = () => {
         ? { ...missionRun, calendarEventId: options.calendarEventId }
         : missionRun;
 
-      setRoster((prev) =>
-        prev.map((c) =>
-          memberIds.includes(c.id)
-            ? {
-                ...c,
-                status: "Questing",
-                statusText: hasDungeonChain
-                  ? `Chain: ${openingMission.name}`
-                  : "On Mission",
-              }
-            : c,
-        ),
+      if (openingMission?.isRaid === true) {
+        const nextRaidLockouts = startRaidLockout({
+          raidLockouts: raidLockoutsRef.current,
+          mission: openingMission,
+          currentDayIndex: getCurrentCalendarDayIndex(),
+          memberIds,
+          totalBosses: getDungeonBossCount(openingMission),
+        });
+        raidLockoutsRef.current = nextRaidLockouts;
+        setRaidLockouts(nextRaidLockouts);
+      }
+
+      const deployedRoster = rosterSnapshot.map((c) =>
+        memberIds.includes(c.id)
+          ? {
+              ...c,
+              status: "Questing",
+              statusText: hasDungeonChain
+                ? `Chain: ${openingMission.name}`
+                : "On Mission",
+            }
+          : c,
       );
+      rosterRef.current = deployedRoster;
+      setRoster(deployedRoster);
       missionsRef.current = [...missionsRef.current, missionRunWithCalendar];
       setActiveMissions((prev) => [...prev, missionRunWithCalendar]);
 
@@ -3076,6 +3164,7 @@ const App = () => {
     [
       assignZoneToRoster,
       buildMissionRun,
+      getCurrentCalendarDayIndex,
       normalizeRosterZones,
       preemptDungeonMissionsForRaid,
       pushNotification,
@@ -3096,6 +3185,12 @@ const App = () => {
         activeMissions: missionsRef.current,
         missionList: missionListRef.current,
         createId,
+        getRaidLockoutStatus: ({ mission }) =>
+          getRaidLockoutStatus({
+            raidLockouts: raidLockoutsRef.current,
+            mission,
+            currentDayIndex,
+          }),
       });
       commitCalendarState(refreshed.state);
       return refreshed.state;
@@ -3135,7 +3230,15 @@ const App = () => {
   );
 
   const handleCreateCalendarSeries = useCallback(
-    ({ missionId, weekday, scheduledTimeOfDay, title, startsOnDayIndex }) => {
+    ({
+      missionId,
+      weekday,
+      scheduledTimeOfDay,
+      title,
+      startsOnDayIndex,
+      seriesType,
+      intervalDays,
+    }) => {
       const mission = missionListRef.current.find(
         (entry) => String(entry?.id) === String(missionId),
       );
@@ -3147,6 +3250,8 @@ const App = () => {
         weekday,
         scheduledTimeOfDay,
         startsOnDayIndex,
+        seriesType,
+        intervalDays,
       });
       refreshCalendarStateNow({
         ...calendarStateRef.current,
@@ -3155,7 +3260,10 @@ const App = () => {
       pushNotification({
         type: "info",
         title: "Raid Series Created",
-        message: `${series.title} repeats on ${formatCalendarDate(series.startsOnDayIndex).split(",")[0]}.`,
+        message:
+          series.seriesType === "interval"
+            ? `${series.title} repeats every ${series.intervalDays} days.`
+            : `${series.title} repeats on ${formatCalendarDate(series.startsOnDayIndex).split(",")[0]}.`,
       });
     },
     [pushNotification, refreshCalendarStateNow],
@@ -3193,29 +3301,46 @@ const App = () => {
     [updateCalendarEvent],
   );
 
-  const handleStartCalendarEvent = useCallback(
-    (eventId) => {
-      const event = calendarStateRef.current.calendarEvents.find(
-        (entry) => entry.id === eventId,
+  startCalendarEventRef.current = ({
+    eventId,
+    source = "manual",
+    calendarDayIndex: overrideDayIndex = null,
+    logAutoStart = false,
+  }) => {
+    const event = calendarStateRef.current.calendarEvents.find(
+      (entry) => entry.id === eventId,
+    );
+    if (!event || event.status !== CALENDAR_STATUS.READY) return false;
+    if (calendarEventStartLocksRef.current.has(eventId)) return false;
+
+    const mission = missionListRef.current.find(
+      (entry) => String(entry?.id) === String(event.missionId),
+    );
+    if (!mission) return false;
+
+    calendarEventStartLocksRef.current.add(eventId);
+    try {
+      const approvedRosterIds = [...new Set(event.approvedRosterIds)].filter(
+        Boolean,
       );
-      if (!event || event.status !== CALENDAR_STATUS.READY) return;
-      const mission = missionListRef.current.find(
-        (entry) => String(entry?.id) === String(event.missionId),
-      );
-      if (!mission) return;
-      const approvedRosterIds = event.approvedRosterIds.filter(Boolean);
+      if (approvedRosterIds.length === 0) return false;
+
       const deployed = handleDeploy(mission, approvedRosterIds, {
         calendarEventId: event.id,
       });
-      if (!deployed) return;
+      if (!deployed) return false;
 
       const runningMission = missionsRef.current.find(
         (missionRun) => missionRun.calendarEventId === event.id,
       );
-      const currentDayIndex = getCalendarDayIndex(
-        gameTimeRef.current,
-        calendarStateRef.current.calendarEpochGameTimeMs,
-      );
+      const currentDayIndex =
+        Number.isFinite(overrideDayIndex) && overrideDayIndex >= 0
+          ? Math.floor(overrideDayIndex)
+          : getCalendarDayIndex(
+              gameTimeRef.current,
+              calendarStateRef.current.calendarEpochGameTimeMs,
+            );
+
       commitCalendarState({
         ...calendarStateRef.current,
         calendarEvents: calendarStateRef.current.calendarEvents.map((entry) =>
@@ -3231,23 +3356,37 @@ const App = () => {
           {
             id: createId(),
             eventId: event.id,
-            type: "started",
+            type:
+              source === "auto" && logAutoStart ? "auto-started" : "started",
             missionName: mission.name,
             dayIndex: currentDayIndex,
             approvedRosterIds: [...event.approvedRosterIds],
             benchedIds: [...event.benchedIds],
+            ...(source === "auto" && logAutoStart
+              ? { scheduledTimeOfDay: event.scheduledTimeOfDay }
+              : null),
           },
           ...calendarStateRef.current.calendarEventHistory,
         ].slice(0, 100),
       });
+
       pushNotification({
         type: "info",
-        title: "Raid Started",
+        title: source === "auto" ? "Raid Auto-Started" : "Raid Started",
         message: `${event.title} started with ${approvedRosterIds.length} heroes.`,
       });
-      setShowCalendar(false);
+      if (source !== "auto") setShowCalendar(false);
+      return true;
+    } finally {
+      calendarEventStartLocksRef.current.delete(eventId);
+    }
+  };
+
+  const handleStartCalendarEvent = useCallback(
+    (eventId) => {
+      startCalendarEventRef.current({ eventId, source: "manual" });
     },
-    [commitCalendarState, handleDeploy, pushNotification],
+    [],
   );
   const handleManualFinish = (m) => {
     const now = gameTimeRef.current;
@@ -3287,6 +3426,18 @@ const App = () => {
       missionWithStepLoot,
       stepLootAwards.roster,
     );
+    if (missionWithStepLoot?.isRaid === true) {
+      const nextRaidLockouts = updateRaidLockoutProgress({
+        raidLockouts: raidLockoutsRef.current,
+        mission: missionWithStepLoot,
+        currentDayIndex: getCurrentCalendarDayIndex(),
+        memberIds: missionWithStepLoot.memberIds,
+        clearedSteps: missionWithStepLoot.dungeonProgress?.clearedSteps || 0,
+        totalBosses: getDungeonBossCount(missionWithStepLoot),
+      });
+      raidLockoutsRef.current = nextRaidLockouts;
+      setRaidLockouts(nextRaidLockouts);
+    }
     const chainResolution = resolveDungeonChainContinuation({
       mission: missionWithStepLoot,
       missionSucceeded: result.missionSucceeded,
@@ -3485,8 +3636,10 @@ const App = () => {
     guildProgressRef.current = nextGuildProgress;
     setGuildProgress(nextGuildProgress);
     missionsRef.current = [];
+    raidLockoutsRef.current = {};
     rewardedMissionIdsRef.current = new Set();
     setActiveMissions([]);
+    setRaidLockouts({});
     setGuildLog((prev) =>
       [
         {
@@ -3528,6 +3681,7 @@ const App = () => {
         guildProgress,
         guildSetup,
         calendarState,
+        raidLockouts,
         gameSpeed,
         isPaused,
         gameTimeMs: gameTimeRef.current,
@@ -3571,6 +3725,7 @@ const App = () => {
             guildProgress: guildProgressRef,
             guildSetup: guildSetupRef,
             calendarState: calendarStateRef,
+            raidLockouts: raidLockoutsRef,
             gameTime: gameTimeRef,
             lastRealTime: lastRealTimeRef,
           },
@@ -3583,6 +3738,7 @@ const App = () => {
             setGuildProgress,
             setGuildSetup,
             setCalendarState,
+            setRaidLockouts,
             setIsPaused,
             setGameSpeed,
             setGameTimeMs,
@@ -4198,6 +4354,8 @@ const App = () => {
               guildDerivedStats.expMultiplier * guildFocusBonuses.expMultiplier
             }
             isRaidUnlocked={guildDerivedStats.raidUnlocked}
+            raidLockouts={raidLockouts}
+            currentDayIndex={currentCalendarDayIndex}
             onNotify={pushNotification}
           />
         )}
@@ -4210,6 +4368,7 @@ const App = () => {
             missionList={missionList}
             roster={roster}
             activeMissions={activeMissions}
+            raidLockouts={raidLockouts}
             onCreateEvent={handleCreateCalendarEvent}
             onCreateSeries={handleCreateCalendarSeries}
             onUpdateEventRoster={handleUpdateCalendarEventRoster}

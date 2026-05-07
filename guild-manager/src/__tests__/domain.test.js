@@ -39,6 +39,7 @@ import { INITIAL_MISSIONS } from "../constants";
 import { isItemUsableByClass } from "../utils";
 import {
   CALENDAR_DAY_MS,
+  CALENDAR_SERIES_TYPE,
   CALENDAR_STATUS,
   CALENDAR_TIME_OF_DAY,
   buildCalendarEvent,
@@ -52,12 +53,23 @@ import {
   materializeCalendarSeriesEvents,
   refreshCalendarState,
 } from "../calendar/calendarLogic";
+import {
+  getRaidResetWindow,
+  getRaidLockoutStatus,
+  startRaidLockout,
+  updateRaidLockoutProgress,
+} from "../raids/raidLockouts";
 import { DB_ITEMS } from "../data/items";
 import {
   MOLTEN_CORE_ACTIVE_LOOT_MANIFEST,
   MOLTEN_CORE_ITEMS,
   unsupportedMoltenCoreDrops,
 } from "../data/imports/moltenCoreLootManifest";
+import {
+  ZUL_GURUB_ACTIVE_LOOT_MANIFEST,
+  ZUL_GURUB_ITEMS,
+  unsupportedZulGurubDrops,
+} from "../data/imports/zulGurubLootManifest";
 import {
   LOWER_BLACKROCK_SPIRE_ACTIVE_LOOT_MANIFEST,
   LOWER_BLACKROCK_SPIRE_ITEMS,
@@ -345,6 +357,44 @@ describe("calendar logic", () => {
     expect(second.calendarEvents).toHaveLength(first.calendarEvents.length);
   });
 
+  it("materializes interval raid series without duplicates", () => {
+    const state = {
+      ...createInitialCalendarState(0),
+      calendarSeries: [
+        buildCalendarSeries({
+          id: "zg-series",
+          title: "ZG Reset",
+          missionId: 63,
+          weekday: 0,
+          scheduledTimeOfDay: CALENDAR_TIME_OF_DAY.EVENING,
+          startsOnDayIndex: 0,
+          seriesType: CALENDAR_SERIES_TYPE.INTERVAL,
+          intervalDays: 3,
+        }),
+      ],
+    };
+    const first = materializeCalendarSeriesEvents({
+      state,
+      currentDayIndex: 0,
+      createId: () => "fallback-id",
+      horizonDays: 10,
+    });
+    const second = materializeCalendarSeriesEvents({
+      state: first,
+      currentDayIndex: 0,
+      createId: () => "fallback-id",
+      horizonDays: 10,
+    });
+
+    expect(first.calendarEvents.map((event) => event.scheduledDayIndex)).toEqual([
+      0,
+      3,
+      6,
+      9,
+    ]);
+    expect(second.calendarEvents).toHaveLength(first.calendarEvents.length);
+  });
+
   it("preempts dungeon missions that contain raid members", () => {
     const result = getDungeonMissionPreemption({
       activeMissions: [
@@ -436,6 +486,53 @@ describe("calendar logic", () => {
     expect(event.approvedRosterIds).toEqual(["tank", "dps"]);
     expect(event.benchedIds).toEqual([]);
     expect(result.newlyReadyEvents).toHaveLength(1);
+  });
+
+  it("excludes signups when a raid is completed until reset", () => {
+    const mission = {
+      id: 63,
+      name: "Zul'Gurub",
+      isRaid: true,
+      entryLevel: 58,
+      requiredPartySize: 2,
+      raidReset: { type: "interval", intervalDays: 3, anchorDayIndex: 0 },
+    };
+    const state = {
+      ...createInitialCalendarState(0),
+      calendarEvents: [
+        buildCalendarEvent({
+          id: "event-1",
+          title: "ZG Raid",
+          missionId: 63,
+          scheduledDayIndex: 1,
+          createdAtDayIndex: 0,
+        }),
+      ],
+    };
+    const completedLockouts = updateRaidLockoutProgress({
+      raidLockouts: {},
+      mission,
+      currentDayIndex: 1,
+      memberIds: ["hero"],
+      clearedSteps: 9,
+      totalBosses: 9,
+    });
+    const result = refreshCalendarState({
+      state,
+      currentDayIndex: 1,
+      roster: [{ id: "hero", name: "Hero", role: "DPS", level: 60 }],
+      activeMissions: [],
+      missionList: [mission],
+      createId: () => "new-id",
+      getRaidLockoutStatus: ({ mission: raidMission, currentDayIndex }) =>
+        getRaidLockoutStatus({
+          raidLockouts: completedLockouts,
+          mission: raidMission,
+          currentDayIndex,
+        }),
+    });
+
+    expect(result.state.calendarEvents[0].registrations).toEqual([]);
   });
 });
 
@@ -739,6 +836,142 @@ describe("Molten Core loot manifest", () => {
     unsupportedMoltenCoreDrops.forEach((item) => {
       expect(activeWowheadIds.has(item.wowheadId)).toBe(false);
     });
+  });
+});
+
+describe("Zul'Gurub raid integration", () => {
+  const zulGurubMission = INITIAL_MISSIONS.find(
+    (mission) => mission.name === "Zul'Gurub",
+  );
+  const zulGurubItems = DB_ITEMS.filter(
+    (item) => item.dungeonSetId === "zul_gurub",
+  );
+
+  it("defines Zul'Gurub as a 20-player no-attunement raid", () => {
+    expect(zulGurubMission).toBeTruthy();
+    expect(zulGurubMission.isRaid).toBe(true);
+    expect(zulGurubMission.requiredPartySize).toBe(20);
+    expect(zulGurubMission.minLevel).toBe(58);
+    expect(zulGurubMission.entryLevel).toBe(58);
+    expect(zulGurubMission.requiresKey).toBeFalsy();
+    expect(getDungeonBossCount(zulGurubMission)).toBe(9);
+    expect(zulGurubMission.raidReset).toMatchObject({
+      type: "interval",
+      intervalDays: 3,
+      anchorDayIndex: 0,
+    });
+  });
+
+  it("converts active manifest entries into valid database items", () => {
+    expect(ZUL_GURUB_ACTIVE_LOOT_MANIFEST.length).toBeGreaterThan(20);
+    expect(ZUL_GURUB_ITEMS.length).toBeGreaterThan(15);
+    ZUL_GURUB_ITEMS.forEach((item) => {
+      expect(item.wowheadId).toBeTypeOf("number");
+      expect(item.icon).toContain("wow/icons/large/");
+      expect(item.dungeonSetId).toBe("zul_gurub");
+      expect(item.dungeonSetName).toBe("Zul'Gurub");
+      expect(item.slot).toBeTruthy();
+      expect(item.quality).toBeGreaterThan(0);
+      expect(item.sourceBosses.length).toBeGreaterThan(0);
+    });
+  });
+
+  it("keeps unsupported Zul'Gurub drops out of active reward items", () => {
+    const activeWowheadIds = new Set(zulGurubItems.map((item) => item.wowheadId));
+    expect(unsupportedZulGurubDrops.length).toBeGreaterThan(0);
+    unsupportedZulGurubDrops.forEach((item) => {
+      expect(activeWowheadIds.has(item.wowheadId)).toBe(false);
+    });
+  });
+});
+
+describe("raid lockouts", () => {
+  const moltenCoreMission = INITIAL_MISSIONS.find(
+    (mission) => mission.name === "Molten Core",
+  );
+  const zulGurubMission = INITIAL_MISSIONS.find(
+    (mission) => mission.name === "Zul'Gurub",
+  );
+
+  it("computes Zul'Gurub 3-day reset windows from Monday day 0", () => {
+    expect([0, 1, 2, 3, 4, 6, 9].map((day) =>
+      getRaidResetWindow(zulGurubMission, day).resetStartDayIndex,
+    )).toEqual([0, 0, 0, 3, 3, 6, 9]);
+    expect([0, 3, 6, 9].map((day) =>
+      getRaidResetWindow(zulGurubMission, day).nextResetDayIndex,
+    )).toEqual([3, 6, 9, 12]);
+  });
+
+  it("computes Molten Core weekly Wednesday windows", () => {
+    expect(getRaidResetWindow(moltenCoreMission, 0)).toMatchObject({
+      resetStartDayIndex: 0,
+      nextResetDayIndex: 7,
+    });
+    expect(getRaidResetWindow(moltenCoreMission, 2)).toMatchObject({
+      resetStartDayIndex: 2,
+      nextResetDayIndex: 9,
+    });
+    expect(getRaidResetWindow(moltenCoreMission, 8)).toMatchObject({
+      resetStartDayIndex: 2,
+      nextResetDayIndex: 9,
+    });
+  });
+
+  it("blocks completed lockouts until reset then unlocks", () => {
+    const lockouts = updateRaidLockoutProgress({
+      raidLockouts: {},
+      mission: zulGurubMission,
+      currentDayIndex: 1,
+      memberIds: ["hero"],
+      clearedSteps: 9,
+      totalBosses: 9,
+    });
+
+    expect(
+      getRaidLockoutStatus({
+        raidLockouts: lockouts,
+        mission: zulGurubMission,
+        currentDayIndex: 2,
+      }).isCompletedLocked,
+    ).toBe(true);
+    expect(
+      getRaidLockoutStatus({
+        raidLockouts: lockouts,
+        mission: zulGurubMission,
+        currentDayIndex: 3,
+      }).isCompletedLocked,
+    ).toBe(false);
+  });
+
+  it("keeps partial lockouts continuable with saved boss progress", () => {
+    const started = startRaidLockout({
+      raidLockouts: {},
+      mission: zulGurubMission,
+      currentDayIndex: 1,
+      memberIds: ["tank", "healer"],
+      totalBosses: 9,
+    });
+    const lockouts = updateRaidLockoutProgress({
+      raidLockouts: started,
+      mission: zulGurubMission,
+      currentDayIndex: 1,
+      memberIds: ["dps"],
+      clearedSteps: 4,
+      totalBosses: 9,
+    });
+    const status = getRaidLockoutStatus({
+      raidLockouts: lockouts,
+      mission: zulGurubMission,
+      currentDayIndex: 2,
+    });
+
+    expect(status.canEnter).toBe(true);
+    expect(status.clearedSteps).toBe(4);
+    expect(status.lockout.participantIds.sort()).toEqual([
+      "dps",
+      "healer",
+      "tank",
+    ]);
   });
 });
 
