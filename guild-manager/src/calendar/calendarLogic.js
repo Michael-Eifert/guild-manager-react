@@ -1,0 +1,470 @@
+export const CALENDAR_DAY_MS = 10 * 60 * 1000;
+export const CALENDAR_MATERIALIZE_HORIZON_DAYS = 60;
+export const CALENDAR_STATUS = Object.freeze({
+  SCHEDULED: "scheduled",
+  READY: "ready",
+  RUNNING: "running",
+  COMPLETED: "completed",
+  CANCELLED: "cancelled",
+});
+export const CALENDAR_WEEKDAYS = Object.freeze([
+  "Monday",
+  "Tuesday",
+  "Wednesday",
+  "Thursday",
+  "Friday",
+  "Saturday",
+  "Sunday",
+]);
+export const CALENDAR_MONTHS = Object.freeze([
+  { name: "January", days: 31 },
+  { name: "February", days: 28 },
+  { name: "March", days: 31 },
+  { name: "April", days: 30 },
+  { name: "May", days: 31 },
+  { name: "June", days: 30 },
+  { name: "July", days: 31 },
+  { name: "August", days: 31 },
+  { name: "September", days: 30 },
+  { name: "October", days: 31 },
+  { name: "November", days: 30 },
+  { name: "December", days: 31 },
+]);
+
+const DAYS_PER_YEAR = CALENDAR_MONTHS.reduce((sum, month) => sum + month.days, 0);
+
+const toObject = (value) =>
+  value && typeof value === "object" ? value : {};
+
+const normalizeIdList = (value) => [
+  ...new Set(
+    (Array.isArray(value) ? value : [])
+      .map((id) => String(id || "").trim())
+      .filter(Boolean),
+  ),
+];
+
+const normalizeStatus = (status) =>
+  Object.values(CALENDAR_STATUS).includes(status)
+    ? status
+    : CALENDAR_STATUS.SCHEDULED;
+
+export const getCalendarDayIndex = (gameTimeMs, calendarEpochGameTimeMs) => {
+  const gameTime = Number(gameTimeMs);
+  const epoch = Number(calendarEpochGameTimeMs);
+  if (!Number.isFinite(gameTime) || !Number.isFinite(epoch)) return 0;
+  return Math.max(0, Math.floor((gameTime - epoch) / CALENDAR_DAY_MS));
+};
+
+export const getCalendarDayProgress = (gameTimeMs, calendarEpochGameTimeMs) => {
+  const gameTime = Number(gameTimeMs);
+  const epoch = Number(calendarEpochGameTimeMs);
+  if (!Number.isFinite(gameTime) || !Number.isFinite(epoch)) return 0;
+  const elapsed = Math.max(0, gameTime - epoch);
+  return (elapsed % CALENDAR_DAY_MS) / CALENDAR_DAY_MS;
+};
+
+export const getCalendarDate = (dayIndex) => {
+  const safeDayIndex = Math.max(0, Math.floor(Number(dayIndex) || 0));
+  const year = Math.floor(safeDayIndex / DAYS_PER_YEAR) + 1;
+  let dayOfYear = safeDayIndex % DAYS_PER_YEAR;
+  let monthIndex = 0;
+  while (
+    monthIndex < CALENDAR_MONTHS.length - 1 &&
+    dayOfYear >= CALENDAR_MONTHS[monthIndex].days
+  ) {
+    dayOfYear -= CALENDAR_MONTHS[monthIndex].days;
+    monthIndex += 1;
+  }
+
+  const weekdayIndex = safeDayIndex % CALENDAR_WEEKDAYS.length;
+  return {
+    dayIndex: safeDayIndex,
+    year,
+    monthIndex,
+    monthName: CALENDAR_MONTHS[monthIndex].name,
+    dayOfMonth: dayOfYear + 1,
+    weekdayIndex,
+    weekdayName: CALENDAR_WEEKDAYS[weekdayIndex],
+  };
+};
+
+export const getCalendarDayIndexFromDate = ({ year, monthIndex, dayOfMonth }) => {
+  const safeYear = Math.max(1, Math.floor(Number(year) || 1));
+  const safeMonthIndex = Math.max(
+    0,
+    Math.min(CALENDAR_MONTHS.length - 1, Math.floor(Number(monthIndex) || 0)),
+  );
+  const safeDayOfMonth = Math.max(
+    1,
+    Math.min(
+      CALENDAR_MONTHS[safeMonthIndex].days,
+      Math.floor(Number(dayOfMonth) || 1),
+    ),
+  );
+  const priorMonthDays = CALENDAR_MONTHS.slice(0, safeMonthIndex).reduce(
+    (sum, month) => sum + month.days,
+    0,
+  );
+  return (safeYear - 1) * DAYS_PER_YEAR + priorMonthDays + safeDayOfMonth - 1;
+};
+
+export const formatCalendarDate = (dayIndex) => {
+  const date = getCalendarDate(dayIndex);
+  return `${date.weekdayName}, ${date.monthName} ${date.dayOfMonth}, Year ${date.year}`;
+};
+
+export const getCalendarMonthGrid = (year, monthIndex) => {
+  const safeYear = Math.max(1, Math.floor(Number(year) || 1));
+  const safeMonthIndex = Math.max(
+    0,
+    Math.min(CALENDAR_MONTHS.length - 1, Math.floor(Number(monthIndex) || 0)),
+  );
+  const firstDayIndex = getCalendarDayIndexFromDate({
+    year: safeYear,
+    monthIndex: safeMonthIndex,
+    dayOfMonth: 1,
+  });
+  const firstWeekday = getCalendarDate(firstDayIndex).weekdayIndex;
+  const days = [];
+
+  for (let offset = 0; offset < firstWeekday; offset += 1) {
+    days.push(null);
+  }
+
+  for (let day = 1; day <= CALENDAR_MONTHS[safeMonthIndex].days; day += 1) {
+    const dayIndex = getCalendarDayIndexFromDate({
+      year: safeYear,
+      monthIndex: safeMonthIndex,
+      dayOfMonth: day,
+    });
+    days.push({ dayIndex, dayOfMonth: day });
+  }
+
+  while (days.length % 7 !== 0) {
+    days.push(null);
+  }
+
+  return days;
+};
+
+export const createInitialCalendarState = (calendarEpochGameTimeMs = Date.now()) => ({
+  calendarEpochGameTimeMs,
+  calendarEvents: [],
+  calendarSeries: [],
+  calendarEventHistory: [],
+});
+
+export const normalizeCalendarState = (rawState, fallbackEpochGameTimeMs = Date.now()) => {
+  const source = toObject(rawState);
+  const epoch = Number(source.calendarEpochGameTimeMs);
+  return {
+    calendarEpochGameTimeMs: Number.isFinite(epoch) ? epoch : fallbackEpochGameTimeMs,
+    calendarEvents: (Array.isArray(source.calendarEvents) ? source.calendarEvents : [])
+      .map((event) => {
+        const scheduledDayIndex = Math.floor(Number(event?.scheduledDayIndex));
+        if (!Number.isFinite(scheduledDayIndex) || scheduledDayIndex < 0) return null;
+        return {
+          id: String(event?.id || "").trim(),
+          title: String(event?.title || "Raid Event").trim(),
+          missionId: event?.missionId,
+          scheduledDayIndex,
+          status: normalizeStatus(event?.status),
+          registrations: normalizeIdList(event?.registrations),
+          approvedRosterIds: normalizeIdList(event?.approvedRosterIds),
+          benchedIds: normalizeIdList(event?.benchedIds),
+          createdAtDayIndex: Math.max(0, Math.floor(Number(event?.createdAtDayIndex) || 0)),
+          seriesId: event?.seriesId ? String(event.seriesId) : null,
+          runningMissionInstanceId: event?.runningMissionInstanceId || null,
+          completedAtDayIndex: Number.isFinite(Number(event?.completedAtDayIndex))
+            ? Math.max(0, Math.floor(Number(event.completedAtDayIndex)))
+            : null,
+        };
+      })
+      .filter((event) => event && event.id),
+    calendarSeries: (Array.isArray(source.calendarSeries) ? source.calendarSeries : [])
+      .map((series) => {
+        const weekday = Math.floor(Number(series?.weekday));
+        return {
+          id: String(series?.id || "").trim(),
+          title: String(series?.title || "Weekly Raid").trim(),
+          missionId: series?.missionId,
+          weekday: Math.max(0, Math.min(6, Number.isFinite(weekday) ? weekday : 0)),
+          active: series?.active !== false,
+          startsOnDayIndex: Math.max(0, Math.floor(Number(series?.startsOnDayIndex) || 0)),
+        };
+      })
+      .filter((series) => series.id),
+    calendarEventHistory: Array.isArray(source.calendarEventHistory)
+      ? source.calendarEventHistory.map((entry) => ({ ...toObject(entry) }))
+      : [],
+  };
+};
+
+const getMissionIdKey = (missionId) => String(missionId ?? "");
+
+const getMissionById = (missionList, missionId) => {
+  const missionIdKey = getMissionIdKey(missionId);
+  return (Array.isArray(missionList) ? missionList : []).find(
+    (mission) => getMissionIdKey(mission?.id) === missionIdKey,
+  );
+};
+
+const getRequiredKeyIds = (mission) => [
+  ...new Set(
+    [
+      mission?.requiresKey ? mission?.keyId : null,
+      ...(Array.isArray(mission?.requiredKeys) ? mission.requiredKeys : []),
+    ]
+      .map((keyId) => String(keyId || "").trim())
+      .filter(Boolean),
+  ),
+];
+
+export const isCharacterEligibleForCalendarEvent = ({
+  character,
+  mission,
+  activeMemberIds = new Set(),
+}) => {
+  if (!character || !mission) return false;
+  if (activeMemberIds.has(character.id)) return false;
+  if (character.status === "Questing") return false;
+
+  const level = Number(character.level) || 1;
+  const entryLevel = Number(mission.entryLevel);
+  const minLevel = Number.isFinite(entryLevel) && entryLevel > 0
+    ? entryLevel
+    : Number(mission.minLevel) || Math.max(1, (Number(mission.level) || 1) - 6);
+  if (level < minLevel) return false;
+
+  const requiredKeyIds = getRequiredKeyIds(mission);
+  if (requiredKeyIds.length > 0 && mission.requiresKeyForAllMembers === true) {
+    const characterKeys = new Set(normalizeIdList(character.keys));
+    return requiredKeyIds.every((keyId) => characterKeys.has(keyId));
+  }
+
+  return true;
+};
+
+export const getCalendarEventSignups = ({
+  event,
+  missionList,
+  roster,
+  activeMissions,
+}) => {
+  const mission = getMissionById(missionList, event?.missionId);
+  const activeMemberIds = new Set(
+    (Array.isArray(activeMissions) ? activeMissions : []).flatMap((missionRun) =>
+      normalizeIdList(missionRun?.memberIds),
+    ),
+  );
+  return (Array.isArray(roster) ? roster : [])
+    .filter((character) =>
+      isCharacterEligibleForCalendarEvent({
+        character,
+        mission,
+        activeMemberIds,
+      }),
+    )
+    .map((character) => character.id);
+};
+
+const getRoleRequirement = (mission) => ({
+  Tank: Math.max(0, Math.floor(Number(mission?.raidRoleRequirement?.Tank) || 0)),
+  Healer: Math.max(0, Math.floor(Number(mission?.raidRoleRequirement?.Healer) || 0)),
+  DPS: Math.max(0, Math.floor(Number(mission?.raidRoleRequirement?.DPS) || 0)),
+});
+
+export const suggestCalendarRoster = ({ mission, roster, signupIds }) => {
+  const maxRoster = Math.max(1, Math.floor(Number(mission?.requiredPartySize) || 40));
+  const signupIdSet = new Set(normalizeIdList(signupIds));
+  const signups = (Array.isArray(roster) ? roster : []).filter((member) =>
+    signupIdSet.has(member.id),
+  );
+  const selectedIds = [];
+  const selectedIdSet = new Set();
+  const requirement = getRoleRequirement(mission);
+  const roleOrder = ["Tank", "Healer", "DPS"];
+
+  roleOrder.forEach((role) => {
+    const needed = requirement[role];
+    if (needed <= 0) return;
+    signups
+      .filter((member) => member.role === role)
+      .sort((left, right) => (Number(right.level) || 1) - (Number(left.level) || 1))
+      .slice(0, Math.max(0, needed - selectedIds.filter((id) => {
+        const selected = signups.find((member) => member.id === id);
+        return selected?.role === role;
+      }).length))
+      .forEach((member) => {
+        if (selectedIds.length >= maxRoster || selectedIdSet.has(member.id)) return;
+        selectedIdSet.add(member.id);
+        selectedIds.push(member.id);
+      });
+  });
+
+  signups
+    .filter((member) => !selectedIdSet.has(member.id))
+    .sort((left, right) => {
+      const leftLevel = Number(left.level) || 1;
+      const rightLevel = Number(right.level) || 1;
+      if (rightLevel !== leftLevel) return rightLevel - leftLevel;
+      return String(left.name || "").localeCompare(String(right.name || ""));
+    })
+    .forEach((member) => {
+      if (selectedIds.length >= maxRoster) return;
+      selectedIdSet.add(member.id);
+      selectedIds.push(member.id);
+    });
+
+  return selectedIds;
+};
+
+export const buildCalendarEvent = ({
+  id,
+  title,
+  missionId,
+  scheduledDayIndex,
+  createdAtDayIndex,
+  seriesId = null,
+}) => ({
+  id,
+  title,
+  missionId,
+  scheduledDayIndex: Math.max(0, Math.floor(Number(scheduledDayIndex) || 0)),
+  status: CALENDAR_STATUS.SCHEDULED,
+  registrations: [],
+  approvedRosterIds: [],
+  benchedIds: [],
+  createdAtDayIndex: Math.max(0, Math.floor(Number(createdAtDayIndex) || 0)),
+  seriesId,
+  runningMissionInstanceId: null,
+  completedAtDayIndex: null,
+});
+
+export const buildCalendarSeries = ({
+  id,
+  title,
+  missionId,
+  weekday,
+  startsOnDayIndex,
+}) => ({
+  id,
+  title,
+  missionId,
+  weekday: Math.max(0, Math.min(6, Math.floor(Number(weekday) || 0))),
+  active: true,
+  startsOnDayIndex: Math.max(0, Math.floor(Number(startsOnDayIndex) || 0)),
+});
+
+export const materializeCalendarSeriesEvents = ({
+  state,
+  currentDayIndex,
+  createId,
+  horizonDays = CALENDAR_MATERIALIZE_HORIZON_DAYS,
+}) => {
+  const normalized = normalizeCalendarState(state, state?.calendarEpochGameTimeMs);
+  const existingIds = new Set(normalized.calendarEvents.map((event) => event.id));
+  const existingSeriesDays = new Set(
+    normalized.calendarEvents
+      .filter((event) => event.seriesId)
+      .map((event) => `${event.seriesId}:${event.scheduledDayIndex}`),
+  );
+  const nextEvents = [...normalized.calendarEvents];
+  const startDay = Math.max(0, Math.floor(Number(currentDayIndex) || 0));
+  const endDay = startDay + Math.max(1, Math.floor(Number(horizonDays) || 1));
+
+  normalized.calendarSeries
+    .filter((series) => series.active)
+    .forEach((series) => {
+      for (
+        let dayIndex = Math.max(series.startsOnDayIndex, startDay);
+        dayIndex <= endDay;
+        dayIndex += 1
+      ) {
+        if (getCalendarDate(dayIndex).weekdayIndex !== series.weekday) continue;
+        const seriesDayKey = `${series.id}:${dayIndex}`;
+        if (existingSeriesDays.has(seriesDayKey)) continue;
+        const stableId = `event:${series.id}:${dayIndex}`;
+        const eventId = existingIds.has(stableId)
+          ? createId()
+          : stableId;
+        existingIds.add(eventId);
+        existingSeriesDays.add(seriesDayKey);
+        nextEvents.push(
+          buildCalendarEvent({
+            id: eventId,
+            title: series.title,
+            missionId: series.missionId,
+            scheduledDayIndex: dayIndex,
+            createdAtDayIndex: startDay,
+            seriesId: series.id,
+          }),
+        );
+      }
+    });
+
+  return {
+    ...normalized,
+    calendarEvents: nextEvents.sort(
+      (left, right) => left.scheduledDayIndex - right.scheduledDayIndex,
+    ),
+  };
+};
+
+export const refreshCalendarState = ({
+  state,
+  currentDayIndex,
+  roster,
+  activeMissions,
+  missionList,
+  createId,
+}) => {
+  const materialized = materializeCalendarSeriesEvents({
+    state,
+    currentDayIndex,
+    createId,
+  });
+  const newlyReadyEvents = [];
+  const nextEvents = materialized.calendarEvents.map((event) => {
+    if (
+      event.status !== CALENDAR_STATUS.SCHEDULED &&
+      event.status !== CALENDAR_STATUS.READY
+    ) {
+      return event;
+    }
+
+    const mission = getMissionById(missionList, event.missionId);
+    const registrations = getCalendarEventSignups({
+      event,
+      missionList,
+      roster,
+      activeMissions,
+    });
+    const approvedRosterIds =
+      event.approvedRosterIds.length > 0
+        ? event.approvedRosterIds.filter((id) => registrations.includes(id))
+        : suggestCalendarRoster({ mission, roster, signupIds: registrations });
+    const benchedIds = registrations.filter((id) => !approvedRosterIds.includes(id));
+    const shouldBecomeReady =
+      event.status === CALENDAR_STATUS.SCHEDULED &&
+      event.scheduledDayIndex <= currentDayIndex;
+    const nextEvent = {
+      ...event,
+      status: shouldBecomeReady ? CALENDAR_STATUS.READY : event.status,
+      registrations,
+      approvedRosterIds,
+      benchedIds,
+    };
+    if (shouldBecomeReady) newlyReadyEvents.push(nextEvent);
+    return nextEvent;
+  });
+
+  return {
+    state: {
+      ...materialized,
+      calendarEvents: nextEvents,
+    },
+    newlyReadyEvents,
+  };
+};

@@ -1,7 +1,11 @@
 import { getMissionMaxAttempts } from "../missions/missionHelpers";
+import {
+  createInitialCalendarState,
+  normalizeCalendarState,
+} from "../calendar/calendarLogic";
 
 export const SESSION_FORMAT = "guild-manager-session";
-export const SESSION_VERSION = 4;
+export const SESSION_VERSION = 5;
 const MAX_GUILD_LOG_ENTRIES = 50;
 const MIN_MISSION_DURATION_MS = 1000;
 const DEFAULT_DUNGEON_STEP_COUNT = 4;
@@ -112,6 +116,15 @@ const normalizeDungeonProgressForLoad = ({
     clearedSteps,
     failedAtStep,
     stepResults,
+    lootAwardedSteps: Array.isArray(progress.lootAwardedSteps)
+      ? [
+          ...new Set(
+            progress.lootAwardedSteps
+              .map((step) => Math.floor(Number(step) || 0))
+              .filter((step) => step > 0 && step <= dungeonStepCount),
+          ),
+        ].sort((left, right) => left - right)
+      : [],
     stepDuration,
     nextStepAt: finished ? loadBaseTime : loadBaseTime + stepDuration,
     finished,
@@ -128,6 +141,7 @@ export const buildSessionPayload = ({
   guildGold,
   guildProgress,
   guildSetup,
+  calendarState,
   gameSpeed,
   isPaused,
   gameTimeMs,
@@ -156,6 +170,10 @@ export const buildSessionPayload = ({
       guildGold: clampNonNegativeNumber(guildGold, 0),
       guildProgress: toObject(guildProgress),
       guildSetup: toObject(guildSetup),
+      calendarState: normalizeCalendarState(
+        calendarState || createInitialCalendarState(now),
+        now,
+      ),
       milestones: guildProgress?.milestones || null,
       achievements: guildProgress?.milestones || null,
       progression: {
@@ -234,6 +252,10 @@ export const hydrateSessionData = ({
     },
   );
   const loadBaseTime = loadedProgression.gameTimeMs;
+  const loadedCalendarState = normalizeCalendarState(
+    safePayload.calendarState,
+    loadBaseTime,
+  );
 
   const loadedActiveMissions = Array.isArray(safePayload.activeMissions)
     ? safePayload.activeMissions.map((mission) => {
@@ -319,5 +341,6 @@ export const hydrateSessionData = ({
     loadedGuildGold,
     loadedGuildSetup,
     loadedProgression,
+    loadedCalendarState,
   };
 };

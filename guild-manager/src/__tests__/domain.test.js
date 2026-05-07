@@ -35,6 +35,18 @@ import {
   DEFAULT_GAME_SPEED,
   normalizeProgressionState,
 } from "../progression";
+import {
+  CALENDAR_DAY_MS,
+  CALENDAR_STATUS,
+  buildCalendarEvent,
+  buildCalendarSeries,
+  createInitialCalendarState,
+  getCalendarDate,
+  getCalendarDayIndex,
+  getCalendarDayProgress,
+  materializeCalendarSeriesEvents,
+  refreshCalendarState,
+} from "../calendar/calendarLogic";
 import { DB_ITEMS } from "../data/items";
 import {
   MOLTEN_CORE_ACTIVE_LOOT_MANIFEST,
@@ -197,6 +209,181 @@ describe("session persistence", () => {
     expect(result.normalizedRoster[0].status).toBe("Questing");
     expect(result.normalizedRoster[1].status).toBe("Idle");
     expect(result.loadedGuildGold).toBe(getGuildDerivedStats(createInitialGuildProgress()).goldCap);
+  });
+
+  it("persists and hydrates calendar state", () => {
+    const calendarState = {
+      calendarEpochGameTimeMs: 1000,
+      calendarEvents: [
+        buildCalendarEvent({
+          id: "event-1",
+          title: "MC Raid",
+          missionId: 62,
+          scheduledDayIndex: 3,
+          createdAtDayIndex: 1,
+        }),
+      ],
+      calendarSeries: [
+        buildCalendarSeries({
+          id: "series-1",
+          title: "Thursday MC",
+          missionId: 62,
+          weekday: 3,
+          startsOnDayIndex: 0,
+        }),
+      ],
+      calendarEventHistory: [{ id: "history-1", eventId: "event-1" }],
+    };
+    const payload = buildSessionPayload({
+      roster: [],
+      activeMissions: [],
+      missionList: [],
+      guildLog: [],
+      guildGold: 0,
+      guildProgress: createInitialGuildProgress(),
+      guildSetup: { hasStarted: true },
+      calendarState,
+      gameSpeed: DEFAULT_GAME_SPEED,
+      isPaused: false,
+      gameTimeMs: 1000,
+    });
+    const result = hydrateSessionData({
+      payloadData: payload.data,
+      initialMissions: [],
+      normalizeGuildProgress,
+      normalizeGuildSetup: (value) => value,
+      getGuildDerivedStats,
+      normalizeProgressionState,
+      defaultGameSpeed: DEFAULT_GAME_SPEED,
+      defaultGuildSetup: {},
+      createId: () => "instance-id",
+      resolveDungeonBossCount: getDungeonBossCount,
+    });
+
+    expect(result.loadedCalendarState.calendarEvents[0].title).toBe("MC Raid");
+    expect(result.loadedCalendarState.calendarSeries[0].weekday).toBe(3);
+    expect(result.loadedCalendarState.calendarEventHistory).toHaveLength(1);
+  });
+});
+
+describe("calendar logic", () => {
+  it("converts compressed game time into calendar dates", () => {
+    expect(getCalendarDayIndex(1000 + CALENDAR_DAY_MS * 2, 1000)).toBe(2);
+    expect(getCalendarDayProgress(1000 + CALENDAR_DAY_MS * 1.5, 1000)).toBe(
+      0.5,
+    );
+    expect(getCalendarDate(0)).toMatchObject({
+      weekdayName: "Monday",
+      monthName: "January",
+      dayOfMonth: 1,
+      year: 1,
+    });
+    expect(getCalendarDate(31)).toMatchObject({
+      monthName: "February",
+      dayOfMonth: 1,
+    });
+    expect(getCalendarDate(365)).toMatchObject({
+      monthName: "January",
+      dayOfMonth: 1,
+      year: 2,
+    });
+  });
+
+  it("materializes weekly raid series without duplicates", () => {
+    const state = {
+      ...createInitialCalendarState(0),
+      calendarSeries: [
+        buildCalendarSeries({
+          id: "series-1",
+          title: "Thursday MC",
+          missionId: 62,
+          weekday: 3,
+          startsOnDayIndex: 0,
+        }),
+      ],
+    };
+    const first = materializeCalendarSeriesEvents({
+      state,
+      currentDayIndex: 0,
+      createId: () => "fallback-id",
+      horizonDays: 14,
+    });
+    const second = materializeCalendarSeriesEvents({
+      state: first,
+      currentDayIndex: 0,
+      createId: () => "fallback-id",
+      horizonDays: 14,
+    });
+
+    expect(first.calendarEvents.map((event) => event.scheduledDayIndex)).toEqual([
+      3,
+      10,
+    ]);
+    expect(second.calendarEvents).toHaveLength(first.calendarEvents.length);
+  });
+
+  it("readies events and auto-signs eligible attuned characters", () => {
+    const mission = {
+      id: 62,
+      name: "Molten Core",
+      isRaid: true,
+      entryLevel: 56,
+      requiredPartySize: 2,
+      requiresKey: true,
+      requiresKeyForAllMembers: true,
+      keyId: "molten_core_attunement",
+      raidRoleRequirement: { Tank: 1, Healer: 0, DPS: 1 },
+    };
+    const state = {
+      ...createInitialCalendarState(0),
+      calendarEvents: [
+        buildCalendarEvent({
+          id: "event-1",
+          title: "MC Raid",
+          missionId: 62,
+          scheduledDayIndex: 2,
+          createdAtDayIndex: 0,
+        }),
+      ],
+    };
+    const roster = [
+      {
+        id: "tank",
+        name: "Tank",
+        role: "Tank",
+        level: 60,
+        keys: ["molten_core_attunement"],
+      },
+      {
+        id: "dps",
+        name: "Dps",
+        role: "DPS",
+        level: 60,
+        keys: ["molten_core_attunement"],
+      },
+      {
+        id: "missing-key",
+        name: "No Key",
+        role: "DPS",
+        level: 60,
+        keys: [],
+      },
+    ];
+    const result = refreshCalendarState({
+      state,
+      currentDayIndex: 2,
+      roster,
+      activeMissions: [],
+      missionList: [mission],
+      createId: () => "new-id",
+    });
+    const event = result.state.calendarEvents[0];
+
+    expect(event.status).toBe(CALENDAR_STATUS.READY);
+    expect(event.registrations).toEqual(["tank", "dps"]);
+    expect(event.approvedRosterIds).toEqual(["tank", "dps"]);
+    expect(event.benchedIds).toEqual([]);
+    expect(result.newlyReadyEvents).toHaveLength(1);
   });
 });
 

@@ -56,11 +56,11 @@ import {
   advanceGameTime,
 } from "./progression";
 import {
-  buildSessionPayload,
-  downloadSessionPayload,
-  parseSessionPayload,
-  hydrateSessionData,
-} from "./session/sessionPersistence";
+  loadSessionFile,
+  openSessionFilePicker,
+  saveSessionFile,
+} from "./session/sessionFileActions";
+import { applyLoadedSessionToApp } from "./session/applyLoadedSession";
 import {
   evaluateMissionKeyAccess,
   getDungeonBossCount,
@@ -98,6 +98,18 @@ import {
   getDefaultDungeonProgress,
 } from "./game/dungeonEngine";
 import { advanceActiveMissionsForTick } from "./game/gameTickEngine";
+import {
+  CALENDAR_STATUS,
+  buildCalendarEvent,
+  buildCalendarSeries,
+  createInitialCalendarState,
+  formatCalendarDate,
+  getCalendarDate,
+  getCalendarDayIndex,
+  getCalendarDayProgress,
+  normalizeCalendarState,
+  refreshCalendarState,
+} from "./calendar/calendarLogic";
 
 const RecruitModal = lazy(() => import("./components/modals/RecruitModal"));
 const DetailModal = lazy(() => import("./components/modals/DetailModal"));
@@ -108,6 +120,7 @@ const WorldMapModal = lazy(() => import("./components/modals/WorldMapModal"));
 const GuildTalentsModal = lazy(() => import("./components/modals/GuildTalentsModal"));
 const MissionModal = lazy(() => import("./components/modals/MissionModal"));
 const OptionsModal = lazy(() => import("./components/modals/OptionsModal"));
+const CalendarModal = lazy(() => import("./components/modals/CalendarModal"));
 
 const geminiProxyUrl = import.meta.env.VITE_GEMINI_PROXY_URL || "";
 const callGemini = async (prompt, isJson = false) => {
@@ -152,6 +165,42 @@ const GUILD_MEMBER_SORT_OPTIONS = [
   { value: GUILD_MEMBER_SORT.ILVL_DESC, label: "iLvl Desc" },
   { value: GUILD_MEMBER_SORT.ILVL_ASC, label: "iLvl Asc" },
 ];
+const normalizeGuildMemberSearch = (value) =>
+  String(value || "")
+    .trim()
+    .toLowerCase()
+    .replace(/[^a-z0-9]/g, "");
+
+const getGuildMemberSearchScore = (member, searchTerm) => {
+  const query = normalizeGuildMemberSearch(searchTerm);
+  const name = normalizeGuildMemberSearch(member?.name);
+  if (!query || !name) return 0;
+  if (name === query) return 1000;
+  if (name.startsWith(query)) return 850 - Math.max(0, name.length - query.length);
+
+  const includesAt = name.indexOf(query);
+  if (includesAt >= 0) return 700 - includesAt * 10;
+
+  let queryIndex = 0;
+  let gaps = 0;
+  for (let nameIndex = 0; nameIndex < name.length && queryIndex < query.length; nameIndex += 1) {
+    if (name[nameIndex] === query[queryIndex]) {
+      queryIndex += 1;
+    } else if (queryIndex > 0) {
+      gaps += 1;
+    }
+  }
+
+  if (queryIndex === query.length) {
+    return 400 - gaps * 5 - Math.max(0, name.length - query.length);
+  }
+
+  const queryLetters = new Set(query);
+  const sharedLetters = [...new Set(name)].filter((letter) =>
+    queryLetters.has(letter),
+  ).length;
+  return sharedLetters > 0 ? sharedLetters * 20 : 0;
+};
 const GUILD_FOCUS = {
   LEVELING: "Leveling",
   DUNGEONS: "Dungeons",
@@ -952,8 +1001,12 @@ const App = () => {
   const [isPaused, setIsPaused] = useState(false);
   const [gameSpeed, setGameSpeed] = useState(DEFAULT_GAME_SPEED);
   const [gameTimeMs, setGameTimeMs] = useState(() => Date.now());
+  const [calendarState, setCalendarState] = useState(() =>
+    createInitialCalendarState(Date.now()),
+  );
   const [showRecruit, setShowRecruit] = useState(false);
   const [showMissions, setShowMissions] = useState(false);
+  const [showCalendar, setShowCalendar] = useState(false);
   const [showLootTable, setShowLootTable] = useState(false);
   const [showGuildLog, setShowGuildLog] = useState(false);
   const [showGuildTalents, setShowGuildTalents] = useState(false);
@@ -965,6 +1018,7 @@ const App = () => {
   const [memberRankingMode, setMemberRankingMode] = useState(
     MEMBER_RANKING_MODES.STANDARD,
   );
+  const [guildMemberSearch, setGuildMemberSearch] = useState("");
   const [guildMemberMinLevelFilter, setGuildMemberMinLevelFilter] = useState("");
   const [guildMemberMaxLevelFilter, setGuildMemberMaxLevelFilter] = useState("");
   const [guildMemberSortMode, setGuildMemberSortMode] = useState(
@@ -979,6 +1033,7 @@ const App = () => {
   const guildProgressRef = useRef(guildProgress);
   const guildSetupRef = useRef(guildSetup);
   const gameTimeRef = useRef(gameTimeMs);
+  const calendarStateRef = useRef(calendarState);
   const lastRealTimeRef = useRef(Date.now());
   const rewardedMissionIdsRef = useRef(new Set());
   const notificationTimersRef = useRef(new Map());
@@ -1060,6 +1115,9 @@ const App = () => {
     gameTimeRef.current = gameTimeMs;
   }, [gameTimeMs]);
   useEffect(() => {
+    calendarStateRef.current = calendarState;
+  }, [calendarState]);
+  useEffect(() => {
     lastRealTimeRef.current = Date.now();
   }, [isPaused, gameSpeed]);
   useEffect(
@@ -1113,6 +1171,18 @@ const App = () => {
   const guildFocusBonuses = useMemo(
     () => getGuildFocusBonuses(guildSetup.focus),
     [guildSetup.focus],
+  );
+  const currentCalendarDayIndex = getCalendarDayIndex(
+    gameTimeMs,
+    calendarState.calendarEpochGameTimeMs,
+  );
+  const currentCalendarDate = getCalendarDate(currentCalendarDayIndex);
+  const currentCalendarDayProgress = getCalendarDayProgress(
+    gameTimeMs,
+    calendarState.calendarEpochGameTimeMs,
+  );
+  const currentCalendarDayProgressPercent = Math.round(
+    currentCalendarDayProgress * 100,
   );
   const factionMissionIconUrl = getWowIconUrl(
     FACTION_EMBLEM_ICON[guildSetup.faction] || FACTION_EMBLEM_ICON[GUILD_FACTION.ALLIANCE],
@@ -1738,6 +1808,67 @@ const App = () => {
     [missionRewardProcessor],
   );
 
+  const commitCalendarState = useCallback((nextCalendarState) => {
+    const normalized = normalizeCalendarState(
+      nextCalendarState,
+      gameTimeRef.current,
+    );
+    calendarStateRef.current = normalized;
+    setCalendarState(normalized);
+  }, []);
+
+  const updateCalendarEvent = useCallback((eventId, updater) => {
+    if (!eventId || typeof updater !== "function") return;
+    const currentState = calendarStateRef.current;
+    const nextState = {
+      ...currentState,
+      calendarEvents: currentState.calendarEvents.map((event) =>
+        event.id === eventId ? updater(event) : event,
+      ),
+    };
+    commitCalendarState(nextState);
+  }, [commitCalendarState]);
+
+  const completeCalendarEvent = useCallback(
+    ({ eventId, missionName, missionSucceeded }) => {
+      if (!eventId) return;
+      const currentDayIndex = getCalendarDayIndex(
+        gameTimeRef.current,
+        calendarStateRef.current.calendarEpochGameTimeMs,
+      );
+      const currentState = calendarStateRef.current;
+      const event = currentState.calendarEvents.find((entry) => entry.id === eventId);
+      if (!event || event.status === CALENDAR_STATUS.COMPLETED) return;
+
+      commitCalendarState({
+        ...currentState,
+        calendarEvents: currentState.calendarEvents.map((entry) =>
+          entry.id === eventId
+            ? {
+                ...entry,
+                status: CALENDAR_STATUS.COMPLETED,
+                completedAtDayIndex: currentDayIndex,
+              }
+            : entry,
+        ),
+        calendarEventHistory: [
+          {
+            id: createId(),
+            eventId,
+            type: "completed",
+            missionName: missionName || event.title,
+            dayIndex: currentDayIndex,
+            approvedRosterIds: [...event.approvedRosterIds],
+            benchedIds: [...event.benchedIds],
+            missionSucceeded: Boolean(missionSucceeded),
+          },
+          ...currentState.calendarEventHistory,
+        ].slice(0, 100),
+      });
+    },
+    [commitCalendarState],
+  );
+
   // --- GAME LOOP ---
   useEffect(() => {
     const tick = setInterval(() => {
@@ -1762,12 +1893,44 @@ const App = () => {
       const currentGold = goldRef.current;
       const currentGuildStats = getGuildDerivedStats(guildProgressRef.current);
       const currentFocusBonuses = getGuildFocusBonuses(guildSetupRef.current?.focus);
+      const calendarDayIndex = getCalendarDayIndex(
+        now,
+        calendarStateRef.current.calendarEpochGameTimeMs,
+      );
 
       let newRoster = [...currentRoster];
       let newMissions = [];
       let finishedMissions = [];
       let newLogs = [];
       let newGold = currentGold;
+
+      const refreshedCalendar = refreshCalendarState({
+        state: calendarStateRef.current,
+        currentDayIndex: calendarDayIndex,
+        roster: currentRoster,
+        activeMissions: currentMissions,
+        missionList: missionListRef.current,
+        createId,
+      });
+      if (
+        JSON.stringify(refreshedCalendar.state) !==
+        JSON.stringify(calendarStateRef.current)
+      ) {
+        calendarStateRef.current = refreshedCalendar.state;
+        setCalendarState(refreshedCalendar.state);
+      }
+      refreshedCalendar.newlyReadyEvents.forEach((event) => {
+        newLogs.push({
+          type: "calendar",
+          message: `${event.title} is ready on ${formatCalendarDate(event.scheduledDayIndex)}.`,
+        });
+        pushNotification({
+          type: "info",
+          title: "Raid Event Ready",
+          message: `${event.title}: finalize roster and start when ready.`,
+          durationMs: 5200,
+        });
+      });
 
       // 1. Advance missions and separate finished/active
       const missionTick = advanceActiveMissionsForTick({
@@ -1806,6 +1969,13 @@ const App = () => {
           } else {
             registerDungeonWipeMilestone(m.name);
           }
+        }
+        if (m.calendarEventId) {
+          completeCalendarEvent({
+            eventId: m.calendarEventId,
+            missionName: m.name,
+            missionSucceeded: result.missionSucceeded,
+          });
         }
         if (!result.missionSucceeded) {
           pushNotification({
@@ -2174,6 +2344,7 @@ const App = () => {
   }, [
     applyDungeonStepLootAwards,
     applyMissionWipeCosts,
+    completeCalendarEvent,
     gameSpeed,
     isPaused,
     itemDatabase,
@@ -2326,13 +2497,16 @@ const App = () => {
       guildSetup.faction,
     );
     const starterGold = STARTING_GUILD_GOLD;
+    const calendarStart = createInitialCalendarState(gameTimeRef.current);
 
     rewardedMissionIdsRef.current = new Set();
     rosterRef.current = starterRoster;
     missionsRef.current = [];
     goldRef.current = starterGold;
+    calendarStateRef.current = calendarStart;
     setRoster(starterRoster);
     setActiveMissions([]);
+    setCalendarState(calendarStart);
     setMissionList(getMissionListWithZones(INITIAL_MISSIONS.map(cloneMissionTemplate)));
     setGuildLog([]);
     setGuildGold(starterGold);
@@ -2357,19 +2531,19 @@ const App = () => {
       return null;
     }
   };
-  const handleDeploy = (quest, ids, options = {}) => {
+  const handleDeploy = useCallback((quest, ids, options = {}) => {
     const memberIds = Array.isArray(ids) ? ids.filter(Boolean) : [];
-    if (!quest || memberIds.length === 0) return;
+    if (!quest || memberIds.length === 0) return false;
     if (isZoneMission(quest)) {
       const zone = getZoneById(quest.zoneId);
-      if (!zone) return;
+      if (!zone) return false;
       if (!isZoneAccessibleForFaction(zone, guildSetupRef.current?.faction)) {
         pushNotification({
           type: "error",
           title: "Zone Locked",
           message: `${zone.name} is restricted to ${zone.faction}.`,
         });
-        return;
+        return false;
       }
       setRoster((prev) => {
         const withZoneState = normalizeRosterZones(prev);
@@ -2382,7 +2556,7 @@ const App = () => {
         title: "Zone Assigned",
         message: `${memberIds.length} hero${memberIds.length === 1 ? "" : "es"} sent to ${zone.name}.`,
       });
-      return;
+      return true;
     }
     const recommendedPartySize = Math.max(
       1,
@@ -2397,7 +2571,7 @@ const App = () => {
         title: "Raid Setup Incomplete",
         message: `${quest.name} requires at least ${minimumPartySize} heroes (recommended: ${recommendedPartySize}).`,
       });
-      return;
+      return false;
     }
     const rosterSnapshot = Array.isArray(rosterRef.current)
       ? rosterRef.current
@@ -2457,9 +2631,9 @@ const App = () => {
         title: "Key Required",
         message: requiresAllMembers
           ? `${blockedMissionName} needs ${missingKeyLabel} on every selected hero.`
-          : `${blockedMissionName} needs ${missingKeyLabel}. Add a key holder or include a key-rewarding wing first.`,
+            : `${blockedMissionName} needs ${missingKeyLabel}. Add a key holder or include a key-rewarding wing first.`,
       });
-      return;
+      return false;
     }
 
     const openingMission = hasDungeonChain ? chainMissions[0] : quest;
@@ -2482,6 +2656,9 @@ const App = () => {
       rosterSnapshot,
       chainContext,
     );
+    const missionRunWithCalendar = options?.calendarEventId
+      ? { ...missionRun, calendarEventId: options.calendarEventId }
+      : missionRun;
 
     setRoster((prev) =>
       prev.map((c) =>
@@ -2496,7 +2673,8 @@ const App = () => {
           : c,
       ),
     );
-    setActiveMissions((prev) => [...prev, missionRun]);
+    missionsRef.current = [...missionsRef.current, missionRunWithCalendar];
+    setActiveMissions((prev) => [...prev, missionRunWithCalendar]);
 
     if (hasDungeonChain) {
       pushNotification({
@@ -2505,7 +2683,174 @@ const App = () => {
         message: `${chainContext.setName}: ${chainMissions.length} wings queued.`,
       });
     }
-  };
+    return true;
+  }, [
+    assignZoneToRoster,
+    buildMissionRun,
+    normalizeRosterZones,
+    pushNotification,
+    roster,
+  ]);
+
+  const refreshCalendarStateNow = useCallback((nextState) => {
+    const currentDayIndex = getCalendarDayIndex(
+      gameTimeRef.current,
+      nextState.calendarEpochGameTimeMs,
+    );
+    const refreshed = refreshCalendarState({
+      state: nextState,
+      currentDayIndex,
+      roster: rosterRef.current,
+      activeMissions: missionsRef.current,
+      missionList: missionListRef.current,
+      createId,
+    });
+    commitCalendarState(refreshed.state);
+    return refreshed.state;
+  }, [commitCalendarState]);
+
+  const handleCreateCalendarEvent = useCallback(
+    ({ missionId, scheduledDayIndex, title }) => {
+      const currentDayIndex = getCalendarDayIndex(
+        gameTimeRef.current,
+        calendarStateRef.current.calendarEpochGameTimeMs,
+      );
+      const mission = missionListRef.current.find(
+        (entry) => String(entry?.id) === String(missionId),
+      );
+      if (!mission) return;
+      const event = buildCalendarEvent({
+        id: createId(),
+        title: title || mission.name,
+        missionId: mission.id,
+        scheduledDayIndex,
+        createdAtDayIndex: currentDayIndex,
+      });
+      refreshCalendarStateNow({
+        ...calendarStateRef.current,
+        calendarEvents: [...calendarStateRef.current.calendarEvents, event],
+      });
+      pushNotification({
+        type: "info",
+        title: "Calendar Event Created",
+        message: `${event.title} scheduled for ${formatCalendarDate(event.scheduledDayIndex)}.`,
+      });
+    },
+    [pushNotification, refreshCalendarStateNow],
+  );
+
+  const handleCreateCalendarSeries = useCallback(
+    ({ missionId, weekday, title, startsOnDayIndex }) => {
+      const mission = missionListRef.current.find(
+        (entry) => String(entry?.id) === String(missionId),
+      );
+      if (!mission) return;
+      const series = buildCalendarSeries({
+        id: createId(),
+        title: title || `${mission.name} Raid Day`,
+        missionId: mission.id,
+        weekday,
+        startsOnDayIndex,
+      });
+      refreshCalendarStateNow({
+        ...calendarStateRef.current,
+        calendarSeries: [...calendarStateRef.current.calendarSeries, series],
+      });
+      pushNotification({
+        type: "info",
+        title: "Raid Series Created",
+        message: `${series.title} repeats on ${formatCalendarDate(series.startsOnDayIndex).split(",")[0]}.`,
+      });
+    },
+    [pushNotification, refreshCalendarStateNow],
+  );
+
+  const handleUpdateCalendarEventRoster = useCallback(
+    (eventId, approvedRosterIds) => {
+      updateCalendarEvent(eventId, (event) => {
+        const approved = [
+          ...new Set(
+            (Array.isArray(approvedRosterIds) ? approvedRosterIds : [])
+              .map((id) => String(id || "").trim())
+              .filter((id) => event.registrations.includes(id)),
+          ),
+        ];
+        return {
+          ...event,
+          approvedRosterIds: approved,
+          benchedIds: event.registrations.filter((id) => !approved.includes(id)),
+        };
+      });
+    },
+    [updateCalendarEvent],
+  );
+
+  const handleCancelCalendarEvent = useCallback(
+    (eventId) => {
+      updateCalendarEvent(eventId, (event) => ({
+        ...event,
+        status: CALENDAR_STATUS.CANCELLED,
+      }));
+    },
+    [updateCalendarEvent],
+  );
+
+  const handleStartCalendarEvent = useCallback(
+    (eventId) => {
+      const event = calendarStateRef.current.calendarEvents.find(
+        (entry) => entry.id === eventId,
+      );
+      if (!event || event.status !== CALENDAR_STATUS.READY) return;
+      const mission = missionListRef.current.find(
+        (entry) => String(entry?.id) === String(event.missionId),
+      );
+      if (!mission) return;
+      const approvedRosterIds = event.approvedRosterIds.filter(Boolean);
+      const deployed = handleDeploy(mission, approvedRosterIds, {
+        calendarEventId: event.id,
+      });
+      if (!deployed) return;
+
+      const runningMission = missionsRef.current.find(
+        (missionRun) => missionRun.calendarEventId === event.id,
+      );
+      const currentDayIndex = getCalendarDayIndex(
+        gameTimeRef.current,
+        calendarStateRef.current.calendarEpochGameTimeMs,
+      );
+      commitCalendarState({
+        ...calendarStateRef.current,
+        calendarEvents: calendarStateRef.current.calendarEvents.map((entry) =>
+          entry.id === event.id
+            ? {
+                ...entry,
+                status: CALENDAR_STATUS.RUNNING,
+                runningMissionInstanceId: runningMission?.instanceId || null,
+              }
+            : entry,
+        ),
+        calendarEventHistory: [
+          {
+            id: createId(),
+            eventId: event.id,
+            type: "started",
+            missionName: mission.name,
+            dayIndex: currentDayIndex,
+            approvedRosterIds: [...event.approvedRosterIds],
+            benchedIds: [...event.benchedIds],
+          },
+          ...calendarStateRef.current.calendarEventHistory,
+        ].slice(0, 100),
+      });
+      pushNotification({
+        type: "info",
+        title: "Raid Started",
+        message: `${event.title} started with ${approvedRosterIds.length} heroes.`,
+      });
+      setShowCalendar(false);
+    },
+    [commitCalendarState, handleDeploy, pushNotification],
+  );
   const handleManualFinish = (m) => {
     const now = gameTimeRef.current;
     const dungeonAdvance =
@@ -2565,6 +2910,13 @@ const App = () => {
       } else {
         registerDungeonWipeMilestone(missionWithStepLoot.name);
       }
+    }
+    if (missionWithStepLoot.calendarEventId) {
+      completeCalendarEvent({
+        eventId: missionWithStepLoot.calendarEventId,
+        missionName: missionWithStepLoot.name,
+        missionSucceeded: result.missionSucceeded,
+      });
     }
 
     const openGoldSpace = guildDerivedStats.goldCap - currentGoldAfterWipes;
@@ -2751,7 +3103,7 @@ const App = () => {
 
   const handleSaveSession = () => {
     try {
-      const payload = buildSessionPayload({
+      saveSessionFile({
         roster,
         activeMissions,
         missionList,
@@ -2759,11 +3111,11 @@ const App = () => {
         guildGold,
         guildProgress,
         guildSetup,
+        calendarState,
         gameSpeed,
         isPaused,
         gameTimeMs: gameTimeRef.current,
       });
-      downloadSessionPayload(payload);
     } catch (error) {
       console.error("Failed to save session:", error);
       alert("Could not save session file.");
@@ -2771,82 +3123,76 @@ const App = () => {
   };
 
   const handleLoadButtonClick = () => {
-    sessionFileInputRef.current?.click();
+    openSessionFilePicker(sessionFileInputRef);
   };
 
   const handleLoadSessionFile = (event) => {
-    const file = event.target.files?.[0];
-    event.target.value = "";
-    if (!file) return;
-
-    const reader = new FileReader();
-    reader.onload = () => {
-      try {
-        const payloadData = parseSessionPayload(reader.result);
-        const {
-          normalizedRoster,
-          loadedActiveMissions,
-          loadedMissionList,
-          loadedGuildLog,
-          loadedGuildProgress,
-          loadedGuildGold,
-          loadedGuildSetup,
-          loadedProgression,
-        } = hydrateSessionData({
-          payloadData,
-          initialMissions: getMissionListWithZones(INITIAL_MISSIONS),
-          normalizeGuildProgress,
-          normalizeGuildSetup,
-          getGuildDerivedStats,
-          normalizeProgressionState,
-          defaultGameSpeed: DEFAULT_GAME_SPEED,
-          createId,
-          resolveDungeonBossCount: getDungeonBossCount,
-          defaultGuildSetup: DEFAULT_GUILD_SETUP,
+    loadSessionFile({
+      event,
+      hydrateOptions: {
+        initialMissions: getMissionListWithZones(INITIAL_MISSIONS),
+        normalizeGuildProgress,
+        normalizeGuildSetup,
+        getGuildDerivedStats,
+        normalizeProgressionState,
+        defaultGameSpeed: DEFAULT_GAME_SPEED,
+        createId,
+        resolveDungeonBossCount: getDungeonBossCount,
+        defaultGuildSetup: DEFAULT_GUILD_SETUP,
+      },
+      onLoaded: (loadedSession) => {
+        applyLoadedSessionToApp({
+          loadedSession,
+          factionFallback: GUILD_FACTION.ALLIANCE,
+          normalizeRosterZones,
+          getMissionListWithZones,
+          clampGameSpeed,
+          refs: {
+            rewardedMissionIds: rewardedMissionIdsRef,
+            roster: rosterRef,
+            missions: missionsRef,
+            gold: goldRef,
+            guildProgress: guildProgressRef,
+            guildSetup: guildSetupRef,
+            calendarState: calendarStateRef,
+            gameTime: gameTimeRef,
+            lastRealTime: lastRealTimeRef,
+          },
+          setters: {
+            setRoster,
+            setActiveMissions,
+            setMissionList,
+            setGuildLog,
+            setGuildGold,
+            setGuildProgress,
+            setGuildSetup,
+            setCalendarState,
+            setIsPaused,
+            setGameSpeed,
+            setGameTimeMs,
+            setDetailCharId,
+          },
+          closeOverlays: () => {
+            setShowRecruit(false);
+            setShowMissions(false);
+            setShowCalendar(false);
+            setShowLootTable(false);
+            setShowGuildLog(false);
+            setShowDebug(false);
+            setShowMap(false);
+            setShowOptions(false);
+          },
         });
-
-        const zoneReadyRoster = normalizeRosterZones(
-          normalizedRoster,
-          loadedGuildSetup?.faction || GUILD_FACTION.ALLIANCE,
-        );
-
-        rewardedMissionIdsRef.current = new Set();
-        rosterRef.current = zoneReadyRoster;
-        missionsRef.current = loadedActiveMissions;
-        goldRef.current = loadedGuildGold;
-        guildProgressRef.current = loadedGuildProgress;
-        guildSetupRef.current = loadedGuildSetup;
-        setRoster(zoneReadyRoster);
-        setActiveMissions(loadedActiveMissions);
-        setMissionList(getMissionListWithZones(loadedMissionList));
-        setGuildLog(loadedGuildLog);
-        setGuildGold(loadedGuildGold);
-        setGuildProgress(loadedGuildProgress);
-        setGuildSetup(loadedGuildSetup);
-        setIsPaused(loadedProgression.isPaused);
-        setGameSpeed(clampGameSpeed(loadedProgression.gameSpeed));
-        gameTimeRef.current = loadedProgression.gameTimeMs;
-        setGameTimeMs(loadedProgression.gameTimeMs);
-        lastRealTimeRef.current = Date.now();
-        setDetailCharId(null);
-        setShowRecruit(false);
-        setShowMissions(false);
-        setShowLootTable(false);
-        setShowGuildLog(false);
-        setShowDebug(false);
-        setShowMap(false);
-        setShowOptions(false);
-
         alert("Session loaded.");
-      } catch (error) {
+      },
+      onInvalidSession: (error) => {
         console.error("Failed to load session:", error);
         alert("Invalid session file.");
-      }
-    };
-    reader.onerror = () => {
-      alert("Could not read session file.");
-    };
-    reader.readAsText(file);
+      },
+      onReadError: () => {
+        alert("Could not read session file.");
+      },
+    });
   };
 
   const guildActivityModeSummary =
@@ -2878,6 +3224,8 @@ const App = () => {
     : null;
   const hasAnyGuildMemberLevelFilter =
     hasGuildMemberMinLevelFilter || hasGuildMemberMaxLevelFilter;
+  const normalizedGuildMemberSearch = normalizeGuildMemberSearch(guildMemberSearch);
+  const hasGuildMemberSearch = normalizedGuildMemberSearch.length > 0;
   const rankedRoster = useMemo(
     () => {
       const levelBounds =
@@ -2904,7 +3252,7 @@ const App = () => {
         return level >= levelBounds.min && level <= levelBounds.max;
       });
 
-      return [...filteredRoster].sort((left, right) => {
+      const sortedRoster = [...filteredRoster].sort((left, right) => {
         const leftLevel = Number(left?.level) || 1;
         const rightLevel = Number(right?.level) || 1;
         const leftItemLevel = getCharacterAverageItemLevel(left);
@@ -2926,15 +3274,43 @@ const App = () => {
 
         return String(left?.name || "").localeCompare(String(right?.name || ""));
       });
+
+      if (!hasGuildMemberSearch) return sortedRoster;
+
+      return sortedRoster
+        .map((member, index) => ({
+          member,
+          index,
+          searchScore: getGuildMemberSearchScore(
+            member,
+            normalizedGuildMemberSearch,
+          ),
+        }))
+        .sort((left, right) => {
+          if (right.searchScore !== left.searchScore) {
+            return right.searchScore - left.searchScore;
+          }
+          return left.index - right.index;
+        })
+        .map((entry) => entry.member);
     },
     [
       guildMemberSortMode,
+      hasGuildMemberSearch,
       hasAnyGuildMemberLevelFilter,
       normalizedGuildMemberMaxLevel,
       normalizedGuildMemberMinLevel,
+      normalizedGuildMemberSearch,
       roster,
     ],
   );
+  const bestGuildMemberSearchScore =
+    hasGuildMemberSearch && rankedRoster.length > 0
+      ? getGuildMemberSearchScore(rankedRoster[0], normalizedGuildMemberSearch)
+      : 0;
+  const bestGuildMemberSearchMatchId =
+    bestGuildMemberSearchScore > 0 ? rankedRoster[0]?.id : null;
+  const hasGuildMemberSearchMatch = bestGuildMemberSearchMatchId !== null;
   const missionAchievementCatalog = useMemo(
     () =>
       [...missionList]
@@ -3014,6 +3390,22 @@ const App = () => {
             {getGuildServerLabel(guildSetup.server, guildSetup.serverStyle)} • Focus:{" "}
             {guildSetup.focus}
           </p>
+          <p className="text-cyan-100/70 text-[11px] md:text-xs tracking-wide mt-1">
+            {currentCalendarDate.weekdayName}, {currentCalendarDate.monthName}{" "}
+            {currentCalendarDate.dayOfMonth}, Year {currentCalendarDate.year}
+          </p>
+          <div className="mt-2 w-full max-w-xs">
+            <div className="h-1.5 overflow-hidden rounded-full border border-cyan-900/70 bg-gray-950/80">
+              <div
+                className="h-full rounded-full bg-gradient-to-r from-cyan-500 via-sky-400 to-amber-300 transition-[width] duration-300"
+                style={{ width: `${currentCalendarDayProgressPercent}%` }}
+              />
+            </div>
+            <div className="mt-1 flex items-center justify-between text-[10px] uppercase tracking-wide text-cyan-100/50">
+              <span>Day progress</span>
+              <span>{currentCalendarDayProgressPercent}%</span>
+            </div>
+          </div>
         </div>
         <div className="text-right flex-none ml-2">
           <div className="text-sm md:text-xl fantasy-font">
@@ -3048,7 +3440,7 @@ const App = () => {
         </div>
       </header>
 
-      <div className="flex overflow-x-auto gap-3 mb-6 pb-2 no-scrollbar snap-x">
+            <div className="flex flex-wrap gap-2 md:gap-3 mb-6 pb-2">
         <button
           onClick={handleOpenRecruit}
           disabled={openRecruitSlots <= 0 || guildGold < RECRUIT_SCOUT_COST_GOLD}
@@ -3076,6 +3468,22 @@ const App = () => {
           />
           Missions
         </button>
+              <button
+                onClick={() => setShowCalendar(true)}
+                className="wow-command flex-none px-4 py-3 rounded bg-gray-800 border border-indigo-700 text-indigo-200 hover:bg-gray-700 shadow flex items-center gap-2 whitespace-nowrap"
+              >
+                <img
+                  src={getWowIconUrl("inv_misc_note_05")}
+                  alt=""
+                  className="w-5 h-5 rounded-sm border border-indigo-900/60 object-cover"
+                  onError={(event) => {
+                    event.currentTarget.src = getWowIconUrl(
+                      "inv_misc_questionmark"
+                    );
+                  }}
+                />
+                Calendar
+              </button>
         <button
           onClick={() => setShowMap(true)}
           className="wow-command flex-none snap-start px-4 py-3 rounded bg-gray-800 border border-cyan-800 text-cyan-200 hover:bg-gray-700 shadow flex items-center gap-2 whitespace-nowrap"
@@ -3172,6 +3580,18 @@ const App = () => {
           <div className="flex flex-wrap items-end gap-2">
             <label className="text-[11px] text-gray-300">
               <span className="block mb-1 uppercase tracking-wide text-gray-500">
+                Search
+              </span>
+              <input
+                type="search"
+                value={guildMemberSearch}
+                onChange={(event) => setGuildMemberSearch(event.target.value)}
+                className="w-36 bg-gray-800 text-gray-100 text-xs border border-gray-600 rounded px-2 py-1 focus:outline-none focus:border-amber-500"
+                placeholder="Character name"
+              />
+            </label>
+            <label className="text-[11px] text-gray-300">
+              <span className="block mb-1 uppercase tracking-wide text-gray-500">
                 Ranking
               </span>
               <select
@@ -3232,10 +3652,11 @@ const App = () => {
             <button
               type="button"
               onClick={() => {
+                setGuildMemberSearch("");
                 setGuildMemberMinLevelFilter("");
                 setGuildMemberMaxLevelFilter("");
               }}
-              disabled={!hasAnyGuildMemberLevelFilter}
+              disabled={!hasAnyGuildMemberLevelFilter && !hasGuildMemberSearch}
               className="h-[26px] px-2 rounded border border-gray-600 bg-gray-800 text-[11px] text-gray-200 hover:bg-gray-700 disabled:opacity-40 disabled:cursor-not-allowed"
             >
               Clear
@@ -3252,25 +3673,40 @@ const App = () => {
           </div>
         ) : rankedRoster.length === 0 ? (
           <div className="text-gray-500 text-center py-10 italic">
-            No guild members match this level filter.
+            No guild members match these filters.
           </div>
         ) : (
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-            {rankedRoster.map((char) =>
-              memberRankingMode === MEMBER_RANKING_MODES.EQUIP_CHECK ? (
-                <CharacterEquipCheckCard
+            {rankedRoster.map((char) => {
+              const isBestSearchMatch =
+                hasGuildMemberSearchMatch &&
+                char.id === bestGuildMemberSearchMatchId;
+              const isDimmedSearchResult =
+                hasGuildMemberSearchMatch && !isBestSearchMatch;
+
+              return (
+                <div
                   key={char.id}
-                  char={char}
-                  onClick={() => setDetailCharId(char.id)}
-                />
-              ) : (
-                <CharacterCard
-                  key={char.id}
-                  char={char}
-                  onClick={() => setDetailCharId(char.id)}
-                />
-              ),
-            )}
+                  className={`rounded-lg transition-all ${
+                    isBestSearchMatch
+                      ? "ring-2 ring-amber-400 shadow-lg shadow-amber-900/30"
+                      : ""
+                  } ${isDimmedSearchResult ? "opacity-45" : ""}`}
+                >
+                  {memberRankingMode === MEMBER_RANKING_MODES.EQUIP_CHECK ? (
+                    <CharacterEquipCheckCard
+                      char={char}
+                      onClick={() => setDetailCharId(char.id)}
+                    />
+                  ) : (
+                    <CharacterCard
+                      char={char}
+                      onClick={() => setDetailCharId(char.id)}
+                    />
+                  )}
+                </div>
+              );
+            })}
           </div>
         )}
       </div>
@@ -3333,6 +3769,22 @@ const App = () => {
             }
             isRaidUnlocked={guildDerivedStats.raidUnlocked}
             onNotify={pushNotification}
+          />
+        )}
+        {showCalendar && (
+          <CalendarModal
+            isOpen={showCalendar}
+            onClose={() => setShowCalendar(false)}
+            calendarState={calendarState}
+            currentDayIndex={currentCalendarDayIndex}
+            missionList={missionList}
+            roster={roster}
+            activeMissions={activeMissions}
+            onCreateEvent={handleCreateCalendarEvent}
+            onCreateSeries={handleCreateCalendarSeries}
+            onUpdateEventRoster={handleUpdateCalendarEventRoster}
+            onCancelEvent={handleCancelCalendarEvent}
+            onStartEvent={handleStartCalendarEvent}
           />
         )}
         {showLootTable && (

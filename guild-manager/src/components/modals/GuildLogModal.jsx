@@ -42,6 +42,7 @@ const buildMissionScenarioLookup = (missionList) =>
   }, new Map());
 
 const getLogScenario = (log, missionScenarioLookup) => {
+  if (log?.type === "calendar") return "raid";
   if (log?.type === "zone-clear" || log?.type === "zone-gold") return "world";
   if (log?.missionName === "World Drop") return "world";
 
@@ -182,6 +183,8 @@ const GuildLogModal = ({ isOpen, onClose, logs, missionList = [] }) => {
                   </span>
                 ) : log.type === "guild-renown" ? (
                   <span className="text-amber-300">{log.message}</span>
+                ) : log.type === "calendar" ? (
+                  <span className="text-indigo-200">{log.message}</span>
                 ) : log.type === "achievement" ? (
                   <span className="text-emerald-300">
                     Achievement unlocked: {log.label} (+{log.reward} Guild Renown)
