@@ -45,6 +45,8 @@ const getEventStatusClass = (status) => {
 const getRaidResetShortLabel = (mission) => {
   if (mission?.name === "Molten Core") return "MC Reset";
   if (mission?.name === "Zul'Gurub") return "ZG Reset";
+  if (mission?.name === "Onyxia's Lair") return "Ony Reset";
+  if (mission?.name === "Blackwing Lair") return "BWL Reset";
   if (mission?.name === "Ruins of Ahn'Qiraj") return "AQ20 Reset";
   if (mission?.name === "Temple of Ahn'Qiraj") return "AQ40 Reset";
   return `${mission?.name || "Raid"} Reset`;
@@ -360,7 +362,7 @@ const CalendarModal = ({
                     const firstEvent = (eventsByDay.get(day.dayIndex) || [])[0];
                     if (firstEvent) setSelectedEventId(firstEvent.id);
                   }}
-                  className={`aspect-square rounded border p-1 text-left text-xs overflow-hidden ${
+                  className={`aspect-square rounded border p-1 text-left text-xs overflow-hidden flex flex-col items-start justify-start ${
                     isSelected
                       ? "border-indigo-400 bg-indigo-950/50"
                       : isToday
@@ -368,8 +370,8 @@ const CalendarModal = ({
                         : "border-gray-700 bg-gray-800 hover:bg-gray-700"
                   }`}
                 >
-                  <div className="font-bold text-gray-100">{day.dayOfMonth}</div>
-                  <div className="space-y-0.5 mt-1">
+                  <div className="font-bold leading-none text-gray-100">{day.dayOfMonth}</div>
+                  <div className="w-full space-y-0.5 mt-2">
                     {dayEvents.slice(0, 2).map((event) => (
                       <div
                         key={event.id}

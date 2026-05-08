@@ -4,6 +4,8 @@ import { AHN_QIRAJ_RUINS_ITEMS } from './imports/ahnQirajRuinsLootManifest';
 import { AHN_QIRAJ_TEMPLE_ITEMS } from './imports/ahnQirajTempleLootManifest';
 import { LOWER_BLACKROCK_SPIRE_ITEMS } from './imports/lowerBlackrockSpireLootManifest';
 import { UPPER_BLACKROCK_SPIRE_ITEMS } from './imports/upperBlackrockSpireLootManifest';
+import { ONYXIAS_LAIR_ITEMS } from './imports/onyxiasLairLootManifest';
+import { BLACKWING_LAIR_ITEMS } from './imports/blackwingLairLootManifest';
 
 const wowItemIcon = (iconCode) =>
   `https://wow.zamimg.com/images/wow/icons/large/${iconCode.toLowerCase()}.jpg`;
@@ -17,6 +19,8 @@ const ITEM_LEVEL_BANDS_BY_SOURCE = Object.freeze({
   zul_gurub: { min: 61, max: 70 },
   ahn_qiraj_ruins: { min: 61, max: 70 },
   molten_core: { min: 66, max: 80 },
+  onyxias_lair: { min: 76, max: 76 },
+  blackwing_lair: { min: 76, max: 76 },
   ahn_qiraj_temple: { min: 73, max: 88 },
 });
 
@@ -30,6 +34,12 @@ const RAID_FINAL_BOSS_ITEM_LEVEL = Object.freeze({
   molten_core: {
     Ragnaros: 80,
     "Majordomo Executus": 76,
+  },
+  onyxias_lair: {
+    Onyxia: 76,
+  },
+  blackwing_lair: {
+    Nefarian: 76,
   },
   ahn_qiraj_temple: {
     "C'Thun": 88,
@@ -6099,6 +6109,10 @@ const RAW_DB_ITEMS = [
   ...ZUL_GURUB_ITEMS,
   // Ahn'Qiraj raid loot is generated from the raid loot manifests.
   ...AHN_QIRAJ_RUINS_ITEMS,
+  // Tier 2 raid loot is generated from the raid loot manifests.
+  ...ONYXIAS_LAIR_ITEMS,
+  ...BLACKWING_LAIR_ITEMS,
+  // Temple of Ahn'Qiraj remains the highest pre-Naxxramas raid tier.
   ...AHN_QIRAJ_TEMPLE_ITEMS,
 ];
 

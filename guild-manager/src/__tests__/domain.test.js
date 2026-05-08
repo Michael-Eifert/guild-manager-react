@@ -82,6 +82,15 @@ import {
   unsupportedAhnQirajTempleDrops,
 } from "../data/imports/ahnQirajTempleLootManifest";
 import {
+  BLACKWING_LAIR_ACTIVE_LOOT_MANIFEST,
+  BLACKWING_LAIR_ITEMS,
+  unsupportedBlackwingLairDrops,
+} from "../data/imports/blackwingLairLootManifest";
+import {
+  ONYXIAS_LAIR_ACTIVE_LOOT_MANIFEST,
+  ONYXIAS_LAIR_ITEMS,
+} from "../data/imports/onyxiasLairLootManifest";
+import {
   LOWER_BLACKROCK_SPIRE_ACTIVE_LOOT_MANIFEST,
   LOWER_BLACKROCK_SPIRE_ITEMS,
 } from "../data/imports/lowerBlackrockSpireLootManifest";
@@ -1105,6 +1114,66 @@ describe("Ahn'Qiraj raid integration", () => {
   });
 });
 
+describe("Tier 2 raid integration", () => {
+  const onyxiaMission = INITIAL_MISSIONS.find(
+    (mission) => mission.name === "Onyxia's Lair",
+  );
+  const blackwingLairMission = INITIAL_MISSIONS.find(
+    (mission) => mission.name === "Blackwing Lair",
+  );
+  const onyxiaItems = DB_ITEMS.filter(
+    (item) => item.dungeonSetId === "onyxias_lair",
+  );
+  const blackwingLairItems = DB_ITEMS.filter(
+    (item) => item.dungeonSetId === "blackwing_lair",
+  );
+  const tierTwoItems = DB_ITEMS.filter((item) =>
+    String(item.setId || "").startsWith("t2_"),
+  );
+
+  it("defines Onyxia and Blackwing Lair as Wednesday-reset raids", () => {
+    expect(onyxiaMission).toBeTruthy();
+    expect(onyxiaMission.isRaid).toBe(true);
+    expect(onyxiaMission.requiredPartySize).toBe(40);
+    expect(onyxiaMission.requiresKey).toBe(false);
+    expect(getDungeonBossCount(onyxiaMission)).toBe(1);
+    expect(onyxiaMission.raidReset).toMatchObject({
+      type: "weekly",
+      weekday: 2,
+    });
+
+    expect(blackwingLairMission).toBeTruthy();
+    expect(blackwingLairMission.isRaid).toBe(true);
+    expect(blackwingLairMission.requiredPartySize).toBe(40);
+    expect(blackwingLairMission.requiresKey).toBe(false);
+    expect(getDungeonBossCount(blackwingLairMission)).toBe(8);
+    expect(blackwingLairMission.raidReset).toMatchObject({
+      type: "weekly",
+      weekday: 2,
+    });
+  });
+
+  it("adds Onyxia Tier 2 helms and Blackwing Lair Tier 2 drops", () => {
+    expect(ONYXIAS_LAIR_ACTIVE_LOOT_MANIFEST.length).toBeGreaterThan(9);
+    expect(BLACKWING_LAIR_ACTIVE_LOOT_MANIFEST.length).toBeGreaterThan(25);
+    expect(ONYXIAS_LAIR_ITEMS.filter((item) => item.setId?.startsWith("t2_"))).toHaveLength(9);
+    expect(BLACKWING_LAIR_ITEMS.filter((item) => item.setId?.startsWith("t2_")).length)
+      .toBeGreaterThanOrEqual(27);
+    expect(unsupportedBlackwingLairDrops.length).toBeGreaterThan(20);
+    expect(tierTwoItems.length).toBeGreaterThanOrEqual(36);
+  });
+
+  it("converts Tier 2 raid manifest entries into valid database items", () => {
+    [...onyxiaItems, ...blackwingLairItems].forEach((item) => {
+      expect(item.id).toBeTypeOf("number");
+      expect(item.icon).toContain("wow/icons/large/");
+      expect(item.quality).toBe(4);
+      expect(item.minLevel).toBe(60);
+      expect(item.sourceBosses.length).toBeGreaterThan(0);
+    });
+  });
+});
+
 describe("item level tuning", () => {
   const getItemsBySource = (sourceId) =>
     DB_ITEMS.filter((item) => item.dungeonSetId === sourceId);
@@ -1142,6 +1211,8 @@ describe("item level tuning", () => {
     expectItemLevelsWithin(getItemsBySource("zul_gurub"), 61, 70);
     expectItemLevelsWithin(getItemsBySource("ahn_qiraj_ruins"), 61, 70);
     expectItemLevelsWithin(getItemsBySource("molten_core"), 66, 80);
+    expectItemLevelsWithin(getItemsBySource("onyxias_lair"), 76, 76);
+    expectItemLevelsWithin(getItemsBySource("blackwing_lair"), 76, 76);
     expectItemLevelsWithin(getItemsBySource("ahn_qiraj_temple"), 73, 88);
   });
 
