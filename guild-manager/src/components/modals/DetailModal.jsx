@@ -27,6 +27,7 @@ const ItemSlot = ({ slotName, item }) => {
   const borderColor = item ? getQualityColor(item.quality) : "#444";
   const itemStats = formatItemStats(item?.stats);
   const itemLevel = getItemEffectiveLevel(item);
+  const setName = String(item?.setName || "").trim();
 
   return (
     <div className="flex items-center gap-3 bg-gray-800/50 p-2 rounded border border-gray-700 hover:bg-gray-700/50 transition-colors wow-card">
@@ -52,6 +53,11 @@ const ItemSlot = ({ slotName, item }) => {
           {item ? item.name : "Empty"}
         </div>
         <div className="text-[10px] text-amber-200/70">iLvl {itemLevel}</div>
+        {setName && (
+          <div className="mt-0.5 inline-flex max-w-full items-center rounded border border-emerald-800 bg-emerald-950/30 px-1.5 py-0.5 text-[10px] font-semibold text-emerald-200">
+            <span className="truncate">Set: {setName}</span>
+          </div>
+        )}
         {itemStats && <div className="text-[10px] text-gray-400 truncate">{itemStats}</div>}
       </div>
     </div>

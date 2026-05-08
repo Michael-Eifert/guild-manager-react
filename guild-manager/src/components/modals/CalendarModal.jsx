@@ -42,6 +42,9 @@ const getEventStatusClass = (status) => {
   return "border-yellow-700 text-yellow-200";
 };
 
+const isTerminalEventStatus = (status) =>
+  status === CALENDAR_STATUS.COMPLETED || status === CALENDAR_STATUS.CANCELLED;
+
 const getRaidResetShortLabel = (mission) => {
   if (mission?.name === "Molten Core") return "MC Reset";
   if (mission?.name === "Zul'Gurub") return "ZG Reset";
@@ -76,6 +79,7 @@ const CalendarModal = ({
   onCreateEvent,
   onCreateSeries,
   onUpdateEventRoster,
+  onLockEventRoster,
   onCancelEvent,
   onCancelSeries,
   onStartEvent,
@@ -180,7 +184,11 @@ const CalendarModal = ({
     return grouped;
   }, [monthGrid, raidMissions]);
   const visibleEvents = [...events]
-    .filter((event) => event.scheduledDayIndex >= currentDayIndex - 7)
+    .filter(
+      (event) =>
+        event.scheduledDayIndex >= currentDayIndex &&
+        !isTerminalEventStatus(event.status),
+    )
     .sort((left, right) => left.scheduledDayIndex - right.scheduledDayIndex);
   const selectedDayEvents = [...(eventsByDay.get(selectedDayIndex) || [])].sort(
     (left, right) =>
@@ -231,7 +239,7 @@ const CalendarModal = ({
     ? getRaidLockoutStatus({
         raidLockouts,
         mission: selectedEventMission,
-        currentDayIndex,
+        currentDayIndex: selectedEvent?.scheduledDayIndex ?? currentDayIndex,
         memberIds: selectedEvent?.approvedRosterIds || [],
       })
     : null;
@@ -290,6 +298,7 @@ const CalendarModal = ({
 
   const toggleApproved = (characterId) => {
     if (!selectedEvent) return;
+    if (selectedEvent.rosterLocked) return;
     const approved = selectedEvent.approvedRosterIds.includes(characterId)
       ? selectedEvent.approvedRosterIds.filter((id) => id !== characterId)
       : [...selectedEvent.approvedRosterIds, characterId].slice(0, maxPartySize);
@@ -402,7 +411,7 @@ const CalendarModal = ({
 
           <div className="mt-4 rounded border border-gray-700 bg-black/20 p-3 space-y-3">
             <h3 className="text-sm font-bold text-gray-200 uppercase tracking-wide">
-              Create Raid Event
+              Raid Setup
             </h3>
             <div className="grid grid-cols-1 md:grid-cols-2 gap-2">
               <label className="text-xs text-gray-300">
@@ -443,62 +452,98 @@ const CalendarModal = ({
                 </select>
               </label>
             </div>
-            <div className="flex flex-wrap items-end gap-2">
-              <div className="text-xs text-gray-400">
-                Selected date:{" "}
-                <span className="text-cyan-200">{formatCalendarDate(selectedDayIndex)}</span>
+            <div className="grid grid-cols-1 xl:grid-cols-2 gap-3">
+              <div className="rounded border border-cyan-900/60 bg-cyan-950/10 p-3 space-y-2">
+                <div className="flex items-start justify-between gap-3">
+                  <div>
+                    <h4 className="text-xs font-bold uppercase tracking-wide text-cyan-200">
+                      One-Off Raid Event
+                    </h4>
+                    <div className="mt-1 text-xs text-gray-400">
+                      Date:{" "}
+                      <span className="text-cyan-100">
+                        {formatCalendarDate(selectedDayIndex)}
+                      </span>
+                    </div>
+                  </div>
+                  <button
+                    type="button"
+                    onClick={handleCreateEvent}
+                    disabled={!selectedMissionId}
+                    className="px-3 py-2 rounded border border-cyan-700 bg-cyan-950/40 text-cyan-100 font-bold text-xs disabled:opacity-40"
+                  >
+                    Create One-Off
+                  </button>
+                </div>
               </div>
-              <button
-                type="button"
-                onClick={handleCreateEvent}
-                disabled={!selectedMissionId}
-                className="ml-auto px-3 py-2 rounded border border-cyan-700 bg-cyan-950/40 text-cyan-100 font-bold text-xs disabled:opacity-40"
-              >
-                Create One-Off
-              </button>
-              <label className="text-xs text-gray-300">
-                <span className="block mb-1 text-gray-500 uppercase tracking-wide">Weekly</span>
-                <select
-                  value={selectedWeekday}
-                  onChange={(event) => setSelectedWeekday(Number(event.target.value))}
-                  className="bg-gray-800 border border-gray-600 rounded px-2 py-2 text-gray-100"
-                >
-                  {CALENDAR_WEEKDAYS.map((weekday, index) => (
-                    <option key={weekday} value={index}>
-                      {weekday}
-                    </option>
-                  ))}
-                </select>
-              </label>
-              <label className="text-xs text-gray-300">
-                <span className="block mb-1 text-gray-500 uppercase tracking-wide">Length</span>
-                <select
-                  value={selectedDurationWeeks}
-                  onChange={(event) =>
-                    setSelectedDurationWeeks(Number(event.target.value))
-                  }
-                  className="bg-gray-800 border border-gray-600 rounded px-2 py-2 text-gray-100"
-                >
-                  {CALENDAR_SERIES_DURATION_OPTIONS.map((weeks) => (
-                    <option key={weeks} value={weeks}>
-                      {weeks} weeks
-                    </option>
-                  ))}
-                </select>
-              </label>
-              <button
-                type="button"
-                onClick={handleCreateSeries}
-                disabled={!selectedMissionId}
-                className="px-3 py-2 rounded border border-indigo-700 bg-indigo-950/40 text-indigo-100 font-bold text-xs disabled:opacity-40"
-              >
-                {missionLookup.get(String(selectedMissionId))?.raidReset?.type === "interval"
-                  ? `Create Every ${
-                      missionLookup.get(String(selectedMissionId))?.raidReset
-                        ?.intervalDays || 3
-                    }d`
-                  : "Create Weekly"}
-              </button>
+
+              <div className="rounded border border-indigo-900/60 bg-indigo-950/10 p-3 space-y-2">
+                <h4 className="text-xs font-bold uppercase tracking-wide text-indigo-200">
+                  Recurring Schedule
+                </h4>
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+                  <label className="text-xs text-gray-300">
+                    <span className="block mb-1 text-gray-500 uppercase tracking-wide">
+                      Weekly Day
+                    </span>
+                    <select
+                      value={selectedWeekday}
+                      onChange={(event) => setSelectedWeekday(Number(event.target.value))}
+                      className="w-full bg-gray-800 border border-gray-600 rounded px-2 py-2 text-gray-100"
+                    >
+                      {CALENDAR_WEEKDAYS.map((weekday, index) => (
+                        <option key={weekday} value={index}>
+                          {weekday}
+                        </option>
+                      ))}
+                    </select>
+                  </label>
+                  <label className="text-xs text-gray-300">
+                    <span className="block mb-1 text-gray-500 uppercase tracking-wide">
+                      Length
+                    </span>
+                    <select
+                      value={selectedDurationWeeks}
+                      onChange={(event) =>
+                        setSelectedDurationWeeks(Number(event.target.value))
+                      }
+                      className="w-full bg-gray-800 border border-gray-600 rounded px-2 py-2 text-gray-100"
+                    >
+                      {CALENDAR_SERIES_DURATION_OPTIONS.map((weeks) => (
+                        <option key={weeks} value={weeks}>
+                          {weeks} weeks
+                        </option>
+                      ))}
+                    </select>
+                  </label>
+                </div>
+                <div className="flex items-center justify-between gap-3">
+                  <div className="text-xs text-gray-400">
+                    Starts no earlier than{" "}
+                    <span className="text-indigo-100">
+                      {formatCalendarDate(
+                        selectedDayIndex >= currentDayIndex
+                          ? selectedDayIndex
+                          : currentDayIndex,
+                      )}
+                    </span>
+                  </div>
+                  <button
+                    type="button"
+                    onClick={handleCreateSeries}
+                    disabled={!selectedMissionId}
+                    className="px-3 py-2 rounded border border-indigo-700 bg-indigo-950/40 text-indigo-100 font-bold text-xs disabled:opacity-40"
+                  >
+                    {missionLookup.get(String(selectedMissionId))?.raidReset?.type ===
+                    "interval"
+                      ? `Create Every ${
+                          missionLookup.get(String(selectedMissionId))?.raidReset
+                            ?.intervalDays || 3
+                        }d`
+                      : "Create Weekly"}
+                  </button>
+                </div>
+              </div>
             </div>
           </div>
 
@@ -606,7 +651,7 @@ const CalendarModal = ({
                   </div>
                 </div>
                 <span className={`text-xs uppercase ${getEventStatusClass(selectedEvent.status)}`}>
-                  {selectedEvent.status}
+                  {selectedEvent.rosterLocked ? "locked" : selectedEvent.status}
                 </span>
               </div>
 
@@ -624,8 +669,10 @@ const CalendarModal = ({
               </div>
               <div className="mt-3 rounded border border-cyan-900/60 bg-cyan-950/20 p-2 text-xs text-cyan-100/80">
                 Auto-start: {getCalendarTimeOfDayOption(selectedEvent.scheduledTimeOfDay).label}
-                {selectedEvent.autoStart === false ? " disabled" : ""}. Lock the roster before
-                that time and the raid will start automatically.
+                {selectedEvent.autoStart === false ? " disabled" : ""}.{" "}
+                {selectedEvent.rosterLocked
+                  ? "Roster is locked and reserved for this raid."
+                  : "Lock the roster before that time and the raid will start automatically."}
               </div>
               {selectedEventMission?.isRaid && (
                 <div className="mt-3 rounded border border-amber-900/60 bg-amber-950/20 p-2 text-xs text-amber-100/80">
@@ -665,7 +712,7 @@ const CalendarModal = ({
                       ? getRaidLockoutStatus({
                           raidLockouts,
                           mission: selectedEventMission,
-                          currentDayIndex,
+                          currentDayIndex: selectedEvent.scheduledDayIndex,
                           memberIds: [member.id],
                         })
                       : null;
@@ -679,7 +726,8 @@ const CalendarModal = ({
                         disabled={
                           selectedEvent.status === CALENDAR_STATUS.RUNNING ||
                           selectedEvent.status === CALENDAR_STATUS.COMPLETED ||
-                          selectedEvent.status === CALENDAR_STATUS.CANCELLED
+                          selectedEvent.status === CALENDAR_STATUS.CANCELLED ||
+                          selectedEvent.rosterLocked
                         }
                         className={`w-full rounded border p-2 text-left flex items-center justify-between gap-2 ${
                           approved
@@ -731,9 +779,25 @@ const CalendarModal = ({
                 </button>
                 <button
                   type="button"
+                  onClick={() =>
+                    onLockEventRoster(selectedEvent.id, !selectedEvent.rosterLocked)
+                  }
+                  disabled={
+                    selectedEvent.status === CALENDAR_STATUS.RUNNING ||
+                    selectedEvent.status === CALENDAR_STATUS.COMPLETED ||
+                    selectedEvent.status === CALENDAR_STATUS.CANCELLED ||
+                    (!selectedEvent.rosterLocked && approvedMembers.length === 0)
+                  }
+                  className="px-3 py-2 rounded border border-indigo-700 bg-indigo-950/40 text-indigo-100 text-xs font-bold disabled:opacity-40"
+                >
+                  {selectedEvent.rosterLocked ? "Unlock Registration" : "Lock Raid Group"}
+                </button>
+                <button
+                  type="button"
                   onClick={() => onStartEvent(selectedEvent.id)}
                   disabled={
                     selectedEvent.status !== CALENDAR_STATUS.READY ||
+                    !selectedEvent.rosterLocked ||
                     !hasMinimumRoster ||
                     selectedEventLockoutStatus?.isCompletedLocked ||
                     selectedEventLockoutStatus?.hasLockoutConflict

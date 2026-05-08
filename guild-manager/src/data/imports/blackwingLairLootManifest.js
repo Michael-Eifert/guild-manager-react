@@ -156,12 +156,42 @@ const TIER_TWO_CLASS_SETS = Object.freeze([
 ]);
 
 const SLOT_SOURCE = Object.freeze({
-  chest: { slot: "chest", sourceBosses: [BOSS.NEFARIAN], iconCode: "inv_chest_chain_05" },
-  feet: { slot: "feet", sourceBosses: [BOSS.BROODLORD], iconCode: "inv_boots_plate_03" },
-  hands: { slot: "hands", sourceBosses: DRAKE_BOSSES, iconCode: "inv_gauntlets_30" },
+  chest: { slot: "chest", sourceBosses: [BOSS.NEFARIAN] },
+  feet: { slot: "feet", sourceBosses: [BOSS.BROODLORD] },
+  hands: { slot: "hands", sourceBosses: DRAKE_BOSSES },
   shoulder: { unsupportedSlot: "shoulder", sourceBosses: [BOSS.CHROMAGGUS] },
   waist: { unsupportedSlot: "waist", sourceBosses: [BOSS.VAELASTRASZ] },
   wrist: { unsupportedSlot: "wrist", sourceBosses: [BOSS.RAZORGORE] },
+});
+
+const TIER_TWO_ICON_BY_WOWHEAD_ID = Object.freeze({
+  16897: "inv_chest_chain_16",
+  16898: "inv_boots_08",
+  16899: "inv_gauntlets_25",
+  16942: "inv_chest_chain_03",
+  16941: "inv_boots_plate_07",
+  16940: "inv_gauntlets_10",
+  16916: "inv_chest_cloth_03",
+  16912: "inv_boots_07",
+  16913: "inv_gauntlets_14",
+  16958: "inv_chest_plate03",
+  16957: "inv_boots_plate_09",
+  16956: "inv_gauntlets_29",
+  16923: "inv_chest_cloth_03",
+  16919: "inv_boots_07",
+  16920: "inv_gauntlets_14",
+  16905: "inv_chest_cloth_07",
+  16906: "inv_boots_08",
+  16907: "inv_gauntlets_21",
+  16950: "inv_chest_chain_11",
+  16949: "inv_boots_plate_06",
+  16948: "inv_gauntlets_11",
+  16931: "inv_chest_leather_01",
+  16927: "inv_boots_05",
+  16928: "inv_gauntlets_19",
+  16966: "inv_chest_plate16",
+  16965: "inv_boots_plate_04",
+  16964: "inv_gauntlets_10",
 });
 
 const getSlotIcon = (slot, armorType) => {
@@ -170,6 +200,9 @@ const getSlotIcon = (slot, armorType) => {
   if (slot === "hands") return armorType === "Cloth" ? "inv_gauntlets_17" : "inv_gauntlets_30";
   return "inv_misc_questionmark";
 };
+
+const getTierTwoIcon = (wowheadId, slot, armorType) =>
+  TIER_TWO_ICON_BY_WOWHEAD_ID[wowheadId] || getSlotIcon(slot, armorType);
 
 const TIER_TWO_PIECES = TIER_TWO_CLASS_SETS.flatMap((classSet, classIndex) =>
   Object.entries(classSet.pieces).map(([pieceSlot, [wowheadId, name]], slotIndex) => ({
@@ -180,7 +213,7 @@ const TIER_TWO_PIECES = TIER_TWO_CLASS_SETS.flatMap((classSet, classIndex) =>
     type: classSet.type,
     minLevel: 60,
     itemLevel: 76,
-    iconCode: getSlotIcon(pieceSlot, classSet.type),
+    iconCode: getTierTwoIcon(wowheadId, pieceSlot, classSet.type),
     allowedClasses: [classSet.className],
     setId: classSet.setId,
     setName: classSet.setName,
@@ -192,6 +225,7 @@ const TIER_TWO_PIECES = TIER_TWO_CLASS_SETS.flatMap((classSet, classIndex) =>
 const EXTRA_BLACKWING_DROPS = Object.freeze([
   {
     internalId: 402101,
+    wowheadId: 19334,
     name: "The Untamed Blade",
     slot: "mainHand",
     quality: 4,
@@ -205,6 +239,7 @@ const EXTRA_BLACKWING_DROPS = Object.freeze([
   },
   {
     internalId: 402102,
+    wowheadId: 19351,
     name: "Maladath, Runed Blade of the Black Flight",
     slot: "mainHand",
     quality: 4,
@@ -218,19 +253,21 @@ const EXTRA_BLACKWING_DROPS = Object.freeze([
   },
   {
     internalId: 402103,
+    wowheadId: 19352,
     name: "Chromatically Tempered Sword",
     slot: "mainHand",
     quality: 4,
     type: "Generic",
     minLevel: 60,
     itemLevel: 76,
-    iconCode: "inv_sword_53",
+    iconCode: "inv_sword_51",
     sourceBosses: [BOSS.CHROMAGGUS],
     allowedClasses: ["Warrior", "Rogue", "Paladin"],
     stats: { agility: 24, strength: 12, stamina: 16 },
   },
   {
     internalId: 402104,
+    wowheadId: 19364,
     name: "Ashkandi, Greatsword of the Brotherhood",
     slot: "mainHand",
     quality: 4,
@@ -244,13 +281,14 @@ const EXTRA_BLACKWING_DROPS = Object.freeze([
   },
   {
     internalId: 402105,
+    wowheadId: 19375,
     name: "Mish'undare, Circlet of the Mind Flayer",
     slot: "head",
     quality: 4,
     type: "Cloth",
     minLevel: 60,
     itemLevel: 76,
-    iconCode: "inv_crown_01",
+    iconCode: "inv_helmet_52",
     sourceBosses: [BOSS.NEFARIAN],
     allowedClasses: ["Mage", "Warlock", "Priest"],
     stats: { intellect: 28, spirit: 12, stamina: 18 },

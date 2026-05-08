@@ -1,3 +1,8 @@
+import {
+  getRaidLockoutKey,
+  getRaidResetWindow,
+} from "../raids/raidLockouts";
+
 export const CALENDAR_DAY_MS = 10 * 60 * 1000;
 export const CALENDAR_MATERIALIZE_HORIZON_DAYS = 60;
 export const CALENDAR_SERIES_DURATION_OPTIONS = Object.freeze([4, 8]);
@@ -212,6 +217,8 @@ export const normalizeCalendarState = (rawState, fallbackEpochGameTimeMs = Date.
           registrations: normalizeIdList(event?.registrations),
           approvedRosterIds: normalizeIdList(event?.approvedRosterIds),
           benchedIds: normalizeIdList(event?.benchedIds),
+          rosterLocked: event?.rosterLocked === true,
+          lockedRosterIds: normalizeIdList(event?.lockedRosterIds),
           createdAtDayIndex: Math.max(0, Math.floor(Number(event?.createdAtDayIndex) || 0)),
           seriesId: event?.seriesId ? String(event.seriesId) : null,
           runningMissionInstanceId: event?.runningMissionInstanceId || null,
@@ -403,11 +410,68 @@ export const buildCalendarEvent = ({
   registrations: [],
   approvedRosterIds: [],
   benchedIds: [],
+  rosterLocked: false,
+  lockedRosterIds: [],
   createdAtDayIndex: Math.max(0, Math.floor(Number(createdAtDayIndex) || 0)),
   seriesId,
   runningMissionInstanceId: null,
   completedAtDayIndex: null,
 });
+
+const getCalendarRaidReservationKey = ({ event, mission }) => {
+  if (mission?.isRaid !== true || !event) return null;
+  const raidKey = getRaidLockoutKey(mission);
+  if (!raidKey) return null;
+  const resetWindow = getRaidResetWindow(mission, event.scheduledDayIndex);
+  return `${raidKey}:${resetWindow.resetStartDayIndex}`;
+};
+
+const buildLockedCalendarRaidReservations = ({ events, missionList }) => {
+  const reservations = new Map();
+  (Array.isArray(events) ? events : []).forEach((event) => {
+    if (event?.rosterLocked !== true) return;
+    if (
+      event.status !== CALENDAR_STATUS.SCHEDULED &&
+      event.status !== CALENDAR_STATUS.READY
+    ) {
+      return;
+    }
+    const mission = getMissionById(missionList, event.missionId);
+    const reservationKey = getCalendarRaidReservationKey({ event, mission });
+    if (!reservationKey) return;
+    const memberIds = normalizeIdList(event.lockedRosterIds || event.approvedRosterIds);
+    if (memberIds.length === 0) return;
+    if (!reservations.has(reservationKey)) reservations.set(reservationKey, new Map());
+    const reservation = reservations.get(reservationKey);
+    memberIds.forEach((memberId) => {
+      if (!reservation.has(memberId)) reservation.set(memberId, event.id);
+    });
+  });
+  return reservations;
+};
+
+const buildLockedCalendarDayReservations = (events) => {
+  const reservations = new Map();
+  (Array.isArray(events) ? events : []).forEach((event) => {
+    if (event?.rosterLocked !== true) return;
+    if (
+      event.status !== CALENDAR_STATUS.SCHEDULED &&
+      event.status !== CALENDAR_STATUS.READY
+    ) {
+      return;
+    }
+    const memberIds = normalizeIdList(event.lockedRosterIds || event.approvedRosterIds);
+    if (memberIds.length === 0) return;
+    if (!reservations.has(event.scheduledDayIndex)) {
+      reservations.set(event.scheduledDayIndex, new Map());
+    }
+    const reservation = reservations.get(event.scheduledDayIndex);
+    memberIds.forEach((memberId) => {
+      if (!reservation.has(memberId)) reservation.set(memberId, event.id);
+    });
+  });
+  return reservations;
+};
 
 export const buildCalendarSeries = ({
   id,
@@ -515,9 +579,22 @@ export const refreshCalendarState = ({
     currentDayIndex,
     createId,
   });
+  const safeCurrentDayIndex = Math.max(0, Math.floor(Number(currentDayIndex) || 0));
+  const activeCalendarEvents = materialized.calendarEvents.filter(
+    (event) =>
+      event.scheduledDayIndex >= safeCurrentDayIndex ||
+      (event.status !== CALENDAR_STATUS.COMPLETED &&
+        event.status !== CALENDAR_STATUS.CANCELLED),
+  );
   const newlyReadyEvents = [];
-  const calendarDayCommitments = new Map();
-  const nextEvents = materialized.calendarEvents.map((event) => {
+  const lockedRaidReservations = buildLockedCalendarRaidReservations({
+    events: activeCalendarEvents,
+    missionList,
+  });
+  const lockedDayReservations = buildLockedCalendarDayReservations(
+    activeCalendarEvents,
+  );
+  const nextEvents = activeCalendarEvents.map((event) => {
     if (
       event.status !== CALENDAR_STATUS.SCHEDULED &&
       event.status !== CALENDAR_STATUS.READY
@@ -526,27 +603,44 @@ export const refreshCalendarState = ({
     }
 
     const mission = getMissionById(missionList, event.missionId);
+    if (event.rosterLocked) {
+      const lockedRosterIds = normalizeIdList(event.lockedRosterIds || event.approvedRosterIds);
+      const shouldBecomeReady =
+        event.status === CALENDAR_STATUS.SCHEDULED &&
+        event.scheduledDayIndex <= currentDayIndex;
+      const nextEvent = {
+        ...event,
+        status: shouldBecomeReady ? CALENDAR_STATUS.READY : event.status,
+        registrations: lockedRosterIds,
+        approvedRosterIds: lockedRosterIds,
+        benchedIds: [],
+        lockedRosterIds,
+      };
+      if (shouldBecomeReady) newlyReadyEvents.push(nextEvent);
+      return nextEvent;
+    }
+    const reservationKey = getCalendarRaidReservationKey({ event, mission });
+    const reservedRaidMemberIds = lockedRaidReservations.get(reservationKey) || new Map();
+    const reservedDayMemberIds = lockedDayReservations.get(event.scheduledDayIndex) || new Map();
     const registrations = getCalendarEventSignups({
       event,
       missionList,
       roster,
       activeMissions,
       getRaidLockoutStatus,
-      currentDayIndex,
+      currentDayIndex: event.scheduledDayIndex,
     }).filter(
       (id) =>
-        !(
-          calendarDayCommitments.get(event.scheduledDayIndex) || new Set()
-        ).has(id),
+        (reservedDayMemberIds.get(id) === undefined ||
+          reservedDayMemberIds.get(id) === event.id) &&
+        (reservedRaidMemberIds.get(id) === undefined ||
+          reservedRaidMemberIds.get(id) === event.id),
     );
     const approvedRosterIds =
       event.approvedRosterIds.length > 0
         ? event.approvedRosterIds.filter((id) => registrations.includes(id))
         : suggestCalendarRoster({ mission, roster, signupIds: registrations });
     const benchedIds = registrations.filter((id) => !approvedRosterIds.includes(id));
-    const committedIds = calendarDayCommitments.get(event.scheduledDayIndex) || new Set();
-    registrations.forEach((id) => committedIds.add(id));
-    calendarDayCommitments.set(event.scheduledDayIndex, committedIds);
     const shouldBecomeReady =
       event.status === CALENDAR_STATUS.SCHEDULED &&
       event.scheduledDayIndex <= currentDayIndex;

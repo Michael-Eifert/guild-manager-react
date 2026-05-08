@@ -582,6 +582,64 @@ describe("calendar logic", () => {
     );
   });
 
+  it("cleans completed and cancelled calendar events after their scheduled day", () => {
+    const state = {
+      ...createInitialCalendarState(0),
+      calendarEvents: [
+        {
+          ...buildCalendarEvent({
+            id: "completed-old",
+            title: "Old Complete",
+            missionId: 62,
+            scheduledDayIndex: 1,
+            createdAtDayIndex: 0,
+          }),
+          status: CALENDAR_STATUS.COMPLETED,
+        },
+        {
+          ...buildCalendarEvent({
+            id: "cancelled-old",
+            title: "Old Cancelled",
+            missionId: 62,
+            scheduledDayIndex: 1,
+            createdAtDayIndex: 0,
+          }),
+          status: CALENDAR_STATUS.CANCELLED,
+        },
+        {
+          ...buildCalendarEvent({
+            id: "completed-today",
+            title: "Today Complete",
+            missionId: 62,
+            scheduledDayIndex: 2,
+            createdAtDayIndex: 0,
+          }),
+          status: CALENDAR_STATUS.COMPLETED,
+        },
+        buildCalendarEvent({
+          id: "scheduled-future",
+          title: "Future Raid",
+          missionId: 62,
+          scheduledDayIndex: 3,
+          createdAtDayIndex: 0,
+        }),
+      ],
+    };
+    const result = refreshCalendarState({
+      state,
+      currentDayIndex: 2,
+      roster: [],
+      activeMissions: [],
+      missionList: [{ id: 62, name: "Molten Core", isRaid: true }],
+      createId: () => "new-id",
+    });
+
+    expect(result.state.calendarEvents.map((event) => event.id)).toEqual([
+      "completed-today",
+      "scheduled-future",
+    ]);
+  });
+
   it("preempts dungeon missions that contain raid members", () => {
     const result = getDungeonMissionPreemption({
       activeMissions: [
@@ -675,7 +733,7 @@ describe("calendar logic", () => {
     expect(result.newlyReadyEvents).toHaveLength(1);
   });
 
-  it("keeps characters from auto-signing more than one raid on the same day", () => {
+  it("keeps unlocked calendar events open while locked groups reserve same-day characters", () => {
     const mission = {
       id: 62,
       name: "Molten Core",
@@ -717,7 +775,35 @@ describe("calendar logic", () => {
     });
 
     expect(result.state.calendarEvents[0].registrations).toEqual(["tank", "dps"]);
-    expect(result.state.calendarEvents[1].registrations).toEqual([]);
+    expect(result.state.calendarEvents[1].registrations).toEqual(["tank", "dps"]);
+
+    const lockedState = {
+      ...state,
+      calendarEvents: [
+        {
+          ...state.calendarEvents[0],
+          rosterLocked: true,
+          lockedRosterIds: ["tank", "dps"],
+          registrations: ["tank", "dps"],
+          approvedRosterIds: ["tank", "dps"],
+        },
+        state.calendarEvents[1],
+      ],
+    };
+    const lockedResult = refreshCalendarState({
+      state: lockedState,
+      currentDayIndex: 2,
+      roster,
+      activeMissions: [],
+      missionList: [mission],
+      createId: () => "new-id",
+    });
+
+    expect(lockedResult.state.calendarEvents[0].approvedRosterIds).toEqual([
+      "tank",
+      "dps",
+    ]);
+    expect(lockedResult.state.calendarEvents[1].registrations).toEqual([]);
   });
 
   it("excludes signups when a raid is completed until reset", () => {
@@ -766,6 +852,54 @@ describe("calendar logic", () => {
     });
 
     expect(result.state.calendarEvents[0].registrations).toEqual([]);
+  });
+
+  it("allows raid calendar signups again on the scheduled reset day", () => {
+    const mission = {
+      id: 63,
+      name: "Zul'Gurub",
+      isRaid: true,
+      entryLevel: 58,
+      requiredPartySize: 2,
+      raidReset: { type: "interval", intervalDays: 3, anchorDayIndex: 0 },
+    };
+    const state = {
+      ...createInitialCalendarState(0),
+      calendarEvents: [
+        buildCalendarEvent({
+          id: "event-reset",
+          title: "ZG Reset Raid",
+          missionId: 63,
+          scheduledDayIndex: 3,
+          createdAtDayIndex: 0,
+        }),
+      ],
+    };
+    const completedLockouts = updateRaidLockoutProgress({
+      raidLockouts: {},
+      mission,
+      currentDayIndex: 1,
+      memberIds: ["hero"],
+      clearedSteps: 9,
+      totalBosses: 9,
+    });
+    const result = refreshCalendarState({
+      state,
+      currentDayIndex: 2,
+      roster: [{ id: "hero", name: "Hero", role: "DPS", level: 60 }],
+      activeMissions: [],
+      missionList: [mission],
+      createId: () => "new-id",
+      getRaidLockoutStatus: ({ mission: raidMission, currentDayIndex, memberIds }) =>
+        getRaidLockoutStatus({
+          raidLockouts: completedLockouts,
+          mission: raidMission,
+          currentDayIndex,
+          memberIds,
+        }),
+    });
+
+    expect(result.state.calendarEvents[0].registrations).toEqual(["hero"]);
   });
 });
 
@@ -1237,7 +1371,9 @@ describe("Tier 2 raid integration", () => {
     expect(blackwingLairMission.isRaid).toBe(true);
     expect(blackwingLairMission.requiredPartySize).toBe(40);
     expect(blackwingLairMission.baseFailChance).toBe(48);
-    expect(blackwingLairMission.requiresKey).toBe(false);
+    expect(blackwingLairMission.requiresKey).toBe(true);
+    expect(blackwingLairMission.requiresKeyForAllMembers).toBe(true);
+    expect(blackwingLairMission.keyId).toBe("blackwing_lair_attunement");
     expect(getDungeonBossCount(blackwingLairMission)).toBe(8);
     expect(blackwingLairMission.raidReset).toMatchObject({
       type: "weekly",
@@ -1263,6 +1399,34 @@ describe("Tier 2 raid integration", () => {
       expect(item.minLevel).toBe(60);
       expect(item.sourceBosses.length).toBeGreaterThan(0);
     });
+  });
+
+  it("uses source item icons for supported Blackwing Lair drops", () => {
+    const expectedIcons = new Map([
+      ["Stormrage Chestguard", "inv_chest_chain_16"],
+      ["Dragonstalker's Breastplate", "inv_chest_chain_03"],
+      ["Netherwind Robes", "inv_chest_cloth_03"],
+      ["Judgment Breastplate", "inv_chest_plate03"],
+      ["Robes of Transcendence", "inv_chest_cloth_03"],
+      ["Bloodfang Chestpiece", "inv_chest_cloth_07"],
+      ["Breastplate of Ten Storms", "inv_chest_chain_11"],
+      ["Nemesis Robes", "inv_chest_leather_01"],
+      ["Breastplate of Wrath", "inv_chest_plate16"],
+      ["Chromatically Tempered Sword", "inv_sword_51"],
+      ["Mish'undare, Circlet of the Mind Flayer", "inv_helmet_52"],
+    ]);
+
+    expectedIcons.forEach((iconCode, itemName) => {
+      const item = blackwingLairItems.find((candidate) => candidate.name === itemName);
+      expect(item?.icon).toContain(`${iconCode}.jpg`);
+    });
+
+    const supportedTierTwoIcons = new Set(
+      blackwingLairItems
+        .filter((item) => String(item.setId || "").startsWith("t2_"))
+        .map((item) => item.icon),
+    );
+    expect(supportedTierTwoIcons.size).toBeGreaterThan(10);
   });
 });
 
@@ -1504,7 +1668,8 @@ describe("Lower Blackrock Spire integration", () => {
   it("adds LBRS as an unlocked late-game dungeon with harder tuning", () => {
     expect(lbrsMission).toBeTruthy();
     expect(lbrsMission.name).toBe("Blackrock Spire");
-    expect(lbrsMission.requiredPartySize).toBe(5);
+    expect(lbrsMission.minPartySize).toBe(5);
+    expect(lbrsMission.requiredPartySize).toBe(10);
     expect(lbrsMission.requiresKey).toBe(false);
     expect(lbrsMission.rewardKeys).toEqual(["seal_of_ascension"]);
     expect(lbrsMission.baseFailChance).toBe(30);
@@ -1578,6 +1743,7 @@ describe("Upper Blackrock Spire integration", () => {
     expect(ubrsMission.requiresKeyForAllMembers).toBe(false);
     expect(ubrsMission.keyId).toBe("seal_of_ascension");
     expect(ubrsMission.baseFailChance).toBe(30);
+    expect(ubrsMission.rewardKeys).toEqual(["blackwing_lair_attunement"]);
     expect(ubrsMission.dungeonBosses).toEqual([
       "Pyroguard Emberseer",
       "Solakar Flamewreath",
@@ -1618,7 +1784,35 @@ describe("Upper Blackrock Spire integration", () => {
     });
 
     expect(result.canEnter).toBe(true);
-    expect(result.unlockedDuringSequence).toEqual(["seal_of_ascension"]);
+    expect(result.unlockedDuringSequence).toEqual([
+      "seal_of_ascension",
+      "blackwing_lair_attunement",
+    ]);
+  });
+
+  it("requires every Blackwing Lair raider to have the Orb of Ascension", () => {
+    const blackwingLairMission = INITIAL_MISSIONS.find(
+      (mission) => mission.name === "Blackwing Lair",
+    );
+    const result = evaluateMissionKeyAccess({
+      missions: [blackwingLairMission],
+      partyMembers: [
+        { id: "attuned", keys: ["blackwing_lair_attunement"] },
+        { id: "missing", keys: [] },
+      ],
+    });
+    const attunedResult = evaluateMissionKeyAccess({
+      missions: [blackwingLairMission],
+      partyMembers: [
+        { id: "tank", keys: ["blackwing_lair_attunement"] },
+        { id: "dps", keys: ["blackwing_lair_attunement"] },
+      ],
+    });
+
+    expect(result.canEnter).toBe(false);
+    expect(result.requiresAllMembers).toBe(true);
+    expect(result.missingKeyIds).toEqual(["blackwing_lair_attunement"]);
+    expect(attunedResult.canEnter).toBe(true);
   });
 
   it("converts active UBRS manifest entries into valid wing-specific items", () => {

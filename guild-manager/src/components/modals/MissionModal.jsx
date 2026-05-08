@@ -109,9 +109,7 @@ const getMissionPartySize = (mission) =>
   Math.max(1, Number(mission?.requiredPartySize) || (mission?.isRaid ? 40 : 5));
 
 const getMissionMinPartySize = (mission) =>
-  mission?.isRaid
-    ? Math.max(1, Number(mission?.minPartySize) || 5)
-    : 1;
+  Math.max(1, Number(mission?.minPartySize) || (mission?.isRaid ? 5 : 1));
 
 const formatBonusDropChanceLabel = (rawChance) => {
   const numericChance = Number(rawChance);
@@ -710,6 +708,7 @@ const MissionModal = ({
   const selectedMissionMissingKeyLabels = selectedMissionKeyAccess.missingKeyIds.map(
     (keyId) => getKeyLabel(keyId) || keyId,
   );
+  const selectedMissionRewardKeyIds = getMissionRewardKeys(activePrepMission);
   const selectedMissionUnlockedRequiredKeyLabels =
     selectedMissionKeyAccess.unlockedRequiredKeyIds.map(
       (keyId) => getKeyLabel(keyId) || keyId,
@@ -2455,6 +2454,19 @@ const MissionModal = ({
                 ownedKeys.some((keyId) =>
                   selectedMissionRequiredKeyIds.includes(keyId),
                 );
+              const hasRewardKey =
+                selectedMissionRewardKeyIds.length > 0 &&
+                ownedKeys.some((keyId) =>
+                  selectedMissionRewardKeyIds.includes(keyId),
+                );
+              const heldRelevantKeyLabels = [
+                ...new Set(
+                  [...selectedMissionRequiredKeyIds, ...selectedMissionRewardKeyIds]
+                    .filter((keyId) => ownedKeys.includes(keyId))
+                    .map((keyId) => getKeyLabel(keyId) || keyId),
+                ),
+              ];
+              const isKeyHolder = hasRequiredKey || hasRewardKey;
               const hasAllRequiredKeys = memberHasAllRequiredKeys(char);
               const keyLockedForMember =
                 selectedMissionRequiredKeyIds.length > 0 &&
@@ -2490,7 +2502,7 @@ const MissionModal = ({
                 <div
                   key={char.id}
                   onClick={() => canSelectMember && toggleMember(char.id)}
-                  className={`p-3 rounded flex items-center gap-3 transition-all cursor-pointer border ${!isEligible ? "opacity-40 cursor-not-allowed bg-black border-transparent" : keyLockedForMember || raidLockedForMember ? "opacity-50 cursor-not-allowed bg-red-950/20 border-red-800/60" : isSelected ? "bg-green-900/30 border-green-500" : hasRequiredKey ? "bg-amber-950/20 border-amber-600 hover:bg-amber-900/20" : "bg-gray-700 border-gray-600 hover:bg-gray-600"}`}
+                  className={`p-3 rounded flex items-center gap-3 transition-all cursor-pointer border ${!isEligible ? "opacity-40 cursor-not-allowed bg-black border-transparent" : keyLockedForMember || raidLockedForMember ? "opacity-50 cursor-not-allowed bg-red-950/20 border-red-800/60" : isSelected ? "bg-green-900/30 border-green-500" : isKeyHolder ? "bg-amber-950/20 border-amber-600 hover:bg-amber-900/20" : "bg-gray-700 border-gray-600 hover:bg-gray-600"}`}
                 >
                   <img
                     src={getRacePortraitUrl(char.race, char.gender)}
@@ -2520,9 +2532,12 @@ const MissionModal = ({
                       )}
                       <span>{char.charClass}</span>
                     </div>
-                    {hasRequiredKey && (
+                    {isKeyHolder && (
                       <div className="text-[10px] text-amber-300 uppercase tracking-wide font-bold mt-0.5">
                         🔑 Key Holder
+                        {heldRelevantKeyLabels.length > 0
+                          ? `: ${heldRelevantKeyLabels.join(" / ")}`
+                          : ""}
                       </div>
                     )}
                     {keyLockedForMember && (

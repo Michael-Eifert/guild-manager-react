@@ -100,6 +100,12 @@ export const KEY_DEFINITIONS = Object.freeze({
     icon: wowItemIcon("INV_Jewelry_Ring_15"),
     sourceQuest: "Lower Blackrock Spire - Seal of Ascension",
   },
+  blackwing_lair_attunement: {
+    id: "blackwing_lair_attunement",
+    name: "Orb of Ascension",
+    icon: wowItemIcon("INV_Misc_Orb_05"),
+    sourceQuest: "Upper Blackrock Spire - Blackhand's Command",
+  },
 });
 
 export { DB_CLASSES } from './data/classes';

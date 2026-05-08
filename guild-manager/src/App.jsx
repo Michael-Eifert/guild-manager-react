@@ -1787,11 +1787,13 @@ const App = () => {
         activeMissions: currentMissions,
         missionList: missionListRef.current,
         createId,
-        getRaidLockoutStatus: ({ mission, memberIds }) =>
+        getRaidLockoutStatus: ({ mission, memberIds, currentDayIndex: statusDayIndex }) =>
           getRaidLockoutStatus({
             raidLockouts: raidLockoutsRef.current,
             mission,
-            currentDayIndex: calendarDayIndex,
+            currentDayIndex: Number.isFinite(Number(statusDayIndex))
+              ? Math.floor(Number(statusDayIndex))
+              : calendarDayIndex,
             memberIds,
           }),
       });
@@ -1821,6 +1823,7 @@ const App = () => {
           (event) =>
             event.status === CALENDAR_STATUS.READY &&
             event.autoStart !== false &&
+            event.rosterLocked === true &&
             event.scheduledDayIndex === calendarDayIndex &&
             getCalendarTimeOfDayOption(event.scheduledTimeOfDay).dayProgress <=
               calendarDayProgress &&
@@ -2616,13 +2619,14 @@ const App = () => {
         1,
         Number(quest?.requiredPartySize) || (quest?.isRaid ? 40 : 5),
       );
-      const minimumPartySize = quest?.isRaid
-        ? Math.max(1, Number(quest?.minPartySize) || 5)
-        : 1;
-      if (quest?.isRaid && memberIds.length < minimumPartySize) {
+      const minimumPartySize = Math.max(
+        1,
+        Number(quest?.minPartySize) || (quest?.isRaid ? 5 : 1),
+      );
+      if (memberIds.length < minimumPartySize) {
         pushNotification({
           type: "error",
-          title: "Raid Setup Incomplete",
+          title: quest?.isRaid ? "Raid Setup Incomplete" : "Dungeon Group Incomplete",
           message: `${quest.name} requires at least ${minimumPartySize} heroes (recommended: ${recommendedPartySize}).`,
         });
         return false;
@@ -2867,11 +2871,13 @@ const App = () => {
         activeMissions: missionsRef.current,
         missionList: missionListRef.current,
         createId,
-        getRaidLockoutStatus: ({ mission, memberIds }) =>
+        getRaidLockoutStatus: ({ mission, memberIds, currentDayIndex: statusDayIndex }) =>
           getRaidLockoutStatus({
             raidLockouts: raidLockoutsRef.current,
             mission,
-            currentDayIndex,
+            currentDayIndex: Number.isFinite(Number(statusDayIndex))
+              ? Math.floor(Number(statusDayIndex))
+              : currentDayIndex,
             memberIds,
           }),
       });
@@ -2957,6 +2963,7 @@ const App = () => {
   const handleUpdateCalendarEventRoster = useCallback(
     (eventId, approvedRosterIds) => {
       updateCalendarEvent(eventId, (event) => {
+        if (event.rosterLocked) return event;
         const approved = [
           ...new Set(
             (Array.isArray(approvedRosterIds) ? approvedRosterIds : [])
@@ -2974,6 +2981,50 @@ const App = () => {
       });
     },
     [updateCalendarEvent],
+  );
+
+  const handleLockCalendarEventRoster = useCallback(
+    (eventId, shouldLock) => {
+      const currentState = calendarStateRef.current;
+      const nextEvents = currentState.calendarEvents.map((event) => {
+        if (event.id !== eventId) return event;
+        if (
+          event.status === CALENDAR_STATUS.RUNNING ||
+          event.status === CALENDAR_STATUS.COMPLETED ||
+          event.status === CALENDAR_STATUS.CANCELLED
+        ) {
+          return event;
+        }
+        const lockedRosterIds = [
+          ...new Set(
+            (Array.isArray(event.approvedRosterIds) ? event.approvedRosterIds : [])
+              .map((id) => String(id || "").trim())
+              .filter(Boolean),
+          ),
+        ];
+        if (shouldLock && lockedRosterIds.length === 0) return event;
+        return {
+          ...event,
+          rosterLocked: Boolean(shouldLock),
+          lockedRosterIds: shouldLock ? lockedRosterIds : [],
+          registrations: shouldLock ? lockedRosterIds : event.registrations,
+          approvedRosterIds: shouldLock ? lockedRosterIds : event.approvedRosterIds,
+          benchedIds: shouldLock ? [] : event.benchedIds,
+        };
+      });
+      refreshCalendarStateNow({
+        ...currentState,
+        calendarEvents: nextEvents,
+      });
+      pushNotification({
+        type: "info",
+        title: shouldLock ? "Raid Group Locked" : "Raid Group Unlocked",
+        message: shouldLock
+          ? "This roster is reserved for the selected raid lockout."
+          : "Registration is open again for this raid event.",
+      });
+    },
+    [pushNotification, refreshCalendarStateNow],
   );
 
   const handleCancelCalendarEvent = useCallback(
@@ -2995,7 +3046,7 @@ const App = () => {
     const event = calendarStateRef.current.calendarEvents.find(
       (entry) => entry.id === eventId,
     );
-    if (!event || event.status !== CALENDAR_STATUS.READY) return false;
+    if (!event || event.status !== CALENDAR_STATUS.READY || event.rosterLocked !== true) return false;
     if (calendarEventStartLocksRef.current.has(eventId)) return false;
 
     const mission = missionListRef.current.find(
@@ -4077,6 +4128,7 @@ const App = () => {
             onCreateEvent={handleCreateCalendarEvent}
             onCreateSeries={handleCreateCalendarSeries}
             onUpdateEventRoster={handleUpdateCalendarEventRoster}
+            onLockEventRoster={handleLockCalendarEventRoster}
             onCancelEvent={handleCancelCalendarEvent}
             onCancelSeries={handleCancelCalendarSeries}
             onStartEvent={handleStartCalendarEvent}
