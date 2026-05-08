@@ -14,8 +14,21 @@ import {
   PROF_ACTIONS,
   GUILD_FACTION,
   GUILD_FACTION_OPTIONS,
-  GUILD_SERVER,
   GUILD_SERVER_OPTIONS,
+  GAMEPLAY_TUNING,
+  GUILD_ACTIVITY_MODES,
+  MEMBER_RANKING_MODES,
+  GUILD_MEMBER_SORT,
+  GUILD_MEMBER_SORT_OPTIONS,
+  GUILD_FOCUS,
+  GUILD_FOCUS_OPTIONS,
+  DEFAULT_GUILD_SETUP,
+  GUILD_STARTING_CONFIG,
+  RECRUITMENT_CONFIG,
+  WORLD_DROP_CONFIG,
+  ZONE_TUNING,
+  DEFAULT_DUNGEON_LOOT_TABLE,
+  FACTION_EMBLEM_ICON,
 } from "./constants";
 import {
   getReqExp,
@@ -103,6 +116,7 @@ import {
   getCalendarTimeOfDayOption,
   buildCalendarEvent,
   buildCalendarSeries,
+  cancelCalendarSeriesEvents,
   createInitialCalendarState,
   getDungeonMissionPreemption,
   formatCalendarDate,
@@ -156,27 +170,33 @@ const callGemini = async (prompt, isJson = false) => {
   }
 };
 
-const FAILED_MISSION_EXP_FACTOR = 0.2;
-const LEVELING_TICK_EXP_MULTIPLIER = 1;
-const ENABLE_ZONE_QUESTING = true;
-const SHOW_LEGACY_QUESTS = false;
-const GUILD_ACTIVITY_MODES = ["Leveling", "Professions", "Auto"];
-const MEMBER_RANKING_MODES = {
-  STANDARD: "standard",
-  EQUIP_CHECK: "equipCheck",
-};
-const GUILD_MEMBER_SORT = {
-  LEVEL_DESC: "levelDesc",
-  LEVEL_ASC: "levelAsc",
-  ILVL_DESC: "ilvlDesc",
-  ILVL_ASC: "ilvlAsc",
-};
-const GUILD_MEMBER_SORT_OPTIONS = [
-  { value: GUILD_MEMBER_SORT.LEVEL_DESC, label: "Level Desc" },
-  { value: GUILD_MEMBER_SORT.LEVEL_ASC, label: "Level Asc" },
-  { value: GUILD_MEMBER_SORT.ILVL_DESC, label: "iLvl Desc" },
-  { value: GUILD_MEMBER_SORT.ILVL_ASC, label: "iLvl Asc" },
-];
+const {
+  FAILED_MISSION_EXP_FACTOR,
+  LEVELING_TICK_EXP_MULTIPLIER,
+  ENABLE_ZONE_QUESTING,
+  SHOW_LEGACY_QUESTS,
+} = GAMEPLAY_TUNING;
+const {
+  MEMBER_COUNT: STARTING_GUILD_MEMBERS,
+  ROLE_PLAN: STARTING_GUILD_ROLE_PLAN,
+  GOLD: STARTING_GUILD_GOLD,
+} = GUILD_STARTING_CONFIG;
+const {
+  SCOUT_COST_GOLD: RECRUIT_SCOUT_COST_GOLD,
+  RECRUIT_COST_GOLD,
+} = RECRUITMENT_CONFIG;
+const {
+  COMMON_DROP_CHANCE: WORLD_TICK_COMMON_DROP_CHANCE,
+  UNCOMMON_DROP_CHANCE: WORLD_TICK_UNCOMMON_DROP_CHANCE,
+  EPIC_DROP_CHANCE: WORLD_TICK_EPIC_DROP_CHANCE,
+  EPIC_MIN_LEVEL: WORLD_TICK_EPIC_MIN_LEVEL,
+} = WORLD_DROP_CONFIG;
+const {
+  STARTER_DURATION_VARIANCE_MIN: STARTER_ZONE_DURATION_VARIANCE_MIN,
+  STARTER_DURATION_VARIANCE_MAX: STARTER_ZONE_DURATION_VARIANCE_MAX,
+  OVERLEVEL_MOVE_THRESHOLD_MIN: ZONE_OVERLEVEL_MOVE_THRESHOLD_MIN,
+  OVERLEVEL_MOVE_THRESHOLD_MAX: ZONE_OVERLEVEL_MOVE_THRESHOLD_MAX,
+} = ZONE_TUNING;
 const normalizeGuildMemberSearch = (value) =>
   String(value || "")
     .trim()
@@ -218,57 +238,6 @@ const getGuildMemberSearchScore = (member, searchTerm) => {
   ).length;
   return sharedLetters > 0 ? sharedLetters * 20 : 0;
 };
-const GUILD_FOCUS = {
-  LEVELING: "Leveling",
-  DUNGEONS: "Dungeons",
-  SOCIAL: "Social",
-};
-const GUILD_FOCUS_OPTIONS = Object.values(GUILD_FOCUS);
-const DEFAULT_GUILD_SETUP = {
-  name: "",
-  faction: GUILD_FACTION.ALLIANCE,
-  server: GUILD_SERVER.EVERLOOK,
-  serverStyle:
-    GUILD_SERVER_OPTIONS.find(
-      (option) => option.value === GUILD_SERVER.EVERLOOK,
-    )?.style || "PvE",
-  focus: GUILD_FOCUS.LEVELING,
-  hasStarted: false,
-};
-const DEFAULT_DUNGEON_LOOT_TABLE = {
-  boss: [
-    { quality: 2, chance: 80 },
-    { quality: 3, chance: 20 },
-  ],
-  endboss: [
-    { quality: 3, chance: 80 },
-    { quality: 2, chance: 20 },
-  ],
-};
-const STARTING_GUILD_MEMBERS = 5;
-const STARTING_GUILD_ROLE_PLAN = Object.freeze([
-  "Tank",
-  "DPS",
-  "DPS",
-  "DPS",
-  "Healer",
-]);
-const STARTING_GUILD_GOLD = 10;
-const RECRUIT_SCOUT_COST_GOLD = 10;
-const RECRUIT_COST_GOLD = 5;
-const WORLD_TICK_COMMON_DROP_CHANCE = 0.08;
-const WORLD_TICK_UNCOMMON_DROP_CHANCE = 0.01;
-const WORLD_TICK_EPIC_DROP_CHANCE = 0.0001; // 0.01%
-const WORLD_TICK_EPIC_MIN_LEVEL = 40;
-const STARTER_ZONE_DURATION_VARIANCE_MIN = 0.9;
-const STARTER_ZONE_DURATION_VARIANCE_MAX = 1.1;
-const ZONE_OVERLEVEL_MOVE_THRESHOLD_MIN = 2;
-const ZONE_OVERLEVEL_MOVE_THRESHOLD_MAX = 4;
-const FACTION_EMBLEM_ICON = {
-  [GUILD_FACTION.ALLIANCE]: "inv_bannerpvp_02",
-  [GUILD_FACTION.HORDE]: "inv_bannerpvp_01",
-};
-
 const getLevelingTargetSecondsPerLevel = (level) => {
   const safeLevel = Math.max(1, Number(level) || 1);
   if (safeLevel <= 5) return 10;
@@ -1298,15 +1267,6 @@ const App = () => {
       ),
     [],
   );
-  const normalizeCurrentRaidLockouts = useCallback(() => {
-    const normalized = normalizeRaidLockouts(
-      raidLockoutsRef.current,
-      getCurrentCalendarDayIndex(),
-    );
-    raidLockoutsRef.current = normalized;
-    setRaidLockouts(normalized);
-    return normalized;
-  }, [getCurrentCalendarDayIndex]);
   const factionMissionIconUrl = getWowIconUrl(
     FACTION_EMBLEM_ICON[guildSetup.faction] ||
       FACTION_EMBLEM_ICON[GUILD_FACTION.ALLIANCE],
@@ -1631,6 +1591,7 @@ const App = () => {
           raidLockouts: raidLockoutsRef.current,
           mission: quest,
           currentDayIndex: getCurrentCalendarDayIndex(),
+          memberIds: ids,
         });
         const bossCount = getDungeonBossCount(quest);
         const safeResumeSteps = Math.max(
@@ -2119,11 +2080,12 @@ const App = () => {
         activeMissions: currentMissions,
         missionList: missionListRef.current,
         createId,
-        getRaidLockoutStatus: ({ mission }) =>
+        getRaidLockoutStatus: ({ mission, memberIds }) =>
           getRaidLockoutStatus({
             raidLockouts: raidLockoutsRef.current,
             mission,
             currentDayIndex: calendarDayIndex,
+            memberIds,
           }),
       });
       if (
@@ -3026,12 +2988,25 @@ const App = () => {
           raidLockouts: raidLockoutsRef.current,
           mission: quest,
           currentDayIndex: getCurrentCalendarDayIndex(),
+          memberIds,
         });
+        if (raidStatus.hasLockoutConflict) {
+          pushNotification({
+            type: "error",
+            title: "Raid ID Conflict",
+            message: `${quest.name} has selected heroes saved to different raid IDs.`,
+          });
+          return false;
+        }
         if (raidStatus.isCompletedLocked) {
+          const lockedNames = rosterSnapshot
+            .filter((member) => raidStatus.completedMemberIds.includes(member.id))
+            .map((member) => member.name)
+            .join(", ");
           pushNotification({
             type: "error",
             title: "Raid Locked",
-            message: `${quest.name} is cleared until day ${raidStatus.resetWindow.nextResetDayIndex}.`,
+            message: `${lockedNames || quest.name} cleared this lockout until day ${raidStatus.resetWindow.nextResetDayIndex}.`,
           });
           return false;
         }
@@ -3185,11 +3160,12 @@ const App = () => {
         activeMissions: missionsRef.current,
         missionList: missionListRef.current,
         createId,
-        getRaidLockoutStatus: ({ mission }) =>
+        getRaidLockoutStatus: ({ mission, memberIds }) =>
           getRaidLockoutStatus({
             raidLockouts: raidLockoutsRef.current,
             mission,
             currentDayIndex,
+            memberIds,
           }),
       });
       commitCalendarState(refreshed.state);
@@ -3238,6 +3214,7 @@ const App = () => {
       startsOnDayIndex,
       seriesType,
       intervalDays,
+      durationWeeks,
     }) => {
       const mission = missionListRef.current.find(
         (entry) => String(entry?.id) === String(missionId),
@@ -3252,6 +3229,7 @@ const App = () => {
         startsOnDayIndex,
         seriesType,
         intervalDays,
+        durationWeeks,
       });
       refreshCalendarStateNow({
         ...calendarStateRef.current,
@@ -3263,7 +3241,7 @@ const App = () => {
         message:
           series.seriesType === "interval"
             ? `${series.title} repeats every ${series.intervalDays} days.`
-            : `${series.title} repeats on ${formatCalendarDate(series.startsOnDayIndex).split(",")[0]}.`,
+            : `${series.title} repeats on ${formatCalendarDate(series.startsOnDayIndex).split(",")[0]} for ${series.durationWeeks} weeks.`,
       });
     },
     [pushNotification, refreshCalendarStateNow],
@@ -3387,6 +3365,26 @@ const App = () => {
       startCalendarEventRef.current({ eventId, source: "manual" });
     },
     [],
+  );
+
+  const handleCancelCalendarSeries = useCallback(
+    (seriesId) => {
+      const nextState = cancelCalendarSeriesEvents({
+        state: calendarStateRef.current,
+        seriesId,
+        currentDayIndex: getCalendarDayIndex(
+          gameTimeRef.current,
+          calendarStateRef.current.calendarEpochGameTimeMs,
+        ),
+      });
+      commitCalendarState(nextState);
+      pushNotification({
+        type: "info",
+        title: "Raid Series Cancelled",
+        message: "Future scheduled events in this series have been cancelled.",
+      });
+    },
+    [commitCalendarState, pushNotification],
   );
   const handleManualFinish = (m) => {
     const now = gameTimeRef.current;
@@ -4373,6 +4371,7 @@ const App = () => {
             onCreateSeries={handleCreateCalendarSeries}
             onUpdateEventRoster={handleUpdateCalendarEventRoster}
             onCancelEvent={handleCancelCalendarEvent}
+            onCancelSeries={handleCancelCalendarSeries}
             onStartEvent={handleStartCalendarEvent}
           />
         )}

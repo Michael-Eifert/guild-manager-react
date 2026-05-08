@@ -2,6 +2,7 @@ import { useEffect, useMemo, useState } from "react";
 import { DB_CLASSES } from "../../constants";
 import {
   CALENDAR_MONTHS,
+  CALENDAR_SERIES_DURATION_OPTIONS,
   CALENDAR_SERIES_TYPE,
   CALENDAR_STATUS,
   CALENDAR_TIME_OF_DAY_OPTIONS,
@@ -44,6 +45,8 @@ const getEventStatusClass = (status) => {
 const getRaidResetShortLabel = (mission) => {
   if (mission?.name === "Molten Core") return "MC Reset";
   if (mission?.name === "Zul'Gurub") return "ZG Reset";
+  if (mission?.name === "Ruins of Ahn'Qiraj") return "AQ20 Reset";
+  if (mission?.name === "Temple of Ahn'Qiraj") return "AQ40 Reset";
   return `${mission?.name || "Raid"} Reset`;
 };
 
@@ -72,6 +75,7 @@ const CalendarModal = ({
   onCreateSeries,
   onUpdateEventRoster,
   onCancelEvent,
+  onCancelSeries,
   onStartEvent,
 }) => {
   const currentDate = getCalendarDate(currentDayIndex);
@@ -89,6 +93,7 @@ const CalendarModal = ({
   const [selectedMissionId, setSelectedMissionId] = useState(defaultMissionId);
   const [selectedWeekday, setSelectedWeekday] = useState(currentDate.weekdayIndex);
   const [selectedTimeOfDay, setSelectedTimeOfDay] = useState("evening");
+  const [selectedDurationWeeks, setSelectedDurationWeeks] = useState(8);
   const [eventTitle, setEventTitle] = useState("");
   const [selectedEventId, setSelectedEventId] = useState(null);
 
@@ -100,6 +105,7 @@ const CalendarModal = ({
     setSelectedMissionId(defaultMissionId);
     setSelectedWeekday(currentDate.weekdayIndex);
     setSelectedTimeOfDay("evening");
+    setSelectedDurationWeeks(8);
     setEventTitle("");
     setSelectedEventId(null);
   }, [
@@ -174,9 +180,23 @@ const CalendarModal = ({
   const visibleEvents = [...events]
     .filter((event) => event.scheduledDayIndex >= currentDayIndex - 7)
     .sort((left, right) => left.scheduledDayIndex - right.scheduledDayIndex);
+  const selectedDayEvents = [...(eventsByDay.get(selectedDayIndex) || [])].sort(
+    (left, right) =>
+      CALENDAR_TIME_OF_DAY_OPTIONS.findIndex(
+        (option) => option.value === left.scheduledTimeOfDay,
+      ) -
+        CALENDAR_TIME_OF_DAY_OPTIONS.findIndex(
+          (option) => option.value === right.scheduledTimeOfDay,
+        ),
+  );
+  const selectedDayResetLabels = raidResetLabelsByDay.get(selectedDayIndex) || [];
+  const selectedDayHasDetails =
+    selectedDayEvents.length > 0 || selectedDayResetLabels.length > 0;
   const selectedEvent =
-    events.find((event) => event.id === selectedEventId) || visibleEvents[0] || null;
-  const selectedCreateMission = missionLookup.get(String(selectedMissionId));
+    events.find((event) => event.id === selectedEventId) ||
+    selectedDayEvents[0] ||
+    visibleEvents[0] ||
+    null;
   const selectedEventMission = selectedEvent
     ? missionLookup.get(String(selectedEvent.missionId))
     : null;
@@ -210,6 +230,7 @@ const CalendarModal = ({
         raidLockouts,
         mission: selectedEventMission,
         currentDayIndex,
+        memberIds: selectedEvent?.approvedRosterIds || [],
       })
     : null;
 
@@ -255,6 +276,7 @@ const CalendarModal = ({
         ? CALENDAR_SERIES_TYPE.INTERVAL
         : CALENDAR_SERIES_TYPE.WEEKLY,
       intervalDays: isIntervalRaid ? mission.raidReset.intervalDays : undefined,
+      durationWeeks: selectedDurationWeeks,
       title:
         eventTitle.trim() ||
         (isIntervalRaid
@@ -333,7 +355,11 @@ const CalendarModal = ({
                 <button
                   key={day.dayIndex}
                   type="button"
-                  onClick={() => setSelectedDayIndex(day.dayIndex)}
+                  onClick={() => {
+                    setSelectedDayIndex(day.dayIndex);
+                    const firstEvent = (eventsByDay.get(day.dayIndex) || [])[0];
+                    if (firstEvent) setSelectedEventId(firstEvent.id);
+                  }}
                   className={`aspect-square rounded border p-1 text-left text-xs overflow-hidden ${
                     isSelected
                       ? "border-indigo-400 bg-indigo-950/50"
@@ -344,14 +370,6 @@ const CalendarModal = ({
                 >
                   <div className="font-bold text-gray-100">{day.dayOfMonth}</div>
                   <div className="space-y-0.5 mt-1">
-                    {dayResetLabels.slice(0, 2).map((label) => (
-                      <div
-                        key={`${day.dayIndex}-${label}`}
-                        className="truncate rounded border border-amber-700/70 bg-amber-950/40 px-1 text-[10px] font-bold text-amber-100"
-                      >
-                        {label}
-                      </div>
-                    ))}
                     {dayEvents.slice(0, 2).map((event) => (
                       <div
                         key={event.id}
@@ -360,6 +378,15 @@ const CalendarModal = ({
                         {event.title}
                       </div>
                     ))}
+                    {dayEvents.length < 2 &&
+                      dayResetLabels.slice(0, 2 - dayEvents.length).map((label) => (
+                        <div
+                          key={`${day.dayIndex}-${label}`}
+                          className="truncate rounded border border-amber-700/70 bg-amber-950/40 px-1 text-[10px] font-bold text-amber-100"
+                        >
+                          {label}
+                        </div>
+                      ))}
                     {dayEvents.length > 2 && (
                       <div className="text-[10px] text-gray-400">
                         +{dayEvents.length - 2}
@@ -441,6 +468,22 @@ const CalendarModal = ({
                   ))}
                 </select>
               </label>
+              <label className="text-xs text-gray-300">
+                <span className="block mb-1 text-gray-500 uppercase tracking-wide">Length</span>
+                <select
+                  value={selectedDurationWeeks}
+                  onChange={(event) =>
+                    setSelectedDurationWeeks(Number(event.target.value))
+                  }
+                  className="bg-gray-800 border border-gray-600 rounded px-2 py-2 text-gray-100"
+                >
+                  {CALENDAR_SERIES_DURATION_OPTIONS.map((weeks) => (
+                    <option key={weeks} value={weeks}>
+                      {weeks} weeks
+                    </option>
+                  ))}
+                </select>
+              </label>
               <button
                 type="button"
                 onClick={handleCreateSeries}
@@ -455,6 +498,62 @@ const CalendarModal = ({
                   : "Create Weekly"}
               </button>
             </div>
+          </div>
+
+          <div className="mt-4 rounded border border-gray-700 bg-black/20 p-3">
+            <div className="flex items-start justify-between gap-3">
+              <div>
+                <h3 className="text-sm font-bold text-gray-200 uppercase tracking-wide">
+                  Selected Day
+                </h3>
+                <div className="mt-1 text-xs text-cyan-200">
+                  {formatCalendarDate(selectedDayIndex)}
+                </div>
+              </div>
+              <div className="text-xs text-gray-500">
+                {selectedDayEvents.length} schedule
+                {selectedDayEvents.length === 1 ? "" : "s"}
+              </div>
+            </div>
+
+            {!selectedDayHasDetails ? (
+              <div className="mt-3 text-sm text-gray-500 italic">
+                No raids or resets are planned for this day.
+              </div>
+            ) : (
+              <div className="mt-3 space-y-2">
+                {selectedDayEvents.map((event) => (
+                  <button
+                    key={event.id}
+                    type="button"
+                    onClick={() => setSelectedEventId(event.id)}
+                    className={`w-full rounded border p-2 text-left bg-gray-800 hover:bg-gray-700 ${
+                      selectedEvent?.id === event.id
+                        ? "border-indigo-500"
+                        : "border-gray-700"
+                    }`}
+                  >
+                    <div className="flex items-center justify-between gap-2">
+                      <span className="font-bold text-gray-100">{event.title}</span>
+                      <span className={`text-[10px] uppercase ${getEventStatusClass(event.status)}`}>
+                        {event.status}
+                      </span>
+                    </div>
+                    <div className="text-xs text-gray-400">
+                      {getCalendarTimeOfDayOption(event.scheduledTimeOfDay).label}
+                    </div>
+                  </button>
+                ))}
+                {selectedDayResetLabels.map((label) => (
+                  <div
+                    key={`${selectedDayIndex}-${label}-detail`}
+                    className="rounded border border-amber-800/70 bg-amber-950/30 p-2 text-xs font-bold text-amber-100"
+                  >
+                    {label}
+                  </div>
+                ))}
+              </div>
+            )}
           </div>
         </div>
 
@@ -529,11 +628,14 @@ const CalendarModal = ({
               {selectedEventMission?.isRaid && (
                 <div className="mt-3 rounded border border-amber-900/60 bg-amber-950/20 p-2 text-xs text-amber-100/80">
                   {formatRaidResetSchedule(selectedEventMission)}
-                  {selectedEventLockoutStatus?.clearedSteps > 0
-                    ? ` - Saved ID: ${selectedEventLockoutStatus.clearedSteps}/${selectedEventLockoutStatus.totalBosses} bosses cleared`
+                  {selectedEventLockoutStatus?.lockout
+                    ? ` - ID ${selectedEventLockoutStatus.lockout.displayId}: ${selectedEventLockoutStatus.clearedSteps}/${selectedEventLockoutStatus.totalBosses} bosses cleared`
                     : ""}
                   {selectedEventLockoutStatus?.isCompletedLocked
                     ? ` - cleared until day ${selectedEventLockoutStatus.resetWindow.nextResetDayIndex}`
+                    : ""}
+                  {selectedEventLockoutStatus?.hasLockoutConflict
+                    ? " - conflicting raid IDs selected"
                     : ""}
                 </div>
               )}
@@ -557,9 +659,16 @@ const CalendarModal = ({
                   signupMembers.map((member) => {
                     const approved = selectedEvent.approvedRosterIds.includes(member.id);
                     const busy = activeMemberIds.has(member.id);
-                    const raidLocked = Boolean(
-                      selectedEventLockoutStatus?.isCompletedLocked,
-                    );
+                    const memberRaidStatus = selectedEventMission?.isRaid
+                      ? getRaidLockoutStatus({
+                          raidLockouts,
+                          mission: selectedEventMission,
+                          currentDayIndex,
+                          memberIds: [member.id],
+                        })
+                      : null;
+                    const memberRaidLockout = memberRaidStatus?.partyLockouts?.[0] || null;
+                    const raidLocked = Boolean(memberRaidStatus?.isCompletedLocked);
                     return (
                       <button
                         key={member.id}
@@ -589,7 +698,15 @@ const CalendarModal = ({
                           </span>
                         </span>
                         <span className="text-xs text-gray-300">
-                          {raidLocked ? "Locked" : busy ? "Busy" : approved ? "Roster" : "Bench"}
+                          {raidLocked
+                            ? "Locked"
+                            : memberRaidLockout
+                              ? `ID ${memberRaidLockout.displayId}`
+                              : busy
+                                ? "Busy"
+                                : approved
+                                  ? "Roster"
+                                  : "Bench"}
                         </span>
                       </button>
                     );
@@ -616,7 +733,8 @@ const CalendarModal = ({
                   disabled={
                     selectedEvent.status !== CALENDAR_STATUS.READY ||
                     !hasMinimumRoster ||
-                    selectedEventLockoutStatus?.isCompletedLocked
+                    selectedEventLockoutStatus?.isCompletedLocked ||
+                    selectedEventLockoutStatus?.hasLockoutConflict
                   }
                   className="px-4 py-2 rounded border border-emerald-700 bg-emerald-950/40 text-emerald-100 text-xs font-bold disabled:opacity-40"
                 >
@@ -631,11 +749,43 @@ const CalendarModal = ({
               <h3 className="text-sm font-bold text-gray-200 uppercase tracking-wide mb-2">
                 Weekly Series
               </h3>
-              <div className="space-y-1 text-xs text-gray-300">
+              <div className="space-y-2 text-xs text-gray-300">
                 {series.map((entry) => (
-                  <div key={entry.id} className="flex justify-between gap-2">
-                    <span>{entry.title}</span>
-                    <span className="text-gray-500">{CALENDAR_WEEKDAYS[entry.weekday]}</span>
+                  <div
+                    key={entry.id}
+                    className="rounded border border-gray-700 bg-gray-900/70 p-2"
+                  >
+                    <div className="flex items-start justify-between gap-2">
+                      <div>
+                        <div className="font-bold text-gray-100">{entry.title}</div>
+                        <div className="mt-1 text-gray-500">
+                          {entry.seriesType === CALENDAR_SERIES_TYPE.INTERVAL
+                            ? `Every ${entry.intervalDays} days`
+                            : CALENDAR_WEEKDAYS[entry.weekday]}
+                          {" - "}
+                          {entry.durationWeeks} weeks
+                        </div>
+                      </div>
+                      <span
+                        className={
+                          entry.active
+                            ? "text-[10px] uppercase text-emerald-300"
+                            : "text-[10px] uppercase text-red-300"
+                        }
+                      >
+                        {entry.active ? "Active" : "Cancelled"}
+                      </span>
+                    </div>
+                    <div className="mt-2 flex justify-end">
+                      <button
+                        type="button"
+                        onClick={() => onCancelSeries(entry.id)}
+                        disabled={!entry.active}
+                        className="rounded border border-red-800 bg-red-950/30 px-3 py-1.5 text-xs font-bold text-red-200 disabled:opacity-40"
+                      >
+                        Cancel Series
+                      </button>
+                    </div>
                   </div>
                 ))}
               </div>

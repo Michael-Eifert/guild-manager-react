@@ -1,12 +1,113 @@
 import { MOLTEN_CORE_ITEMS } from './imports/moltenCoreLootManifest';
 import { ZUL_GURUB_ITEMS } from './imports/zulGurubLootManifest';
+import { AHN_QIRAJ_RUINS_ITEMS } from './imports/ahnQirajRuinsLootManifest';
+import { AHN_QIRAJ_TEMPLE_ITEMS } from './imports/ahnQirajTempleLootManifest';
 import { LOWER_BLACKROCK_SPIRE_ITEMS } from './imports/lowerBlackrockSpireLootManifest';
 import { UPPER_BLACKROCK_SPIRE_ITEMS } from './imports/upperBlackrockSpireLootManifest';
 
 const wowItemIcon = (iconCode) =>
   `https://wow.zamimg.com/images/wow/icons/large/${iconCode.toLowerCase()}.jpg`;
 
-export const DB_ITEMS = [
+const ITEM_LEVEL_BANDS_BY_SOURCE = Object.freeze({
+  blackrock_depths: { min: 52, max: 58 },
+  stratholme: { min: 56, max: 60 },
+  blackrock_spire_lbrs: { min: 57, max: 60 },
+  blackrock_spire_ubrs: { min: 58, max: 63 },
+  tier_zero: { min: 57, max: 62 },
+  zul_gurub: { min: 61, max: 70 },
+  ahn_qiraj_ruins: { min: 61, max: 70 },
+  molten_core: { min: 66, max: 80 },
+  ahn_qiraj_temple: { min: 73, max: 88 },
+});
+
+const RAID_FINAL_BOSS_ITEM_LEVEL = Object.freeze({
+  zul_gurub: {
+    "Hakkar": 70,
+  },
+  ahn_qiraj_ruins: {
+    "Ossirian the Unscarred": 70,
+  },
+  molten_core: {
+    Ragnaros: 80,
+    "Majordomo Executus": 76,
+  },
+  ahn_qiraj_temple: {
+    "C'Thun": 88,
+    Ouro: 84,
+    "Twin Emperors": 83,
+  },
+});
+
+const clampItemLevel = (value, band) =>
+  Math.max(band.min, Math.min(band.max, Math.floor(Number(value) || band.min)));
+
+const getStableItemLevelOffset = (item, band) => {
+  const span = Math.max(0, band.max - band.min);
+  if (span === 0) return 0;
+  const source = `${item?.id || ""}:${item?.name || ""}`;
+  let hash = 0;
+  for (let index = 0; index < source.length; index += 1) {
+    hash = (hash * 31 + source.charCodeAt(index)) % 9973;
+  }
+  return hash % (span + 1);
+};
+
+const getItemSourceKeyForLevelBand = (item) => {
+  if (String(item?.setId || "").startsWith("t0_")) return "tier_zero";
+  if (item?.dungeonSetId === "blackrock_spire") {
+    const sourceBosses = Array.isArray(item.sourceBosses) ? item.sourceBosses : [];
+    const upperBosses = new Set([
+      "Pyroguard Emberseer",
+      "Solakar Flamewreath",
+      "Goraluk Anvilcrack",
+      "Jed Runewatcher",
+      "Gyth",
+      "Warchief Rend Blackhand",
+      "The Beast",
+      "General Drakkisath",
+    ]);
+    return sourceBosses.some((boss) => upperBosses.has(boss))
+      ? "blackrock_spire_ubrs"
+      : "blackrock_spire_lbrs";
+  }
+  return item?.dungeonSetId || null;
+};
+
+const getRaidBossItemLevel = (item, sourceKey, band) => {
+  const bossLevels = RAID_FINAL_BOSS_ITEM_LEVEL[sourceKey];
+  if (!bossLevels) return null;
+  const sourceBosses = Array.isArray(item.sourceBosses) ? item.sourceBosses : [];
+  const matchedBoss = sourceBosses.find((bossName) =>
+    Object.prototype.hasOwnProperty.call(bossLevels, bossName),
+  );
+  if (!matchedBoss) return null;
+  return clampItemLevel(bossLevels[matchedBoss], band);
+};
+
+const getNormalizedItemLevel = (item) => {
+  const explicitItemLevel = Number(item?.itemLevel);
+  if (Number.isFinite(explicitItemLevel) && explicitItemLevel > 0) {
+    return Math.floor(explicitItemLevel);
+  }
+  const sourceKey = getItemSourceKeyForLevelBand(item);
+  const band = ITEM_LEVEL_BANDS_BY_SOURCE[sourceKey];
+  if (!band) return null;
+  const bossLevel = getRaidBossItemLevel(item, sourceKey, band);
+  if (bossLevel !== null) return bossLevel;
+  const quality = Number(item?.quality) || 0;
+  const qualityOffset = quality >= 5 ? band.max - band.min : quality >= 4 ? 3 : 1;
+  return clampItemLevel(
+    band.min + qualityOffset + getStableItemLevelOffset(item, band),
+    band,
+  );
+};
+
+const applyItemLevelTuning = (item) => {
+  const itemLevel = getNormalizedItemLevel(item);
+  return itemLevel ? { ...item, itemLevel } : item;
+};
+
+const RAW_DB_ITEMS = [
   {
     id: 101,
     name: "Worn Shortsword",
@@ -5996,5 +6097,10 @@ export const DB_ITEMS = [
   ...MOLTEN_CORE_ITEMS,
   // Zul'Gurub raid loot is generated from the real-loot manifest.
   ...ZUL_GURUB_ITEMS,
+  // Ahn'Qiraj raid loot is generated from the raid loot manifests.
+  ...AHN_QIRAJ_RUINS_ITEMS,
+  ...AHN_QIRAJ_TEMPLE_ITEMS,
 ];
+
+export const DB_ITEMS = Object.freeze(RAW_DB_ITEMS.map(applyItemLevelTuning));
 

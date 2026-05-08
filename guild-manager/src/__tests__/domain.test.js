@@ -36,7 +36,7 @@ import {
   normalizeProgressionState,
 } from "../progression";
 import { INITIAL_MISSIONS } from "../constants";
-import { isItemUsableByClass } from "../utils";
+import { getItemEffectiveLevel, isItemUsableByClass } from "../utils";
 import {
   CALENDAR_DAY_MS,
   CALENDAR_SERIES_TYPE,
@@ -44,6 +44,7 @@ import {
   CALENDAR_TIME_OF_DAY,
   buildCalendarEvent,
   buildCalendarSeries,
+  cancelCalendarSeriesEvents,
   createInitialCalendarState,
   getCalendarDate,
   getCalendarDayIndex,
@@ -70,6 +71,16 @@ import {
   ZUL_GURUB_ITEMS,
   unsupportedZulGurubDrops,
 } from "../data/imports/zulGurubLootManifest";
+import {
+  AHN_QIRAJ_RUINS_ACTIVE_LOOT_MANIFEST,
+  AHN_QIRAJ_RUINS_ITEMS,
+  unsupportedAhnQirajRuinsDrops,
+} from "../data/imports/ahnQirajRuinsLootManifest";
+import {
+  AHN_QIRAJ_TEMPLE_ACTIVE_LOOT_MANIFEST,
+  AHN_QIRAJ_TEMPLE_ITEMS,
+  unsupportedAhnQirajTempleDrops,
+} from "../data/imports/ahnQirajTempleLootManifest";
 import {
   LOWER_BLACKROCK_SPIRE_ACTIVE_LOOT_MANIFEST,
   LOWER_BLACKROCK_SPIRE_ITEMS,
@@ -357,6 +368,35 @@ describe("calendar logic", () => {
     expect(second.calendarEvents).toHaveLength(first.calendarEvents.length);
   });
 
+  it("limits weekly series materialization to the configured duration", () => {
+    const state = {
+      ...createInitialCalendarState(0),
+      calendarSeries: [
+        buildCalendarSeries({
+          id: "series-1",
+          title: "Thursday MC",
+          missionId: 62,
+          weekday: 3,
+          startsOnDayIndex: 0,
+          durationWeeks: 4,
+        }),
+      ],
+    };
+    const result = materializeCalendarSeriesEvents({
+      state,
+      currentDayIndex: 0,
+      createId: () => "fallback-id",
+      horizonDays: 70,
+    });
+
+    expect(result.calendarEvents.map((event) => event.scheduledDayIndex)).toEqual([
+      3,
+      10,
+      17,
+      24,
+    ]);
+  });
+
   it("materializes interval raid series without duplicates", () => {
     const state = {
       ...createInitialCalendarState(0),
@@ -393,6 +433,55 @@ describe("calendar logic", () => {
       9,
     ]);
     expect(second.calendarEvents).toHaveLength(first.calendarEvents.length);
+  });
+
+  it("cancels future events from a calendar series", () => {
+    const state = {
+      ...createInitialCalendarState(0),
+      calendarSeries: [
+        buildCalendarSeries({
+          id: "series-1",
+          title: "Thursday MC",
+          missionId: 62,
+          weekday: 3,
+          startsOnDayIndex: 0,
+        }),
+      ],
+      calendarEvents: [
+        {
+          ...buildCalendarEvent({
+            id: "past-event",
+            title: "Past MC",
+            missionId: 62,
+            scheduledDayIndex: 3,
+            createdAtDayIndex: 0,
+            seriesId: "series-1",
+          }),
+          status: CALENDAR_STATUS.COMPLETED,
+        },
+        buildCalendarEvent({
+          id: "future-event",
+          title: "Future MC",
+          missionId: 62,
+          scheduledDayIndex: 10,
+          createdAtDayIndex: 0,
+          seriesId: "series-1",
+        }),
+      ],
+    };
+    const result = cancelCalendarSeriesEvents({
+      state,
+      seriesId: "series-1",
+      currentDayIndex: 5,
+    });
+
+    expect(result.calendarSeries[0].active).toBe(false);
+    expect(result.calendarEvents.find((event) => event.id === "past-event").status).toBe(
+      CALENDAR_STATUS.COMPLETED,
+    );
+    expect(result.calendarEvents.find((event) => event.id === "future-event").status).toBe(
+      CALENDAR_STATUS.CANCELLED,
+    );
   });
 
   it("preempts dungeon missions that contain raid members", () => {
@@ -488,6 +577,51 @@ describe("calendar logic", () => {
     expect(result.newlyReadyEvents).toHaveLength(1);
   });
 
+  it("keeps characters from auto-signing more than one raid on the same day", () => {
+    const mission = {
+      id: 62,
+      name: "Molten Core",
+      isRaid: true,
+      entryLevel: 56,
+      requiredPartySize: 2,
+      raidRoleRequirement: { Tank: 1, Healer: 0, DPS: 1 },
+    };
+    const state = {
+      ...createInitialCalendarState(0),
+      calendarEvents: [
+        buildCalendarEvent({
+          id: "event-1",
+          title: "First Raid",
+          missionId: 62,
+          scheduledDayIndex: 2,
+          createdAtDayIndex: 0,
+        }),
+        buildCalendarEvent({
+          id: "event-2",
+          title: "Second Raid",
+          missionId: 62,
+          scheduledDayIndex: 2,
+          createdAtDayIndex: 0,
+        }),
+      ],
+    };
+    const roster = [
+      { id: "tank", name: "Tank", role: "Tank", level: 60 },
+      { id: "dps", name: "Dps", role: "DPS", level: 60 },
+    ];
+    const result = refreshCalendarState({
+      state,
+      currentDayIndex: 2,
+      roster,
+      activeMissions: [],
+      missionList: [mission],
+      createId: () => "new-id",
+    });
+
+    expect(result.state.calendarEvents[0].registrations).toEqual(["tank", "dps"]);
+    expect(result.state.calendarEvents[1].registrations).toEqual([]);
+  });
+
   it("excludes signups when a raid is completed until reset", () => {
     const mission = {
       id: 63,
@@ -524,11 +658,12 @@ describe("calendar logic", () => {
       activeMissions: [],
       missionList: [mission],
       createId: () => "new-id",
-      getRaidLockoutStatus: ({ mission: raidMission, currentDayIndex }) =>
+      getRaidLockoutStatus: ({ mission: raidMission, currentDayIndex, memberIds }) =>
         getRaidLockoutStatus({
           raidLockouts: completedLockouts,
           mission: raidMission,
           currentDayIndex,
+          memberIds,
         }),
     });
 
@@ -885,12 +1020,148 @@ describe("Zul'Gurub raid integration", () => {
   });
 });
 
+describe("Ahn'Qiraj raid integration", () => {
+  const aq20Mission = INITIAL_MISSIONS.find(
+    (mission) => mission.name === "Ruins of Ahn'Qiraj",
+  );
+  const aq40Mission = INITIAL_MISSIONS.find(
+    (mission) => mission.name === "Temple of Ahn'Qiraj",
+  );
+  const aq20Items = DB_ITEMS.filter(
+    (item) => item.dungeonSetId === "ahn_qiraj_ruins",
+  );
+  const aq40Items = DB_ITEMS.filter(
+    (item) => item.dungeonSetId === "ahn_qiraj_temple",
+  );
+
+  it("defines AQ20 as a 20-player no-attunement 3-day raid", () => {
+    expect(aq20Mission).toBeTruthy();
+    expect(aq20Mission.isRaid).toBe(true);
+    expect(aq20Mission.requiredPartySize).toBe(20);
+    expect(aq20Mission.minLevel).toBe(58);
+    expect(aq20Mission.entryLevel).toBe(58);
+    expect(aq20Mission.requiresKey).toBe(false);
+    expect(getDungeonBossCount(aq20Mission)).toBe(6);
+    expect(aq20Mission.raidReset).toMatchObject({
+      type: "interval",
+      intervalDays: 3,
+      anchorDayIndex: 0,
+    });
+  });
+
+  it("defines AQ40 as a 40-player no-attunement Wednesday-reset raid", () => {
+    expect(aq40Mission).toBeTruthy();
+    expect(aq40Mission.isRaid).toBe(true);
+    expect(aq40Mission.requiredPartySize).toBe(40);
+    expect(aq40Mission.minLevel).toBe(60);
+    expect(aq40Mission.entryLevel).toBe(60);
+    expect(aq40Mission.requiresKey).toBe(false);
+    expect(getDungeonBossCount(aq40Mission)).toBe(9);
+    expect(aq40Mission.raidReset).toMatchObject({
+      type: "weekly",
+      weekday: 2,
+    });
+  });
+
+  it("converts AQ20 manifest entries into valid database items", () => {
+    expect(AHN_QIRAJ_RUINS_ACTIVE_LOOT_MANIFEST.length).toBeGreaterThan(12);
+    expect(AHN_QIRAJ_RUINS_ITEMS.length).toBeGreaterThan(10);
+    AHN_QIRAJ_RUINS_ITEMS.forEach((item) => {
+      expect(item.id).toBeTypeOf("number");
+      expect(item.icon).toContain("wow/icons/large/");
+      expect(item.dungeonSetId).toBe("ahn_qiraj_ruins");
+      expect(item.dungeonSetName).toBe("Ruins of Ahn'Qiraj");
+      expect(item.slot).toBeTruthy();
+      expect(item.quality).toBeGreaterThan(0);
+      expect(item.sourceBosses.length).toBeGreaterThan(0);
+    });
+  });
+
+  it("converts AQ40 manifest entries into valid database items", () => {
+    expect(AHN_QIRAJ_TEMPLE_ACTIVE_LOOT_MANIFEST.length).toBeGreaterThan(25);
+    expect(AHN_QIRAJ_TEMPLE_ITEMS.length).toBeGreaterThan(20);
+    AHN_QIRAJ_TEMPLE_ITEMS.forEach((item) => {
+      expect(item.id).toBeTypeOf("number");
+      expect(item.icon).toContain("wow/icons/large/");
+      expect(item.dungeonSetId).toBe("ahn_qiraj_temple");
+      expect(item.dungeonSetName).toBe("Temple of Ahn'Qiraj");
+      expect(item.slot).toBeTruthy();
+      expect(item.quality).toBeGreaterThan(0);
+      expect(item.sourceBosses.length).toBeGreaterThan(0);
+    });
+  });
+
+  it("keeps unsupported AQ drops out of active reward items", () => {
+    const activeAq20Ids = new Set(aq20Items.map((item) => item.id));
+    const activeAq40Ids = new Set(aq40Items.map((item) => item.id));
+    expect(unsupportedAhnQirajRuinsDrops.length).toBeGreaterThan(0);
+    expect(unsupportedAhnQirajTempleDrops.length).toBeGreaterThan(0);
+    unsupportedAhnQirajRuinsDrops.forEach((item) => {
+      expect(activeAq20Ids.has(item.internalId)).toBe(false);
+    });
+    unsupportedAhnQirajTempleDrops.forEach((item) => {
+      expect(activeAq40Ids.has(item.internalId)).toBe(false);
+    });
+  });
+});
+
+describe("item level tuning", () => {
+  const getItemsBySource = (sourceId) =>
+    DB_ITEMS.filter((item) => item.dungeonSetId === sourceId);
+  const expectItemLevelsWithin = (items, minItemLevel, maxItemLevel) => {
+    expect(items.length).toBeGreaterThan(0);
+    items.forEach((item) => {
+      const itemLevel = getItemEffectiveLevel(item);
+      expect(itemLevel).toBeGreaterThanOrEqual(minItemLevel);
+      expect(itemLevel).toBeLessThanOrEqual(maxItemLevel);
+    });
+  };
+
+  it("keeps late dungeon loot below raid item-level bands", () => {
+    expectItemLevelsWithin(
+      getItemsBySource("stratholme").filter(
+        (item) => !String(item.setId || "").startsWith("t0_"),
+      ),
+      56,
+      60,
+    );
+    expectItemLevelsWithin(
+      DB_ITEMS.filter((item) => String(item.setId || "").startsWith("t0_")),
+      57,
+      62,
+    );
+    expectItemLevelsWithin(
+      getItemsBySource("blackrock_depths"),
+      52,
+      58,
+    );
+    expectItemLevelsWithin(getItemsBySource("blackrock_spire"), 57, 63);
+  });
+
+  it("keeps raid loot in Classic item-level bands", () => {
+    expectItemLevelsWithin(getItemsBySource("zul_gurub"), 61, 70);
+    expectItemLevelsWithin(getItemsBySource("ahn_qiraj_ruins"), 61, 70);
+    expectItemLevelsWithin(getItemsBySource("molten_core"), 66, 80);
+    expectItemLevelsWithin(getItemsBySource("ahn_qiraj_temple"), 73, 88);
+  });
+
+  it("supports explicit itemLevel over min-level quality fallback", () => {
+    expect(getItemEffectiveLevel({ minLevel: 60, quality: 4, itemLevel: 63 })).toBe(63);
+  });
+});
+
 describe("raid lockouts", () => {
   const moltenCoreMission = INITIAL_MISSIONS.find(
     (mission) => mission.name === "Molten Core",
   );
   const zulGurubMission = INITIAL_MISSIONS.find(
     (mission) => mission.name === "Zul'Gurub",
+  );
+  const aq20Mission = INITIAL_MISSIONS.find(
+    (mission) => mission.name === "Ruins of Ahn'Qiraj",
+  );
+  const aq40Mission = INITIAL_MISSIONS.find(
+    (mission) => mission.name === "Temple of Ahn'Qiraj",
   );
 
   it("computes Zul'Gurub 3-day reset windows from Monday day 0", () => {
@@ -917,6 +1188,16 @@ describe("raid lockouts", () => {
     });
   });
 
+  it("computes Ahn'Qiraj reset windows", () => {
+    expect([0, 1, 2, 3, 4, 6, 9].map((day) =>
+      getRaidResetWindow(aq20Mission, day).resetStartDayIndex,
+    )).toEqual([0, 0, 0, 3, 3, 6, 9]);
+    expect(getRaidResetWindow(aq40Mission, 2)).toMatchObject({
+      resetStartDayIndex: 2,
+      nextResetDayIndex: 9,
+    });
+  });
+
   it("blocks completed lockouts until reset then unlocks", () => {
     const lockouts = updateRaidLockoutProgress({
       raidLockouts: {},
@@ -932,6 +1213,7 @@ describe("raid lockouts", () => {
         raidLockouts: lockouts,
         mission: zulGurubMission,
         currentDayIndex: 2,
+        memberIds: ["hero"],
       }).isCompletedLocked,
     ).toBe(true);
     expect(
@@ -939,6 +1221,7 @@ describe("raid lockouts", () => {
         raidLockouts: lockouts,
         mission: zulGurubMission,
         currentDayIndex: 3,
+        memberIds: ["hero"],
       }).isCompletedLocked,
     ).toBe(false);
   });
@@ -955,7 +1238,7 @@ describe("raid lockouts", () => {
       raidLockouts: started,
       mission: zulGurubMission,
       currentDayIndex: 1,
-      memberIds: ["dps"],
+      memberIds: ["tank", "healer", "dps"],
       clearedSteps: 4,
       totalBosses: 9,
     });
@@ -963,6 +1246,7 @@ describe("raid lockouts", () => {
       raidLockouts: lockouts,
       mission: zulGurubMission,
       currentDayIndex: 2,
+      memberIds: ["tank", "dps"],
     });
 
     expect(status.canEnter).toBe(true);
@@ -972,6 +1256,48 @@ describe("raid lockouts", () => {
       "healer",
       "tank",
     ]);
+  });
+
+  it("keeps separate character raid IDs from mixing while allowing unsaved characters to join either", () => {
+    const lockoutOne = startRaidLockout({
+      raidLockouts: {},
+      mission: zulGurubMission,
+      currentDayIndex: 1,
+      memberIds: ["a"],
+      totalBosses: 9,
+    });
+    const lockoutTwo = startRaidLockout({
+      raidLockouts: lockoutOne,
+      mission: zulGurubMission,
+      currentDayIndex: 1,
+      memberIds: ["b"],
+      totalBosses: 9,
+    });
+
+    expect(
+      getRaidLockoutStatus({
+        raidLockouts: lockoutTwo,
+        mission: zulGurubMission,
+        currentDayIndex: 1,
+        memberIds: ["a", "b"],
+      }).hasLockoutConflict,
+    ).toBe(true);
+    expect(
+      getRaidLockoutStatus({
+        raidLockouts: lockoutTwo,
+        mission: zulGurubMission,
+        currentDayIndex: 1,
+        memberIds: ["a", "c"],
+      }).canEnter,
+    ).toBe(true);
+    expect(
+      getRaidLockoutStatus({
+        raidLockouts: lockoutTwo,
+        mission: zulGurubMission,
+        currentDayIndex: 1,
+        memberIds: ["b", "c"],
+      }).canEnter,
+    ).toBe(true);
   });
 });
 

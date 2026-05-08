@@ -1,5 +1,7 @@
 export const CALENDAR_DAY_MS = 10 * 60 * 1000;
 export const CALENDAR_MATERIALIZE_HORIZON_DAYS = 60;
+export const CALENDAR_SERIES_DURATION_OPTIONS = Object.freeze([4, 8]);
+export const DEFAULT_CALENDAR_SERIES_DURATION_WEEKS = 8;
 export const CALENDAR_STATUS = Object.freeze({
   SCHEDULED: "scheduled",
   READY: "ready",
@@ -233,6 +235,11 @@ export const normalizeCalendarState = (rawState, fallbackEpochGameTimeMs = Date.
           startsOnDayIndex: Math.max(0, Math.floor(Number(series?.startsOnDayIndex) || 0)),
           seriesType: normalizeSeriesType(series?.seriesType),
           intervalDays: Math.max(1, Math.floor(Number(series?.intervalDays) || 7)),
+          durationWeeks: CALENDAR_SERIES_DURATION_OPTIONS.includes(
+            Math.floor(Number(series?.durationWeeks)),
+          )
+            ? Math.floor(Number(series.durationWeeks))
+            : DEFAULT_CALENDAR_SERIES_DURATION_WEEKS,
         };
       })
       .filter((series) => series.id),
@@ -270,6 +277,7 @@ export const isCharacterEligibleForCalendarEvent = ({
 }) => {
   if (!character || !mission) return false;
   if (raidLockoutStatus?.isCompletedLocked) return false;
+  if (raidLockoutStatus?.hasLockoutConflict) return false;
   if (activeMemberIds.has(character.id)) return false;
   if (character.status === "Questing") return false;
 
@@ -298,24 +306,29 @@ export const getCalendarEventSignups = ({
   currentDayIndex,
 }) => {
   const mission = getMissionById(missionList, event?.missionId);
-  const raidLockoutStatus =
-    typeof getRaidLockoutStatus === "function"
-      ? getRaidLockoutStatus({ mission, event, currentDayIndex })
-      : null;
   const activeMemberIds = new Set(
     (Array.isArray(activeMissions) ? activeMissions : []).flatMap((missionRun) =>
       normalizeIdList(missionRun?.memberIds),
     ),
   );
   return (Array.isArray(roster) ? roster : [])
-    .filter((character) =>
-      isCharacterEligibleForCalendarEvent({
+    .filter((character) => {
+      const raidLockoutStatus =
+        typeof getRaidLockoutStatus === "function"
+          ? getRaidLockoutStatus({
+              mission,
+              event,
+              currentDayIndex,
+              memberIds: [character.id],
+            })
+          : null;
+      return isCharacterEligibleForCalendarEvent({
         character,
         mission,
         activeMemberIds,
         raidLockoutStatus,
-      }),
-    )
+      });
+    })
     .map((character) => character.id);
 };
 
@@ -406,6 +419,7 @@ export const buildCalendarSeries = ({
   startsOnDayIndex,
   seriesType = CALENDAR_SERIES_TYPE.WEEKLY,
   intervalDays = 7,
+  durationWeeks = DEFAULT_CALENDAR_SERIES_DURATION_WEEKS,
 }) => ({
   id,
   title,
@@ -417,6 +431,11 @@ export const buildCalendarSeries = ({
   startsOnDayIndex: Math.max(0, Math.floor(Number(startsOnDayIndex) || 0)),
   seriesType: normalizeSeriesType(seriesType),
   intervalDays: Math.max(1, Math.floor(Number(intervalDays) || 7)),
+  durationWeeks: CALENDAR_SERIES_DURATION_OPTIONS.includes(
+    Math.floor(Number(durationWeeks)),
+  )
+    ? Math.floor(Number(durationWeeks))
+    : DEFAULT_CALENDAR_SERIES_DURATION_WEEKS,
 });
 
 export const materializeCalendarSeriesEvents = ({
@@ -439,9 +458,11 @@ export const materializeCalendarSeriesEvents = ({
   normalized.calendarSeries
     .filter((series) => series.active)
     .forEach((series) => {
+      const seriesEndDayIndex =
+        series.startsOnDayIndex + Math.max(1, series.durationWeeks) * 7 - 1;
       for (
         let dayIndex = Math.max(series.startsOnDayIndex, startDay);
-        dayIndex <= endDay;
+        dayIndex <= Math.min(endDay, seriesEndDayIndex);
         dayIndex += 1
       ) {
         const isSeriesDay =
@@ -495,6 +516,7 @@ export const refreshCalendarState = ({
     createId,
   });
   const newlyReadyEvents = [];
+  const calendarDayCommitments = new Map();
   const nextEvents = materialized.calendarEvents.map((event) => {
     if (
       event.status !== CALENDAR_STATUS.SCHEDULED &&
@@ -511,12 +533,20 @@ export const refreshCalendarState = ({
       activeMissions,
       getRaidLockoutStatus,
       currentDayIndex,
-    });
+    }).filter(
+      (id) =>
+        !(
+          calendarDayCommitments.get(event.scheduledDayIndex) || new Set()
+        ).has(id),
+    );
     const approvedRosterIds =
       event.approvedRosterIds.length > 0
         ? event.approvedRosterIds.filter((id) => registrations.includes(id))
         : suggestCalendarRoster({ mission, roster, signupIds: registrations });
     const benchedIds = registrations.filter((id) => !approvedRosterIds.includes(id));
+    const committedIds = calendarDayCommitments.get(event.scheduledDayIndex) || new Set();
+    registrations.forEach((id) => committedIds.add(id));
+    calendarDayCommitments.set(event.scheduledDayIndex, committedIds);
     const shouldBecomeReady =
       event.status === CALENDAR_STATUS.SCHEDULED &&
       event.scheduledDayIndex <= currentDayIndex;
@@ -537,6 +567,35 @@ export const refreshCalendarState = ({
       calendarEvents: nextEvents,
     },
     newlyReadyEvents,
+  };
+};
+
+export const cancelCalendarSeriesEvents = ({
+  state,
+  seriesId,
+  currentDayIndex = 0,
+  cancelStartedEvents = false,
+}) => {
+  const normalized = normalizeCalendarState(state, state?.calendarEpochGameTimeMs);
+  const targetSeriesId = String(seriesId || "").trim();
+  if (!targetSeriesId) return normalized;
+  const cancellableStatuses = new Set([
+    CALENDAR_STATUS.SCHEDULED,
+    CALENDAR_STATUS.READY,
+    ...(cancelStartedEvents ? [CALENDAR_STATUS.RUNNING] : []),
+  ]);
+  return {
+    ...normalized,
+    calendarSeries: normalized.calendarSeries.map((series) =>
+      series.id === targetSeriesId ? { ...series, active: false } : series,
+    ),
+    calendarEvents: normalized.calendarEvents.map((event) =>
+      event.seriesId === targetSeriesId &&
+      event.scheduledDayIndex >= currentDayIndex &&
+      cancellableStatuses.has(event.status)
+        ? { ...event, status: CALENDAR_STATUS.CANCELLED }
+        : event,
+    ),
   };
 };
 

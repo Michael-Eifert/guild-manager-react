@@ -272,6 +272,10 @@ export const getKeySourceQuestLabel = (keyId) =>
 
 export const getItemEffectiveLevel = (item) => {
   if (!item || typeof item !== "object") return 0;
+  const explicitItemLevel = Number(item.itemLevel);
+  if (Number.isFinite(explicitItemLevel) && explicitItemLevel > 0) {
+    return Math.max(0, Math.floor(explicitItemLevel));
+  }
   const minLevel = Number(item.minLevel) || 0;
   const quality = Number(item.quality) || 0;
   const qualityBonus = ITEM_QUALITY_LEVEL_BONUS[quality] || 0;

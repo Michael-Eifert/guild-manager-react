@@ -165,6 +165,99 @@ export const GUILD_SERVER_OPTIONS = Object.freeze([
   },
 ]);
 
+export const GAMEPLAY_TUNING = Object.freeze({
+  FAILED_MISSION_EXP_FACTOR: 0.2,
+  LEVELING_TICK_EXP_MULTIPLIER: 1,
+  ENABLE_ZONE_QUESTING: true,
+  SHOW_LEGACY_QUESTS: false,
+});
+
+export const GUILD_ACTIVITY_MODES = Object.freeze([
+  "Leveling",
+  "Professions",
+  "Auto",
+]);
+
+export const MEMBER_RANKING_MODES = Object.freeze({
+  STANDARD: "standard",
+  EQUIP_CHECK: "equipCheck",
+});
+
+export const GUILD_MEMBER_SORT = Object.freeze({
+  LEVEL_DESC: "levelDesc",
+  LEVEL_ASC: "levelAsc",
+  ILVL_DESC: "ilvlDesc",
+  ILVL_ASC: "ilvlAsc",
+});
+
+export const GUILD_MEMBER_SORT_OPTIONS = Object.freeze([
+  { value: GUILD_MEMBER_SORT.LEVEL_DESC, label: "Level Desc" },
+  { value: GUILD_MEMBER_SORT.LEVEL_ASC, label: "Level Asc" },
+  { value: GUILD_MEMBER_SORT.ILVL_DESC, label: "iLvl Desc" },
+  { value: GUILD_MEMBER_SORT.ILVL_ASC, label: "iLvl Asc" },
+]);
+
+export const GUILD_FOCUS = Object.freeze({
+  LEVELING: "Leveling",
+  DUNGEONS: "Dungeons",
+  SOCIAL: "Social",
+});
+
+export const GUILD_FOCUS_OPTIONS = Object.freeze(Object.values(GUILD_FOCUS));
+
+export const DEFAULT_GUILD_SETUP = Object.freeze({
+  name: "",
+  faction: GUILD_FACTION.ALLIANCE,
+  server: GUILD_SERVER.EVERLOOK,
+  serverStyle:
+    GUILD_SERVER_OPTIONS.find(
+      (option) => option.value === GUILD_SERVER.EVERLOOK,
+    )?.style || GUILD_SERVER_STYLE.PVE,
+  focus: GUILD_FOCUS.LEVELING,
+  hasStarted: false,
+});
+
+export const GUILD_STARTING_CONFIG = Object.freeze({
+  MEMBER_COUNT: 5,
+  ROLE_PLAN: Object.freeze(["Tank", "DPS", "DPS", "DPS", "Healer"]),
+  GOLD: 10,
+});
+
+export const RECRUITMENT_CONFIG = Object.freeze({
+  SCOUT_COST_GOLD: 10,
+  RECRUIT_COST_GOLD: 5,
+});
+
+export const WORLD_DROP_CONFIG = Object.freeze({
+  COMMON_DROP_CHANCE: 0.08,
+  UNCOMMON_DROP_CHANCE: 0.01,
+  EPIC_DROP_CHANCE: 0.0001, // 0.01%
+  EPIC_MIN_LEVEL: 40,
+});
+
+export const ZONE_TUNING = Object.freeze({
+  STARTER_DURATION_VARIANCE_MIN: 0.9,
+  STARTER_DURATION_VARIANCE_MAX: 1.1,
+  OVERLEVEL_MOVE_THRESHOLD_MIN: 2,
+  OVERLEVEL_MOVE_THRESHOLD_MAX: 4,
+});
+
+export const DEFAULT_DUNGEON_LOOT_TABLE = Object.freeze({
+  boss: Object.freeze([
+    Object.freeze({ quality: 2, chance: 80 }),
+    Object.freeze({ quality: 3, chance: 20 }),
+  ]),
+  endboss: Object.freeze([
+    Object.freeze({ quality: 3, chance: 80 }),
+    Object.freeze({ quality: 2, chance: 20 }),
+  ]),
+});
+
+export const FACTION_EMBLEM_ICON = Object.freeze({
+  [GUILD_FACTION.ALLIANCE]: "inv_bannerpvp_02",
+  [GUILD_FACTION.HORDE]: "inv_bannerpvp_01",
+});
+
 export const FACTION_RACES = Object.freeze({
   [GUILD_FACTION.ALLIANCE]: Object.freeze([
     "Human",

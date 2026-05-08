@@ -754,10 +754,14 @@ const MissionModal = ({
         raidLockouts,
         mission: activePrepMission,
         currentDayIndex,
+        memberIds: party,
       })
     : null;
   const isSelectedRaidCompletedLocked = Boolean(
     selectedRaidLockoutStatus?.isCompletedLocked,
+  );
+  const isSelectedRaidLockoutConflicted = Boolean(
+    selectedRaidLockoutStatus?.hasLockoutConflict,
   );
   const missionPreview = activePrepMission
     ? getAdjustedMissionPreview(activePrepMission, selectedPartyMembers)
@@ -965,6 +969,38 @@ const MissionModal = ({
     });
   };
 
+  const deployButtonLabel =
+    selectedQuest?.type === "zone" && selectedZoneEliteQuest
+      ? "Deploy Zone Elite"
+      : isSelectedZoneMission
+        ? "Assign Zone"
+        : isChainEnabled && selectedChainMissions.length > 1
+          ? `Start Chain (${selectedChainMissions.length})`
+          : "Deploy";
+
+  const isDeployDisabled =
+    party.length === 0 ||
+    isKeyBlocked ||
+    isRaidPartySizeInvalid ||
+    isSelectedRaidCompletedLocked ||
+    isSelectedRaidLockoutConflicted;
+
+  const handleDeploySelectedMission = () => {
+    if (isDeployDisabled) return;
+    if (isKeyBlocked) return;
+    const missionToDeploy = selectedZoneEliteQuest || selectedQuest;
+    const chainMissionIds =
+      !selectedZoneEliteQuest && isChainEnabled && selectedChainMissions.length > 1
+        ? selectedChainMissions.map((mission) => mission.id)
+        : null;
+    onDeploy(
+      missionToDeploy,
+      party,
+      chainMissionIds ? { chainMissionIds } : undefined,
+    );
+    onClose();
+  };
+
   const renderMissionCard = (mission, showSetName = true) => {
     const isZoneMissionCard = mission?.type === "zone";
     const zone = isZoneMissionCard ? getZoneById(mission?.zoneId) : null;
@@ -995,9 +1031,7 @@ const MissionModal = ({
           currentDayIndex,
         })
       : null;
-    const isRaidCompletedLocked = Boolean(
-      raidLockoutStatus?.isCompletedLocked,
-    );
+    const activeRaidLockouts = raidLockoutStatus?.activeLockouts || [];
     const inRangeBounds = getMissionProgressionBounds(mission);
     const inRangeReferenceLevel = Math.max(
       inRangeBounds.minLevel,
@@ -1014,10 +1048,8 @@ const MissionModal = ({
     return (
       <div
         key={mission.id}
-        onClick={() => {
-          if (!isRaidCompletedLocked) handleSelectQuest(mission);
-        }}
-        className={`relative overflow-hidden p-4 rounded flex justify-between items-center bg-gray-800 transition-transform border border-transparent ${isRaidCompletedLocked ? "opacity-50 cursor-not-allowed grayscale" : "cursor-pointer active:bg-gray-700 hover:translate-x-1 hover:border-blue-500"} ${mission.type === "dungeon" ? "border-l-4 border-l-blue-600" : mission.type === "zone" ? "border-l-4 border-l-emerald-600" : ""}`}
+        onClick={() => handleSelectQuest(mission)}
+        className={`relative overflow-hidden p-4 rounded flex justify-between items-center bg-gray-800 transition-transform border border-transparent cursor-pointer active:bg-gray-700 hover:translate-x-1 hover:border-blue-500 ${mission.type === "dungeon" ? "border-l-4 border-l-blue-600" : mission.type === "zone" ? "border-l-4 border-l-emerald-600" : ""}`}
       >
         {isZoneMissionCard &&
           zone?.faction !== ZONE_FACTION.NEUTRAL &&
@@ -1063,16 +1095,16 @@ const MissionModal = ({
             )}
             {mission.isRaid && (
               <div
-                className={`text-xs mt-0.5 ${
-                  isRaidCompletedLocked ? "text-gray-300" : "text-emerald-200/85"
-                }`}
+                className="text-xs mt-0.5 text-emerald-200/85"
               >
                 {formatRaidResetSchedule(mission)}
-                {raidLockoutStatus?.clearedSteps > 0
-                  ? ` - Saved ID: ${raidLockoutStatus.clearedSteps}/${raidLockoutStatus.totalBosses} bosses cleared`
-                  : ""}
-                {isRaidCompletedLocked
-                  ? ` - cleared until day ${raidLockoutStatus.resetWindow.nextResetDayIndex}`
+                {activeRaidLockouts.length > 0
+                  ? ` - Active IDs: ${activeRaidLockouts
+                      .map(
+                        (lockout) =>
+                          `ID ${lockout.displayId} (${lockout.clearedSteps}/${lockout.totalBosses}${lockout.completed ? ", cleared" : ""})`,
+                      )
+                      .join(", ")}`
                   : ""}
               </div>
             )}
@@ -1733,13 +1765,22 @@ const MissionModal = ({
           <div
             className={`bg-gray-900 p-4 md:p-6 border-b border-gray-700 flex-none shadow-md ${prepSummaryHeightClass} overflow-y-auto custom-scrollbar`}
           >
-            <div className="flex justify-between items-start gap-3 md:gap-6 mb-2">
+            <div className="flex flex-col md:flex-row md:justify-between items-stretch md:items-start gap-3 md:gap-6 mb-2">
               <div className="min-w-0 flex-1">
-                <h2
-                  className={`text-xl md:text-2xl fantasy-font ${selectedQuest.elite ? "text-yellow-500" : "text-white"}`}
-                >
-                  {getMissionDisplayName(selectedQuest)}
-                </h2>
+                <div className="flex items-start gap-2 min-w-0">
+                  <button
+                    type="button"
+                    onClick={() => setView("list")}
+                    className="mt-0.5 flex-none rounded border border-gray-700 bg-gray-800 px-2 py-1 text-xs font-bold uppercase tracking-wide text-gray-300 hover:bg-gray-700 hover:text-white"
+                  >
+                    Back
+                  </button>
+                  <h2
+                    className={`min-w-0 text-xl md:text-2xl fantasy-font ${selectedQuest.elite ? "text-yellow-500" : "text-white"}`}
+                  >
+                    {getMissionDisplayName(selectedQuest)}
+                  </h2>
+                </div>
                 {selectedQuest.type === "dungeon" && selectedQuest.dungeonSetName && (
                   <div className="text-sm text-blue-300/80 mt-0.5">
                     {selectedQuest.dungeonSetName}
@@ -1751,12 +1792,13 @@ const MissionModal = ({
                 {activePrepMission?.isRaid && (
                   <div className="mt-2 rounded border border-amber-900/60 bg-amber-950/20 px-3 py-2 text-xs text-amber-100/85">
                     {formatRaidResetSchedule(activePrepMission)}
-                    {selectedRaidLockoutStatus?.clearedSteps > 0
-                      ? ` - Saved ID: ${selectedRaidLockoutStatus.clearedSteps}/${selectedRaidLockoutStatus.totalBosses} bosses cleared`
+                    {selectedRaidLockoutStatus?.lockout
+                      ? ` - ID ${selectedRaidLockoutStatus.lockout.displayId}: ${selectedRaidLockoutStatus.clearedSteps}/${selectedRaidLockoutStatus.totalBosses} bosses cleared`
                       : ""}
                     {isSelectedRaidCompletedLocked
                       ? ` - cleared until day ${selectedRaidLockoutStatus.resetWindow.nextResetDayIndex}`
                       : ""}
+                    {isSelectedRaidLockoutConflicted ? " - conflicting raid IDs selected" : ""}
                   </div>
                 )}
                 {shouldShowTacticalOdds && (
@@ -2245,7 +2287,7 @@ const MissionModal = ({
                   )}
                 </div>
               </div>
-              <div className="text-right flex-none md:pl-2">
+              <div className="text-left md:text-right flex-none md:w-48 md:pl-2">
                 <div className="text-xs md:text-sm text-gray-400 mb-1">Squad</div>
                 <div className="text-xl font-bold text-white">
                   {isSelectedZoneMission
@@ -2309,6 +2351,14 @@ const MissionModal = ({
                   className="mt-3 w-full px-4 py-2 text-sm font-bold uppercase tracking-wide rounded border border-emerald-500 bg-emerald-900/45 text-emerald-100 hover:bg-emerald-800/55 shadow-lg disabled:opacity-40 disabled:cursor-not-allowed"
                 >
                   Auto-Select
+                </button>
+                <button
+                  type="button"
+                  onClick={handleDeploySelectedMission}
+                  disabled={isDeployDisabled}
+                  className="btn-quest mt-2 w-full px-4 py-3 rounded text-blue-100 font-bold disabled:opacity-50 disabled:cursor-not-allowed text-sm md:text-base"
+                >
+                  {deployButtonLabel}
                 </button>
               </div>
             </div>
@@ -2410,12 +2460,37 @@ const MissionModal = ({
                 selectedMissionRequiredKeyIds.length > 0 &&
                 requiresAllMembersKey &&
                 !hasAllRequiredKeys;
-              const canSelectMember = isEligible && !keyLockedForMember;
+              const charRaidLockoutStatus = activePrepMission?.isRaid
+                ? getRaidLockoutStatus({
+                    raidLockouts,
+                    mission: activePrepMission,
+                    currentDayIndex,
+                    memberIds: [char.id],
+                  })
+                : null;
+              const charRaidLockout = charRaidLockoutStatus?.partyLockouts?.[0] || null;
+              const selectedRaidLockout =
+                selectedRaidLockoutStatus?.partyLockouts?.length === 1
+                  ? selectedRaidLockoutStatus.partyLockouts[0]
+                  : null;
+              const isRaidCompletedForMember = Boolean(
+                charRaidLockoutStatus?.isCompletedLocked,
+              );
+              const hasRaidIdConflict =
+                Boolean(activePrepMission?.isRaid) &&
+                !isSelected &&
+                selectedRaidLockout &&
+                charRaidLockout &&
+                selectedRaidLockout.lockoutId !== charRaidLockout.lockoutId;
+              const raidLockedForMember =
+                isRaidCompletedForMember || hasRaidIdConflict;
+              const canSelectMember =
+                isEligible && !keyLockedForMember && !raidLockedForMember;
               return (
                 <div
                   key={char.id}
                   onClick={() => canSelectMember && toggleMember(char.id)}
-                  className={`p-3 rounded flex items-center gap-3 transition-all cursor-pointer border ${!isEligible ? "opacity-40 cursor-not-allowed bg-black border-transparent" : keyLockedForMember ? "opacity-50 cursor-not-allowed bg-red-950/20 border-red-800/60" : isSelected ? "bg-green-900/30 border-green-500" : hasRequiredKey ? "bg-amber-950/20 border-amber-600 hover:bg-amber-900/20" : "bg-gray-700 border-gray-600 hover:bg-gray-600"}`}
+                  className={`p-3 rounded flex items-center gap-3 transition-all cursor-pointer border ${!isEligible ? "opacity-40 cursor-not-allowed bg-black border-transparent" : keyLockedForMember || raidLockedForMember ? "opacity-50 cursor-not-allowed bg-red-950/20 border-red-800/60" : isSelected ? "bg-green-900/30 border-green-500" : hasRequiredKey ? "bg-amber-950/20 border-amber-600 hover:bg-amber-900/20" : "bg-gray-700 border-gray-600 hover:bg-gray-600"}`}
                 >
                   <img
                     src={getRacePortraitUrl(char.race, char.gender)}
@@ -2455,6 +2530,21 @@ const MissionModal = ({
                         🔒 Missing Required Key
                       </div>
                     )}
+                    {charRaidLockout && (
+                      <div
+                        className={`text-[10px] uppercase tracking-wide font-bold mt-0.5 ${
+                          isRaidCompletedForMember || hasRaidIdConflict
+                            ? "text-red-300"
+                            : "text-cyan-200"
+                        }`}
+                      >
+                        ID {charRaidLockout.displayId}:{" "}
+                        {charRaidLockout.completed
+                          ? "Raid Cleared"
+                          : `${charRaidLockout.clearedSteps}/${charRaidLockout.totalBosses} bosses`}
+                        {hasRaidIdConflict ? " - Conflict" : ""}
+                      </div>
+                    )}
                     <div className="flex justify-between items-center mt-1">
                       <span className="text-xs text-gray-400">
                         {getRoleIcon(char.role)} Lvl {char.level}
@@ -2473,45 +2563,6 @@ const MissionModal = ({
                 </div>
               );
             })}
-          </div>
-          <div className="p-4 border-t border-gray-700 bg-gray-900 flex justify-between items-center flex-none relative z-10">
-            <button
-              onClick={() => setView("list")}
-              className="text-gray-400 hover:text-white text-sm md:text-base"
-            >
-              ← Back
-            </button>
-            <button
-              onClick={() => {
-                if (isKeyBlocked) return;
-                const missionToDeploy = selectedZoneEliteQuest || selectedQuest;
-                const chainMissionIds =
-                  !selectedZoneEliteQuest && isChainEnabled && selectedChainMissions.length > 1
-                    ? selectedChainMissions.map((mission) => mission.id)
-                    : null;
-                onDeploy(
-                  missionToDeploy,
-                  party,
-                  chainMissionIds ? { chainMissionIds } : undefined,
-                );
-                onClose();
-              }}
-              disabled={
-                party.length === 0 ||
-                isKeyBlocked ||
-                isRaidPartySizeInvalid ||
-                isSelectedRaidCompletedLocked
-              }
-              className="btn-quest px-6 md:px-10 py-3 rounded text-blue-100 font-bold disabled:opacity-50 disabled:cursor-not-allowed text-sm md:text-base"
-            >
-              {selectedQuest?.type === "zone" && selectedZoneEliteQuest
-                ? "Deploy Zone Elite"
-                : isSelectedZoneMission
-                ? "Assign Zone"
-                : isChainEnabled && selectedChainMissions.length > 1
-                ? `Start Chain (${selectedChainMissions.length})`
-                : "Deploy"}
-            </button>
           </div>
         </div>
       )}
