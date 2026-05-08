@@ -178,6 +178,17 @@ export const GUILD_ACTIVITY_MODES = Object.freeze([
   "Auto",
 ]);
 
+export const GUILD_DUNGEON_ACTIVITY = Object.freeze({
+  NONE: "No Dungeons",
+  MINIMAL: "Minimal",
+  BALANCED: "Balanced",
+  ALWAYS: "Always",
+});
+
+export const GUILD_DUNGEON_ACTIVITY_OPTIONS = Object.freeze(
+  Object.values(GUILD_DUNGEON_ACTIVITY),
+);
+
 export const MEMBER_RANKING_MODES = Object.freeze({
   STANDARD: "standard",
   EQUIP_CHECK: "equipCheck",
@@ -201,6 +212,7 @@ export const GUILD_FOCUS = Object.freeze({
   LEVELING: "Leveling",
   DUNGEONS: "Dungeons",
   SOCIAL: "Social",
+  RAID_ATTUNEMENTS: "Raid Attunements",
 });
 
 export const GUILD_FOCUS_OPTIONS = Object.freeze(Object.values(GUILD_FOCUS));
@@ -214,6 +226,8 @@ export const DEFAULT_GUILD_SETUP = Object.freeze({
       (option) => option.value === GUILD_SERVER.EVERLOOK,
     )?.style || GUILD_SERVER_STYLE.PVE,
   focus: GUILD_FOCUS.LEVELING,
+  lastFocusChangeDayIndex: null,
+  dungeonActivity: GUILD_DUNGEON_ACTIVITY.NONE,
   hasStarted: false,
 });
 

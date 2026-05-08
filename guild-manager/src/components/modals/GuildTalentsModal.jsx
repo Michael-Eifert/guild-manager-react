@@ -9,6 +9,15 @@ import {
   getGuildTalentUpgradeStatus,
   getGuildTalentTreeNodeStatus,
 } from "../../guildProgression";
+import { GUILD_FOCUS, GUILD_FOCUS_OPTIONS } from "../../constants";
+
+const GUILD_FOCUS_DESCRIPTIONS = Object.freeze({
+  [GUILD_FOCUS.LEVELING]: "Members gain +5% XP from passive and mission rewards.",
+  [GUILD_FOCUS.DUNGEONS]: "Dungeon success previews gain +5%.",
+  [GUILD_FOCUS.SOCIAL]: "Full parties earn +5% gold.",
+  [GUILD_FOCUS.RAID_ATTUNEMENTS]:
+    "Auto groups prioritize raid key and attunement routes.",
+});
 
 const GuildTalentsModal = ({
   isOpen,
@@ -16,6 +25,10 @@ const GuildTalentsModal = ({
   guildProgress,
   guildGold,
   guildDerivedStats,
+  guildSetup,
+  currentDayIndex,
+  focusChangeCostGold = 10,
+  onChangeGuildFocus,
   onUpgradeTalent,
 }) => {
   const [activeTab, setActiveTab] = useState("achievements");
@@ -26,6 +39,11 @@ const GuildTalentsModal = ({
   const unlockedAchievements = achievementEntries.filter(
     (achievement) => achievement.unlocked,
   ).length;
+  const currentFocus = guildSetup?.focus || GUILD_FOCUS.LEVELING;
+  const focusChangedToday =
+    Number.isFinite(Number(guildSetup?.lastFocusChangeDayIndex)) &&
+    Number(guildSetup.lastFocusChangeDayIndex) === currentDayIndex;
+  const canAffordFocusChange = (Number(guildGold) || 0) >= focusChangeCostGold;
 
   return (
     <BaseModal
@@ -59,10 +77,11 @@ const GuildTalentsModal = ({
       </div>
 
       <div className="flex-1 overflow-y-auto custom-scrollbar p-4 space-y-4">
-        <div className="grid grid-cols-2 rounded border border-gray-700 bg-gray-950/50 p-1 text-xs font-bold">
+        <div className="grid grid-cols-3 rounded border border-gray-700 bg-gray-950/50 p-1 text-xs font-bold">
           {[
             ["achievements", "Achievements"],
             ["talents", "Talent Tree"],
+            ["focus", "Guild Focus"],
           ].map(([tabKey, label]) => (
             <button
               key={tabKey}
@@ -243,6 +262,88 @@ const GuildTalentsModal = ({
                   </section>
                 ))}
               </div>
+            </div>
+          </div>
+        )}
+
+        {activeTab === "focus" && (
+          <div className="space-y-4">
+            <div className="grid grid-cols-1 md:grid-cols-3 gap-3 text-xs">
+              <div className="rounded border border-gray-700 bg-gray-800 px-3 py-2 text-gray-300">
+                Current Focus:{" "}
+                <span className="text-amber-200 font-bold">{currentFocus}</span>
+              </div>
+              <div className="rounded border border-gray-700 bg-gray-800 px-3 py-2 text-gray-300">
+                Change Cost:{" "}
+                <span className="text-yellow-300 font-bold">
+                  {focusChangeCostGold}g
+                </span>
+              </div>
+              <div
+                className={`rounded border px-3 py-2 text-xs ${
+                  focusChangedToday
+                    ? "border-red-800 bg-red-950/30 text-red-200"
+                    : "border-emerald-800 bg-emerald-950/25 text-emerald-200"
+                }`}
+              >
+                {focusChangedToday
+                  ? "Focus already changed today."
+                  : "Focus can be changed today."}
+              </div>
+            </div>
+
+            <div className="rounded border border-gray-700 bg-gray-800/60 p-3 space-y-3">
+              <div className="flex items-center justify-between gap-3">
+                <h3 className="text-xs uppercase tracking-wider text-amber-200 font-bold">
+                  Guild Focus
+                </h3>
+                <span className="text-[11px] text-gray-400">
+                  One change per calendar day
+                </span>
+              </div>
+
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-2">
+                {GUILD_FOCUS_OPTIONS.map((focus) => {
+                  const isCurrent = focus === currentFocus;
+                  const isDisabled =
+                    isCurrent ||
+                    focusChangedToday ||
+                    !canAffordFocusChange ||
+                    typeof onChangeGuildFocus !== "function";
+                  return (
+                    <div
+                      key={focus}
+                      className={`rounded border p-3 text-xs space-y-3 ${
+                        isCurrent
+                          ? "border-amber-700 bg-amber-950/35"
+                          : "border-gray-700 bg-gray-900/60"
+                      }`}
+                    >
+                      <div>
+                        <div className="font-bold text-amber-100">{focus}</div>
+                        <div className="text-[11px] text-gray-300 mt-1">
+                          {GUILD_FOCUS_DESCRIPTIONS[focus]}
+                        </div>
+                      </div>
+                      <button
+                        type="button"
+                        onClick={() => onChangeGuildFocus(focus)}
+                        disabled={isDisabled}
+                        className="w-full px-3 py-2 rounded border border-cyan-700 bg-cyan-950/40 text-cyan-100 text-[11px] font-bold disabled:opacity-40 disabled:cursor-not-allowed hover:bg-cyan-900/50"
+                      >
+                        {isCurrent ? "Active" : `Set Focus (${focusChangeCostGold}g)`}
+                      </button>
+                    </div>
+                  );
+                })}
+              </div>
+
+              {!canAffordFocusChange && (
+                <div className="text-[11px] text-yellow-300">
+                  Need {Math.max(0, focusChangeCostGold - (Number(guildGold) || 0))}g
+                  more to change focus.
+                </div>
+              )}
             </div>
           </div>
         )}

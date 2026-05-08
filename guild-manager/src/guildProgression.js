@@ -10,6 +10,11 @@ export const GUILD_LEVEL_MILESTONE_REWARDS = {
   50: 3,
   60: 5,
 };
+export const GUILD_ROSTER_SIZE_MILESTONES = [
+  { target: 10, reward: 1, label: "One small step..." },
+  { target: 20, reward: 1, label: "Now We Need a Bigger Inn" },
+  { target: 40, reward: 2, label: "Raid Roster" },
+];
 export const GUILD_DUNGEON_CLEAR_MILESTONES = [
   { target: 1, reward: 1, label: "First dungeon clear" },
   { target: 5, reward: 2, label: "5 dungeon clears" },
@@ -206,6 +211,14 @@ export const getGuildTalentTierGoldCost = (tier) => {
 const createLevelMilestoneMap = () =>
   Object.fromEntries(GUILD_LEVEL_MILESTONES.map((level) => [level, false]));
 
+const createRosterSizeMilestoneMap = () =>
+  Object.fromEntries(
+    GUILD_ROSTER_SIZE_MILESTONES.map((milestone) => [
+      milestone.target,
+      false,
+    ]),
+  );
+
 const createDungeonClearMilestoneMap = () =>
   Object.fromEntries(
     GUILD_DUNGEON_CLEAR_MILESTONES.map((milestone) => [milestone.target, false]),
@@ -355,6 +368,7 @@ export const createInitialGuildProgress = () => ({
   ),
   milestones: {
     levelReached: createLevelMilestoneMap(),
+    rosterSizeReached: createRosterSizeMilestoneMap(),
     dungeon: getFallbackDungeonState(),
   },
 });
@@ -565,6 +579,12 @@ export const normalizeGuildProgress = (rawGuildProgress) => {
       levelReached[level] = true;
     }
   });
+  const rosterSizeReached = createRosterSizeMilestoneMap();
+  GUILD_ROSTER_SIZE_MILESTONES.forEach((milestone) => {
+    if (rawGuildProgress?.milestones?.rosterSizeReached?.[milestone.target]) {
+      rosterSizeReached[milestone.target] = true;
+    }
+  });
 
   const rawDungeonMilestones = rawGuildProgress?.milestones?.dungeon || {};
   const clearReached = createDungeonClearMilestoneMap();
@@ -710,6 +730,7 @@ export const normalizeGuildProgress = (rawGuildProgress) => {
     talents,
     milestones: {
       levelReached,
+      rosterSizeReached,
       dungeon: {
         clearCount,
         clearReached,
@@ -763,6 +784,42 @@ export const applyLevelMilestones = (guildProgress, roster) => {
       milestones: {
         ...normalized.milestones,
         levelReached,
+      },
+    },
+  };
+};
+
+export const applyRosterSizeMilestones = (guildProgress, roster) => {
+  const normalized = normalizeGuildProgress(guildProgress);
+  const rosterSizeReached = {
+    ...createRosterSizeMilestoneMap(),
+    ...normalized.milestones.rosterSizeReached,
+  };
+  const rosterSize = Array.isArray(roster) ? roster.length : 0;
+  const unlocked = [];
+  let gained = 0;
+
+  GUILD_ROSTER_SIZE_MILESTONES.forEach((milestone) => {
+    if (rosterSizeReached[milestone.target]) return;
+    if (rosterSize < milestone.target) return;
+    rosterSizeReached[milestone.target] = true;
+    gained += milestone.reward;
+    unlocked.push(milestone);
+  });
+
+  if (unlocked.length === 0) {
+    return { guildProgress: guildProgress || normalized, unlocked };
+  }
+
+  return {
+    unlocked,
+    guildProgress: {
+      ...normalized,
+      renownPoints: normalized.renownPoints + gained,
+      totalRenown: normalized.totalRenown + gained,
+      milestones: {
+        ...normalized.milestones,
+        rosterSizeReached,
       },
     },
   };
@@ -1066,6 +1123,15 @@ export const buildGuildAchievementEntries = (guildProgress) => {
       label: `First level ${level} character`,
       unlocked: Boolean(normalized?.milestones?.levelReached?.[level]),
       reward: `+${GUILD_LEVEL_MILESTONE_REWARDS[level]} ${GUILD_POINT_LABEL}`,
+    })),
+    ...GUILD_ROSTER_SIZE_MILESTONES.map((milestone) => ({
+      key: `roster-size-${milestone.target}`,
+      label: milestone.label,
+      unlocked: Boolean(
+        normalized?.milestones?.rosterSizeReached?.[milestone.target],
+      ),
+      progress: `${normalized?.milestones?.rosterSizeReached?.[milestone.target] ? milestone.target : 0}/${milestone.target}`,
+      reward: `+${milestone.reward} ${GUILD_POINT_LABEL}`,
     })),
     ...GUILD_DUNGEON_CLEAR_MILESTONES.map((milestone) => ({
       key: `dungeon-clear-${milestone.target}`,

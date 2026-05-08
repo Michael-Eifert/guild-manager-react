@@ -358,13 +358,31 @@ const MissionModal = ({
   raidLockouts = {},
   currentDayIndex = 0,
   onNotify,
+  missionBoardState = null,
+  onMissionBoardStateChange = null,
 }) => {
+  const initialBoardState =
+    missionBoardState && typeof missionBoardState === "object"
+      ? missionBoardState
+      : {};
   const [view, setView] = useState("list");
   const [selectedQuest, setSelectedQuest] = useState(null);
   const [party, setParty] = useState([]);
-  const [selectedCategory, setSelectedCategory] = useState("all");
-  const [levelFilterMin, setLevelFilterMin] = useState("");
-  const [levelFilterMax, setLevelFilterMax] = useState("");
+  const [selectedCategory, setSelectedCategory] = useState(
+    initialBoardState.selectedCategory || "all",
+  );
+  const [levelFilterMin, setLevelFilterMin] = useState(
+    initialBoardState.levelFilterMin || "",
+  );
+  const [levelFilterMax, setLevelFilterMax] = useState(
+    initialBoardState.levelFilterMax || "",
+  );
+  const [showAvailableDungeonsOnly, setShowAvailableDungeonsOnly] = useState(
+    Boolean(initialBoardState.showAvailableDungeonsOnly),
+  );
+  const [hideLowLevelDungeons, setHideLowLevelDungeons] = useState(
+    Boolean(initialBoardState.hideLowLevelDungeons),
+  );
   const [characterFilterMinLevel, setCharacterFilterMinLevel] = useState("");
   const [characterFilterMaxLevel, setCharacterFilterMaxLevel] = useState("");
   const [characterSortMode, setCharacterSortMode] = useState(
@@ -411,9 +429,6 @@ const MissionModal = ({
     setView("list");
     setParty([]);
     setSelectedQuest(null);
-    setSelectedCategory("all");
-    setLevelFilterMin("");
-    setLevelFilterMax("");
     setCharacterFilterMinLevel("");
     setCharacterFilterMaxLevel("");
     setCharacterSortMode(TACTICAL_CHARACTER_SORT.LEVEL_DESC);
@@ -426,6 +441,24 @@ const MissionModal = ({
     setIsLootAccordionOpen(false);
     setIsAutoSelectMenuOpen(false);
   }, [isOpen]);
+
+  useEffect(() => {
+    if (typeof onMissionBoardStateChange !== "function") return;
+    onMissionBoardStateChange({
+      selectedCategory,
+      levelFilterMin,
+      levelFilterMax,
+      showAvailableDungeonsOnly,
+      hideLowLevelDungeons,
+    });
+  }, [
+    hideLowLevelDungeons,
+    levelFilterMax,
+    levelFilterMin,
+    onMissionBoardStateChange,
+    selectedCategory,
+    showAvailableDungeonsOnly,
+  ]);
 
   useEffect(() => {
     if (!isAutoSelectMenuOpen) return undefined;
@@ -601,6 +634,57 @@ const MissionModal = ({
   );
 
   const eligibleRoster = idleRoster.filter((char) => char.level >= minLevel);
+  const getDungeonAvailabilityParty = (mission, useProgressionRange = false) => {
+    if (mission?.type !== "dungeon" || mission?.isRaid === true) return [];
+    const targetPartySize = Math.max(5, getMissionMinPartySize(mission));
+    const joinMinLevel = getMissionJoinMinLevel(mission);
+    const progressionBounds = getMissionProgressionBounds(mission);
+    const levelReadyRoster = idleRoster.filter((member) => {
+      const level = Number(member?.level) || 1;
+      if (level < joinMinLevel) return false;
+      if (!useProgressionRange) return true;
+      return (
+        level >= progressionBounds.minLevel &&
+        level <= progressionBounds.maxLevel
+      );
+    });
+    const keyReadyRoster =
+      mission?.requiresKeyForAllMembers === true
+        ? levelReadyRoster.filter((member) => {
+            const keys = Array.isArray(member?.keys) ? member.keys : [];
+            return keys.some((keyId) => String(keyId) === String(mission.keyId));
+          })
+        : levelReadyRoster;
+
+    if (keyReadyRoster.length < targetPartySize) return [];
+
+    const partyMembers = [];
+    if (mission?.requiresKey && mission?.requiresKeyForAllMembers !== true) {
+      const keyHolder = keyReadyRoster.find((member) => {
+        const keys = Array.isArray(member?.keys) ? member.keys : [];
+        return keys.some((keyId) => String(keyId) === String(mission.keyId));
+      });
+      if (!keyHolder) return [];
+      partyMembers.push(keyHolder);
+    }
+
+    keyReadyRoster.forEach((member) => {
+      if (partyMembers.length >= targetPartySize) return;
+      if (partyMembers.some((entry) => entry.id === member.id)) return;
+      partyMembers.push(member);
+    });
+
+    if (partyMembers.length < targetPartySize) return [];
+    const keyAccess = evaluateMissionKeyAccess({
+      missions: [mission],
+      partyMembers,
+    });
+    return keyAccess.canEnter ? partyMembers : [];
+  };
+  const canFormAvailableDungeonGroup = (mission) =>
+    getDungeonAvailabilityParty(mission, false).length > 0;
+  const hasInRangeDungeonGroup = (mission) =>
+    getDungeonAvailabilityParty(mission, true).length > 0;
   const parsedCharacterFilterMin = Number(characterFilterMinLevel);
   const parsedCharacterFilterMax = Number(characterFilterMaxLevel);
   const hasCharacterFilterMin =
@@ -837,16 +921,29 @@ const MissionModal = ({
     }
     return { minLevel: 1, maxLevel: activeLevelFilterMax };
   })();
-  const filteredOrderedMissions = hasAnyLevelFilter
-    ? orderedMissions.filter((mission) => {
-        if (!normalizedLevelFilter) return true;
-        const missionBounds = getMissionLevelBounds(mission);
-        return (
-          missionBounds.maxLevel >= normalizedLevelFilter.minLevel &&
-          missionBounds.minLevel <= normalizedLevelFilter.maxLevel
-        );
-      })
-    : orderedMissions;
+  const filteredOrderedMissions = orderedMissions.filter((mission) => {
+    if (hasAnyLevelFilter) {
+      if (!normalizedLevelFilter) return true;
+      const missionBounds = getMissionLevelBounds(mission);
+      if (
+        missionBounds.maxLevel < normalizedLevelFilter.minLevel ||
+        missionBounds.minLevel > normalizedLevelFilter.maxLevel
+      ) {
+        return false;
+      }
+    }
+
+    if (mission?.type === "dungeon" && mission?.isRaid !== true) {
+      if (showAvailableDungeonsOnly && !canFormAvailableDungeonGroup(mission)) {
+        return false;
+      }
+      if (hideLowLevelDungeons && !hasInRangeDungeonGroup(mission)) {
+        return false;
+      }
+    }
+
+    return true;
+  });
 
   const missionEligibilityById = useMemo(() => {
     const totalRoster = roster.length;
@@ -1681,6 +1778,30 @@ const MissionModal = ({
                 className="h-[30px] px-3 rounded border border-gray-600 bg-gray-800 text-xs text-gray-200 hover:bg-gray-700 disabled:opacity-40 disabled:cursor-not-allowed"
               >
                 Clear
+              </button>
+              <button
+                type="button"
+                onClick={() => setShowAvailableDungeonsOnly((prev) => !prev)}
+                className={`h-[30px] px-3 rounded border text-xs font-semibold transition-colors ${
+                  showAvailableDungeonsOnly
+                    ? "border-emerald-500 bg-emerald-900/40 text-emerald-100"
+                    : "border-gray-600 bg-gray-800 text-gray-300 hover:bg-gray-700"
+                }`}
+                title="Only show dungeons where idle heroes can currently form an eligible group."
+              >
+                Available Dungeons
+              </button>
+              <button
+                type="button"
+                onClick={() => setHideLowLevelDungeons((prev) => !prev)}
+                className={`h-[30px] px-3 rounded border text-xs font-semibold transition-colors ${
+                  hideLowLevelDungeons
+                    ? "border-amber-500 bg-amber-900/30 text-amber-100"
+                    : "border-gray-600 bg-gray-800 text-gray-300 hover:bg-gray-700"
+                }`}
+                title="Hide dungeons where idle heroes are already outside the recommended level range."
+              >
+                Hide Low Level
               </button>
               <span className="text-xs text-gray-500 ml-auto">
                 Showing {filteredOrderedMissions.length}/{orderedMissions.length}

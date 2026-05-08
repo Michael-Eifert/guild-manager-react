@@ -17,6 +17,8 @@ import {
   GUILD_SERVER_OPTIONS,
   GAMEPLAY_TUNING,
   GUILD_ACTIVITY_MODES,
+  GUILD_DUNGEON_ACTIVITY,
+  GUILD_DUNGEON_ACTIVITY_OPTIONS,
   MEMBER_RANKING_MODES,
   GUILD_MEMBER_SORT,
   GUILD_MEMBER_SORT_OPTIONS,
@@ -24,7 +26,6 @@ import {
   GUILD_FOCUS_OPTIONS,
   DEFAULT_GUILD_SETUP,
   GUILD_STARTING_CONFIG,
-  RECRUITMENT_CONFIG,
   WORLD_DROP_CONFIG,
   DEFAULT_DUNGEON_LOOT_TABLE,
   FACTION_EMBLEM_ICON,
@@ -43,6 +44,8 @@ import {
   getClassArmorTypes,
   isItemUsableByClass,
   getKeyLabel,
+  getRacePortraitUrl,
+  getRoleIcon,
   getWowIconUrl,
 } from "./utils";
 import CharacterCard from "./components/CharacterCard";
@@ -55,6 +58,7 @@ import {
   normalizeGuildProgress,
   getGuildDerivedStats,
   applyLevelMilestones,
+  applyRosterSizeMilestones,
   applyDungeonClearMilestones,
   applyDungeonWipeMilestone,
   upgradeGuildTalent,
@@ -106,7 +110,6 @@ import {
   resolveZoneAutoTransition,
 } from "./zones/zoneLogic";
 import {
-  getRecruitmentCapacity,
   resolveRecruitmentResult,
 } from "./recruitment/recruitmentLogic";
 import {
@@ -137,6 +140,7 @@ import {
   startRaidLockout,
   updateRaidLockoutProgress,
 } from "./raids/raidLockouts";
+import { resolveAutoDungeonAttempt } from "./automation/dungeonAutomation";
 
 const RecruitModal = lazy(() => import("./components/modals/RecruitModal"));
 const DetailModal = lazy(() => import("./components/modals/DetailModal"));
@@ -150,6 +154,8 @@ const GuildTalentsModal = lazy(
 const MissionModal = lazy(() => import("./components/modals/MissionModal"));
 const OptionsModal = lazy(() => import("./components/modals/OptionsModal"));
 const CalendarModal = lazy(() => import("./components/modals/CalendarModal"));
+
+const GUILD_FOCUS_CHANGE_COST_GOLD = 10;
 
 const geminiProxyUrl = import.meta.env.VITE_GEMINI_PROXY_URL || "";
 const callGemini = async (prompt, isJson = false) => {
@@ -184,10 +190,6 @@ const {
   ROLE_PLAN: STARTING_GUILD_ROLE_PLAN,
   GOLD: STARTING_GUILD_GOLD,
 } = GUILD_STARTING_CONFIG;
-const {
-  SCOUT_COST_GOLD: RECRUIT_SCOUT_COST_GOLD,
-  RECRUIT_COST_GOLD,
-} = RECRUITMENT_CONFIG;
 const {
   COMMON_DROP_CHANCE: WORLD_TICK_COMMON_DROP_CHANCE,
   UNCOMMON_DROP_CHANCE: WORLD_TICK_UNCOMMON_DROP_CHANCE,
@@ -537,6 +539,11 @@ const normalizeGuildSetup = (value, payloadData = {}) => {
   const normalizedFocus = GUILD_FOCUS_OPTIONS.includes(safe.focus)
     ? safe.focus
     : GUILD_FOCUS.LEVELING;
+  const normalizedDungeonActivity = GUILD_DUNGEON_ACTIVITY_OPTIONS.includes(
+    safe.dungeonActivity,
+  )
+    ? safe.dungeonActivity
+    : GUILD_DUNGEON_ACTIVITY.NONE;
   const normalizedServer = GUILD_SERVER_OPTIONS.some(
     (option) => option.value === safe.server,
   )
@@ -559,6 +566,12 @@ const normalizeGuildSetup = (value, payloadData = {}) => {
     server: normalizedServer,
     serverStyle: normalizedServerStyle,
     focus: normalizedFocus,
+    lastFocusChangeDayIndex: Number.isFinite(
+      Number(safe.lastFocusChangeDayIndex),
+    )
+      ? Number(safe.lastFocusChangeDayIndex)
+      : null,
+    dungeonActivity: normalizedDungeonActivity,
     hasStarted,
   };
 };
@@ -618,7 +631,7 @@ const cloneMissionTemplate = (mission) => ({
 
 // --- Local Components ---
 
-const ActiveMissionCard = ({ mission, onFinish, gameTimeMs }) => {
+const ActiveMissionCard = ({ mission, onFinish, gameTimeMs, roster }) => {
   const now = Number.isFinite(gameTimeMs) ? gameTimeMs : mission.startTime || 0;
   const timeLeft = Math.max(0, mission.finishTime - now);
   const progress = 100 - (timeLeft / mission.totalDuration) * 100;
@@ -653,6 +666,16 @@ const ActiveMissionCard = ({ mission, onFinish, gameTimeMs }) => {
     Math.floor(Number(dungeonProgress?.maxAttempts) || 0),
   );
   const wipeCost = getMissionWipeCost(mission);
+  const partyMembers =
+    mission.type === "dungeon" && mission.isRaid !== true
+      ? (Array.isArray(mission.memberIds) ? mission.memberIds : [])
+          .map((memberId) =>
+            (Array.isArray(roster) ? roster : []).find(
+              (member) => String(member?.id) === String(memberId),
+            ),
+          )
+          .filter(Boolean)
+      : [];
   return (
     <div className="wow-card p-3 rounded flex flex-col gap-2 shadow-lg relative overflow-hidden border border-gray-600 bg-gray-800">
       <div className="flex justify-between items-center z-10 relative">
@@ -679,6 +702,60 @@ const ActiveMissionCard = ({ mission, onFinish, gameTimeMs }) => {
             Cleared: {dungeonProgress?.clearedSteps || 0}/{dungeonBossCount}{" "}
             bosses
           </div>
+          {mission.isRaid !== true && partyMembers.length > 0 && (
+            <div className="rounded border border-gray-700 bg-gray-900/60 p-2">
+              <div className="text-[10px] uppercase tracking-wider text-gray-400 font-bold mb-2">
+                Dungeon Party
+              </div>
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+                {partyMembers.map((member) => {
+                  const classData = DB_CLASSES[member.charClass] || {};
+                  return (
+                    <div
+                      key={`${mission.instanceId || mission.id}-${member.id}`}
+                      className="flex items-center gap-2 min-w-0 rounded border border-gray-700 bg-black/25 px-2 py-1.5"
+                    >
+                      <img
+                        src={getRacePortraitUrl(member.race, member.gender)}
+                        alt={`${member.race || "Unknown"} ${member.gender || ""}`}
+                        className="w-8 h-8 rounded border border-gray-600 object-cover flex-none"
+                        onError={(event) => {
+                          event.currentTarget.src = getWowIconUrl(
+                            "inv_misc_questionmark",
+                          );
+                        }}
+                      />
+                      {classData.icon && (
+                        <img
+                          src={classData.icon}
+                          alt={member.charClass}
+                          className="w-5 h-5 rounded-sm border border-gray-600 flex-none"
+                          onError={(event) => {
+                            event.currentTarget.style.display = "none";
+                          }}
+                        />
+                      )}
+                      <div className="min-w-0 flex-1">
+                        <div
+                          className="text-xs font-bold truncate"
+                          style={{ color: classData.color || "#e5e7eb" }}
+                        >
+                          {member.name}
+                        </div>
+                        <div className="text-[10px] text-gray-400 truncate">
+                          {member.race} {member.charClass}
+                        </div>
+                      </div>
+                      <div className="flex-none inline-flex items-center gap-1 rounded border border-gray-700 bg-gray-950/60 px-2 py-1 text-[10px] text-gray-200">
+                        <span>{getRoleIcon(member.role)}</span>
+                        <span>{member.role}</span>
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+            </div>
+          )}
           {maxAttempts > 0 && (
             <div className="text-[11px] text-amber-200/80">
               Attempts: {attemptsUsed}/{maxAttempts}
@@ -793,6 +870,13 @@ const App = () => {
   const [showOptions, setShowOptions] = useState(false);
   const [detailCharId, setDetailCharId] = useState(null);
   const [notifications, setNotifications] = useState([]);
+  const [missionBoardState, setMissionBoardState] = useState({
+    selectedCategory: "all",
+    levelFilterMin: "",
+    levelFilterMax: "",
+    showAvailableDungeonsOnly: false,
+    hideLowLevelDungeons: false,
+  });
   const [memberRankingMode, setMemberRankingMode] = useState(
     MEMBER_RANKING_MODES.STANDARD,
   );
@@ -811,6 +895,7 @@ const App = () => {
   const missionListRef = useRef(missionList);
   const calendarEventStartLocksRef = useRef(new Set());
   const startCalendarEventRef = useRef(() => false);
+  const autoDungeonStateRef = useRef({ nextAttemptAt: 0 });
   const goldRef = useRef(guildGold);
   const guildProgressRef = useRef(guildProgress);
   const guildSetupRef = useRef(guildSetup);
@@ -1123,20 +1208,33 @@ const App = () => {
   useEffect(() => {
     let newlyUnlocked = [];
     setGuildProgress((prev) => {
-      const result = applyLevelMilestones(prev, roster);
-      newlyUnlocked = result.unlocked;
-      return result.guildProgress;
+      const levelResult = applyLevelMilestones(prev, roster);
+      const rosterResult = applyRosterSizeMilestones(
+        levelResult.guildProgress,
+        roster,
+      );
+      newlyUnlocked = [
+        ...levelResult.unlocked.map(({ level, reward }) => ({
+          label: `First level ${level} character`,
+          reward,
+        })),
+        ...rosterResult.unlocked.map(({ label, reward }) => ({
+          label,
+          reward,
+        })),
+      ];
+      return rosterResult.guildProgress;
     });
 
     if (newlyUnlocked.length > 0) {
-      newlyUnlocked.forEach(({ level, reward }) => {
+      newlyUnlocked.forEach(({ label, reward }) => {
         pushNotification({
           type: "achievement",
           title: "Achievement Unlocked",
-          message: `First level ${level} character: +${reward} ${GUILD_POINT_LABEL}`,
+          message: `${label}: +${reward} ${GUILD_POINT_LABEL}`,
           durationMs: 5200,
         });
-        appendAchievementLog(`First level ${level} character`, reward);
+        appendAchievementLog(label, reward);
       });
     }
   }, [appendAchievementLog, pushNotification, roster]);
@@ -1955,6 +2053,100 @@ const App = () => {
         }
       });
 
+      const autoDungeonAttempt = resolveAutoDungeonAttempt({
+        mode:
+          guildSetupRef.current?.focus === GUILD_FOCUS.RAID_ATTUNEMENTS &&
+          guildSetupRef.current?.dungeonActivity === GUILD_DUNGEON_ACTIVITY.NONE
+            ? GUILD_DUNGEON_ACTIVITY.BALANCED
+            : guildSetupRef.current?.dungeonActivity ||
+          GUILD_DUNGEON_ACTIVITY.NONE,
+        guildFocus: guildSetupRef.current?.focus,
+        now,
+        nextAttemptAt: autoDungeonStateRef.current.nextAttemptAt,
+        lastCheckpointKey: autoDungeonStateRef.current.lastCheckpointKey,
+        calendarEpochGameTimeMs:
+          calendarStateRef.current.calendarEpochGameTimeMs,
+        missionList: missionListRef.current,
+        roster: newRoster,
+        activeMissions: newMissions,
+        getSuccessPreview: getAdjustedMissionSuccessPreview,
+      });
+      autoDungeonStateRef.current = {
+        nextAttemptAt: autoDungeonAttempt.nextAttemptAt,
+        lastCheckpointKey: autoDungeonAttempt.lastCheckpointKey,
+      };
+      const autoDungeonCandidates = Array.isArray(autoDungeonAttempt.candidates)
+        ? autoDungeonAttempt.candidates
+        : autoDungeonAttempt.candidate
+          ? [autoDungeonAttempt.candidate]
+          : [];
+      autoDungeonCandidates.forEach((candidate) => {
+        const { mission, memberIds, successChance } = candidate;
+        const chainMissionIds = Array.isArray(candidate.chainMissionIds)
+          ? candidate.chainMissionIds
+          : [];
+        const chainMissions =
+          chainMissionIds.length > 1
+            ? chainMissionIds
+                .map((missionId) =>
+                  missionListRef.current.find(
+                    (missionEntry) => missionEntry.id === missionId,
+                  ),
+                )
+                .filter(Boolean)
+                .sort(sortDungeonChainMissions)
+            : [];
+        const hasDungeonChain = chainMissions.length > 1;
+        const openingMission = hasDungeonChain ? chainMissions[0] : mission;
+        const chainContext = hasDungeonChain
+          ? {
+              chainId: createId(),
+              setId: openingMission.dungeonSetId,
+              setName: openingMission.dungeonSetName || openingMission.name,
+              totalMissions: chainMissions.length,
+              currentPosition: 1,
+              remainingMissionIds: chainMissions
+                .slice(1)
+                .map((missionEntry) => missionEntry.id),
+            }
+          : null;
+        const missionRun = buildMissionRun(
+          openingMission,
+          memberIds,
+          now,
+          newRoster,
+          chainContext,
+        );
+        newRoster = newRoster.map((char) =>
+          memberIds.includes(char.id)
+            ? {
+                ...char,
+                status: "Questing",
+                statusText: hasDungeonChain
+                  ? `Auto Chain: ${chainContext.setName}`
+                  : `Auto Dungeon: ${openingMission.dungeonWing || openingMission.name}`,
+                autoDungeonLastStartedAt: now,
+              }
+            : char,
+        );
+        newMissions.push(missionRun);
+        newLogs.push({
+          type: "auto-dungeon",
+          missionName: hasDungeonChain
+            ? chainContext.setName
+            : openingMission.dungeonWing || openingMission.name,
+          message: `${memberIds.length} heroes formed an automatic ${hasDungeonChain ? "dungeon chain" : "dungeon group"} for ${hasDungeonChain ? chainMissions.map((missionEntry) => missionEntry.dungeonWing || missionEntry.name).join(" + ") : openingMission.dungeonWing || openingMission.name} (${successChance}% success).`,
+        });
+        pushNotification({
+          type: "info",
+          title: hasDungeonChain
+            ? "Dungeon Chain Formed"
+            : "Dungeon Group Formed",
+          message: `${hasDungeonChain ? chainMissions.map((missionEntry) => missionEntry.dungeonWing || missionEntry.name).join(" + ") : openingMission.dungeonWing || openingMission.name}: ${memberIds.length} heroes, ${successChance}% success.`,
+          durationMs: 4200,
+        });
+      });
+
       // 3. Process Character Status (Idle/Professions)
       newRoster = newRoster.map((char) => {
         const normalizedChar = normalizeCharacterZoneState(
@@ -2315,6 +2507,7 @@ const App = () => {
     buildMissionRun,
     completeCalendarEvent,
     gameSpeed,
+    getAdjustedMissionSuccessPreview,
     isPaused,
     itemDatabase,
     normalizeRosterZones,
@@ -2339,34 +2532,40 @@ const App = () => {
       });
       return;
     }
+    setShowRecruit(true);
+  };
+
+  const handleScoutRecruitmentTier = (tier) => {
+    const scoutCost = Math.max(0, Number(tier?.scoutCostGold) || 0);
     const currentGold = Math.max(0, Number(goldRef.current) || 0);
-    if (currentGold < RECRUIT_SCOUT_COST_GOLD) {
+    if (currentGold < scoutCost) {
       pushNotification({
         type: "error",
         title: "Recruitment Blocked",
-        message: `Need ${RECRUIT_SCOUT_COST_GOLD}g to scout new applicants.`,
+        message: `Need ${scoutCost}g to scout ${tier?.label || "applicants"}.`,
       });
-      return;
+      return false;
     }
-    const updatedGold = Math.max(0, currentGold - RECRUIT_SCOUT_COST_GOLD);
+    const updatedGold = Math.max(0, currentGold - scoutCost);
     goldRef.current = updatedGold;
     setGuildGold(updatedGold);
-    setShowRecruit(true);
     pushNotification({
       type: "info",
       title: "Recruitment Scouted",
-      message: `Scouting cost paid: ${RECRUIT_SCOUT_COST_GOLD}g. First recruit is free, additional recruits cost ${RECRUIT_COST_GOLD}g each.`,
+      message: `${tier?.label || "Applicants"} scouted for ${scoutCost}g.`,
     });
+    return true;
   };
 
-  const handleRecruit = (chars) => {
+  const handleRecruit = (chars, tier = {}) => {
+    const recruitCostGold = Math.max(1, Number(tier?.recruitCostGold) || 1);
     const { recruits, spentGold, updatedGold, updatedRoster } =
       resolveRecruitmentResult({
         currentRoster: rosterRef.current,
         currentGold: goldRef.current,
         selectedCandidates: chars,
         maxRoster: guildDerivedStats.maxRoster,
-        recruitCostGold: RECRUIT_COST_GOLD,
+        recruitCostGold,
       });
 
     if (recruits.length === 0) {
@@ -2387,7 +2586,7 @@ const App = () => {
     pushNotification({
       type: "info",
       title: "Recruitment Complete",
-      message: `${recruits.length} hero${recruits.length > 1 ? "es" : ""} recruited. Additional recruitment cost: ${spentGold}g.`,
+      message: `${recruits.length} hero${recruits.length > 1 ? "es" : ""} recruited from ${tier?.label || "applicants"}. Additional recruitment cost: ${spentGold}g.`,
     });
     setShowRecruit(false);
   };
@@ -2407,6 +2606,67 @@ const App = () => {
       type: "info",
       title: "Guild Directive",
       message: `All members set to ${mode}.`,
+    });
+  };
+  const handleGuildDungeonActivityChange = (mode) => {
+    if (!GUILD_DUNGEON_ACTIVITY_OPTIONS.includes(mode)) return;
+    autoDungeonStateRef.current = { nextAttemptAt: 0 };
+    setGuildSetup((prev) => ({
+      ...prev,
+      dungeonActivity: mode,
+    }));
+    pushNotification({
+      type: "info",
+      title: "Dungeon Directive",
+      message:
+        mode === GUILD_DUNGEON_ACTIVITY.NONE
+          ? "Automatic dungeon grouping disabled."
+          : `Automatic dungeon grouping set to ${mode}.`,
+    });
+  };
+  const handleGuildFocusChange = (focus) => {
+    if (!GUILD_FOCUS_OPTIONS.includes(focus)) return;
+    const currentFocus = guildSetupRef.current?.focus || GUILD_FOCUS.LEVELING;
+    if (focus === currentFocus) return;
+
+    const lastChangedDay = Number(guildSetupRef.current?.lastFocusChangeDayIndex);
+    if (
+      Number.isFinite(lastChangedDay) &&
+      lastChangedDay === currentCalendarDayIndex
+    ) {
+      pushNotification({
+        type: "error",
+        title: "Guild Focus Locked",
+        message: "The guild focus can only be changed once per calendar day.",
+      });
+      return;
+    }
+
+    const currentGold = Math.max(0, Number(goldRef.current) || 0);
+    if (currentGold < GUILD_FOCUS_CHANGE_COST_GOLD) {
+      pushNotification({
+        type: "error",
+        title: "Not Enough Gold",
+        message: `Changing guild focus costs ${GUILD_FOCUS_CHANGE_COST_GOLD}g.`,
+      });
+      return;
+    }
+
+    const updatedGold = Math.max(0, currentGold - GUILD_FOCUS_CHANGE_COST_GOLD);
+    goldRef.current = updatedGold;
+    setGuildGold(updatedGold);
+    setGuildSetup((prev) => ({
+      ...prev,
+      focus,
+      lastFocusChangeDayIndex: currentCalendarDayIndex,
+    }));
+    if (focus === GUILD_FOCUS.RAID_ATTUNEMENTS) {
+      autoDungeonStateRef.current = { nextAttemptAt: 0 };
+    }
+    pushNotification({
+      type: "info",
+      title: "Guild Focus Changed",
+      message: `Guild focus set to ${focus}.`,
     });
   };
   const handleProfChange = (id, idx, newProf) => {
@@ -2443,6 +2703,14 @@ const App = () => {
             : GUILD_FOCUS.LEVELING,
         };
       }
+      if (field === "dungeonActivity") {
+        return {
+          ...prev,
+          dungeonActivity: GUILD_DUNGEON_ACTIVITY_OPTIONS.includes(value)
+            ? value
+            : GUILD_DUNGEON_ACTIVITY.NONE,
+        };
+      }
       if (field === "server") {
         const normalizedServer = GUILD_SERVER_OPTIONS.some(
           (option) => option.value === value,
@@ -2474,6 +2742,7 @@ const App = () => {
     const calendarStart = createInitialCalendarState(gameTimeRef.current);
 
     rewardedMissionIdsRef.current = new Set();
+    autoDungeonStateRef.current = { nextAttemptAt: 0 };
     rosterRef.current = starterRoster;
     missionsRef.current = [];
     goldRef.current = starterGold;
@@ -3533,6 +3802,14 @@ const App = () => {
           );
           return uniform ? firstMode : "Mixed";
         })();
+  const dungeonActivityInfoText =
+    guildSetup.dungeonActivity === GUILD_DUNGEON_ACTIVITY.MINIMAL
+      ? "Groups are formed every other day."
+      : guildSetup.dungeonActivity === GUILD_DUNGEON_ACTIVITY.BALANCED
+        ? "Groups are formed every day."
+        : guildSetup.dungeonActivity === GUILD_DUNGEON_ACTIVITY.ALWAYS
+          ? "Groups will be formed several times a day."
+          : "Automatic dungeon groups are disabled.";
 
   const parsedGuildMemberMinLevel = Number(guildMemberMinLevelFilter);
   const parsedGuildMemberMaxLevel = Number(guildMemberMaxLevelFilter);
@@ -3667,16 +3944,7 @@ const App = () => {
         })),
     [missionList],
   );
-  const {
-    openSlots: openRecruitSlots,
-    affordableSlots: affordableRecruitSlots,
-    availableSlots: availableRecruitSlots,
-  } = getRecruitmentCapacity({
-    rosterSize: roster.length,
-    maxRoster: guildDerivedStats.maxRoster,
-    guildGold,
-    recruitCostGold: RECRUIT_COST_GOLD,
-  });
+  const openRecruitSlots = Math.max(0, guildDerivedStats.maxRoster - roster.length);
   const activeCharacterNames = useMemo(
     () => roster.map((member) => member?.name).filter(Boolean),
     [roster],
@@ -3778,13 +4046,10 @@ const App = () => {
       <div className="flex flex-wrap gap-2 md:gap-3 mb-6 pb-2">
         <button
           onClick={handleOpenRecruit}
-          disabled={
-            openRecruitSlots <= 0 || guildGold < RECRUIT_SCOUT_COST_GOLD
-          }
+          disabled={openRecruitSlots <= 0}
           className="flex-none snap-start btn-recruit text-yellow-100 font-bold py-3 px-6 rounded border border-yellow-900 shadow-lg flex items-center gap-2 select-none disabled:opacity-50 whitespace-nowrap"
         >
-          <span className="text-xl">📜</span> Recruit ({RECRUIT_SCOUT_COST_GOLD}
-          g)
+          <span className="text-xl">📜</span> Recruit
         </button>
         <button
           onClick={() => setShowGuildTalents(true)}
@@ -3880,6 +4145,41 @@ const App = () => {
         </div>
       </div>
 
+      <div className="mb-6 rounded border border-gray-700 bg-gray-900/70 p-3">
+        <div className="flex items-center justify-between gap-2 mb-2">
+          <h3 className="text-xs uppercase tracking-wider text-gray-300 font-bold">
+            Dungeon Groups
+          </h3>
+          <span className="text-[11px] text-gray-400">
+            Current: {guildSetup.dungeonActivity || GUILD_DUNGEON_ACTIVITY.NONE}
+          </span>
+        </div>
+        <div className="grid grid-cols-2 lg:grid-cols-4 gap-2">
+          {GUILD_DUNGEON_ACTIVITY_OPTIONS.map((mode) => {
+            const isActive =
+              (guildSetup.dungeonActivity || GUILD_DUNGEON_ACTIVITY.NONE) ===
+              mode;
+            return (
+              <button
+                key={mode}
+                onClick={() => handleGuildDungeonActivityChange(mode)}
+                disabled={roster.length === 0}
+                className={`px-3 py-2 rounded border text-xs md:text-sm font-bold transition-colors disabled:opacity-50 disabled:cursor-not-allowed ${
+                  isActive
+                    ? "border-emerald-500 bg-emerald-900/30 text-emerald-100"
+                    : "border-gray-600 bg-gray-800 text-gray-300 hover:bg-gray-700"
+                }`}
+              >
+                {mode}
+              </button>
+            );
+          })}
+        </div>
+        <p className="mt-2 text-[11px] text-gray-500">
+          {dungeonActivityInfoText}
+        </p>
+      </div>
+
       <div className="mb-6 border-t border-amber-900/50"></div>
 
       {activeMissions.length > 0 && (
@@ -3900,6 +4200,7 @@ const App = () => {
                     mission={m}
                     onFinish={handleManualFinish}
                     gameTimeMs={gameTimeMs}
+                    roster={roster}
                   />
                 </div>
               );
@@ -4078,10 +4379,13 @@ const App = () => {
             isOpen={showRecruit}
             onClose={() => setShowRecruit(false)}
             onRecruit={handleRecruit}
-            availableSlots={availableRecruitSlots}
             openSlots={openRecruitSlots}
-            affordableSlots={affordableRecruitSlots}
-            recruitCostGold={RECRUIT_COST_GOLD}
+            guildGold={guildGold}
+            maxRoster={guildDerivedStats.maxRoster}
+            rosterSize={roster.length}
+            guildProgress={guildProgress}
+            raidUnlocked={guildDerivedStats.raidUnlocked}
+            onScoutTier={handleScoutRecruitmentTier}
             guildFaction={guildSetup.faction}
             existingNames={activeCharacterNames}
           />
@@ -4093,6 +4397,10 @@ const App = () => {
             guildProgress={guildProgress}
             guildGold={guildGold}
             guildDerivedStats={guildDerivedStats}
+            guildSetup={guildSetup}
+            currentDayIndex={currentCalendarDayIndex}
+            focusChangeCostGold={GUILD_FOCUS_CHANGE_COST_GOLD}
+            onChangeGuildFocus={handleGuildFocusChange}
             onUpgradeTalent={handleUpgradeGuildTalent}
           />
         )}
@@ -4113,6 +4421,8 @@ const App = () => {
             raidLockouts={raidLockouts}
             currentDayIndex={currentCalendarDayIndex}
             onNotify={pushNotification}
+            missionBoardState={missionBoardState}
+            onMissionBoardStateChange={setMissionBoardState}
           />
         )}
         {showCalendar && (

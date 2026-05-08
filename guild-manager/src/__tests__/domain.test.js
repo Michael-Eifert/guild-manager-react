@@ -4,6 +4,7 @@ import {
   applyDungeonClearMilestones,
   applyDungeonWipeMilestone,
   applyLevelMilestones,
+  applyRosterSizeMilestones,
   buildGuildAchievementEntries,
   getGuildDerivedStats,
   normalizeGuildProgress,
@@ -20,7 +21,9 @@ import {
 } from "../missions/missionHelpers";
 import { createMissionRewardProcessor } from "../missions/missionRewards";
 import {
+  buildRecruitmentEquipment,
   getRecruitmentCapacity,
+  getRecruitmentTierOptions,
   resolveRecruitmentResult,
 } from "../recruitment/recruitmentLogic";
 import {
@@ -36,8 +39,18 @@ import {
   DEFAULT_GAME_SPEED,
   normalizeProgressionState,
 } from "../progression";
-import { INITIAL_MISSIONS } from "../constants";
+import {
+  GUILD_DUNGEON_ACTIVITY,
+  GUILD_FOCUS,
+  INITIAL_MISSIONS,
+} from "../constants";
 import { getItemEffectiveLevel, isItemUsableByClass } from "../utils";
+import {
+  AUTO_DUNGEON_MIN_SUCCESS_CHANCE,
+  getAutoDungeonLevelRange,
+  getAutoDungeonIntervalMs,
+  resolveAutoDungeonAttempt,
+} from "../automation/dungeonAutomation";
 import {
   CALENDAR_DAY_MS,
   CALENDAR_SERIES_TYPE,
@@ -178,6 +191,121 @@ describe("recruitment", () => {
     expect(result.updatedGold).toBe(0);
     expect(result.updatedRoster).toHaveLength(4);
   });
+
+  it("unlocks recruitment tiers from level achievements and raid attunement", () => {
+    const baseProgress = createInitialGuildProgress();
+    const levelProgress = {
+      ...baseProgress,
+      milestones: {
+        ...baseProgress.milestones,
+        levelReached: {
+          ...baseProgress.milestones.levelReached,
+          20: true,
+          30: true,
+          40: true,
+          50: true,
+          60: true,
+        },
+      },
+    };
+
+    const earlyTiers = getRecruitmentTierOptions({
+      guildProgress: baseProgress,
+      raidUnlocked: false,
+    });
+    const lateTiersWithoutRaid = getRecruitmentTierOptions({
+      guildProgress: levelProgress,
+      raidUnlocked: false,
+    });
+    const lateTiersWithRaid = getRecruitmentTierOptions({
+      guildProgress: levelProgress,
+      raidUnlocked: true,
+    });
+
+    expect(earlyTiers.filter((tier) => tier.unlocked).map((tier) => tier.id)).toEqual([
+      "level_1_10",
+    ]);
+    expect(
+      lateTiersWithoutRaid.find((tier) => tier.id === "level_51_60")?.unlocked,
+    ).toBe(true);
+    expect(
+      lateTiersWithoutRaid.find((tier) => tier.id === "level_60")?.unlocked,
+    ).toBe(false);
+    expect(lateTiersWithRaid.find((tier) => tier.id === "level_60")).toMatchObject({
+      unlocked: true,
+      scoutCostGold: 30,
+      recruitCostGold: 15,
+    });
+  });
+
+  it("builds level-appropriate recruitment gear instead of starter whites", () => {
+    const itemDatabase = [
+      {
+        id: "green-head",
+        name: "Green Head",
+        slot: "head",
+        quality: 2,
+        type: "Plate",
+        minLevel: 35,
+        itemLevel: 40,
+      },
+      {
+        id: "green-chest",
+        name: "Green Chest",
+        slot: "chest",
+        quality: 2,
+        type: "Plate",
+        minLevel: 35,
+        itemLevel: 40,
+      },
+      {
+        id: "green-legs",
+        name: "Green Legs",
+        slot: "legs",
+        quality: 2,
+        type: "Plate",
+        minLevel: 35,
+        itemLevel: 40,
+      },
+      {
+        id: "blue-feet",
+        name: "Blue Feet",
+        slot: "feet",
+        quality: 3,
+        type: "Plate",
+        minLevel: 35,
+        itemLevel: 42,
+      },
+      {
+        id: "green-hands",
+        name: "Green Hands",
+        slot: "hands",
+        quality: 2,
+        type: "Plate",
+        minLevel: 35,
+        itemLevel: 40,
+      },
+      {
+        id: "green-weapon",
+        name: "Green Weapon",
+        slot: "mainHand",
+        quality: 2,
+        type: "Generic",
+        minLevel: 35,
+        itemLevel: 40,
+      },
+    ];
+
+    const equipment = buildRecruitmentEquipment({
+      character: { level: 40, charClass: "Warrior" },
+      itemDatabase,
+    });
+    const itemLevels = Object.values(equipment).map(getItemEffectiveLevel);
+
+    expect(Object.values(equipment).every((item) => item.quality >= 2)).toBe(true);
+    expect(Math.min(...itemLevels)).toBeGreaterThanOrEqual(35);
+    expect(Math.max(...itemLevels)).toBeLessThanOrEqual(42);
+  });
 });
 
 describe("guild progression", () => {
@@ -191,6 +319,30 @@ describe("guild progression", () => {
     expect(first.guildProgress.renownPoints).toBe(2);
     expect(second.unlocked).toEqual([]);
     expect(second.guildProgress.renownPoints).toBe(2);
+  });
+
+  it("awards roster size achievements once", () => {
+    const baseProgress = createInitialGuildProgress();
+    const tenMembers = Array.from({ length: 10 }, (_, index) => ({
+      id: `member-${index}`,
+    }));
+    const fortyMembers = Array.from({ length: 40 }, (_, index) => ({
+      id: `member-${index}`,
+    }));
+    const first = applyRosterSizeMilestones(baseProgress, tenMembers);
+    const second = applyRosterSizeMilestones(first.guildProgress, tenMembers);
+    const third = applyRosterSizeMilestones(first.guildProgress, fortyMembers);
+
+    expect(first.unlocked).toEqual([
+      { target: 10, reward: 1, label: "One small step..." },
+    ]);
+    expect(first.guildProgress.renownPoints).toBe(1);
+    expect(second.unlocked).toEqual([]);
+    expect(third.unlocked.map((milestone) => milestone.label)).toEqual([
+      "Now We Need a Bigger Inn",
+      "Raid Roster",
+    ]);
+    expect(third.guildProgress.renownPoints).toBe(4);
   });
 
   it("tracks dungeon clear and wipe milestones without double-awarding the first wipe", () => {
@@ -292,6 +444,21 @@ describe("guild progression", () => {
       "Cleared Onyxia": "+3 Guild Renown",
       "Cleared BWL": "+5 Guild Renown",
       "Cleared AQ40": "+5 Guild Renown",
+    });
+  });
+
+  it("lists roster size achievements in guild achievements", () => {
+    const entries = buildGuildAchievementEntries(createInitialGuildProgress());
+    const rosterAchievementRewards = Object.fromEntries(
+      entries
+        .filter((entry) => entry.key.startsWith("roster-size-"))
+        .map((entry) => [entry.label, entry.reward]),
+    );
+
+    expect(rosterAchievementRewards).toMatchObject({
+      "One small step...": "+1 Guild Renown",
+      "Now We Need a Bigger Inn": "+1 Guild Renown",
+      "Raid Roster": "+2 Guild Renown",
     });
   });
 });
@@ -1501,6 +1668,268 @@ describe("item level tuning", () => {
     expect(getItemEffectiveLevel({ minLevel: 10, quality: 3 })).toBe(17);
     expect(getItemEffectiveLevel({ minLevel: 10, quality: 4 })).toBe(20);
     expect(getItemEffectiveLevel({ minLevel: 60, quality: 5 })).toBe(80);
+  });
+});
+
+describe("auto dungeon activity", () => {
+  const deadmines = INITIAL_MISSIONS.find(
+    (mission) => mission.name === "The Deadmines",
+  );
+  const makeMember = (id, level, role = "DPS", extras = {}) => ({
+    id,
+    name: id,
+    level,
+    role,
+    status: "Idle",
+    equipment: {},
+    keys: [],
+    ...extras,
+  });
+
+  it("derives an entry-to-recommended level range for auto dungeon groups", () => {
+    expect(getAutoDungeonLevelRange(deadmines)).toEqual({
+      min: 10,
+      max: 23,
+    });
+  });
+
+  it("uses calendar-day intervals for dungeon group search frequency", () => {
+    expect(getAutoDungeonIntervalMs(GUILD_DUNGEON_ACTIVITY.MINIMAL)).toBe(
+      CALENDAR_DAY_MS * 2,
+    );
+    expect(getAutoDungeonIntervalMs(GUILD_DUNGEON_ACTIVITY.BALANCED)).toBe(
+      CALENDAR_DAY_MS,
+    );
+    expect(getAutoDungeonIntervalMs(GUILD_DUNGEON_ACTIVITY.ALWAYS)).toBe(
+      CALENDAR_DAY_MS * 0.5,
+    );
+  });
+
+  it("checks auto dungeon formation once per 20 percent day checkpoint", () => {
+    const roster = [
+      makeMember("tank", 20, "Tank"),
+      makeMember("healer", 20, "Healer"),
+      makeMember("dps-1", 20),
+      makeMember("dps-2", 20),
+      makeMember("dps-3", 20),
+    ];
+    const first = resolveAutoDungeonAttempt({
+      mode: GUILD_DUNGEON_ACTIVITY.ALWAYS,
+      now: CALENDAR_DAY_MS * 0.2,
+      missionList: [deadmines],
+      roster,
+      activeMissions: [],
+      getSuccessPreview: () => ({ successChance: 100 }),
+    });
+    const repeat = resolveAutoDungeonAttempt({
+      mode: GUILD_DUNGEON_ACTIVITY.ALWAYS,
+      now: CALENDAR_DAY_MS * 0.3,
+      lastCheckpointKey: first.lastCheckpointKey,
+      missionList: [deadmines],
+      roster,
+      activeMissions: [],
+      getSuccessPreview: () => ({ successChance: 100 }),
+    });
+    const nextCheckpoint = resolveAutoDungeonAttempt({
+      mode: GUILD_DUNGEON_ACTIVITY.ALWAYS,
+      now: CALENDAR_DAY_MS * 0.4,
+      lastCheckpointKey: first.lastCheckpointKey,
+      missionList: [deadmines],
+      roster,
+      activeMissions: [],
+      getSuccessPreview: () => ({ successChance: 100 }),
+    });
+
+    expect(first.candidate).toBeTruthy();
+    expect(repeat.candidate).toBeNull();
+    expect(nextCheckpoint.candidate).toBeTruthy();
+  });
+
+  it("forms a level-appropriate dungeon group only when success is at least 70%", () => {
+    const roster = [
+      makeMember("tank", 20, "Tank"),
+      makeMember("healer", 20, "Healer"),
+      makeMember("dps-1", 20),
+      makeMember("dps-2", 20),
+      makeMember("dps-3", 20),
+      makeMember("too-high", 40, "Tank"),
+    ];
+
+    const blocked = resolveAutoDungeonAttempt({
+      mode: GUILD_DUNGEON_ACTIVITY.ALWAYS,
+      now: CALENDAR_DAY_MS * 0.2,
+      missionList: [deadmines],
+      roster,
+      activeMissions: [],
+      getSuccessPreview: () => ({
+        successChance: AUTO_DUNGEON_MIN_SUCCESS_CHANCE - 1,
+      }),
+    });
+    const formed = resolveAutoDungeonAttempt({
+      mode: GUILD_DUNGEON_ACTIVITY.ALWAYS,
+      now: CALENDAR_DAY_MS * 0.2,
+      missionList: [deadmines],
+      roster,
+      activeMissions: [],
+      getSuccessPreview: () => ({
+        successChance: AUTO_DUNGEON_MIN_SUCCESS_CHANCE,
+      }),
+    });
+
+    expect(blocked.candidate).toBeNull();
+    expect(formed.candidate).toMatchObject({
+      mission: deadmines,
+      successChance: AUTO_DUNGEON_MIN_SUCCESS_CHANCE,
+    });
+    expect([...formed.candidate.memberIds].sort()).toEqual([
+      "dps-1",
+      "dps-2",
+      "dps-3",
+      "tank",
+      "healer",
+    ].sort());
+    expect(formed.candidate.memberIds).not.toContain("too-high");
+  });
+
+  it("rotates dungeon searchers by each character's last auto dungeon time", () => {
+    const roster = [
+      makeMember("recent-tank", 20, "Tank", {
+        autoDungeonLastStartedAt: CALENDAR_DAY_MS * 0.5,
+      }),
+      makeMember("fresh-tank", 20, "Tank"),
+      makeMember("healer", 20, "Healer", {
+        autoDungeonLastStartedAt: CALENDAR_DAY_MS * 0.5,
+      }),
+      makeMember("dps-1", 20, "DPS", {
+        autoDungeonLastStartedAt: CALENDAR_DAY_MS * 0.5,
+      }),
+      makeMember("dps-2", 20, "DPS", {
+        autoDungeonLastStartedAt: CALENDAR_DAY_MS * 0.5,
+      }),
+      makeMember("dps-3", 20, "DPS", {
+        autoDungeonLastStartedAt: CALENDAR_DAY_MS * 0.5,
+      }),
+    ];
+
+    const result = resolveAutoDungeonAttempt({
+      mode: GUILD_DUNGEON_ACTIVITY.BALANCED,
+      now: CALENDAR_DAY_MS * 1.2,
+      missionList: [deadmines],
+      roster,
+      activeMissions: [],
+      getSuccessPreview: () => ({ successChance: 100 }),
+    });
+
+    expect(result.candidate.initiatorId).toBe("fresh-tank");
+    expect(result.candidate.memberIds).toContain("fresh-tank");
+  });
+
+  it("can form several non-overlapping dungeon groups in one search pass", () => {
+    const roster = [
+      makeMember("tank-a", 20, "Tank"),
+      makeMember("healer-a", 20, "Healer"),
+      makeMember("dps-a1", 20),
+      makeMember("dps-a2", 20),
+      makeMember("dps-a3", 20),
+      makeMember("tank-b", 20, "Tank"),
+      makeMember("healer-b", 20, "Healer"),
+      makeMember("dps-b1", 20),
+      makeMember("dps-b2", 20),
+      makeMember("dps-b3", 20),
+    ];
+
+    const result = resolveAutoDungeonAttempt({
+      mode: GUILD_DUNGEON_ACTIVITY.ALWAYS,
+      now: CALENDAR_DAY_MS * 0.2,
+      missionList: [deadmines],
+      roster,
+      activeMissions: [],
+      getSuccessPreview: () => ({ successChance: 100 }),
+    });
+
+    expect(result.candidates).toHaveLength(2);
+    const allMemberIds = result.candidates.flatMap((candidate) => candidate.memberIds);
+    expect(new Set(allMemberIds).size).toBe(10);
+  });
+
+  it("prefers a short chain when consecutive dungeon wings are in range", () => {
+    const scarletMissions = INITIAL_MISSIONS.filter(
+      (mission) => mission.dungeonSetName === "Scarlet Monastery",
+    );
+    const roster = [
+      makeMember("tank", 34, "Tank"),
+      makeMember("healer", 34, "Healer"),
+      makeMember("dps-1", 34),
+      makeMember("dps-2", 34),
+      makeMember("dps-3", 34),
+    ];
+
+    const result = resolveAutoDungeonAttempt({
+      mode: GUILD_DUNGEON_ACTIVITY.ALWAYS,
+      now: CALENDAR_DAY_MS * 0.2,
+      missionList: scarletMissions,
+      roster,
+      activeMissions: [],
+      getSuccessPreview: () => ({ successChance: 100 }),
+    });
+
+    expect(result.candidate.chainMissionIds.length).toBeGreaterThanOrEqual(2);
+    expect(
+      result.candidate.missions.map((mission) => mission.dungeonWing),
+    ).toEqual(["Library", "Armory"]);
+  });
+
+  it("prioritizes raid attunement routes when guild focus is raid attunements", () => {
+    const normalDungeon = {
+      id: "normal-dungeon",
+      type: "dungeon",
+      name: "Normal Dungeon",
+      level: 58,
+      minLevel: 55,
+      recommended: "55 - 60",
+      requiredPartySize: 5,
+      minPartySize: 5,
+      exp: 999999,
+    };
+    const attunementDungeon = {
+      id: "attunement-dungeon",
+      type: "dungeon",
+      name: "Attunement Dungeon",
+      level: 58,
+      minLevel: 55,
+      recommended: "55 - 60",
+      requiredPartySize: 5,
+      minPartySize: 5,
+      rewardKeys: ["molten_core_attunement"],
+      exp: 1,
+    };
+    const raid = {
+      id: "molten-core",
+      type: "dungeon",
+      name: "Molten Core",
+      isRaid: true,
+      requiresKey: true,
+      keyId: "molten_core_attunement",
+    };
+    const roster = [
+      makeMember("tank", 60, "Tank"),
+      makeMember("healer", 60, "Healer"),
+      makeMember("dps-1", 60),
+      makeMember("dps-2", 60),
+      makeMember("dps-3", 60),
+    ];
+
+    const result = resolveAutoDungeonAttempt({
+      mode: GUILD_DUNGEON_ACTIVITY.BALANCED,
+      guildFocus: GUILD_FOCUS.RAID_ATTUNEMENTS,
+      now: CALENDAR_DAY_MS * 0.2,
+      missionList: [normalDungeon, attunementDungeon, raid],
+      roster,
+      activeMissions: [],
+      getSuccessPreview: () => ({ successChance: 100 }),
+    });
+
+    expect(result.candidate.mission).toBe(attunementDungeon);
   });
 });
 
