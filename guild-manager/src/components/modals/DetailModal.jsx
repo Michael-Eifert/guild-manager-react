@@ -20,6 +20,7 @@ import {
   getWowIconUrl,
 } from "../../utils";
 import { ZONE_DEFINITIONS, getZoneById } from "../../zones/zoneDefinitions";
+import { getRaidLockoutStatus } from "../../raids/raidLockouts";
 import BaseModal from "./BaseModal";
 
 const ItemSlot = ({ slotName, item }) => {
@@ -61,6 +62,9 @@ const DetailModal = ({
   char,
   isOpen,
   missionAchievementCatalog = [],
+  missionList = [],
+  raidLockouts = {},
+  currentDayIndex = 0,
   onClose,
   onDismiss,
   onLevelChange,
@@ -132,6 +136,32 @@ const DetailModal = ({
     { length: Math.max(MIN_KEY_SLOTS, characterKeys.length) },
     (_, index) => characterKeys[index] || null,
   );
+  const characterRaidLockouts = (Array.isArray(missionList) ? missionList : [])
+    .filter((mission) => mission?.isRaid)
+    .map((mission) => {
+      const status = getRaidLockoutStatus({
+        raidLockouts,
+        mission,
+        currentDayIndex,
+        memberIds: [char?.id],
+      });
+      const lockout = status.partyLockouts?.[0] || null;
+      if (!lockout) return null;
+      return {
+        key: `${mission.id}-${lockout.lockoutId}`,
+        raidName: mission.dungeonSetName || mission.name || lockout.raidName || "Raid",
+        displayId: lockout.displayId,
+        clearedSteps: status.clearedSteps,
+        totalBosses: status.totalBosses,
+        completed: lockout.completed,
+        resetDaysRemaining: Math.max(
+          0,
+          Math.floor(Number(status.resetWindow?.nextResetDayIndex) || 0) -
+            Math.max(0, Math.floor(Number(currentDayIndex) || 0)),
+        ),
+      };
+    })
+    .filter(Boolean);
   const historyPageCount = Math.max(1, Math.ceil(historyEntries.length / HISTORY_PAGE_SIZE));
   const currentPage = Math.min(historyPage, historyPageCount - 1);
   const historyStart = currentPage * HISTORY_PAGE_SIZE;
@@ -359,6 +389,46 @@ const DetailModal = ({
                     </div>
                   ))}
                 </div>
+              </div>
+
+              <div className="mt-4 bg-gray-800/50 p-3 rounded border border-cyan-900/50">
+                <h3 className="text-[10px] text-cyan-300 uppercase tracking-widest mb-2 font-bold">
+                  Raid IDs
+                </h3>
+                {characterRaidLockouts.length === 0 ? (
+                  <div className="text-xs text-gray-500 italic">
+                    No active raid IDs this lockout.
+                  </div>
+                ) : (
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+                    {characterRaidLockouts.map((raidLockout) => (
+                      <div
+                        key={`${char.id}-raid-id-${raidLockout.key}`}
+                        className={`rounded border px-2 py-2 text-xs ${
+                          raidLockout.completed
+                            ? "border-red-800 bg-red-950/20 text-red-100"
+                            : "border-cyan-800 bg-cyan-950/20 text-cyan-100"
+                        }`}
+                      >
+                        <div className="flex items-center justify-between gap-2">
+                          <span className="font-bold truncate">{raidLockout.raidName}</span>
+                          <span className="font-mono whitespace-nowrap">
+                            ID {raidLockout.displayId}
+                          </span>
+                        </div>
+                        <div className="mt-1 text-[11px] text-gray-300">
+                          {raidLockout.clearedSteps}/{raidLockout.totalBosses} bosses cleared
+                          {raidLockout.completed ? " - completed" : ""}
+                          {raidLockout.resetDaysRemaining > 0
+                            ? ` - resets in ${raidLockout.resetDaysRemaining} day${
+                                raidLockout.resetDaysRemaining === 1 ? "" : "s"
+                              }`
+                            : " - resets today"}
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                )}
               </div>
 
               <div className="flex gap-2 items-center mt-4">
@@ -673,14 +743,14 @@ const DetailModal = ({
                                     <img
                                       src={getWowIconUrl(
                                         isCleared
-                                          ? "achievement_general_raid_10man"
+                                          ? "inv_misc_head_dragon_01"
                                           : "achievement_bg_returnxflags_def_wsg",
                                       )}
                                       alt={isCleared ? "Cleared achievement" : "Not cleared"}
                                       className="w-4 h-4 rounded-sm border border-gray-700 object-cover flex-none"
                                       onError={(event) => {
                                         event.currentTarget.src = getWowIconUrl(
-                                          "inv_misc_questionmark",
+                                          "inv_misc_head_dragon_01",
                                         );
                                       }}
                                     />

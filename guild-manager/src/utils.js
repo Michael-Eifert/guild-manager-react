@@ -64,10 +64,10 @@ const SLOT_TYPE_FALLBACK_ICONS = {
 const ITEM_QUALITY_LEVEL_BONUS = {
   0: 0, // Poor (gray)
   1: 0, // Common (white)
-  2: 7, // Uncommon (green)
-  3: 12, // Rare (blue)
-  4: 20, // Epic (purple)
-  5: 40, // Legendary (orange)
+  2: 5, // Uncommon (green)
+  3: 7, // Rare (blue)
+  4: 10, // Epic (purple)
+  5: 20, // Legendary (orange)
 };
 const ITEM_SET_BONUS_TIERS = Object.freeze([
   { pieces: 4, bonus: 10 },
@@ -92,6 +92,15 @@ const SET_CLASS_RESTRICTIONS = Object.freeze({
   t1_earthfury: ["Shaman"],
   t1_felheart_raiment: ["Warlock"],
   t1_battlegear_of_might: ["Warrior"],
+  t2_stormrage_raiment: ["Druid"],
+  t2_dragonstalker_armor: ["Hunter"],
+  t2_netherwind_regalia: ["Mage"],
+  t2_judgment_armor: ["Paladin"],
+  t2_vestments_of_transcendence: ["Priest"],
+  t2_bloodfang_armor: ["Rogue"],
+  t2_the_ten_storms: ["Shaman"],
+  t2_nemesis_raiment: ["Warlock"],
+  t2_battlegear_of_wrath: ["Warrior"],
 });
 const ITEM_SET_ARMOR_SLOTS = Object.freeze([
   "head",

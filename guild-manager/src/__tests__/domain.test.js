@@ -4,6 +4,7 @@ import {
   applyDungeonClearMilestones,
   applyDungeonWipeMilestone,
   applyLevelMilestones,
+  buildGuildAchievementEntries,
   getGuildDerivedStats,
   normalizeGuildProgress,
 } from "../guildProgression";
@@ -204,6 +205,94 @@ describe("guild progression", () => {
     expect(clearResult.guildProgress.milestones.dungeon.gnomereganCleared).toBe(true);
     expect(firstWipe.unlocked.label).toBe("First dungeon wipe");
     expect(secondWipe.unlocked).toBeNull();
+  });
+
+  it("awards new raid clear achievements once", () => {
+    const baseProgress = createInitialGuildProgress();
+    const seededProgress = {
+      ...baseProgress,
+      milestones: {
+        ...baseProgress.milestones,
+        dungeon: {
+          ...baseProgress.milestones.dungeon,
+          clearCount: 10,
+          clearReached: { 1: true, 5: true, 10: true },
+        },
+      },
+    };
+    const raidMilestones = [
+      {
+        missionName: "Zul'Gurub",
+        key: "zulGurubCleared",
+        label: "Cleared ZG",
+        reward: 3,
+      },
+      {
+        missionName: "Ruins of Ahn'Qiraj",
+        key: "ahnQirajRuinsCleared",
+        label: "Cleared AQ20",
+        reward: 3,
+      },
+      {
+        missionName: "Onyxia's Lair",
+        key: "onyxiasLairCleared",
+        label: "Cleared Onyxia",
+        reward: 3,
+      },
+      {
+        missionName: "Blackwing Lair",
+        key: "blackwingLairCleared",
+        label: "Cleared BWL",
+        reward: 5,
+      },
+      {
+        missionName: "Temple of Ahn'Qiraj",
+        key: "ahnQirajTempleCleared",
+        label: "Cleared AQ40",
+        reward: 5,
+      },
+    ];
+
+    raidMilestones.forEach((milestone) => {
+      const firstClear = applyDungeonClearMilestones(seededProgress, {
+        name: milestone.missionName,
+        dungeonSetName: milestone.missionName,
+      });
+      const secondClear = applyDungeonClearMilestones(firstClear.guildProgress, {
+        name: milestone.missionName,
+        dungeonSetName: milestone.missionName,
+      });
+
+      expect(firstClear.unlocked).toContainEqual({
+        label: milestone.label,
+        reward: milestone.reward,
+      });
+      expect(firstClear.guildProgress.renownPoints).toBe(milestone.reward);
+      expect(firstClear.guildProgress.totalRenown).toBe(milestone.reward);
+      expect(firstClear.guildProgress.milestones.dungeon[milestone.key]).toBe(true);
+      expect(secondClear.unlocked).not.toContainEqual({
+        label: milestone.label,
+        reward: milestone.reward,
+      });
+      expect(secondClear.guildProgress.renownPoints).toBe(milestone.reward);
+    });
+  });
+
+  it("lists new raid clear achievements in guild achievements", () => {
+    const entries = buildGuildAchievementEntries(createInitialGuildProgress());
+    const raidAchievementRewards = Object.fromEntries(
+      entries
+        .filter((entry) => entry.key.startsWith("raid-clear-"))
+        .map((entry) => [entry.label, entry.reward]),
+    );
+
+    expect(raidAchievementRewards).toMatchObject({
+      "Cleared ZG": "+3 Guild Renown",
+      "Cleared AQ20": "+3 Guild Renown",
+      "Cleared Onyxia": "+3 Guild Renown",
+      "Cleared BWL": "+5 Guild Renown",
+      "Cleared AQ40": "+5 Guild Renown",
+    });
   });
 });
 
@@ -1064,6 +1153,7 @@ describe("Ahn'Qiraj raid integration", () => {
     expect(aq40Mission.requiredPartySize).toBe(40);
     expect(aq40Mission.minLevel).toBe(60);
     expect(aq40Mission.entryLevel).toBe(60);
+    expect(aq40Mission.baseFailChance).toBe(50);
     expect(aq40Mission.requiresKey).toBe(false);
     expect(getDungeonBossCount(aq40Mission)).toBe(9);
     expect(aq40Mission.raidReset).toMatchObject({
@@ -1135,6 +1225,7 @@ describe("Tier 2 raid integration", () => {
     expect(onyxiaMission).toBeTruthy();
     expect(onyxiaMission.isRaid).toBe(true);
     expect(onyxiaMission.requiredPartySize).toBe(40);
+    expect(onyxiaMission.baseFailChance).toBe(45);
     expect(onyxiaMission.requiresKey).toBe(false);
     expect(getDungeonBossCount(onyxiaMission)).toBe(1);
     expect(onyxiaMission.raidReset).toMatchObject({
@@ -1145,6 +1236,7 @@ describe("Tier 2 raid integration", () => {
     expect(blackwingLairMission).toBeTruthy();
     expect(blackwingLairMission.isRaid).toBe(true);
     expect(blackwingLairMission.requiredPartySize).toBe(40);
+    expect(blackwingLairMission.baseFailChance).toBe(48);
     expect(blackwingLairMission.requiresKey).toBe(false);
     expect(getDungeonBossCount(blackwingLairMission)).toBe(8);
     expect(blackwingLairMission.raidReset).toMatchObject({
@@ -1177,12 +1269,20 @@ describe("Tier 2 raid integration", () => {
 describe("item level tuning", () => {
   const getItemsBySource = (sourceId) =>
     DB_ITEMS.filter((item) => item.dungeonSetId === sourceId);
+  const getItemsBySetPrefix = (setPrefix) =>
+    DB_ITEMS.filter((item) => String(item.setId || "").startsWith(setPrefix));
   const expectItemLevelsWithin = (items, minItemLevel, maxItemLevel) => {
     expect(items.length).toBeGreaterThan(0);
     items.forEach((item) => {
       const itemLevel = getItemEffectiveLevel(item);
       expect(itemLevel).toBeGreaterThanOrEqual(minItemLevel);
       expect(itemLevel).toBeLessThanOrEqual(maxItemLevel);
+    });
+  };
+  const expectItemLevelsEqual = (items, expectedItemLevel) => {
+    expect(items.length).toBeGreaterThan(0);
+    items.forEach((item) => {
+      expect(getItemEffectiveLevel(item)).toBe(expectedItemLevel);
     });
   };
 
@@ -1194,23 +1294,34 @@ describe("item level tuning", () => {
       56,
       60,
     );
-    expectItemLevelsWithin(
-      DB_ITEMS.filter((item) => String(item.setId || "").startsWith("t0_")),
-      57,
-      62,
-    );
+    expectItemLevelsEqual(getItemsBySetPrefix("t0_"), 66);
     expectItemLevelsWithin(
       getItemsBySource("blackrock_depths"),
       52,
       58,
     );
-    expectItemLevelsWithin(getItemsBySource("blackrock_spire"), 57, 63);
+    expectItemLevelsWithin(
+      getItemsBySource("blackrock_spire").filter(
+        (item) => !String(item.setId || "").startsWith("t0_"),
+      ),
+      57,
+      63,
+    );
   });
 
   it("keeps raid loot in Classic item-level bands", () => {
-    expectItemLevelsWithin(getItemsBySource("zul_gurub"), 61, 70);
-    expectItemLevelsWithin(getItemsBySource("ahn_qiraj_ruins"), 61, 70);
-    expectItemLevelsWithin(getItemsBySource("molten_core"), 66, 80);
+    expectItemLevelsWithin(getItemsBySource("zul_gurub"), 66, 70);
+    expectItemLevelsWithin(getItemsBySource("ahn_qiraj_ruins"), 66, 70);
+    expectItemLevelsEqual(getItemsBySetPrefix("t1_"), 70);
+    expectItemLevelsEqual(getItemsBySetPrefix("t2_"), 76);
+    expectItemLevelsEqual(
+      getItemsBySource("molten_core").filter((item) => Number(item.quality) === 4),
+      70,
+    );
+    expectItemLevelsEqual(
+      getItemsBySource("molten_core").filter((item) => Number(item.quality) === 5),
+      90,
+    );
     expectItemLevelsWithin(getItemsBySource("onyxias_lair"), 76, 76);
     expectItemLevelsWithin(getItemsBySource("blackwing_lair"), 76, 76);
     expectItemLevelsWithin(getItemsBySource("ahn_qiraj_temple"), 73, 88);
@@ -1218,6 +1329,14 @@ describe("item level tuning", () => {
 
   it("supports explicit itemLevel over min-level quality fallback", () => {
     expect(getItemEffectiveLevel({ minLevel: 60, quality: 4, itemLevel: 63 })).toBe(63);
+  });
+
+  it("uses the normalized quality fallback when no explicit item level exists", () => {
+    expect(getItemEffectiveLevel({ minLevel: 10, quality: 1 })).toBe(10);
+    expect(getItemEffectiveLevel({ minLevel: 10, quality: 2 })).toBe(15);
+    expect(getItemEffectiveLevel({ minLevel: 10, quality: 3 })).toBe(17);
+    expect(getItemEffectiveLevel({ minLevel: 10, quality: 4 })).toBe(20);
+    expect(getItemEffectiveLevel({ minLevel: 60, quality: 5 })).toBe(80);
   });
 });
 

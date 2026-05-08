@@ -4116,6 +4116,9 @@ const App = () => {
             char={roster.find((c) => c.id === detailCharId)}
             isOpen={!!detailCharId}
             missionAchievementCatalog={missionAchievementCatalog}
+            missionList={missionList}
+            raidLockouts={raidLockouts}
+            currentDayIndex={currentCalendarDayIndex}
             onClose={() => setDetailCharId(null)}
             onDismiss={handleDismiss}
             onModeChange={handleModeChange}

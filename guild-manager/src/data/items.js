@@ -1,11 +1,11 @@
-import { MOLTEN_CORE_ITEMS } from './imports/moltenCoreLootManifest';
-import { ZUL_GURUB_ITEMS } from './imports/zulGurubLootManifest';
-import { AHN_QIRAJ_RUINS_ITEMS } from './imports/ahnQirajRuinsLootManifest';
-import { AHN_QIRAJ_TEMPLE_ITEMS } from './imports/ahnQirajTempleLootManifest';
-import { LOWER_BLACKROCK_SPIRE_ITEMS } from './imports/lowerBlackrockSpireLootManifest';
-import { UPPER_BLACKROCK_SPIRE_ITEMS } from './imports/upperBlackrockSpireLootManifest';
-import { ONYXIAS_LAIR_ITEMS } from './imports/onyxiasLairLootManifest';
-import { BLACKWING_LAIR_ITEMS } from './imports/blackwingLairLootManifest';
+import { MOLTEN_CORE_ITEMS } from "./imports/moltenCoreLootManifest";
+import { ZUL_GURUB_ITEMS } from "./imports/zulGurubLootManifest";
+import { AHN_QIRAJ_RUINS_ITEMS } from "./imports/ahnQirajRuinsLootManifest";
+import { AHN_QIRAJ_TEMPLE_ITEMS } from "./imports/ahnQirajTempleLootManifest";
+import { LOWER_BLACKROCK_SPIRE_ITEMS } from "./imports/lowerBlackrockSpireLootManifest";
+import { UPPER_BLACKROCK_SPIRE_ITEMS } from "./imports/upperBlackrockSpireLootManifest";
+import { ONYXIAS_LAIR_ITEMS } from "./imports/onyxiasLairLootManifest";
+import { BLACKWING_LAIR_ITEMS } from "./imports/blackwingLairLootManifest";
 
 const wowItemIcon = (iconCode) =>
   `https://wow.zamimg.com/images/wow/icons/large/${iconCode.toLowerCase()}.jpg`;
@@ -15,25 +15,30 @@ const ITEM_LEVEL_BANDS_BY_SOURCE = Object.freeze({
   stratholme: { min: 56, max: 60 },
   blackrock_spire_lbrs: { min: 57, max: 60 },
   blackrock_spire_ubrs: { min: 58, max: 63 },
-  tier_zero: { min: 57, max: 62 },
-  zul_gurub: { min: 61, max: 70 },
-  ahn_qiraj_ruins: { min: 61, max: 70 },
-  molten_core: { min: 66, max: 80 },
+  zul_gurub: { min: 66, max: 70 },
+  ahn_qiraj_ruins: { min: 66, max: 70 },
+  molten_core: { min: 70, max: 90 },
   onyxias_lair: { min: 76, max: 76 },
   blackwing_lair: { min: 76, max: 76 },
   ahn_qiraj_temple: { min: 73, max: 88 },
 });
 
+const SET_TIER_ITEM_LEVEL = Object.freeze({
+  t0_: 66,
+  t1_: 70,
+  t2_: 76,
+});
+
 const RAID_FINAL_BOSS_ITEM_LEVEL = Object.freeze({
   zul_gurub: {
-    "Hakkar": 70,
+    Hakkar: 70,
   },
   ahn_qiraj_ruins: {
     "Ossirian the Unscarred": 70,
   },
   molten_core: {
-    Ragnaros: 80,
-    "Majordomo Executus": 76,
+    Ragnaros: 70,
+    "Majordomo Executus": 70,
   },
   onyxias_lair: {
     Onyxia: 76,
@@ -63,9 +68,10 @@ const getStableItemLevelOffset = (item, band) => {
 };
 
 const getItemSourceKeyForLevelBand = (item) => {
-  if (String(item?.setId || "").startsWith("t0_")) return "tier_zero";
   if (item?.dungeonSetId === "blackrock_spire") {
-    const sourceBosses = Array.isArray(item.sourceBosses) ? item.sourceBosses : [];
+    const sourceBosses = Array.isArray(item.sourceBosses)
+      ? item.sourceBosses
+      : [];
     const upperBosses = new Set([
       "Pyroguard Emberseer",
       "Solakar Flamewreath",
@@ -83,10 +89,20 @@ const getItemSourceKeyForLevelBand = (item) => {
   return item?.dungeonSetId || null;
 };
 
+const getFixedSetTierItemLevel = (item) => {
+  const setId = String(item?.setId || "").trim();
+  const matchedPrefix = Object.keys(SET_TIER_ITEM_LEVEL).find((prefix) =>
+    setId.startsWith(prefix),
+  );
+  return matchedPrefix ? SET_TIER_ITEM_LEVEL[matchedPrefix] : null;
+};
+
 const getRaidBossItemLevel = (item, sourceKey, band) => {
   const bossLevels = RAID_FINAL_BOSS_ITEM_LEVEL[sourceKey];
   if (!bossLevels) return null;
-  const sourceBosses = Array.isArray(item.sourceBosses) ? item.sourceBosses : [];
+  const sourceBosses = Array.isArray(item.sourceBosses)
+    ? item.sourceBosses
+    : [];
   const matchedBoss = sourceBosses.find((bossName) =>
     Object.prototype.hasOwnProperty.call(bossLevels, bossName),
   );
@@ -99,13 +115,19 @@ const getNormalizedItemLevel = (item) => {
   if (Number.isFinite(explicitItemLevel) && explicitItemLevel > 0) {
     return Math.floor(explicitItemLevel);
   }
+  const fixedSetItemLevel = getFixedSetTierItemLevel(item);
+  if (fixedSetItemLevel !== null) return fixedSetItemLevel;
   const sourceKey = getItemSourceKeyForLevelBand(item);
   const band = ITEM_LEVEL_BANDS_BY_SOURCE[sourceKey];
   if (!band) return null;
+  if (sourceKey === "molten_core") {
+    return Number(item?.quality) >= 5 ? 90 : 70;
+  }
   const bossLevel = getRaidBossItemLevel(item, sourceKey, band);
   if (bossLevel !== null) return bossLevel;
   const quality = Number(item?.quality) || 0;
-  const qualityOffset = quality >= 5 ? band.max - band.min : quality >= 4 ? 3 : 1;
+  const qualityOffset =
+    quality >= 5 ? band.max - band.min : quality >= 4 ? 4 : 0;
   return clampItemLevel(
     band.min + qualityOffset + getStableItemLevelOffset(item, band),
     band,
@@ -6117,4 +6139,3 @@ const RAW_DB_ITEMS = [
 ];
 
 export const DB_ITEMS = Object.freeze(RAW_DB_ITEMS.map(applyItemLevelTuning));
-

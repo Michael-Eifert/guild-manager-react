@@ -45,10 +45,44 @@ export const GUILD_SCOURGE_CLEAR_MILESTONE = {
   scholomanceDungeonName: "Scholomance",
 };
 export const GUILD_MOLTEN_CORE_CLEAR_MILESTONE = {
+  key: "moltenCoreCleared",
   reward: 5,
   label: "Cleared Molten Core",
   dungeonName: "Molten Core",
 };
+export const GUILD_RAID_CLEAR_MILESTONES = [
+  GUILD_MOLTEN_CORE_CLEAR_MILESTONE,
+  {
+    key: "zulGurubCleared",
+    reward: 3,
+    label: "Cleared ZG",
+    dungeonName: "Zul'Gurub",
+  },
+  {
+    key: "ahnQirajRuinsCleared",
+    reward: 3,
+    label: "Cleared AQ20",
+    dungeonName: "Ruins of Ahn'Qiraj",
+  },
+  {
+    key: "onyxiasLairCleared",
+    reward: 3,
+    label: "Cleared Onyxia",
+    dungeonName: "Onyxia's Lair",
+  },
+  {
+    key: "blackwingLairCleared",
+    reward: 5,
+    label: "Cleared BWL",
+    dungeonName: "Blackwing Lair",
+  },
+  {
+    key: "ahnQirajTempleCleared",
+    reward: 5,
+    label: "Cleared AQ40",
+    dungeonName: "Temple of Ahn'Qiraj",
+  },
+];
 
 export const GUILD_TALENT_DEFS = {
   rosterCap: {
@@ -305,6 +339,11 @@ const getFallbackDungeonState = (dungeonState) => ({
   scholomanceCleared: Boolean(dungeonState?.scholomanceCleared),
   scourgeCleared: Boolean(dungeonState?.scourgeCleared),
   moltenCoreCleared: Boolean(dungeonState?.moltenCoreCleared),
+  zulGurubCleared: Boolean(dungeonState?.zulGurubCleared),
+  ahnQirajRuinsCleared: Boolean(dungeonState?.ahnQirajRuinsCleared),
+  onyxiasLairCleared: Boolean(dungeonState?.onyxiasLairCleared),
+  blackwingLairCleared: Boolean(dungeonState?.blackwingLairCleared),
+  ahnQirajTempleCleared: Boolean(dungeonState?.ahnQirajTempleCleared),
 });
 
 export const createInitialGuildProgress = () => ({
@@ -647,9 +686,13 @@ export const normalizeGuildProgress = (rawGuildProgress) => {
       rawGuildProgress?.milestones?.scourgeCleared ||
       (stratholmeFullClear && scholomanceCleared),
   );
-  const moltenCoreCleared = Boolean(
-    rawDungeonMilestones?.moltenCoreCleared ||
-      rawGuildProgress?.milestones?.moltenCoreCleared,
+  const getRaidClearState = (key) =>
+    Boolean(rawDungeonMilestones?.[key] || rawGuildProgress?.milestones?.[key]);
+  const raidClearStates = Object.fromEntries(
+    GUILD_RAID_CLEAR_MILESTONES.map((milestone) => [
+      milestone.key,
+      getRaidClearState(milestone.key),
+    ]),
   );
 
   const renownPoints = Math.max(
@@ -686,7 +729,7 @@ export const normalizeGuildProgress = (rawGuildProgress) => {
         },
         scholomanceCleared,
         scourgeCleared,
-        moltenCoreCleared,
+        ...raidClearStates,
       },
     },
   };
@@ -790,13 +833,18 @@ export const applyDungeonClearMilestones = (guildProgress, missionContext = "") 
     );
   const scourgeCleared =
     dungeon.scourgeCleared || (stratholmeFullClear && scholomanceCleared);
-  const moltenCoreTargetName =
-    GUILD_MOLTEN_CORE_CLEAR_MILESTONE.dungeonName.toLowerCase();
-  const moltenCoreCleared =
-    dungeon.moltenCoreCleared ||
-    [missionName, missionSetName].some(
-      (label) => String(label || "").toLowerCase() === moltenCoreTargetName,
-    );
+  const missionLabels = [missionName, missionSetName].map((label) =>
+    String(label || "").toLowerCase(),
+  );
+  const raidClearStates = Object.fromEntries(
+    GUILD_RAID_CLEAR_MILESTONES.map((milestone) => {
+      const targetName = String(milestone.dungeonName || "").toLowerCase();
+      return [
+        milestone.key,
+        Boolean(dungeon[milestone.key]) || missionLabels.includes(targetName),
+      ];
+    }),
+  );
 
   let gained = 0;
   const unlocked = [];
@@ -840,13 +888,14 @@ export const applyDungeonClearMilestones = (guildProgress, missionContext = "") 
       reward: GUILD_SCOURGE_CLEAR_MILESTONE.reward,
     });
   }
-  if (!dungeon.moltenCoreCleared && moltenCoreCleared) {
-    gained += GUILD_MOLTEN_CORE_CLEAR_MILESTONE.reward;
+  GUILD_RAID_CLEAR_MILESTONES.forEach((milestone) => {
+    if (dungeon[milestone.key] || !raidClearStates[milestone.key]) return;
+    gained += milestone.reward;
     unlocked.push({
-      label: GUILD_MOLTEN_CORE_CLEAR_MILESTONE.label,
-      reward: GUILD_MOLTEN_CORE_CLEAR_MILESTONE.reward,
+      label: milestone.label,
+      reward: milestone.reward,
     });
-  }
+  });
 
   return {
     unlocked,
@@ -875,7 +924,7 @@ export const applyDungeonClearMilestones = (guildProgress, missionContext = "") 
           },
           scholomanceCleared,
           scourgeCleared,
-          moltenCoreCleared,
+          ...raidClearStates,
         },
       },
     },
@@ -1053,13 +1102,13 @@ export const buildGuildAchievementEntries = (guildProgress) => {
       progress: scourgeProgress,
       reward: `+${GUILD_SCOURGE_CLEAR_MILESTONE.reward} ${GUILD_POINT_LABEL}`,
     },
-    {
-      key: "raid-clear-molten-core",
-      label: GUILD_MOLTEN_CORE_CLEAR_MILESTONE.label,
-      unlocked: Boolean(normalized?.milestones?.dungeon?.moltenCoreCleared),
-      progress: `${normalized?.milestones?.dungeon?.moltenCoreCleared ? 1 : 0}/1`,
-      reward: `+${GUILD_MOLTEN_CORE_CLEAR_MILESTONE.reward} ${GUILD_POINT_LABEL}`,
-    },
+    ...GUILD_RAID_CLEAR_MILESTONES.map((milestone) => ({
+      key: `raid-clear-${milestone.key}`,
+      label: milestone.label,
+      unlocked: Boolean(normalized?.milestones?.dungeon?.[milestone.key]),
+      progress: `${normalized?.milestones?.dungeon?.[milestone.key] ? 1 : 0}/1`,
+      reward: `+${milestone.reward} ${GUILD_POINT_LABEL}`,
+    })),
     {
       key: "dungeon-first-wipe",
       label: GUILD_DUNGEON_WIPE_MILESTONE.label,
