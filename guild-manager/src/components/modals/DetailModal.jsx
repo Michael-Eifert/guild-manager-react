@@ -34,6 +34,7 @@ import {
   getZoneById,
 } from "../../zones/zoneDefinitions";
 import { getRaidLockoutStatus } from "../../raids/raidLockouts";
+import { getCharacterRelationshipRows } from "../../social/relationshipSystem";
 import BaseModal from "./BaseModal";
 
 const ZONE_ARCHETYPE_LABEL = Object.freeze({
@@ -130,6 +131,8 @@ const DetailModal = ({
   isOpen,
   missionAchievementCatalog = [],
   missionList = [],
+  roster = [],
+  guildRelationships = {},
   raidLockouts = {},
   currentDayIndex = 0,
   onClose,
@@ -141,7 +144,9 @@ const DetailModal = ({
 }) => {
   const [tab, setTab] = useState("stats");
   const [historyPage, setHistoryPage] = useState(0);
+  const [relationshipsOpen, setRelationshipsOpen] = useState(false);
   const HISTORY_PAGE_SIZE = 8;
+  const characterId = char?.id;
   const classData = DB_CLASSES[char?.charClass];
   const zonePreference = getCharacterZonePreference(char);
   const zoneArchetypeLabel =
@@ -165,6 +170,11 @@ const DetailModal = ({
   const setBonus = getCharacterSetBonus(char);
   const activeSetBonuses = getEquipmentSetBonuses(char?.equipment);
   const historyEntries = Array.isArray(char?.history) ? char.history : [];
+  const relationshipRows = getCharacterRelationshipRows({
+    relationships: guildRelationships,
+    characterId: char?.id,
+    roster,
+  });
   const characterKeys = Array.isArray(char?.keys)
     ? [...new Set(char.keys.map((keyId) => String(keyId || "").trim()).filter(Boolean))]
     : [];
@@ -297,10 +307,11 @@ const DetailModal = ({
     });
 
   useEffect(() => {
-    if (isOpen && char) {
+    if (isOpen && characterId) {
       setHistoryPage(0);
+      setRelationshipsOpen(false);
     }
-  }, [isOpen, char]);
+  }, [isOpen, characterId]);
 
   if (!isOpen || !char || !classData) return null;
 
@@ -756,6 +767,93 @@ const DetailModal = ({
               <div className="rounded border border-gray-700 bg-gray-900/40 p-3 text-xs text-gray-400">
                 These traits are derived from the character identity and guide automatic
                 zone finishing at max level.
+              </div>
+
+              <div className="rounded border border-pink-900/60 bg-pink-950/10">
+                <button
+                  type="button"
+                  onClick={() => setRelationshipsOpen((prev) => !prev)}
+                  aria-expanded={relationshipsOpen}
+                  className="flex w-full items-center justify-between gap-3 px-4 py-3 text-left"
+                >
+                  <span className="text-sm font-bold uppercase tracking-wide text-pink-100">
+                    Relationships
+                  </span>
+                  <span className="flex items-center gap-2 text-[11px] text-pink-100/60">
+                    {relationshipRows.length} known
+                    <span className="flex h-6 w-6 items-center justify-center rounded border border-pink-900/60 bg-gray-950 text-sm text-pink-100">
+                      {relationshipsOpen ? "-" : "+"}
+                    </span>
+                  </span>
+                </button>
+                {relationshipsOpen && (
+                  <div className="border-t border-pink-950/60 px-4 pb-4 pt-3">
+                    {relationshipRows.length === 0 ? (
+                      <div className="text-xs text-gray-500 italic">
+                        No known guildmates yet.
+                      </div>
+                    ) : (
+                      <div className="space-y-2">
+                        {relationshipRows.map((row) => {
+                          const flairs =
+                            row.flairs.length > 0
+                              ? row.flairs
+                              : ["No flair yet"];
+                          return (
+                            <div
+                              key={`${char.id}-relationship-${row.otherMember.id}`}
+                              className="rounded border border-gray-700 bg-gray-900/50 p-2 text-xs"
+                            >
+                              <div className="flex items-center justify-between gap-2">
+                                <div className="min-w-0">
+                                  <div className="flex items-center gap-1.5 font-bold text-gray-100">
+                                    <span>
+                                      {getRoleIcon(row.otherMember.role)}
+                                    </span>
+                                    <span className="truncate">
+                                      {row.otherMember.name}
+                                    </span>
+                                  </div>
+                                  <div className="mt-0.5 text-[11px] text-gray-400">
+                                    Lvl {row.otherMember.level}{" "}
+                                    {row.otherMember.charClass}
+                                  </div>
+                                </div>
+                                <div className="text-right">
+                                  <div className="font-bold text-pink-200">
+                                    {row.level}
+                                  </div>
+                                  <div className="text-[11px] text-gray-400">
+                                    {row.relationship.points} pts
+                                  </div>
+                                </div>
+                              </div>
+                              <div className="mt-2 flex flex-wrap gap-1">
+                                {flairs.map((flair) => (
+                                  <span
+                                    key={`${row.otherMember.id}-${flair}`}
+                                    className={`rounded border px-1.5 py-0.5 text-[10px] font-semibold ${
+                                      flair === "No flair yet"
+                                        ? "border-gray-700 bg-gray-900/60 text-gray-500"
+                                        : "border-pink-800 bg-pink-950/35 text-pink-100"
+                                    }`}
+                                  >
+                                    {flair}
+                                  </span>
+                                ))}
+                              </div>
+                              {row.relationship.lastMissionName && (
+                                <div className="mt-1 text-[11px] text-gray-500">
+                                  Last shared: {row.relationship.lastMissionName}
+                                </div>
+                              )}
+                            </div>
+                          );
+                        })}
+                      </div>
+                    )}
+                  </div>
+                )}
               </div>
             </div>
           )}

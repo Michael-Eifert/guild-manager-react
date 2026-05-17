@@ -5,6 +5,7 @@ import {
   normalizeCalendarState,
 } from "../calendar/calendarLogic";
 import { normalizeRaidLockouts } from "../raids/raidLockouts";
+import { normalizeGuildRelationships } from "../social/relationshipSystem";
 
 export const SESSION_FORMAT = "guild-manager-session";
 export const SESSION_VERSION = 5;
@@ -143,6 +144,7 @@ export const buildSessionPayload = ({
   guildGold,
   guildProgress,
   guildSetup,
+  guildRelationships,
   calendarState,
   raidLockouts,
   gameSpeed,
@@ -173,6 +175,7 @@ export const buildSessionPayload = ({
       guildGold: clampNonNegativeNumber(guildGold, 0),
       guildProgress: toObject(guildProgress),
       guildSetup: toObject(guildSetup),
+      guildRelationships: normalizeGuildRelationships(guildRelationships),
       calendarState: normalizeCalendarState(
         calendarState || createInitialCalendarState(now),
         now,
@@ -256,6 +259,9 @@ export const hydrateSessionData = ({
   const loadedGuildSetup = normalizeGuildSetup(
     safePayload.guildSetup || defaultGuildSetup,
     safePayload,
+  );
+  const loadedGuildRelationships = normalizeGuildRelationships(
+    safePayload.guildRelationships,
   );
 
   const loadedProgression = normalizeProgressionState(
@@ -365,6 +371,7 @@ export const hydrateSessionData = ({
     loadedGuildProgress,
     loadedGuildGold,
     loadedGuildSetup,
+    loadedGuildRelationships,
     loadedProgression,
     loadedCalendarState,
     loadedRaidLockouts,

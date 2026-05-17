@@ -73,6 +73,19 @@ import {
   resolveAutoDungeonAttempt,
 } from "../automation/dungeonAutomation";
 import {
+  getGuildClassSummary,
+  getGuildRoleSummary,
+} from "../guild/guildRoleSummary";
+import {
+  findRelationshipClusters,
+  getCharacterRelationshipRows,
+  getRelationshipFlairs,
+  getRelationshipLevel,
+  getRelationshipPairKey,
+  getRelationshipSuccessModifier,
+  updateRelationshipsForSharedActivity,
+} from "../social/relationshipSystem";
+import {
   CALENDAR_DAY_MS,
   CALENDAR_SERIES_TYPE,
   CALENDAR_STATUS,
@@ -492,7 +505,356 @@ describe("guild progression", () => {
   });
 });
 
+describe("guild role summary", () => {
+  it("returns zero counts for an empty roster", () => {
+    expect(getGuildRoleSummary([])).toEqual({
+      total: 0,
+      Tank: 0,
+      Healer: 0,
+      DPS: 0,
+    });
+  });
+
+  it("counts tanks, healers, and damage dealers", () => {
+    expect(
+      getGuildRoleSummary([
+        { id: "tank-1", role: "Tank" },
+        { id: "tank-2", role: "Tank" },
+        { id: "healer-1", role: "Healer" },
+        { id: "dps-1", role: "DPS" },
+        { id: "dps-2", role: "DPS" },
+        { id: "dps-3", role: "DPS" },
+      ]),
+    ).toEqual({
+      total: 6,
+      Tank: 2,
+      Healer: 1,
+      DPS: 3,
+    });
+  });
+
+  it("includes unknown roles in total without counting them as core roles", () => {
+    expect(
+      getGuildRoleSummary([
+        { id: "tank", role: "Tank" },
+        { id: "missing-role" },
+        { id: "unknown-role", role: "Bench" },
+      ]),
+    ).toEqual({
+      total: 3,
+      Tank: 1,
+      Healer: 0,
+      DPS: 0,
+    });
+  });
+});
+
+describe("guild class summary", () => {
+  it("counts classes and sorts by count then name", () => {
+    expect(
+      getGuildClassSummary([
+        { id: "one", charClass: "Mage" },
+        { id: "two", class: "Warrior" },
+        { id: "three", charClass: "Mage" },
+        { id: "four", className: "Priest" },
+        { id: "five", class: "Priest" },
+        { id: "six", class: "Rogue" },
+      ]),
+    ).toEqual([
+      { className: "Mage", count: 2 },
+      { className: "Priest", count: 2 },
+      { className: "Rogue", count: 1 },
+      { className: "Warrior", count: 1 },
+    ]);
+  });
+
+  it("ignores missing class data", () => {
+    expect(
+      getGuildClassSummary([
+        { id: "one", class: "Mage" },
+        { id: "two", class: "" },
+        { id: "three" },
+      ]),
+    ).toEqual([{ className: "Mage", count: 1 }]);
+  });
+});
+
+describe("relationship system", () => {
+  it("treats missing relationships as strangers", () => {
+    expect(getRelationshipLevel(null)).toBe("Stranger");
+    expect(getRelationshipLevel({ points: -41 })).toBe("Hated");
+    expect(getRelationshipLevel({ points: -1 })).toBe("Unfriendly");
+    expect(getRelationshipLevel({ points: 9 })).toBe("Stranger");
+    expect(getRelationshipLevel({ points: 10 })).toBe("Acquainted");
+    expect(getRelationshipLevel({ points: 20 })).toBe("Liked");
+    expect(getRelationshipLevel({ points: 35 })).toBe("Friend");
+    expect(getRelationshipLevel({ points: 80 })).toBe("Good Friend");
+  });
+
+  it("builds stable pair keys independent of member order", () => {
+    expect(getRelationshipPairKey("mage", "tank")).toBe("mage::tank");
+    expect(getRelationshipPairKey("tank", "mage")).toBe("mage::tank");
+  });
+
+  it("creates negative relationship edges for failed dungeon attempts", () => {
+    const relationships = updateRelationshipsForSharedActivity(
+      {},
+      {
+        mission: {
+          name: "Deadmines",
+          type: "dungeon",
+          memberIds: ["tank", "healer", "dps"],
+        },
+        missionSucceeded: false,
+        occurredAt: 1000,
+      },
+    );
+
+    expect(Object.keys(relationships).sort()).toEqual([
+      "dps::healer",
+      "dps::tank",
+      "healer::tank",
+    ]);
+    expect(relationships["healer::tank"]).toMatchObject({
+      memberIds: ["healer", "tank"],
+      points: -6,
+      runsTogether: 1,
+      dungeonRuns: 1,
+      successfulRuns: 0,
+      failedRuns: 1,
+      lastMissionName: "Deadmines",
+    });
+  });
+
+  it("grants extra progress for successful shared runs", () => {
+    const failed = updateRelationshipsForSharedActivity(
+      {},
+      {
+        mission: { name: "Wailing Caverns", type: "dungeon", memberIds: ["a", "b"] },
+        missionSucceeded: false,
+      },
+    );
+    const succeeded = updateRelationshipsForSharedActivity(
+      {},
+      {
+        mission: { name: "Wailing Caverns", type: "dungeon", memberIds: ["a", "b"] },
+        missionSucceeded: true,
+      },
+    );
+
+    expect(succeeded["a::b"].points).toBeGreaterThan(failed["a::b"].points);
+    expect(succeeded["a::b"]).toMatchObject({
+      points: 10,
+      successfulRuns: 1,
+    });
+    expect(failed["a::b"]).toMatchObject({
+      points: -6,
+      failedRuns: 1,
+    });
+  });
+
+  it("lets failures push existing relationships below zero", () => {
+    const relationships = updateRelationshipsForSharedActivity(
+      {
+        "a::b": {
+          memberIds: ["a", "b"],
+          points: 4,
+          runsTogether: 1,
+          successfulRuns: 0,
+          failedRuns: 0,
+        },
+      },
+      {
+        mission: { name: "Shadowfang Keep", type: "dungeon", memberIds: ["a", "b"] },
+        missionSucceeded: false,
+      },
+    );
+
+    expect(relationships["a::b"].points).toBe(-2);
+    expect(getRelationshipLevel(relationships["a::b"])).toBe("Unfriendly");
+  });
+
+  it("ignores normal non-elite quests", () => {
+    const relationships = updateRelationshipsForSharedActivity(
+      {},
+      {
+        mission: {
+          name: "Collect Candles",
+          type: "quest",
+          elite: false,
+          memberIds: ["a", "b"],
+        },
+        missionSucceeded: true,
+      },
+    );
+
+    expect(relationships).toEqual({});
+  });
+
+  it("derives flairs from shared run counters", () => {
+    const relationship = {
+      dungeonRuns: 3,
+      raidRuns: 2,
+      eliteRuns: 2,
+      successfulRuns: 5,
+    };
+
+    expect(getRelationshipFlairs(relationship)).toEqual([
+      "Dungeon Mate",
+      "Raid Companion",
+      "Elite Duo",
+      "Reliable Pair",
+    ]);
+  });
+
+  it("derives capped success modifiers from the strongest group relationship", () => {
+    const relationships = {
+      "a::b": { memberIds: ["a", "b"], points: 25 },
+      "a::c": { memberIds: ["a", "c"], points: 38 },
+      "b::c": { memberIds: ["b", "c"], points: 5 },
+    };
+
+    expect(
+      getRelationshipSuccessModifier({
+        relationships,
+        memberIds: ["a", "b", "c"],
+      }),
+    ).toMatchObject({
+      successModifier: 5,
+      level: "Friend",
+      affectedPairKey: "a::c",
+    });
+  });
+
+  it("lets hated relationships override positive group chemistry", () => {
+    const relationships = {
+      "a::b": { memberIds: ["a", "b"], points: 80 },
+      "a::c": { memberIds: ["a", "c"], points: -40 },
+      "b::c": { memberIds: ["b", "c"], points: 25 },
+    };
+
+    expect(
+      getRelationshipSuccessModifier({
+        relationships,
+        memberIds: ["a", "b", "c"],
+      }),
+    ).toMatchObject({
+      successModifier: -5,
+      level: "Hated",
+      affectedPairKey: "a::c",
+    });
+  });
+
+  it("builds character rows and strong relationship clusters", () => {
+    const relationships = {
+      "a::b": {
+        memberIds: ["a", "b"],
+        points: 40,
+        runsTogether: 4,
+        successfulRuns: 4,
+        dungeonRuns: 4,
+      },
+      "b::c": {
+        memberIds: ["b", "c"],
+        points: 36,
+        runsTogether: 4,
+        successfulRuns: 4,
+      },
+      "d::e": {
+        memberIds: ["d", "e"],
+        points: 12,
+        runsTogether: 2,
+        successfulRuns: 1,
+      },
+    };
+    const roster = [
+      { id: "a", name: "Ala", level: 30, charClass: "Mage" },
+      { id: "b", name: "Borin", level: 31, charClass: "Warrior" },
+      { id: "c", name: "Cora", level: 32, charClass: "Priest" },
+    ];
+
+    expect(
+      getCharacterRelationshipRows({
+        relationships,
+        characterId: "a",
+        roster,
+      }).map((row) => row.otherMember.id),
+    ).toEqual(["b"]);
+    expect(findRelationshipClusters({ relationships, minimumPoints: 35 })).toEqual([
+      ["a", "b", "c"],
+    ]);
+  });
+});
+
 describe("session persistence", () => {
+  it("hydrates missing relationship data as an empty graph", () => {
+    const result = hydrateSessionData({
+      payloadData: {
+        roster: [],
+        activeMissions: [],
+        missionList: [],
+        guildProgress: createInitialGuildProgress(),
+        guildSetup: { hasStarted: true },
+      },
+      initialMissions: [],
+      normalizeGuildProgress,
+      normalizeGuildSetup: (value) => value,
+      getGuildDerivedStats,
+      normalizeProgressionState,
+      defaultGameSpeed: DEFAULT_GAME_SPEED,
+      defaultGuildSetup: {},
+      createId: () => "instance-id",
+      resolveDungeonBossCount: getDungeonBossCount,
+    });
+
+    expect(result.loadedGuildRelationships).toEqual({});
+  });
+
+  it("round-trips guild relationships through save hydration", () => {
+    const guildRelationships = {
+      "healer::tank": {
+        memberIds: ["healer", "tank"],
+        points: 42,
+        runsTogether: 5,
+        successfulRuns: 4,
+        failedRuns: 0,
+        dungeonRuns: 5,
+        raidRuns: 0,
+        eliteRuns: 0,
+        lastMissionName: "Scarlet Monastery",
+        lastInteractionAt: 12345,
+      },
+    };
+    const payload = buildSessionPayload({
+      roster: [],
+      activeMissions: [],
+      missionList: [],
+      guildLog: [],
+      guildGold: 0,
+      guildProgress: createInitialGuildProgress(),
+      guildSetup: { hasStarted: true },
+      guildRelationships,
+      gameSpeed: DEFAULT_GAME_SPEED,
+      isPaused: false,
+      gameTimeMs: 1000,
+    });
+    const result = hydrateSessionData({
+      payloadData: payload.data,
+      initialMissions: [],
+      normalizeGuildProgress,
+      normalizeGuildSetup: (value) => value,
+      getGuildDerivedStats,
+      normalizeProgressionState,
+      defaultGameSpeed: DEFAULT_GAME_SPEED,
+      defaultGuildSetup: {},
+      createId: () => "instance-id",
+      resolveDungeonBossCount: getDungeonBossCount,
+    });
+
+    expect(payload.data.guildRelationships).toEqual(guildRelationships);
+    expect(result.loadedGuildRelationships).toEqual(guildRelationships);
+  });
+
   it("serializes active mission remaining time against game time", () => {
     const payload = buildSessionPayload({
       roster: [],
@@ -2191,6 +2553,9 @@ describe("auto dungeon activity", () => {
   const deadmines = INITIAL_MISSIONS.find(
     (mission) => mission.name === "The Deadmines",
   );
+  const wailingCaverns = INITIAL_MISSIONS.find(
+    (mission) => mission.name === "Wailing Caverns",
+  );
   const makeMember = (id, level, role = "DPS", extras = {}) => ({
     id,
     name: id,
@@ -2366,6 +2731,66 @@ describe("auto dungeon activity", () => {
     expect(result.candidates).toHaveLength(2);
     const allMemberIds = result.candidates.flatMap((candidate) => candidate.memberIds);
     expect(new Set(allMemberIds).size).toBe(10);
+  });
+
+  it("rotates away from a dungeon the same party just auto-ran", () => {
+    const roster = [
+      makeMember("tank", 20, "Tank", {
+        autoDungeonLastMissionId: String(wailingCaverns.id),
+      }),
+      makeMember("healer", 20, "Healer", {
+        autoDungeonLastMissionId: String(wailingCaverns.id),
+      }),
+      makeMember("dps-1", 20, "DPS", {
+        autoDungeonLastMissionId: String(wailingCaverns.id),
+      }),
+      makeMember("dps-2", 20, "DPS", {
+        autoDungeonLastMissionId: String(wailingCaverns.id),
+      }),
+      makeMember("dps-3", 20, "DPS", {
+        autoDungeonLastMissionId: String(wailingCaverns.id),
+      }),
+    ];
+
+    const result = resolveAutoDungeonAttempt({
+      mode: GUILD_DUNGEON_ACTIVITY.ALWAYS,
+      now: CALENDAR_DAY_MS * 0.2,
+      missionList: [deadmines, wailingCaverns],
+      roster,
+      activeMissions: [],
+      getSuccessPreview: () => ({ successChance: 100 }),
+    });
+
+    expect(result.candidate.mission).toBe(deadmines);
+  });
+
+  it("avoids duplicate opening dungeons when several groups form together", () => {
+    const roster = [
+      makeMember("tank-a", 20, "Tank"),
+      makeMember("healer-a", 20, "Healer"),
+      makeMember("dps-a1", 20),
+      makeMember("dps-a2", 20),
+      makeMember("dps-a3", 20),
+      makeMember("tank-b", 20, "Tank"),
+      makeMember("healer-b", 20, "Healer"),
+      makeMember("dps-b1", 20),
+      makeMember("dps-b2", 20),
+      makeMember("dps-b3", 20),
+    ];
+
+    const result = resolveAutoDungeonAttempt({
+      mode: GUILD_DUNGEON_ACTIVITY.ALWAYS,
+      now: CALENDAR_DAY_MS * 0.2,
+      missionList: [deadmines, wailingCaverns],
+      roster,
+      activeMissions: [],
+      getSuccessPreview: () => ({ successChance: 100 }),
+    });
+
+    expect(result.candidates.map((candidate) => candidate.mission.name)).toEqual([
+      "Wailing Caverns",
+      "The Deadmines",
+    ]);
   });
 
   it("prefers a short chain when consecutive dungeon wings are in range", () => {

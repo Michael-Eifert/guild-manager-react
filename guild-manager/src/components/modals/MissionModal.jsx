@@ -40,6 +40,7 @@ import {
   formatRaidResetSchedule,
   getRaidLockoutStatus,
 } from "../../raids/raidLockouts";
+import { getRelationshipSuccessModifier } from "../../social/relationshipSystem";
 import { getPartyMoraleSuccessBonus } from "../../game/characterMorale";
 import BaseModal from "./BaseModal";
 import {
@@ -357,6 +358,7 @@ const MissionModal = ({
   guildExpMultiplier = 1,
   isRaidUnlocked = false,
   raidLockouts = {},
+  guildRelationships = {},
   currentDayIndex = 0,
   onNotify,
   missionBoardState = null,
@@ -757,6 +759,10 @@ const MissionModal = ({
     const veteranCoverage = getMissionVeteranCoverage(mission, members);
     const moraleSuccessBonus =
       mission?.type === "dungeon" ? getPartyMoraleSuccessBonus(members) : 0;
+    const relationshipSuccessModifier = getRelationshipSuccessModifier({
+      relationships: guildRelationships,
+      memberIds: members.map((member) => member?.id),
+    });
     const adjustedSuccess = Math.min(
       100,
       Math.max(
@@ -764,7 +770,8 @@ const MissionModal = ({
         preview.successChance +
           bonus +
           veteranCoverage.successBonus +
-          moraleSuccessBonus,
+          moraleSuccessBonus +
+          relationshipSuccessModifier.successModifier,
       ),
     );
     return {
@@ -773,6 +780,11 @@ const MissionModal = ({
       failChance: Math.max(0, 100 - adjustedSuccess),
       focusSuccessBonus: bonus,
       moraleSuccessBonus,
+      relationshipSuccessModifier:
+        relationshipSuccessModifier.successModifier,
+      relationshipSuccessModifierLevel: relationshipSuccessModifier.level,
+      relationshipSuccessModifierPair:
+        relationshipSuccessModifier.affectedPairKey,
       veteranSuccessBonus: veteranCoverage.successBonus,
       veteranExperiencedCount: veteranCoverage.experiencedCount,
       veteranCoverageRatio: veteranCoverage.coverageRatio,
@@ -2429,6 +2441,21 @@ const MissionModal = ({
                             : missionPreview.moraleSuccessBonus < 0
                               ? `${missionPreview.moraleSuccessBonus}% Success`
                               : "No bonus"}
+                        </span>
+                      )}
+                      {missionPreview.relationshipSuccessModifier !== 0 && (
+                        <span
+                          className={`px-2 py-1 rounded border ${
+                            missionPreview.relationshipSuccessModifier > 0
+                              ? "border-pink-700 bg-pink-950/30 text-pink-200"
+                              : "border-red-800 bg-red-950/30 text-red-200"
+                          }`}
+                        >
+                          Relationships:{" "}
+                          {missionPreview.relationshipSuccessModifier > 0
+                            ? `+${missionPreview.relationshipSuccessModifier}% Success`
+                            : `${missionPreview.relationshipSuccessModifier}% Success`}{" "}
+                          ({missionPreview.relationshipSuccessModifierLevel})
                         </span>
                       )}
                     </>

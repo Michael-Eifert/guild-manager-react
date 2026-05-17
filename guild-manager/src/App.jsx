@@ -27,7 +27,6 @@ import {
   DEFAULT_GUILD_SETUP,
   GUILD_STARTING_CONFIG,
   WORLD_DROP_CONFIG,
-  DEFAULT_DUNGEON_LOOT_TABLE,
   FACTION_EMBLEM_ICON,
 } from "./constants";
 import {
@@ -41,11 +40,12 @@ import {
   getClassArmorTypes,
   isItemUsableByClass,
   getKeyLabel,
-  getRacePortraitUrl,
-  getRoleIcon,
   getWowIconUrl,
+  getRoleIcon,
 } from "./utils";
 import CharacterCard from "./components/CharacterCard";
+import ActiveMissionCard from "./components/ActiveMissionCard";
+import DashboardAccordionSection from "./components/DashboardAccordionSection";
 import CharacterEquipCheckCard from "./components/CharacterEquipCheckCard";
 import CharacterPersonalityCard from "./components/CharacterPersonalityCard";
 import ToastNotifications from "./components/ToastNotifications";
@@ -78,7 +78,6 @@ import { applyLoadedSessionToApp } from "./session/applyLoadedSession";
 import {
   evaluateMissionKeyAccess,
   getDungeonBossCount,
-  getDungeonBossNames,
   getDungeonQuarterExpMultiplier,
   getDungeonOverlevelExpMultiplier,
   getMissionLevelExpMultiplier,
@@ -88,6 +87,38 @@ import {
   resolveMissionRewardQualities,
 } from "./missions/missionHelpers";
 import { createMissionRewardProcessor } from "./missions/missionRewards";
+import { cloneMissionTemplate } from "./missions/missionTemplates";
+import {
+  getDungeonStepLootConfig,
+  getDungeonStepQualityPriority,
+} from "./loot/dungeonLootConfig";
+import {
+  applyLootRewardToCharacter,
+  generateWorldTickLoot,
+  generateZoneCheckpointLoot,
+} from "./loot/worldLoot";
+import {
+  getFactionDefaultGuildName,
+  getGuildFocusBonuses,
+  getGuildServerLabel,
+  getGuildServerStyle,
+  getFactionFallbackManagerName,
+  normalizeGuildSetup,
+} from "./guild/guildSetup";
+import {
+  getGuildMemberSearchScore,
+  normalizeGuildMemberSearch,
+} from "./guild/guildMemberSearch";
+import {
+  getGuildClassSummary,
+  getGuildRoleSummary,
+} from "./guild/guildRoleSummary";
+import {
+  isRelationshipEligibleMission,
+  removeMemberRelationships,
+  getRelationshipSuccessModifier,
+  updateRelationshipsForSharedActivity,
+} from "./social/relationshipSystem";
 import {
   ZONE_PROGRESS_CHECKPOINTS,
   getZoneById,
@@ -119,6 +150,7 @@ import {
   getSkillCap,
   resolveCharacterActivityPlan,
 } from "./game/characterActivity";
+import { getLevelingTickExpGain } from "./game/levelingProgression";
 import {
   MORALE_WIPE_DELTA,
   MORALE_ZONE_CLEAR_DELTA,
@@ -167,6 +199,12 @@ const CalendarModal = lazy(() => import("./components/modals/CalendarModal"));
 
 const GUILD_FOCUS_CHANGE_COST_GOLD = 10;
 
+const DEFAULT_DASHBOARD_SECTIONS = Object.freeze({
+  guildActivity: true,
+  dungeonGroups: true,
+  guildComposition: true,
+});
+
 const geminiProxyUrl = import.meta.env.VITE_GEMINI_PROXY_URL || "";
 const callGemini = async (prompt, isJson = false) => {
   try {
@@ -191,7 +229,6 @@ const callGemini = async (prompt, isJson = false) => {
 
 const {
   FAILED_MISSION_EXP_FACTOR,
-  LEVELING_TICK_EXP_MULTIPLIER,
   ENABLE_ZONE_QUESTING,
   SHOW_LEGACY_QUESTS,
 } = GAMEPLAY_TUNING;
@@ -206,646 +243,6 @@ const {
   EPIC_DROP_CHANCE: WORLD_TICK_EPIC_DROP_CHANCE,
   EPIC_MIN_LEVEL: WORLD_TICK_EPIC_MIN_LEVEL,
 } = WORLD_DROP_CONFIG;
-const normalizeGuildMemberSearch = (value) =>
-  String(value || "")
-    .trim()
-    .toLowerCase()
-    .replace(/[^a-z0-9]/g, "");
-
-const getGuildMemberSearchScore = (member, searchTerm) => {
-  const query = normalizeGuildMemberSearch(searchTerm);
-  const name = normalizeGuildMemberSearch(member?.name);
-  if (!query || !name) return 0;
-  if (name === query) return 1000;
-  if (name.startsWith(query))
-    return 850 - Math.max(0, name.length - query.length);
-
-  const includesAt = name.indexOf(query);
-  if (includesAt >= 0) return 700 - includesAt * 10;
-
-  let queryIndex = 0;
-  let gaps = 0;
-  for (
-    let nameIndex = 0;
-    nameIndex < name.length && queryIndex < query.length;
-    nameIndex += 1
-  ) {
-    if (name[nameIndex] === query[queryIndex]) {
-      queryIndex += 1;
-    } else if (queryIndex > 0) {
-      gaps += 1;
-    }
-  }
-
-  if (queryIndex === query.length) {
-    return 400 - gaps * 5 - Math.max(0, name.length - query.length);
-  }
-
-  const queryLetters = new Set(query);
-  const sharedLetters = [...new Set(name)].filter((letter) =>
-    queryLetters.has(letter),
-  ).length;
-  return sharedLetters > 0 ? sharedLetters * 20 : 0;
-};
-const getLevelingTargetSecondsPerLevel = (level) => {
-  const safeLevel = Math.max(1, Number(level) || 1);
-  if (safeLevel <= 5) return 10;
-  if (safeLevel <= 12) return 20;
-  if (safeLevel <= 18) return 40;
-  if (safeLevel <= 22) return 60;
-  if (safeLevel <= 30) return 90;
-  if (safeLevel <= 40) return 120;
-  if (safeLevel <= 49) return 150;
-  if (safeLevel <= 55) return 200;
-  return 300;
-};
-
-const getLevelingTickExpGain = (level, totalExpMultiplier = 1) => {
-  const safeLevel = Math.max(1, Number(level) || 1);
-  const reqExp = getReqExp(safeLevel);
-  const targetSeconds = getLevelingTargetSecondsPerLevel(safeLevel);
-  const baseExpPerTick = reqExp / targetSeconds;
-  return Math.max(
-    1,
-    Math.floor(
-      baseExpPerTick * LEVELING_TICK_EXP_MULTIPLIER * totalExpMultiplier,
-    ),
-  );
-};
-
-const getFactionDefaultGuildName = (faction) =>
-  faction === GUILD_FACTION.HORDE ? "Horde Vanguard" : "Alliance Vanguard";
-
-const getFactionFallbackManagerName = (faction) =>
-  faction === GUILD_FACTION.HORDE ? "Horde Manager" : "Alliance Manager";
-
-const getServerOptionByValue = (serverValue) =>
-  GUILD_SERVER_OPTIONS.find((option) => option.value === serverValue) ||
-  GUILD_SERVER_OPTIONS[0];
-
-const getGuildServerStyle = (serverValue) =>
-  getServerOptionByValue(serverValue)?.style || DEFAULT_GUILD_SETUP.serverStyle;
-
-const getGuildServerLabel = (serverValue, serverStyle) => {
-  const option = getServerOptionByValue(serverValue);
-  const resolvedStyle =
-    serverStyle || option?.style || DEFAULT_GUILD_SETUP.serverStyle;
-  const resolvedServer =
-    serverValue || option?.value || DEFAULT_GUILD_SETUP.server;
-  return `${resolvedServer} (${resolvedStyle})`;
-};
-
-const parseDungeonStepLootConfig = (entry) => {
-  if (Array.isArray(entry)) {
-    return { weights: entry };
-  }
-  if (!entry || typeof entry !== "object") {
-    return {};
-  }
-  return {
-    weights: Array.isArray(entry.weights) ? entry.weights : [],
-    source: typeof entry.source === "string" ? entry.source : undefined,
-    includeWorldDrops:
-      typeof entry.includeWorldDrops === "boolean"
-        ? entry.includeWorldDrops
-        : undefined,
-    dungeonOnly:
-      typeof entry.dungeonOnly === "boolean" ? entry.dungeonOnly : undefined,
-    worldOnly:
-      typeof entry.worldOnly === "boolean" ? entry.worldOnly : undefined,
-  };
-};
-
-const resolveDungeonDropSource = (stepConfig, isEndboss) => {
-  const defaultSource = isEndboss ? "dungeon" : "mixed";
-  const source = String(stepConfig.source || defaultSource).toLowerCase();
-
-  let sourceOptions;
-  if (source === "dungeon") {
-    sourceOptions = {
-      includeWorldDrops: false,
-      dungeonOnly: true,
-      worldOnly: false,
-    };
-  } else if (source === "world") {
-    sourceOptions = {
-      includeWorldDrops: true,
-      dungeonOnly: false,
-      worldOnly: true,
-    };
-  } else {
-    sourceOptions = {
-      includeWorldDrops: true,
-      dungeonOnly: false,
-      worldOnly: false,
-    };
-  }
-
-  if (typeof stepConfig.includeWorldDrops === "boolean") {
-    sourceOptions.includeWorldDrops = stepConfig.includeWorldDrops;
-  }
-  if (typeof stepConfig.dungeonOnly === "boolean") {
-    sourceOptions.dungeonOnly = stepConfig.dungeonOnly;
-  }
-  if (typeof stepConfig.worldOnly === "boolean") {
-    sourceOptions.worldOnly = stepConfig.worldOnly;
-  }
-
-  return sourceOptions;
-};
-
-const getDungeonStepLootConfig = (mission, stepIndex) => {
-  const table =
-    mission && typeof mission.dungeonLootTable === "object"
-      ? mission.dungeonLootTable
-      : {};
-  const bossCount = getDungeonBossCount(mission);
-  const isEndboss = stepIndex === bossCount - 1;
-
-  const stepOverrides = Array.isArray(table.steps) ? table.steps : [];
-  const explicitStepConfig = parseDungeonStepLootConfig(
-    stepOverrides[stepIndex],
-  );
-  if (
-    Array.isArray(explicitStepConfig.weights) &&
-    explicitStepConfig.weights.length > 0
-  ) {
-    return {
-      weights: explicitStepConfig.weights,
-      ...resolveDungeonDropSource(explicitStepConfig, isEndboss),
-    };
-  }
-
-  const phaseConfig = parseDungeonStepLootConfig(
-    isEndboss ? table.endboss : table.boss,
-  );
-  if (Array.isArray(phaseConfig.weights) && phaseConfig.weights.length > 0) {
-    return {
-      weights: phaseConfig.weights,
-      ...resolveDungeonDropSource(phaseConfig, isEndboss),
-    };
-  }
-
-  return {
-    weights: isEndboss
-      ? DEFAULT_DUNGEON_LOOT_TABLE.endboss
-      : DEFAULT_DUNGEON_LOOT_TABLE.boss,
-    ...resolveDungeonDropSource({}, isEndboss),
-  };
-};
-
-const normalizeLootWeights = (weights) =>
-  (Array.isArray(weights) ? weights : [])
-    .map((entry) => ({
-      quality: Number(entry?.quality),
-      chance: Number(entry?.chance),
-    }))
-    .filter(
-      (entry) =>
-        Number.isFinite(entry.quality) &&
-        entry.quality > 0 &&
-        Number.isFinite(entry.chance) &&
-        entry.chance > 0,
-    );
-
-const rollQualityFromWeights = (weights, fallbackQuality = 2) => {
-  const normalized = normalizeLootWeights(weights);
-  if (normalized.length === 0) return fallbackQuality;
-
-  const totalChance = normalized.reduce((sum, entry) => sum + entry.chance, 0);
-  if (totalChance <= 0) return fallbackQuality;
-
-  let roll = Math.random() * totalChance;
-  for (const entry of normalized) {
-    roll -= entry.chance;
-    if (roll <= 0) return entry.quality;
-  }
-
-  return normalized[normalized.length - 1]?.quality || fallbackQuality;
-};
-
-const getDungeonStepQualityPriority = (mission, stepIndex) => {
-  const stepConfig = getDungeonStepLootConfig(mission, stepIndex);
-  const stepWeights = stepConfig.weights;
-  const normalized = normalizeLootWeights(stepWeights);
-  const rolledQuality = rollQualityFromWeights(stepWeights, 2);
-  const fallbackOrder = [5, 4, 3, 2, 1];
-  const configuredFallbacks = normalized
-    .filter((entry) => entry.quality !== rolledQuality)
-    .sort((a, b) => b.chance - a.chance)
-    .map((entry) => entry.quality);
-  return [
-    ...new Set([rolledQuality, ...configuredFallbacks, ...fallbackOrder]),
-  ];
-};
-
-// --- Loot Logic moved to /missions/missionRewards.js ---
-
-const generateWorldLootForCharacter = ({
-  char,
-  quality,
-  minLevel,
-  maxLevel,
-  itemDatabase,
-}) => {
-  const classInfo = DB_CLASSES[char.charClass];
-  if (!classInfo) return null;
-
-  const allowedTypes = getClassArmorTypes(char.charClass, char.level);
-  const safeMinLevel = Math.max(1, Number(minLevel) || 1);
-  const safeMaxLevel = Math.max(safeMinLevel, Number(maxLevel) || safeMinLevel);
-
-  const possibleItems = (
-    Array.isArray(itemDatabase) ? itemDatabase : []
-  ).filter((item) => {
-    if (
-      (typeof item.dungeon === "string" && item.dungeon.trim()) ||
-      (typeof item.dungeonSetId === "string" && item.dungeonSetId.trim())
-    ) {
-      return false;
-    }
-    if (item.quality !== quality) return false;
-    if (item.minLevel < safeMinLevel || item.minLevel > safeMaxLevel)
-      return false;
-    if (!isItemUsableByClass(item, char.charClass)) return false;
-    return item.type === "Generic" || allowedTypes.includes(item.type);
-  });
-
-  if (possibleItems.length === 0) return null;
-  return possibleItems[Math.floor(Math.random() * possibleItems.length)];
-};
-
-const generateWorldTickLoot = (char, quality, itemDatabase) =>
-  generateWorldLootForCharacter({
-    char,
-    quality,
-    minLevel: Math.max(1, char.level - 6),
-    maxLevel: char.level,
-    itemDatabase,
-  });
-
-const generateZoneCheckpointLoot = (char, zone, quality, itemDatabase) => {
-  if (!zone) return null;
-  return generateWorldLootForCharacter({
-    char,
-    quality,
-    minLevel: Math.max(1, Number(zone?.minLevel) || 1),
-    maxLevel: Math.max(1, Number(zone?.maxLevel) || 1),
-    itemDatabase,
-  });
-};
-
-const applyLootRewardToCharacter = ({
-  char,
-  lootItem,
-  logCollector,
-  missionName,
-  bossName = null,
-  updateStatusText = false,
-  logDiscarded = false,
-}) => {
-  if (!lootItem) return char;
-
-  const currentItem = char.equipment?.[lootItem.slot];
-  const currentItemLevel = getItemEffectiveLevel(currentItem);
-  const newItemLevel = getItemEffectiveLevel(lootItem);
-  const willEquip = !currentItem || newItemLevel > currentItemLevel;
-
-  if (willEquip || logDiscarded) {
-    logCollector.push({
-      type: "loot",
-      characterName: char.name,
-      itemName: lootItem.name,
-      itemQuality: lootItem.quality,
-      missionName,
-      bossName,
-      equipped: willEquip,
-    });
-  }
-
-  if (!willEquip) return char;
-  const nextEquipment = { ...char.equipment, [lootItem.slot]: lootItem };
-  return {
-    ...char,
-    equipment: nextEquipment,
-    statusText: updateStatusText
-      ? `Found [${lootItem.name}] while adventuring.`
-      : char.statusText,
-  };
-};
-
-const normalizeGuildSetup = (value, payloadData = {}) => {
-  const safe = value && typeof value === "object" ? value : {};
-  const hasLegacyGameData =
-    (Array.isArray(payloadData?.roster) && payloadData.roster.length > 0) ||
-    (Array.isArray(payloadData?.activeMissions) &&
-      payloadData.activeMissions.length > 0) ||
-    Number(payloadData?.guildGold) > 0;
-
-  const normalizedName = String(safe.name || "").trim();
-  const normalizedFaction = GUILD_FACTION_OPTIONS.includes(safe.faction)
-    ? safe.faction
-    : GUILD_FACTION.ALLIANCE;
-  const normalizedFocus = GUILD_FOCUS_OPTIONS.includes(safe.focus)
-    ? safe.focus
-    : GUILD_FOCUS.LEVELING;
-  const normalizedDungeonActivity = GUILD_DUNGEON_ACTIVITY_OPTIONS.includes(
-    safe.dungeonActivity,
-  )
-    ? safe.dungeonActivity
-    : GUILD_DUNGEON_ACTIVITY.NONE;
-  const normalizedServer = GUILD_SERVER_OPTIONS.some(
-    (option) => option.value === safe.server,
-  )
-    ? safe.server
-    : DEFAULT_GUILD_SETUP.server;
-  const normalizedServerStyle = getGuildServerStyle(normalizedServer);
-
-  const hasStarted = Boolean(
-    safe.hasStarted || normalizedName || hasLegacyGameData,
-  );
-
-  return {
-    ...DEFAULT_GUILD_SETUP,
-    name:
-      normalizedName ||
-      (hasStarted
-        ? getFactionDefaultGuildName(normalizedFaction)
-        : DEFAULT_GUILD_SETUP.name),
-    faction: normalizedFaction,
-    server: normalizedServer,
-    serverStyle: normalizedServerStyle,
-    focus: normalizedFocus,
-    lastFocusChangeDayIndex: Number.isFinite(
-      Number(safe.lastFocusChangeDayIndex),
-    )
-      ? Number(safe.lastFocusChangeDayIndex)
-      : null,
-    dungeonActivity: normalizedDungeonActivity,
-    hasStarted,
-  };
-};
-
-const getGuildFocusBonuses = (focus) => {
-  if (focus === GUILD_FOCUS.LEVELING) {
-    return {
-      expMultiplier: 1.05,
-      dungeonSuccessBonus: 0,
-      fullPartyGoldMultiplier: 1,
-    };
-  }
-  if (focus === GUILD_FOCUS.DUNGEONS) {
-    return {
-      expMultiplier: 1,
-      dungeonSuccessBonus: 5,
-      fullPartyGoldMultiplier: 1,
-    };
-  }
-  if (focus === GUILD_FOCUS.SOCIAL) {
-    return {
-      expMultiplier: 1,
-      dungeonSuccessBonus: 0,
-      fullPartyGoldMultiplier: 1.05,
-    };
-  }
-  return {
-    expMultiplier: 1,
-    dungeonSuccessBonus: 0,
-    fullPartyGoldMultiplier: 1,
-  };
-};
-
-const cloneMissionTemplate = (mission) => ({
-  ...mission,
-  rewardQualities: Array.isArray(mission.rewardQualities)
-    ? [...mission.rewardQualities]
-    : mission.rewardQualities,
-  rewardKeys: Array.isArray(mission.rewardKeys)
-    ? [...mission.rewardKeys]
-    : mission.rewardKeys,
-  dungeonBosses: Array.isArray(mission.dungeonBosses)
-    ? [...mission.dungeonBosses]
-    : mission.dungeonBosses,
-  dungeonLootTable: mission.dungeonLootTable
-    ? JSON.parse(JSON.stringify(mission.dungeonLootTable))
-    : mission.dungeonLootTable,
-  bonusDrops: Array.isArray(mission.bonusDrops)
-    ? JSON.parse(JSON.stringify(mission.bonusDrops))
-    : mission.bonusDrops,
-  raidRoleRequirement:
-    mission.raidRoleRequirement &&
-    typeof mission.raidRoleRequirement === "object"
-      ? { ...mission.raidRoleRequirement }
-      : mission.raidRoleRequirement,
-});
-
-// --- Local Components ---
-
-const ActiveMissionCard = ({ mission, onFinish, gameTimeMs, roster }) => {
-  const now = Number.isFinite(gameTimeMs) ? gameTimeMs : mission.startTime || 0;
-  const timeLeft = Math.max(0, mission.finishTime - now);
-  const progress = 100 - (timeLeft / mission.totalDuration) * 100;
-  const successChance =
-    typeof mission.successChance === "number" ? mission.successChance : 100;
-  const dungeonProgress = mission.dungeonProgress;
-  const stepResults = Array.isArray(dungeonProgress?.stepResults)
-    ? dungeonProgress.stepResults
-    : [];
-  const activeStepIndex =
-    typeof dungeonProgress?.currentStep === "number"
-      ? dungeonProgress.currentStep
-      : 0;
-  const dungeonBossNames = getDungeonBossNames(mission);
-  const dungeonBossCount = dungeonBossNames.length;
-  const stepResultsByStep = stepResults.reduce((acc, result) => {
-    const step = Number(result?.step);
-    if (!Number.isFinite(step) || step <= 0) return acc;
-    if (!acc.has(step)) acc.set(step, []);
-    acc.get(step).push(result);
-    return acc;
-  }, new Map());
-  const chainContext = mission.chainContext;
-  const chainTotal = Number(chainContext?.totalMissions) || 0;
-  const chainPosition = Number(chainContext?.currentPosition) || 0;
-  const attemptsUsed = Math.max(
-    0,
-    Math.floor(Number(dungeonProgress?.attemptsUsed) || 0),
-  );
-  const maxAttempts = Math.max(
-    0,
-    Math.floor(Number(dungeonProgress?.maxAttempts) || 0),
-  );
-  const wipeCost = getMissionWipeCost(mission);
-  const partyMembers =
-    mission.type === "dungeon" && mission.isRaid !== true
-      ? (Array.isArray(mission.memberIds) ? mission.memberIds : [])
-          .map((memberId) =>
-            (Array.isArray(roster) ? roster : []).find(
-              (member) => String(member?.id) === String(memberId),
-            ),
-          )
-          .filter(Boolean)
-      : [];
-  return (
-    <div className="wow-card p-3 rounded flex flex-col gap-2 shadow-lg relative overflow-hidden border border-gray-600 bg-gray-800">
-      <div className="flex justify-between items-center z-10 relative">
-        <span className="font-bold text-sm text-white flex items-center gap-1">
-          {mission.isRaid ? "🔥" : mission.type === "dungeon" ? "🏰" : "📜"}{" "}
-          {mission.name}
-        </span>
-        <span className="text-xs text-gray-400">
-          {Math.ceil(timeLeft / 1000)}s
-        </span>
-      </div>
-      <div className="text-[11px] text-amber-200/80">
-        Success chance: {successChance}%
-      </div>
-      {chainContext && chainTotal > 1 && (
-        <div className="text-[11px] text-indigo-200/80">
-          Chain: {chainContext.setName || "Dungeon Set"} (
-          {Math.max(1, chainPosition)}/{chainTotal})
-        </div>
-      )}
-      {mission.type === "dungeon" && (
-        <>
-          <div className="text-[11px] text-gray-300">
-            Cleared: {dungeonProgress?.clearedSteps || 0}/{dungeonBossCount}{" "}
-            bosses
-          </div>
-          {mission.isRaid !== true && partyMembers.length > 0 && (
-            <div className="rounded border border-gray-700 bg-gray-900/60 p-2">
-              <div className="text-[10px] uppercase tracking-wider text-gray-400 font-bold mb-2">
-                Dungeon Party
-              </div>
-              <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
-                {partyMembers.map((member) => {
-                  const classData = DB_CLASSES[member.charClass] || {};
-                  return (
-                    <div
-                      key={`${mission.instanceId || mission.id}-${member.id}`}
-                      className="flex items-center gap-2 min-w-0 rounded border border-gray-700 bg-black/25 px-2 py-1.5"
-                    >
-                      <img
-                        src={getRacePortraitUrl(member.race, member.gender)}
-                        alt={`${member.race || "Unknown"} ${member.gender || ""}`}
-                        className="w-8 h-8 rounded border border-gray-600 object-cover flex-none"
-                        onError={(event) => {
-                          event.currentTarget.src = getWowIconUrl(
-                            "inv_misc_questionmark",
-                          );
-                        }}
-                      />
-                      {classData.icon && (
-                        <img
-                          src={classData.icon}
-                          alt={member.charClass}
-                          className="w-5 h-5 rounded-sm border border-gray-600 flex-none"
-                          onError={(event) => {
-                            event.currentTarget.style.display = "none";
-                          }}
-                        />
-                      )}
-                      <div className="min-w-0 flex-1">
-                        <div
-                          className="text-xs font-bold truncate"
-                          style={{ color: classData.color || "#e5e7eb" }}
-                        >
-                          {member.name}
-                        </div>
-                        <div className="text-[10px] text-gray-400 truncate">
-                          {member.race} {member.charClass}
-                        </div>
-                      </div>
-                      <div className="flex-none inline-flex items-center gap-1 rounded border border-gray-700 bg-gray-950/60 px-2 py-1 text-[10px] text-gray-200">
-                        <span>{getRoleIcon(member.role)}</span>
-                        <span>{member.role}</span>
-                      </div>
-                    </div>
-                  );
-                })}
-              </div>
-            </div>
-          )}
-          {maxAttempts > 0 && (
-            <div className="text-[11px] text-amber-200/80">
-              Attempts: {attemptsUsed}/{maxAttempts}
-            </div>
-          )}
-          {wipeCost > 0 && (
-            <div className="text-[11px] text-rose-200/90">
-              Wipe Cost: {wipeCost}g / wipe
-            </div>
-          )}
-          <div
-            className="grid gap-1"
-            style={{
-              gridTemplateColumns: `repeat(${
-                mission.isRaid
-                  ? Math.min(5, Math.max(1, dungeonBossCount))
-                  : Math.max(1, dungeonBossCount)
-              }, minmax(0, 1fr))`,
-            }}
-          >
-            {dungeonBossNames.map((label, index) => {
-              const stepAttemptResults = stepResultsByStep.get(index + 1) || [];
-              const latestStepResult =
-                stepAttemptResults[stepAttemptResults.length - 1];
-              const hasResolved = stepAttemptResults.length > 0;
-              const failedAttempts = stepAttemptResults.filter(
-                (result) => result?.outcome === "failed",
-              ).length;
-              const failed =
-                hasResolved && latestStepResult?.outcome === "failed";
-              const cleared =
-                hasResolved && latestStepResult?.outcome === "cleared";
-              const isActive =
-                !dungeonProgress?.finished &&
-                !hasResolved &&
-                index === activeStepIndex;
-              const isRetryingAfterWipe =
-                !dungeonProgress?.finished &&
-                index === activeStepIndex &&
-                failedAttempts > 0 &&
-                !cleared;
-              const className = cleared
-                ? "border-emerald-700 bg-emerald-950/40 text-emerald-300"
-                : isRetryingAfterWipe
-                  ? "border-amber-700 bg-amber-950/40 text-amber-300"
-                  : failed
-                    ? "border-red-700 bg-red-950/40 text-red-300"
-                    : isActive
-                      ? "border-amber-700 bg-amber-950/40 text-amber-300"
-                      : "border-gray-700 bg-gray-900/60 text-gray-500";
-              const stepLabel =
-                failedAttempts > 0 ? `${label} (${failedAttempts}w)` : label;
-              return (
-                <div
-                  key={`${mission.instanceId || mission.id}-${label}`}
-                  className={`rounded border px-1 py-1 text-[10px] text-center ${className}`}
-                >
-                  {stepLabel}
-                </div>
-              );
-            })}
-          </div>
-        </>
-      )}
-      <div className="w-full bg-gray-700 h-2 rounded-full overflow-hidden z-10 relative">
-        <div
-          className="bg-blue-500 h-full transition-all duration-100 linear"
-          style={{ width: `${progress}%` }}
-        ></div>
-      </div>
-      <button
-        onClick={() => onFinish(mission)}
-        className="mt-1 text-[10px] uppercase font-bold tracking-wider bg-green-900/50 hover:bg-green-700 text-green-100 px-3 py-2 rounded border border-green-800 transition-colors shadow-sm active:scale-95"
-      >
-        ⚡ Instant Finish
-      </button>
-    </div>
-  );
-};
-
 // --- MAIN APP COMPONENT ---
 
 const App = () => {
@@ -862,6 +259,7 @@ const App = () => {
   const [guildProgress, setGuildProgress] = useState(() =>
     createInitialGuildProgress(),
   );
+  const [guildRelationships, setGuildRelationships] = useState({});
   const [isPaused, setIsPaused] = useState(false);
   const [gameSpeed, setGameSpeed] = useState(DEFAULT_GAME_SPEED);
   const [gameTimeMs, setGameTimeMs] = useState(() => Date.now());
@@ -878,6 +276,9 @@ const App = () => {
   const [showDebug, setShowDebug] = useState(false);
   const [showMap, setShowMap] = useState(false);
   const [showOptions, setShowOptions] = useState(false);
+  const [dashboardSectionsOpen, setDashboardSectionsOpen] = useState(
+    DEFAULT_DASHBOARD_SECTIONS,
+  );
   const [detailCharId, setDetailCharId] = useState(null);
   const [notifications, setNotifications] = useState([]);
   const [missionBoardState, setMissionBoardState] = useState({
@@ -909,6 +310,7 @@ const App = () => {
   const goldRef = useRef(guildGold);
   const guildProgressRef = useRef(guildProgress);
   const guildSetupRef = useRef(guildSetup);
+  const guildRelationshipsRef = useRef(guildRelationships);
   const gameTimeRef = useRef(gameTimeMs);
   const calendarStateRef = useRef(calendarState);
   const raidLockoutsRef = useRef(raidLockouts);
@@ -997,6 +399,9 @@ const App = () => {
     guildSetupRef.current = guildSetup;
   }, [guildSetup]);
   useEffect(() => {
+    guildRelationshipsRef.current = guildRelationships;
+  }, [guildRelationships]);
+  useEffect(() => {
     gameTimeRef.current = gameTimeMs;
   }, [gameTimeMs]);
   useEffect(() => {
@@ -1045,6 +450,14 @@ const App = () => {
   );
 
   const guildDerivedStats = getGuildDerivedStats(guildProgress);
+  const guildRoleSummary = useMemo(
+    () => getGuildRoleSummary(roster),
+    [roster],
+  );
+  const guildClassSummary = useMemo(
+    () => getGuildClassSummary(roster),
+    [roster],
+  );
   const guildFocusBonuses = useMemo(
     () => getGuildFocusBonuses(guildSetup.focus),
     [guildSetup.focus],
@@ -1361,6 +774,10 @@ const App = () => {
     const veteranCoverage = getMissionVeteranCoverage(mission, members);
     const moraleSuccessBonus =
       mission?.type === "dungeon" ? getPartyMoraleSuccessBonus(members) : 0;
+    const relationshipSuccessModifier = getRelationshipSuccessModifier({
+      relationships: guildRelationshipsRef.current,
+      memberIds: members.map((member) => member?.id),
+    });
     const adjustedSuccess = Math.min(
       100,
       Math.max(
@@ -1368,7 +785,8 @@ const App = () => {
         preview.successChance +
           dungeonBonus +
           veteranCoverage.successBonus +
-          moraleSuccessBonus,
+          moraleSuccessBonus +
+          relationshipSuccessModifier.successModifier,
       ),
     );
     return {
@@ -1377,6 +795,11 @@ const App = () => {
       failChance: Math.max(0, 100 - adjustedSuccess),
       focusSuccessBonus: dungeonBonus,
       moraleSuccessBonus,
+      relationshipSuccessModifier:
+        relationshipSuccessModifier.successModifier,
+      relationshipSuccessModifierLevel: relationshipSuccessModifier.level,
+      relationshipSuccessModifierPair:
+        relationshipSuccessModifier.affectedPairKey,
       veteranSuccessBonus: veteranCoverage.successBonus,
       veteranExperiencedCount: veteranCoverage.experiencedCount,
       veteranCoverageRatio: veteranCoverage.coverageRatio,
@@ -1697,6 +1120,24 @@ const App = () => {
         failedMissionExpFactor: FAILED_MISSION_EXP_FACTOR,
       }),
     [missionRewardProcessor],
+  );
+
+  const recordMissionRelationships = useCallback(
+    (mission, missionSucceeded) => {
+      if (!isRelationshipEligibleMission(mission)) return;
+      const nextRelationships = updateRelationshipsForSharedActivity(
+        guildRelationshipsRef.current,
+        {
+          mission,
+          missionSucceeded,
+          occurredAt: gameTimeRef.current,
+        },
+      );
+      if (nextRelationships === guildRelationshipsRef.current) return;
+      guildRelationshipsRef.current = nextRelationships;
+      setGuildRelationships(nextRelationships);
+    },
+    [],
   );
 
   const applyDungeonStepLootAwards = useCallback(
@@ -2026,6 +1467,7 @@ const App = () => {
         rewardedMissionIdsRef.current.add(missionInstanceId);
 
         const result = processMissionRewards(m, newRoster);
+        recordMissionRelationships(m, result.missionSucceeded);
         if (m?.isRaid === true) {
           const nextRaidLockouts = updateRaidLockoutProgress({
             raidLockouts: raidLockoutsRef.current,
@@ -2167,6 +1609,11 @@ const App = () => {
                   ? `Auto Chain: ${chainContext.setName}`
                   : `Auto Dungeon: ${openingMission.dungeonWing || openingMission.name}`,
                 autoDungeonLastStartedAt: now,
+                autoDungeonLastMissionId: String(
+                  openingMission.id ?? openingMission.questId ?? "",
+                ),
+                autoDungeonLastMissionName:
+                  openingMission.dungeonWing || openingMission.name,
               }
             : char,
         );
@@ -2530,6 +1977,7 @@ const App = () => {
     itemDatabase,
     normalizeRosterZones,
     processMissionRewards,
+    recordMissionRelationships,
     pushNotification,
     resolveDungeonChainContinuation,
     registerDungeonClearMilestones,
@@ -2610,6 +2058,12 @@ const App = () => {
   };
   const handleDismiss = (id) => {
     setRoster((p) => p.filter((c) => c.id !== id));
+    const nextRelationships = removeMemberRelationships(
+      guildRelationshipsRef.current,
+      id,
+    );
+    guildRelationshipsRef.current = nextRelationships;
+    setGuildRelationships(nextRelationships);
     setDetailCharId(null);
   };
   const handleModeChange = (id, mode) => {
@@ -2642,6 +2096,12 @@ const App = () => {
           : `Automatic dungeon grouping set to ${mode}.`,
     });
   };
+  const toggleDashboardSection = useCallback((sectionKey) => {
+    setDashboardSectionsOpen((prev) => ({
+      ...prev,
+      [sectionKey]: !prev[sectionKey],
+    }));
+  }, []);
   const handleGuildFocusChange = (focus) => {
     if (!GUILD_FOCUS_OPTIONS.includes(focus)) return;
     const currentFocus = guildSetupRef.current?.focus || GUILD_FOCUS.LEVELING;
@@ -2764,6 +2224,7 @@ const App = () => {
     rosterRef.current = starterRoster;
     missionsRef.current = [];
     goldRef.current = starterGold;
+    guildRelationshipsRef.current = {};
     calendarStateRef.current = calendarStart;
     raidLockoutsRef.current = {};
     setRoster(starterRoster);
@@ -2775,6 +2236,7 @@ const App = () => {
     );
     setGuildLog([]);
     setGuildGold(starterGold);
+    setGuildRelationships({});
     setGuildSetup((prev) => ({
       ...prev,
       name: normalizedName,
@@ -3469,6 +2931,7 @@ const App = () => {
       missionWithStepLoot,
       stepLootAwards.roster,
     );
+    recordMissionRelationships(missionWithStepLoot, result.missionSucceeded);
     if (missionWithStepLoot?.isRaid === true) {
       const nextRaidLockouts = updateRaidLockoutProgress({
         raidLockouts: raidLockoutsRef.current,
@@ -3676,6 +3139,8 @@ const App = () => {
 
     rosterRef.current = normalizedRoster;
     setRoster(normalizedRoster);
+    guildRelationshipsRef.current = {};
+    setGuildRelationships({});
     guildProgressRef.current = nextGuildProgress;
     setGuildProgress(nextGuildProgress);
     missionsRef.current = [];
@@ -3723,6 +3188,7 @@ const App = () => {
         guildGold,
         guildProgress,
         guildSetup,
+        guildRelationships,
         calendarState,
         raidLockouts,
         gameSpeed,
@@ -3767,6 +3233,7 @@ const App = () => {
             gold: goldRef,
             guildProgress: guildProgressRef,
             guildSetup: guildSetupRef,
+            guildRelationships: guildRelationshipsRef,
             calendarState: calendarStateRef,
             raidLockouts: raidLockoutsRef,
             gameTime: gameTimeRef,
@@ -3780,6 +3247,7 @@ const App = () => {
             setGuildGold,
             setGuildProgress,
             setGuildSetup,
+            setGuildRelationships,
             setCalendarState,
             setRaidLockouts,
             setIsPaused,
@@ -4129,73 +3597,162 @@ const App = () => {
         </button>
       </div>
 
-      <div className="mb-6 rounded border border-gray-700 bg-gray-900/70 p-3">
-        <div className="flex items-center justify-between gap-2 mb-2">
-          <h3 className="text-xs uppercase tracking-wider text-gray-300 font-bold">
-            Guild Activity Focus
-          </h3>
-          <span className="text-[11px] text-gray-400">
-            Current: {guildActivityModeSummary || "None"}
-          </span>
-        </div>
-        <div className="grid grid-cols-1 sm:grid-cols-3 gap-2">
-          {GUILD_ACTIVITY_MODES.map((mode) => {
-            const isActive = guildActivityModeSummary === mode;
-            return (
-              <button
-                key={mode}
-                onClick={() => handleGuildModeChange(mode)}
-                disabled={roster.length === 0}
-                className={`px-3 py-2 rounded border text-xs md:text-sm font-bold transition-colors disabled:opacity-50 disabled:cursor-not-allowed ${
-                  isActive
-                    ? "border-blue-500 bg-blue-900/40 text-blue-100"
-                    : "border-gray-600 bg-gray-800 text-gray-300 hover:bg-gray-700"
-                }`}
-              >
-                {mode === "Auto"
-                  ? "🤖 Auto"
-                  : mode === "Leveling"
-                    ? "⚔️ Leveling"
-                    : "🔨 Professions"}
-              </button>
-            );
-          })}
-        </div>
-      </div>
+      <div className="mb-6 space-y-2">
+        <DashboardAccordionSection
+          title="Guild Activity"
+          summary={`Current: ${guildActivityModeSummary || "None"}`}
+          isOpen={dashboardSectionsOpen.guildActivity}
+          onToggle={() => toggleDashboardSection("guildActivity")}
+        >
+          <div className="grid grid-cols-1 sm:grid-cols-3 gap-2">
+            {GUILD_ACTIVITY_MODES.map((mode) => {
+              const isActive = guildActivityModeSummary === mode;
+              return (
+                <button
+                  key={mode}
+                  onClick={() => handleGuildModeChange(mode)}
+                  disabled={roster.length === 0}
+                  className={`px-3 py-2 rounded border text-xs md:text-sm font-bold transition-colors disabled:opacity-50 disabled:cursor-not-allowed ${
+                    isActive
+                      ? "border-blue-500 bg-blue-900/40 text-blue-100"
+                      : "border-gray-600 bg-gray-800 text-gray-300 hover:bg-gray-700"
+                  }`}
+                >
+                  {mode === "Auto"
+                    ? "🤖 Auto"
+                    : mode === "Leveling"
+                      ? "⚔️ Leveling"
+                      : "🔨 Professions"}
+                </button>
+              );
+            })}
+          </div>
+        </DashboardAccordionSection>
 
-      <div className="mb-6 rounded border border-gray-700 bg-gray-900/70 p-3">
-        <div className="flex items-center justify-between gap-2 mb-2">
-          <h3 className="text-xs uppercase tracking-wider text-gray-300 font-bold">
-            Dungeon Groups
-          </h3>
-          <span className="text-[11px] text-gray-400">
-            Current: {guildSetup.dungeonActivity || GUILD_DUNGEON_ACTIVITY.NONE}
-          </span>
-        </div>
-        <div className="grid grid-cols-2 lg:grid-cols-4 gap-2">
-          {GUILD_DUNGEON_ACTIVITY_OPTIONS.map((mode) => {
-            const isActive =
-              (guildSetup.dungeonActivity || GUILD_DUNGEON_ACTIVITY.NONE) ===
-              mode;
-            return (
-              <button
-                key={mode}
-                onClick={() => handleGuildDungeonActivityChange(mode)}
-                disabled={roster.length === 0}
-                className={`px-3 py-2 rounded border text-xs md:text-sm font-bold transition-colors disabled:opacity-50 disabled:cursor-not-allowed ${
-                  isActive
-                    ? "border-emerald-500 bg-emerald-900/30 text-emerald-100"
-                    : "border-gray-600 bg-gray-800 text-gray-300 hover:bg-gray-700"
-                }`}
+        <DashboardAccordionSection
+          title="Dungeon Groups"
+          summary={`Current: ${
+            guildSetup.dungeonActivity || GUILD_DUNGEON_ACTIVITY.NONE
+          }`}
+          isOpen={dashboardSectionsOpen.dungeonGroups}
+          onToggle={() => toggleDashboardSection("dungeonGroups")}
+        >
+          <div className="grid grid-cols-2 lg:grid-cols-4 gap-2">
+            {GUILD_DUNGEON_ACTIVITY_OPTIONS.map((mode) => {
+              const isActive =
+                (guildSetup.dungeonActivity || GUILD_DUNGEON_ACTIVITY.NONE) ===
+                mode;
+              return (
+                <button
+                  key={mode}
+                  onClick={() => handleGuildDungeonActivityChange(mode)}
+                  disabled={roster.length === 0}
+                  className={`px-3 py-2 rounded border text-xs md:text-sm font-bold transition-colors disabled:opacity-50 disabled:cursor-not-allowed ${
+                    isActive
+                      ? "border-emerald-500 bg-emerald-900/30 text-emerald-100"
+                      : "border-gray-600 bg-gray-800 text-gray-300 hover:bg-gray-700"
+                  }`}
+                >
+                  {mode}
+                </button>
+              );
+            })}
+          </div>
+          <p className="mt-2 text-[11px] text-gray-500">
+            {dungeonActivityInfoText}
+          </p>
+        </DashboardAccordionSection>
+
+        <DashboardAccordionSection
+          title="Guild Composition"
+          summary={`${guildRoleSummary.total} members`}
+          isOpen={dashboardSectionsOpen.guildComposition}
+          onToggle={() => toggleDashboardSection("guildComposition")}
+        >
+          <div className="grid grid-cols-2 md:grid-cols-4 gap-2">
+            {[
+              {
+                key: "total",
+                label: "Total",
+                icon: "#",
+                value: guildRoleSummary.total,
+              },
+              {
+                key: "Tank",
+                label: "Tanks",
+                icon: getRoleIcon("Tank"),
+                value: guildRoleSummary.Tank,
+              },
+              {
+                key: "Healer",
+                label: "Healers",
+                icon: getRoleIcon("Healer"),
+                value: guildRoleSummary.Healer,
+              },
+              {
+                key: "DPS",
+                label: "DDs / DPS",
+                icon: getRoleIcon("DPS"),
+                value: guildRoleSummary.DPS,
+              },
+            ].map((stat) => (
+              <div
+                key={stat.key}
+                className="rounded border border-gray-700 bg-gray-950/60 px-3 py-2"
               >
-                {mode}
-              </button>
-            );
-          })}
-        </div>
-        <p className="mt-2 text-[11px] text-gray-500">
-          {dungeonActivityInfoText}
-        </p>
+                <div className="flex items-center justify-between gap-2">
+                  <span className="text-[11px] uppercase tracking-wide text-gray-400">
+                    {stat.label}
+                  </span>
+                  <span className="text-sm text-gray-300">{stat.icon}</span>
+                </div>
+                <div className="mt-1 text-lg font-bold text-white">
+                  {Math.max(0, Math.floor(Number(stat.value) || 0))}
+                </div>
+              </div>
+            ))}
+          </div>
+
+          <div className="mt-3">
+            <div className="mb-2 text-[11px] font-bold uppercase tracking-wider text-gray-400">
+              Classes
+            </div>
+            {guildClassSummary.length > 0 ? (
+              <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 gap-2">
+                {guildClassSummary.map(({ className, count }) => {
+                  const classInfo = DB_CLASSES[className] || {};
+                  return (
+                    <div
+                      key={className}
+                      className="flex items-center justify-between gap-2 rounded border border-gray-700 bg-gray-950/50 px-2 py-2"
+                    >
+                      <div className="flex min-w-0 items-center gap-2">
+                        {classInfo.icon && (
+                          <img
+                            src={classInfo.icon}
+                            alt=""
+                            className="h-6 w-6 flex-none rounded border border-gray-700"
+                          />
+                        )}
+                        <span
+                          className="truncate text-xs font-bold"
+                          style={{ color: classInfo.color || "#e5e7eb" }}
+                        >
+                          {className}
+                        </span>
+                      </div>
+                      <span className="text-sm font-bold text-white">
+                        {count}
+                      </span>
+                    </div>
+                  );
+                })}
+              </div>
+            ) : (
+              <p className="text-xs text-gray-500">No class data yet.</p>
+            )}
+          </div>
+        </DashboardAccordionSection>
       </div>
 
       <div className="mb-6 border-t border-amber-900/50"></div>
@@ -4445,6 +4002,7 @@ const App = () => {
             }
             isRaidUnlocked={guildDerivedStats.raidUnlocked}
             raidLockouts={raidLockouts}
+            guildRelationships={guildRelationships}
             currentDayIndex={currentCalendarDayIndex}
             onNotify={pushNotification}
             missionBoardState={missionBoardState}
@@ -4506,6 +4064,8 @@ const App = () => {
             isOpen={!!detailCharId}
             missionAchievementCatalog={missionAchievementCatalog}
             missionList={missionList}
+            roster={roster}
+            guildRelationships={guildRelationships}
             raidLockouts={raidLockouts}
             currentDayIndex={currentCalendarDayIndex}
             onClose={() => setDetailCharId(null)}

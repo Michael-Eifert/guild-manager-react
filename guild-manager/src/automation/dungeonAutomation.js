@@ -12,6 +12,9 @@ export const AUTO_DUNGEON_INTERVAL_DAY_MULTIPLIER = Object.freeze({
 });
 export const AUTO_DUNGEON_DAY_CHECKPOINTS = Object.freeze([0.2, 0.4, 0.6, 0.8]);
 
+const AUTO_DUNGEON_REPEAT_MEMBER_PENALTY = 10_000;
+const AUTO_DUNGEON_SAME_SEARCH_MISSION_PENALTY = 50_000;
+
 const getAutoDungeonCheckpointKey = (now, calendarEpochGameTimeMs = 0) => {
   const safeNow = Math.max(0, Number(now) || 0);
   const safeEpoch = Math.max(0, Number(calendarEpochGameTimeMs) || 0);
@@ -125,6 +128,12 @@ const getMissionRewardKeyIds = (mission) =>
     ? mission.rewardKeys.map((keyId) => String(keyId || "")).filter(Boolean)
     : [];
 
+const getAutoDungeonMissionHistoryKey = (mission) => {
+  const id = String(mission?.id ?? mission?.questId ?? "").trim();
+  if (id) return id;
+  return String(mission?.name || "").trim();
+};
+
 const getRaidAttunementKeyIds = (missionList) => {
   const missions = Array.isArray(missionList) ? missionList : [];
   const attunementKeyIds = new Set(
@@ -203,6 +212,10 @@ const getLastAutoDungeonAt = (member) => {
 
 const hasAutoDungeonTimestamp = (member) =>
   Number.isFinite(Number(member?.autoDungeonLastStartedAt));
+
+const getMemberLastAutoDungeonMissionKey = (member) =>
+  String(member?.autoDungeonLastMissionId || member?.autoDungeonLastMissionName || "")
+    .trim();
 
 const sortByRecentDungeonThenPower = (left, right) => {
   const leftLastRun = getLastAutoDungeonAt(left);
@@ -333,9 +346,15 @@ export const resolveAutoDungeonAttempt = ({
 
   const collectCandidates = (memberPool, searcherPool) => {
     const candidates = [];
+    const selectedOpeningMissionKeys = new Set(
+      selectedCandidates
+        .map((candidate) => getAutoDungeonMissionHistoryKey(candidate.mission))
+        .filter(Boolean),
+    );
     searcherPool.forEach((initiator) => {
       focusedMissionSequences.forEach((missions) => {
       const openingMission = missions[0];
+      const openingMissionKey = getAutoDungeonMissionHistoryKey(openingMission);
       const levelRange = getSequenceLevelRange(missions);
       if (levelRange.min > levelRange.max) return;
       const partyBounds = getSequencePartyBounds(missions);
@@ -389,6 +408,16 @@ export const resolveAutoDungeonAttempt = ({
           (sum, mission) => sum + (Number(mission?.exp) || 0),
           0,
         );
+        const repeatMemberPenalty =
+          party.filter(
+            (member) =>
+              openingMissionKey &&
+              getMemberLastAutoDungeonMissionKey(member) === openingMissionKey,
+          ).length * AUTO_DUNGEON_REPEAT_MEMBER_PENALTY;
+        const sameSearchPenalty =
+          openingMissionKey && selectedOpeningMissionKeys.has(openingMissionKey)
+            ? AUTO_DUNGEON_SAME_SEARCH_MISSION_PENALTY
+            : 0;
         candidates.push({
           mission: openingMission,
           missions,
@@ -405,6 +434,8 @@ export const resolveAutoDungeonAttempt = ({
             (raidAttunementFocus ? 1_000_000 : 0) +
             missions.length * 1_000 +
             partySize -
+            repeatMemberPenalty -
+            sameSearchPenalty -
             getLastAutoDungeonAt(initiator) / 1_000_000,
         });
       }
