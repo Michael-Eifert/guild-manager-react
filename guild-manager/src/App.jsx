@@ -33,9 +33,6 @@ import {
 import {
   getReqExp,
   generateCharacters,
-  getSkillCap,
-  getAutoSkillTarget,
-  getNextTierLevel,
   getItemEffectiveLevel,
   getCharacterAverageItemLevel,
   getMissionSuccessPreview,
@@ -50,6 +47,7 @@ import {
 } from "./utils";
 import CharacterCard from "./components/CharacterCard";
 import CharacterEquipCheckCard from "./components/CharacterEquipCheckCard";
+import CharacterPersonalityCard from "./components/CharacterPersonalityCard";
 import ToastNotifications from "./components/ToastNotifications";
 import GuildSetupScreen from "./components/GuildSetupScreen";
 import {
@@ -116,6 +114,18 @@ import {
   advanceDungeonMission,
   getDefaultDungeonProgress,
 } from "./game/dungeonEngine";
+import {
+  applyProfessionSkillAttempts,
+  getSkillCap,
+  resolveCharacterActivityPlan,
+} from "./game/characterActivity";
+import {
+  MORALE_WIPE_DELTA,
+  MORALE_ZONE_CLEAR_DELTA,
+  applyMoraleDelta,
+  getPartyMoraleSuccessBonus,
+  isCharacterInZoneLevelRange,
+} from "./game/characterMorale";
 import { advanceActiveMissionsForTick } from "./game/gameTickEngine";
 import {
   CALENDAR_STATUS,
@@ -1349,15 +1359,24 @@ const App = () => {
         ? getGuildFocusBonuses(guildSetupRef.current?.focus).dungeonSuccessBonus
         : 0;
     const veteranCoverage = getMissionVeteranCoverage(mission, members);
+    const moraleSuccessBonus =
+      mission?.type === "dungeon" ? getPartyMoraleSuccessBonus(members) : 0;
     const adjustedSuccess = Math.min(
       100,
-      preview.successChance + dungeonBonus + veteranCoverage.successBonus,
+      Math.max(
+        0,
+        preview.successChance +
+          dungeonBonus +
+          veteranCoverage.successBonus +
+          moraleSuccessBonus,
+      ),
     );
     return {
       ...preview,
       successChance: adjustedSuccess,
       failChance: Math.max(0, 100 - adjustedSuccess),
       focusSuccessBonus: dungeonBonus,
+      moraleSuccessBonus,
       veteranSuccessBonus: veteranCoverage.successBonus,
       veteranExperiencedCount: veteranCoverage.experiencedCount,
       veteranCoverageRatio: veteranCoverage.coverageRatio,
@@ -1432,6 +1451,7 @@ const App = () => {
         missionSuccess,
         successChance: missionPreview.successChance,
         failChance: missionPreview.failChance,
+        moraleSuccessBonus: missionPreview.moraleSuccessBonus,
         partyPower: missionPreview.partyPower,
         missionPower: missionPreview.missionPower,
         questId: quest.id,
@@ -1710,7 +1730,7 @@ const App = () => {
 
       (Array.isArray(stepLogs) ? stepLogs : []).forEach((log) => {
         nextLogs.push(log);
-        if (log?.type !== "dungeon-step" || log.outcome !== "cleared") return;
+        if (log?.type !== "dungeon-step") return;
 
         const matchingMission = allMissions.find(({ mission }) => {
           const logInstanceId = String(log?.missionInstanceId || "");
@@ -1727,6 +1747,25 @@ const App = () => {
           );
         });
         if (!matchingMission) return;
+
+        if (log.outcome === "failed") {
+          const memberIds = new Set(
+            (Array.isArray(matchingMission.mission?.memberIds)
+              ? matchingMission.mission.memberIds
+              : []
+            ).map((memberId) => String(memberId || "")),
+          );
+          if (memberIds.size > 0) {
+            nextRoster = nextRoster.map((member) =>
+              memberIds.has(String(member?.id || ""))
+                ? applyMoraleDelta(member, MORALE_WIPE_DELTA)
+                : member,
+            );
+          }
+          return;
+        }
+
+        if (log.outcome !== "cleared") return;
 
         const awardResult = awardDungeonStepLoot({
           mission: matchingMission.mission,
@@ -1826,8 +1865,9 @@ const App = () => {
   // --- GAME LOOP ---
   useEffect(() => {
     const tick = setInterval(() => {
+      const previousGameTime = gameTimeRef.current;
       const clockStep = advanceGameTime({
-        currentGameTime: gameTimeRef.current,
+        currentGameTime: previousGameTime,
         lastRealTime: lastRealTimeRef.current,
         realNow: Date.now(),
         isPaused,
@@ -1836,6 +1876,7 @@ const App = () => {
       gameTimeRef.current = clockStep.gameTime;
       lastRealTimeRef.current = clockStep.lastRealTime;
       const now = gameTimeRef.current;
+      const elapsedGameMs = Math.max(0, now - previousGameTime);
       setGameTimeMs(now);
 
       if (isPaused) return;
@@ -2158,75 +2199,53 @@ const App = () => {
         let statusText = "Resting...";
         let gainXP = false;
         let gainSkill = false;
+        let gainZoneProgress = false;
 
-        const hardCap = getSkillCap(normalizedChar.level);
-        const autoTarget = getAutoSkillTarget(normalizedChar.level);
-        const canGainSkill = normalizedChar.professions.some(
-          (p) => p.skill < hardCap,
-        );
-        const needsAutoSkill = normalizedChar.professions.some(
-          (p) => p.skill < autoTarget,
-        );
-        const isCheckpointLevel = normalizedChar.level % 5 === 0;
+        const activityPlan = resolveCharacterActivityPlan({
+          character: normalizedChar,
+          faction: currentFaction,
+          levelCap: CONFIG.LEVEL_CAP,
+          zoneQuestingEnabled: ENABLE_ZONE_QUESTING,
+        });
+        const hardCap = activityPlan.hardCap;
+        const professionSkillLimit = activityPlan.professionSkillLimit;
+        statusText = activityPlan.statusText;
+        gainXP = activityPlan.gainXP;
+        gainSkill = activityPlan.gainSkill;
+        gainZoneProgress = activityPlan.gainZoneProgress;
 
-        if (normalizedChar.activityMode === "Leveling") {
-          if (normalizedChar.level < CONFIG.LEVEL_CAP) {
-            gainXP = true;
-            statusText = "⚔️ Grinding XP...";
-          } else {
-            statusText = "Max Level Reached";
-          }
-        } else if (normalizedChar.activityMode === "Professions") {
-          if (canGainSkill) {
-            gainSkill = true;
-          } else {
-            statusText =
-              "Skills Capped (Need Level " +
-              getNextTierLevel(normalizedChar.level) +
-              ")";
-          }
-        } else if (normalizedChar.activityMode === "Auto") {
-          if (isCheckpointLevel && needsAutoSkill) {
-            gainSkill = true;
-            statusText = "🤖 Auto: Skilling to " + autoTarget + "...";
-          } else if (normalizedChar.level < CONFIG.LEVEL_CAP) {
-            gainXP = true;
-            statusText = "⚔️ Auto: Leveling...";
-          } else if (canGainSkill && normalizedChar.level >= CONFIG.LEVEL_CAP) {
-            // At max level, just skill to hard cap
-            gainSkill = true;
-            statusText = "🤖 Auto: Max Level Skilling...";
-          } else {
-            statusText = "Awaiting Orders";
-          }
-        }
-
-        if (gainXP) {
+        if (gainXP || gainZoneProgress) {
           const activeZone =
             ENABLE_ZONE_QUESTING && normalizedChar.currentZoneId
               ? getZoneById(normalizedChar.currentZoneId)
               : null;
-          const zoneExpMultiplier = activeZone
-            ? getZoneExpMultiplier(normalizedChar.level, activeZone)
-            : 1;
-          const expGain = getLevelingTickExpGain(
-            normalizedChar.level,
-            currentGuildStats.expMultiplier *
-              currentFocusBonuses.expMultiplier *
-              zoneExpMultiplier,
-          );
-          let newExp = normalizedChar.exp + expGain;
+          let newExp = normalizedChar.exp;
           let newLevel = normalizedChar.level;
           let maxExp = getReqExp(newLevel);
           let leveledUp = false;
-          while (newExp >= maxExp && newLevel < CONFIG.LEVEL_CAP) {
-            newLevel++;
-            newExp -= maxExp;
-            maxExp = getReqExp(newLevel);
-            leveledUp = true;
+
+          if (gainXP) {
+            const zoneExpMultiplier = activeZone
+              ? getZoneExpMultiplier(normalizedChar.level, activeZone)
+              : 1;
+            const expGain = getLevelingTickExpGain(
+              normalizedChar.level,
+              currentGuildStats.expMultiplier *
+                currentFocusBonuses.expMultiplier *
+                zoneExpMultiplier,
+            );
+            newExp += expGain;
+            while (newExp >= maxExp && newLevel < CONFIG.LEVEL_CAP) {
+              newLevel++;
+              newExp -= maxExp;
+              maxExp = getReqExp(newLevel);
+              leveledUp = true;
+            }
           }
+
           if (newLevel >= CONFIG.LEVEL_CAP) {
             newLevel = CONFIG.LEVEL_CAP;
+            maxExp = getReqExp(newLevel);
             newExp = maxExp;
           }
 
@@ -2245,6 +2264,7 @@ const App = () => {
           const checkpointLootRewardEntries = [];
 
           let forceZoneAdvance = false;
+          let zoneClearedThisTick = false;
           if (activeZone) {
             const storedProgress = getClampedZoneProgress(
               zoneProgressById[activeZone.id] ?? currentZoneProgress,
@@ -2313,6 +2333,7 @@ const App = () => {
 
                 if (checkpoint >= 100) {
                   zonesCleared = [...zonesCleared, activeZone.id];
+                  zoneClearedThisTick = true;
                   newLogs.push({
                     type: "zone-clear",
                     characterName: normalizedChar.name,
@@ -2323,6 +2344,7 @@ const App = () => {
             }
             if (nextProgress >= 100 && !zonesCleared.includes(activeZone.id)) {
               zonesCleared = [...zonesCleared, activeZone.id];
+              zoneClearedThisTick = true;
               if (!claimedSet.has(100)) {
                 claimedSet.add(100);
               }
@@ -2340,6 +2362,7 @@ const App = () => {
           }
 
           const transitionedZoneState = resolveZoneAutoTransition({
+            character: normalizedChar,
             faction: currentFaction,
             level: newLevel,
             currentZoneId,
@@ -2366,8 +2389,17 @@ const App = () => {
             currentZone,
             currentZoneProgress,
           );
+          const moraleAdjustedChar =
+            activeZone &&
+            zoneClearedThisTick &&
+            isCharacterInZoneLevelRange(normalizedChar, activeZone)
+              ? applyMoraleDelta(
+                  normalizedChar,
+                  MORALE_ZONE_CLEAR_DELTA,
+                )
+              : normalizedChar;
           const leveledChar = {
-            ...normalizedChar,
+            ...moraleAdjustedChar,
             level: newLevel,
             exp: newExp,
             maxExp,
@@ -2408,6 +2440,7 @@ const App = () => {
         }
 
         const transitionedZoneState = resolveZoneAutoTransition({
+          character: normalizedChar,
           faction: currentFaction,
           level: normalizedChar.level,
           currentZoneId: normalizedChar.currentZoneId,
@@ -2421,37 +2454,22 @@ const App = () => {
         });
 
         if (gainSkill) {
-          // Determine cap based on mode
-          const currentLimit =
-            normalizedChar.activityMode === "Auto" &&
-            isCheckpointLevel &&
-            needsAutoSkill
-              ? autoTarget
-              : hardCap;
+          const currentLimit = professionSkillLimit || hardCap;
+          const professionSkillResult = applyProfessionSkillAttempts({
+            professions: normalizedChar.professions,
+            currentLimit,
+            elapsedGameMs,
+            tickRateMs: CONFIG.TICK_RATE,
+          });
 
-          const uncappedProfs = normalizedChar.professions.filter(
-            (p) => p.skill < currentLimit && p.skill < 300,
-          );
-
-          if (uncappedProfs.length > 0) {
-            const targetProfIndex = Math.floor(
-              Math.random() * uncappedProfs.length,
-            );
-            const realIndex = normalizedChar.professions.indexOf(
-              uncappedProfs[targetProfIndex],
-            );
-            const pName = normalizedChar.professions[realIndex].name;
+          if (professionSkillResult.attempted) {
+            const pName = professionSkillResult.skilledProfessionName;
             statusText = PROF_ACTIONS[pName] || `Working on ${pName}...`;
 
-            if (Math.random() > 0.3) {
-              const newProfs = [...normalizedChar.professions];
-              newProfs[realIndex] = {
-                ...newProfs[realIndex],
-                skill: newProfs[realIndex].skill + 1,
-              };
+            if (professionSkillResult.changed) {
               return {
                 ...normalizedChar,
-                professions: newProfs,
+                professions: professionSkillResult.professions,
                 statusText,
                 currentZoneId: transitionedZoneState.currentZoneId,
                 currentZoneProgress: transitionedZoneState.currentZoneProgress,
@@ -4240,6 +4258,9 @@ const App = () => {
                 <option value={MEMBER_RANKING_MODES.EQUIP_CHECK}>
                   Equip Check
                 </option>
+                <option value={MEMBER_RANKING_MODES.PERSONALITY}>
+                  Personality
+                </option>
               </select>
             </label>
             <label className="text-[11px] text-gray-300">
@@ -4341,6 +4362,11 @@ const App = () => {
                       char={char}
                       onClick={() => setDetailCharId(char.id)}
                     />
+                  ) : memberRankingMode === MEMBER_RANKING_MODES.PERSONALITY ? (
+                    <CharacterPersonalityCard
+                      char={char}
+                      onClick={() => setDetailCharId(char.id)}
+                    />
                   ) : (
                     <CharacterCard
                       char={char}
@@ -4435,6 +4461,7 @@ const App = () => {
             roster={roster}
             activeMissions={activeMissions}
             raidLockouts={raidLockouts}
+            dungeonSuccessBonus={guildFocusBonuses.dungeonSuccessBonus}
             onCreateEvent={handleCreateCalendarEvent}
             onCreateSeries={handleCreateCalendarSeries}
             onUpdateEventRoster={handleUpdateCalendarEventRoster}

@@ -7,6 +7,44 @@ export const ZONE_FACTION = Object.freeze({
 });
 
 export const ZONE_PROGRESS_CHECKPOINTS = Object.freeze([25, 50, 75, 100]);
+export const ZONE_COMPLETION_ARCHETYPE = Object.freeze({
+  GEAR_SEEKER: "gear_seeker",
+  COMPLETIONIST: "completionist",
+  WANDERER: "wanderer",
+  AVOIDANT: "avoidant",
+});
+
+const ZONE_COMPLETION_ARCHETYPES = Object.freeze([
+  ZONE_COMPLETION_ARCHETYPE.GEAR_SEEKER,
+  ZONE_COMPLETION_ARCHETYPE.COMPLETIONIST,
+  ZONE_COMPLETION_ARCHETYPE.WANDERER,
+  ZONE_COMPLETION_ARCHETYPE.AVOIDANT,
+]);
+const ZONE_BIOME_POOL = Object.freeze([
+  "barren",
+  "coast",
+  "desert",
+  "forest",
+  "jungle",
+  "mountain",
+  "plague",
+  "plains",
+  "ruins",
+  "snow",
+  "swamp",
+  "volcanic",
+]);
+const ZONE_ENEMY_POOL = Object.freeze([
+  "beasts",
+  "demons",
+  "dragons",
+  "elementals",
+  "humanoids",
+  "naga",
+  "silithid",
+  "trolls",
+  "undead",
+]);
 
 const ZONE_CHECKPOINT_SPLITS = Object.freeze({
   25: 0.2,
@@ -40,48 +78,48 @@ const SPLIT_ZONE_ID = Object.freeze({
 });
 
 const BASE_ZONE_DEFINITIONS = Object.freeze([
-  { id: "teldrassil", name: "Teldrassil", faction: ZONE_FACTION.ALLIANCE, minLevel: 1, maxLevel: 10 },
-  { id: "dun_morogh", name: "Dun Morogh", faction: ZONE_FACTION.ALLIANCE, minLevel: 1, maxLevel: 10 },
-  { id: "elwynn_forest", name: "Elwynn Forest", faction: ZONE_FACTION.ALLIANCE, minLevel: 1, maxLevel: 10 },
-  { id: "durotar", name: "Durotar", faction: ZONE_FACTION.HORDE, minLevel: 1, maxLevel: 10 },
-  { id: "mulgore", name: "Mulgore", faction: ZONE_FACTION.HORDE, minLevel: 1, maxLevel: 10 },
-  { id: "tirisfal_glades", name: "Tirisfal Glades", faction: ZONE_FACTION.HORDE, minLevel: 1, maxLevel: 10 },
+  { id: "teldrassil", name: "Teldrassil", faction: ZONE_FACTION.ALLIANCE, minLevel: 1, maxLevel: 10, biomes: ["forest"], enemies: ["beasts", "humanoids"] },
+  { id: "dun_morogh", name: "Dun Morogh", faction: ZONE_FACTION.ALLIANCE, minLevel: 1, maxLevel: 10, biomes: ["snow", "mountain"], enemies: ["beasts", "humanoids"] },
+  { id: "elwynn_forest", name: "Elwynn Forest", faction: ZONE_FACTION.ALLIANCE, minLevel: 1, maxLevel: 10, biomes: ["forest"], enemies: ["beasts", "humanoids"] },
+  { id: "durotar", name: "Durotar", faction: ZONE_FACTION.HORDE, minLevel: 1, maxLevel: 10, biomes: ["barren"], enemies: ["beasts", "humanoids"] },
+  { id: "mulgore", name: "Mulgore", faction: ZONE_FACTION.HORDE, minLevel: 1, maxLevel: 10, biomes: ["plains"], enemies: ["beasts", "humanoids"] },
+  { id: "tirisfal_glades", name: "Tirisfal Glades", faction: ZONE_FACTION.HORDE, minLevel: 1, maxLevel: 10, biomes: ["forest", "plague"], enemies: ["undead", "humanoids"] },
 
-  { id: "darkshore", name: "Darkshore", faction: ZONE_FACTION.ALLIANCE, minLevel: 10, maxLevel: 20 },
-  { id: "loch_modan", name: "Loch Modan", faction: ZONE_FACTION.ALLIANCE, minLevel: 10, maxLevel: 20 },
-  { id: "westfall", name: "Westfall", faction: ZONE_FACTION.ALLIANCE, minLevel: 10, maxLevel: 20 },
-  { id: "silverpine_forest", name: "Silverpine Forest", faction: ZONE_FACTION.HORDE, minLevel: 10, maxLevel: 20 },
-  { id: "the_barrens", name: "The Barrens", faction: ZONE_FACTION.HORDE, minLevel: 10, maxLevel: 25 },
-  { id: "redridge_mountains", name: "Redridge Mountains", faction: ZONE_FACTION.ALLIANCE, minLevel: 15, maxLevel: 25 },
-  { id: "stonetalon_mountains", name: "Stonetalon Mountains", faction: ZONE_FACTION.NEUTRAL, minLevel: 15, maxLevel: 27 },
-  { id: "ashenvale", name: "Ashenvale", faction: ZONE_FACTION.NEUTRAL, minLevel: 18, maxLevel: 30 },
-  { id: "duskwood", name: "Duskwood", faction: ZONE_FACTION.ALLIANCE, minLevel: 20, maxLevel: 30 },
-  { id: "hillsbrad_foothills", name: "Hillsbrad Foothills", faction: ZONE_FACTION.NEUTRAL, minLevel: 20, maxLevel: 30 },
-  { id: "wetlands", name: "Wetlands", faction: ZONE_FACTION.ALLIANCE, minLevel: 20, maxLevel: 30 },
-  { id: "thousand_needles", name: "Thousand Needles", faction: ZONE_FACTION.NEUTRAL, minLevel: 25, maxLevel: 35 },
-  { id: "alterac_mountains", name: "Alterac Mountains", faction: ZONE_FACTION.NEUTRAL, minLevel: 30, maxLevel: 40 },
-  { id: "arathi_highlands", name: "Arathi Highlands", faction: ZONE_FACTION.NEUTRAL, minLevel: 30, maxLevel: 40 },
-  { id: "desolace", name: "Desolace", faction: ZONE_FACTION.NEUTRAL, minLevel: 30, maxLevel: 40 },
-  { id: "stranglethorn_vale_north", name: "Stranglethorn Vale North", faction: ZONE_FACTION.NEUTRAL, minLevel: 30, maxLevel: 40 },
-  { id: "stranglethorn_vale_south", name: "Stranglethorn Vale South", faction: ZONE_FACTION.NEUTRAL, minLevel: 40, maxLevel: 45 },
-  { id: "badlands", name: "Badlands", faction: ZONE_FACTION.NEUTRAL, minLevel: 35, maxLevel: 45 },
-  { id: "dustwallow_marsh", name: "Dustwallow Marsh", faction: ZONE_FACTION.NEUTRAL, minLevel: 35, maxLevel: 45 },
-  { id: "swamp_of_sorrows", name: "Swamp of Sorrows", faction: ZONE_FACTION.NEUTRAL, minLevel: 35, maxLevel: 45 },
-  { id: "feralas", name: "Feralas", faction: ZONE_FACTION.NEUTRAL, minLevel: 40, maxLevel: 50 },
-  { id: "the_hinterlands", name: "The Hinterlands", faction: ZONE_FACTION.NEUTRAL, minLevel: 40, maxLevel: 50 },
-  { id: "tanaris", name: "Tanaris", faction: ZONE_FACTION.NEUTRAL, minLevel: 40, maxLevel: 50 },
-  { id: "searing_gorge", name: "Searing Gorge", faction: ZONE_FACTION.NEUTRAL, minLevel: 45, maxLevel: 50 },
-  { id: "azshara", name: "Azshara", faction: ZONE_FACTION.NEUTRAL, minLevel: 45, maxLevel: 55 },
-  { id: "felwood", name: "Felwood", faction: ZONE_FACTION.NEUTRAL, minLevel: 48, maxLevel: 55 },
-  { id: "un_goro_crater", name: "Un'Goro Crater", faction: ZONE_FACTION.NEUTRAL, minLevel: 48, maxLevel: 55 },
-  { id: "blasted_lands", name: "Blasted Lands", faction: ZONE_FACTION.NEUTRAL, minLevel: 50, maxLevel: 55 },
-  { id: "burning_steppes", name: "Burning Steppes", faction: ZONE_FACTION.NEUTRAL, minLevel: 50, maxLevel: 58 },
-  { id: "western_plaguelands", name: "Western Plaguelands", faction: ZONE_FACTION.NEUTRAL, minLevel: 50, maxLevel: 58 },
-  { id: "eastern_plaguelands", name: "Eastern Plaguelands", faction: ZONE_FACTION.NEUTRAL, minLevel: 53, maxLevel: 60 },
-  { id: "winterspring", name: "Winterspring", faction: ZONE_FACTION.NEUTRAL, minLevel: 53, maxLevel: 60 },
-  { id: "moonglade", name: "Moonglade", faction: ZONE_FACTION.NEUTRAL, minLevel: 55, maxLevel: 60 },
-  { id: "deadwind_pass", name: "Deadwind Pass", faction: ZONE_FACTION.NEUTRAL, minLevel: 55, maxLevel: 60 },
-  { id: "silithus", name: "Silithus", faction: ZONE_FACTION.NEUTRAL, minLevel: 55, maxLevel: 60 },
+  { id: "darkshore", name: "Darkshore", faction: ZONE_FACTION.ALLIANCE, minLevel: 10, maxLevel: 20, biomes: ["forest", "coast"], enemies: ["naga", "beasts", "demons"] },
+  { id: "loch_modan", name: "Loch Modan", faction: ZONE_FACTION.ALLIANCE, minLevel: 10, maxLevel: 20, biomes: ["mountain", "forest"], enemies: ["beasts", "humanoids"] },
+  { id: "westfall", name: "Westfall", faction: ZONE_FACTION.ALLIANCE, minLevel: 10, maxLevel: 20, biomes: ["plains", "coast"], enemies: ["humanoids", "undead"] },
+  { id: "silverpine_forest", name: "Silverpine Forest", faction: ZONE_FACTION.HORDE, minLevel: 10, maxLevel: 20, biomes: ["forest"], enemies: ["undead", "humanoids"] },
+  { id: "the_barrens", name: "The Barrens", faction: ZONE_FACTION.HORDE, minLevel: 10, maxLevel: 25, biomes: ["barren", "plains"], enemies: ["beasts", "humanoids"] },
+  { id: "redridge_mountains", name: "Redridge Mountains", faction: ZONE_FACTION.ALLIANCE, minLevel: 15, maxLevel: 25, biomes: ["mountain", "forest"], enemies: ["dragons", "humanoids"] },
+  { id: "stonetalon_mountains", name: "Stonetalon Mountains", faction: ZONE_FACTION.NEUTRAL, minLevel: 15, maxLevel: 27, biomes: ["mountain", "forest"], enemies: ["beasts", "humanoids"] },
+  { id: "ashenvale", name: "Ashenvale", faction: ZONE_FACTION.NEUTRAL, minLevel: 18, maxLevel: 30, biomes: ["forest"], enemies: ["demons", "beasts", "humanoids"] },
+  { id: "duskwood", name: "Duskwood", faction: ZONE_FACTION.ALLIANCE, minLevel: 20, maxLevel: 30, biomes: ["forest"], enemies: ["undead", "beasts"] },
+  { id: "hillsbrad_foothills", name: "Hillsbrad Foothills", faction: ZONE_FACTION.NEUTRAL, minLevel: 20, maxLevel: 30, biomes: ["plains", "forest"], enemies: ["humanoids", "undead"] },
+  { id: "wetlands", name: "Wetlands", faction: ZONE_FACTION.ALLIANCE, minLevel: 20, maxLevel: 30, biomes: ["swamp", "coast"], enemies: ["dragons", "beasts", "humanoids"] },
+  { id: "thousand_needles", name: "Thousand Needles", faction: ZONE_FACTION.NEUTRAL, minLevel: 25, maxLevel: 35, biomes: ["barren", "mountain"], enemies: ["beasts", "humanoids"] },
+  { id: "alterac_mountains", name: "Alterac Mountains", faction: ZONE_FACTION.NEUTRAL, minLevel: 30, maxLevel: 40, biomes: ["snow", "mountain"], enemies: ["humanoids", "elementals"] },
+  { id: "arathi_highlands", name: "Arathi Highlands", faction: ZONE_FACTION.NEUTRAL, minLevel: 30, maxLevel: 40, biomes: ["plains", "ruins"], enemies: ["humanoids", "elementals"] },
+  { id: "desolace", name: "Desolace", faction: ZONE_FACTION.NEUTRAL, minLevel: 30, maxLevel: 40, biomes: ["barren", "desert"], enemies: ["demons", "beasts", "humanoids"] },
+  { id: "stranglethorn_vale_north", name: "Stranglethorn Vale North", faction: ZONE_FACTION.NEUTRAL, minLevel: 30, maxLevel: 40, biomes: ["jungle", "ruins"], enemies: ["beasts", "trolls"] },
+  { id: "stranglethorn_vale_south", name: "Stranglethorn Vale South", faction: ZONE_FACTION.NEUTRAL, minLevel: 40, maxLevel: 45, biomes: ["jungle", "coast"], enemies: ["naga", "trolls", "beasts"] },
+  { id: "badlands", name: "Badlands", faction: ZONE_FACTION.NEUTRAL, minLevel: 35, maxLevel: 45, biomes: ["barren", "desert"], enemies: ["dragons", "elementals", "humanoids"] },
+  { id: "dustwallow_marsh", name: "Dustwallow Marsh", faction: ZONE_FACTION.NEUTRAL, minLevel: 35, maxLevel: 45, biomes: ["swamp"], enemies: ["dragons", "beasts", "humanoids"] },
+  { id: "swamp_of_sorrows", name: "Swamp of Sorrows", faction: ZONE_FACTION.NEUTRAL, minLevel: 35, maxLevel: 45, biomes: ["swamp"], enemies: ["demons", "beasts", "humanoids"] },
+  { id: "feralas", name: "Feralas", faction: ZONE_FACTION.NEUTRAL, minLevel: 40, maxLevel: 50, biomes: ["forest", "ruins"], enemies: ["beasts", "humanoids"] },
+  { id: "the_hinterlands", name: "The Hinterlands", faction: ZONE_FACTION.NEUTRAL, minLevel: 40, maxLevel: 50, biomes: ["forest", "mountain"], enemies: ["trolls", "beasts"] },
+  { id: "tanaris", name: "Tanaris", faction: ZONE_FACTION.NEUTRAL, minLevel: 40, maxLevel: 50, biomes: ["desert", "coast"], enemies: ["trolls", "humanoids", "beasts"] },
+  { id: "searing_gorge", name: "Searing Gorge", faction: ZONE_FACTION.NEUTRAL, minLevel: 45, maxLevel: 50, biomes: ["volcanic", "mountain"], enemies: ["elementals", "humanoids"] },
+  { id: "azshara", name: "Azshara", faction: ZONE_FACTION.NEUTRAL, minLevel: 45, maxLevel: 55, biomes: ["coast", "ruins"], enemies: ["naga", "demons", "dragons"] },
+  { id: "felwood", name: "Felwood", faction: ZONE_FACTION.NEUTRAL, minLevel: 48, maxLevel: 55, biomes: ["forest", "plague"], enemies: ["demons", "beasts"] },
+  { id: "un_goro_crater", name: "Un'Goro Crater", faction: ZONE_FACTION.NEUTRAL, minLevel: 48, maxLevel: 55, biomes: ["jungle"], enemies: ["beasts", "elementals"] },
+  { id: "blasted_lands", name: "Blasted Lands", faction: ZONE_FACTION.NEUTRAL, minLevel: 50, maxLevel: 55, biomes: ["barren"], enemies: ["demons", "humanoids"] },
+  { id: "burning_steppes", name: "Burning Steppes", faction: ZONE_FACTION.NEUTRAL, minLevel: 50, maxLevel: 58, biomes: ["volcanic", "mountain"], enemies: ["dragons", "elementals", "humanoids"] },
+  { id: "western_plaguelands", name: "Western Plaguelands", faction: ZONE_FACTION.NEUTRAL, minLevel: 50, maxLevel: 58, biomes: ["plague", "ruins"], enemies: ["undead", "humanoids"] },
+  { id: "eastern_plaguelands", name: "Eastern Plaguelands", faction: ZONE_FACTION.NEUTRAL, minLevel: 53, maxLevel: 60, biomes: ["plague", "ruins"], enemies: ["undead"] },
+  { id: "winterspring", name: "Winterspring", faction: ZONE_FACTION.NEUTRAL, minLevel: 53, maxLevel: 60, biomes: ["snow", "forest"], enemies: ["beasts", "demons"] },
+  { id: "moonglade", name: "Moonglade", faction: ZONE_FACTION.NEUTRAL, minLevel: 55, maxLevel: 60, biomes: ["forest"], enemies: ["beasts", "dragons"] },
+  { id: "deadwind_pass", name: "Deadwind Pass", faction: ZONE_FACTION.NEUTRAL, minLevel: 55, maxLevel: 60, biomes: ["ruins", "barren"], enemies: ["undead", "demons"] },
+  { id: "silithus", name: "Silithus", faction: ZONE_FACTION.NEUTRAL, minLevel: 55, maxLevel: 60, biomes: ["desert", "ruins"], enemies: ["silithid", "elementals"] },
 ]);
 
 const clampLevel = (value) => Math.max(1, Number(value) || 1);
@@ -352,6 +390,16 @@ export const ZONE_DEFINITIONS = Object.freeze(
       ...zone,
       minLevel: clampLevel(zone.minLevel),
       maxLevel: clampLevel(zone.maxLevel),
+      biomes: Object.freeze(
+        (Array.isArray(zone.biomes) ? zone.biomes : [])
+          .map((biome) => String(biome || "").trim())
+          .filter(Boolean),
+      ),
+      enemies: Object.freeze(
+        (Array.isArray(zone.enemies) ? zone.enemies : [])
+          .map((enemy) => String(enemy || "").trim())
+          .filter(Boolean),
+      ),
       baseDurationSeconds: getZoneBaseDurationSeconds(zone),
       totalGoldReward: getZoneTotalGoldReward(zone),
       isStarterZone: STARTER_ZONE_IDS.has(zone.id),
@@ -506,6 +554,93 @@ export const isZoneAccessibleForFaction = (zone, faction) => {
   return zone.faction === faction;
 };
 
+const getStableCharacterZoneHash = (character) => {
+  const source = String(
+    character?.id ||
+      character?.name ||
+      `${character?.race || ""}:${character?.charClass || ""}` ||
+      "character",
+  );
+  return [...source].reduce(
+    (hash, letter, index) => hash + letter.charCodeAt(0) * (index + 7),
+    0,
+  );
+};
+
+const pickPreferenceTags = ({ pool, hash, count, offset, excluded = [] }) => {
+  const excludedSet = new Set(
+    (Array.isArray(excluded) ? excluded : [])
+      .map((entry) => String(entry || "").trim())
+      .filter(Boolean),
+  );
+  const source = pool.filter((entry) => !excludedSet.has(entry));
+  if (source.length === 0) return [];
+  return Array.from({ length: Math.min(count, source.length) }, (_, index) => {
+    const seed = hash + offset * (index + 1) + index * 17;
+    return source[Math.abs(seed) % source.length];
+  }).filter((entry, index, picked) => picked.indexOf(entry) === index);
+};
+
+const normalizePreferenceTags = (values, pool, fallback) => {
+  const allowed = new Set(pool);
+  const normalized = (Array.isArray(values) ? values : [])
+    .map((value) => String(value || "").trim())
+    .filter((value) => allowed.has(value));
+  return normalized.length > 0 ? [...new Set(normalized)] : fallback;
+};
+
+export const getCharacterZonePreference = (character = {}) => {
+  const hash = getStableCharacterZoneHash(character);
+  const rawPreference =
+    character?.zonePreference && typeof character.zonePreference === "object"
+      ? character.zonePreference
+      : {};
+  const archetype = ZONE_COMPLETION_ARCHETYPES.includes(rawPreference.archetype)
+    ? rawPreference.archetype
+    : ZONE_COMPLETION_ARCHETYPES[hash % ZONE_COMPLETION_ARCHETYPES.length];
+  const likedBiomes = normalizePreferenceTags(
+    rawPreference.likedBiomes,
+    ZONE_BIOME_POOL,
+    pickPreferenceTags({ pool: ZONE_BIOME_POOL, hash, count: 2, offset: 11 }),
+  );
+  const dislikedBiomes = normalizePreferenceTags(
+    rawPreference.dislikedBiomes,
+    ZONE_BIOME_POOL,
+    pickPreferenceTags({
+      pool: ZONE_BIOME_POOL,
+      hash,
+      count: 1,
+      offset: 23,
+      excluded: likedBiomes,
+    }),
+  );
+  const likedEnemies = normalizePreferenceTags(
+    rawPreference.likedEnemies,
+    ZONE_ENEMY_POOL,
+    pickPreferenceTags({ pool: ZONE_ENEMY_POOL, hash, count: 2, offset: 31 }),
+  );
+  const dislikedEnemies = normalizePreferenceTags(
+    rawPreference.dislikedEnemies,
+    ZONE_ENEMY_POOL,
+    pickPreferenceTags({
+      pool: ZONE_ENEMY_POOL,
+      hash,
+      count: 1,
+      offset: 43,
+      excluded: likedEnemies,
+    }),
+  );
+
+  return {
+    archetype,
+    likedBiomes,
+    dislikedBiomes,
+    likedEnemies,
+    dislikedEnemies,
+    hash,
+  };
+};
+
 const sortZonesForPathing = (zones, faction) =>
   [...zones].sort((left, right) => {
     const leftFactionPriority =
@@ -520,11 +655,80 @@ const sortZonesForPathing = (zones, faction) =>
     return left.name.localeCompare(right.name);
   });
 
+const countTagMatches = (source, preferences) => {
+  const preferenceSet = new Set(Array.isArray(preferences) ? preferences : []);
+  return (Array.isArray(source) ? source : []).filter((tag) =>
+    preferenceSet.has(tag),
+  ).length;
+};
+
+const getZonePreferenceTieBreaker = (zone, preference) => {
+  const zoneHash = [...String(zone?.id || "")].reduce(
+    (hash, letter, index) => hash + letter.charCodeAt(0) * (index + 3),
+    0,
+  );
+  return ((zoneHash + (Number(preference?.hash) || 0)) % 97) / 1000;
+};
+
+export const scoreZoneForCharacterPreference = ({
+  zone,
+  level,
+  faction,
+  zonePreference,
+}) => {
+  if (!zone) return Number.NEGATIVE_INFINITY;
+  const safeLevel = clampLevel(level);
+  const preference =
+    zonePreference && typeof zonePreference === "object"
+      ? zonePreference
+      : getCharacterZonePreference();
+  const overlevel = Math.max(0, safeLevel - clampLevel(zone.maxLevel));
+  let score = 0;
+
+  if (zone.faction === faction) score += 8;
+  if (zone.faction === ZONE_FACTION.NEUTRAL) score += 4;
+
+  if (preference.archetype === ZONE_COMPLETION_ARCHETYPE.GEAR_SEEKER) {
+    score += zone.maxLevel >= 50 ? 900 : 0;
+    score += zone.maxLevel * 10 + zone.minLevel;
+  } else if (preference.archetype === ZONE_COMPLETION_ARCHETYPE.COMPLETIONIST) {
+    score += 900 - zone.minLevel * 10;
+    score += overlevel * 4;
+  } else {
+    score += Math.max(0, 60 - Math.abs(zone.maxLevel - safeLevel));
+  }
+
+  const likedBiomeMatches = countTagMatches(zone.biomes, preference.likedBiomes);
+  const likedEnemyMatches = countTagMatches(zone.enemies, preference.likedEnemies);
+  const dislikedBiomeMatches = countTagMatches(
+    zone.biomes,
+    preference.dislikedBiomes,
+  );
+  const dislikedEnemyMatches = countTagMatches(
+    zone.enemies,
+    preference.dislikedEnemies,
+  );
+  if (preference.archetype === ZONE_COMPLETION_ARCHETYPE.WANDERER) {
+    score += likedBiomeMatches * 220 + likedEnemyMatches * 120;
+    score -= dislikedBiomeMatches * 45 + dislikedEnemyMatches * 30;
+  } else if (preference.archetype === ZONE_COMPLETION_ARCHETYPE.AVOIDANT) {
+    score += likedBiomeMatches * 60 + likedEnemyMatches * 35;
+    score -= dislikedBiomeMatches * 260 + dislikedEnemyMatches * 160;
+  } else {
+    score += likedBiomeMatches * 35 + likedEnemyMatches * 25;
+    score -= dislikedBiomeMatches * 20 + dislikedEnemyMatches * 15;
+  }
+
+  return score + getZonePreferenceTieBreaker(zone, preference);
+};
+
 export const pickNextZoneForCharacter = ({
   faction,
   level,
   zonesCleared = [],
   currentZoneId = null,
+  character = null,
+  zonePreference = null,
 }) => {
   const clearedZoneIds = (Array.isArray(zonesCleared) ? zonesCleared : [])
     .map((zoneId) => String(zoneId || "").trim())
@@ -547,6 +751,31 @@ export const pickNextZoneForCharacter = ({
   if (candidates.length === 0) return getZoneById(currentZoneId);
 
   const safeLevel = clampLevel(level);
+  if (safeLevel >= 60) {
+    const preference =
+      zonePreference && typeof zonePreference === "object"
+        ? zonePreference
+        : getCharacterZonePreference(character || {});
+    return [...candidates].sort((left, right) => {
+      const scoreDiff =
+        scoreZoneForCharacterPreference({
+          zone: right,
+          level: safeLevel,
+          faction,
+          zonePreference: preference,
+        }) -
+        scoreZoneForCharacterPreference({
+          zone: left,
+          level: safeLevel,
+          faction,
+          zonePreference: preference,
+        });
+      if (scoreDiff !== 0) return scoreDiff;
+      if (left.minLevel !== right.minLevel) return left.minLevel - right.minLevel;
+      return left.name.localeCompare(right.name);
+    })[0];
+  }
+
   const inRange = candidates.filter(
     (zone) => safeLevel >= zone.minLevel && safeLevel <= zone.maxLevel,
   );

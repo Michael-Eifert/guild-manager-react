@@ -40,6 +40,7 @@ import {
   formatRaidResetSchedule,
   getRaidLockoutStatus,
 } from "../../raids/raidLockouts";
+import { getPartyMoraleSuccessBonus } from "../../game/characterMorale";
 import BaseModal from "./BaseModal";
 import {
   getZoneById,
@@ -754,15 +755,24 @@ const MissionModal = ({
     const preview = getMissionSuccessPreview(mission, members);
     const bonus = mission?.type === "dungeon" ? Math.max(0, dungeonSuccessBonus) : 0;
     const veteranCoverage = getMissionVeteranCoverage(mission, members);
+    const moraleSuccessBonus =
+      mission?.type === "dungeon" ? getPartyMoraleSuccessBonus(members) : 0;
     const adjustedSuccess = Math.min(
       100,
-      preview.successChance + bonus + veteranCoverage.successBonus,
+      Math.max(
+        0,
+        preview.successChance +
+          bonus +
+          veteranCoverage.successBonus +
+          moraleSuccessBonus,
+      ),
     );
     return {
       ...preview,
       successChance: adjustedSuccess,
       failChance: Math.max(0, 100 - adjustedSuccess),
       focusSuccessBonus: bonus,
+      moraleSuccessBonus,
       veteranSuccessBonus: veteranCoverage.successBonus,
       veteranExperiencedCount: veteranCoverage.experiencedCount,
       veteranCoverageRatio: veteranCoverage.coverageRatio,
@@ -2401,6 +2411,24 @@ const MissionModal = ({
                             1,
                             selectedPartyMembers.length,
                           )})
+                        </span>
+                      )}
+                      {activePrepMission?.type === "dungeon" && (
+                        <span
+                          className={`px-2 py-1 rounded border ${
+                            missionPreview.moraleSuccessBonus > 0
+                              ? "border-emerald-700 bg-emerald-950/30 text-emerald-200"
+                              : missionPreview.moraleSuccessBonus < 0
+                                ? "border-red-800 bg-red-950/30 text-red-200"
+                                : "border-gray-700 bg-gray-800 text-gray-400"
+                          }`}
+                        >
+                          Morale:{" "}
+                          {missionPreview.moraleSuccessBonus > 0
+                            ? `+${missionPreview.moraleSuccessBonus}% Success`
+                            : missionPreview.moraleSuccessBonus < 0
+                              ? `${missionPreview.moraleSuccessBonus}% Success`
+                              : "No bonus"}
                         </span>
                       )}
                     </>

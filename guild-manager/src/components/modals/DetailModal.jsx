@@ -11,17 +11,78 @@ import {
   getKeyLabel,
   getItemIconUrl,
   getItemEffectiveLevel,
-  getNextTierLevel,
   getQualityColor,
   getRacePortraitUrl,
   getReqExp,
   getRoleIcon,
-  getSkillCap,
   getWowIconUrl,
 } from "../../utils";
-import { ZONE_DEFINITIONS, getZoneById } from "../../zones/zoneDefinitions";
+import {
+  getCharacterActivityModeDescription,
+  getNextTierLevel,
+  getSkillCap,
+} from "../../game/characterActivity";
+import {
+  getCharacterMorale,
+  getMoraleLabel,
+  getMoraleSuccessModifier,
+} from "../../game/characterMorale";
+import {
+  ZONE_COMPLETION_ARCHETYPE,
+  ZONE_DEFINITIONS,
+  getCharacterZonePreference,
+  getZoneById,
+} from "../../zones/zoneDefinitions";
 import { getRaidLockoutStatus } from "../../raids/raidLockouts";
 import BaseModal from "./BaseModal";
+
+const ZONE_ARCHETYPE_LABEL = Object.freeze({
+  [ZONE_COMPLETION_ARCHETYPE.GEAR_SEEKER]: "Gear Seeker",
+  [ZONE_COMPLETION_ARCHETYPE.COMPLETIONIST]: "Completionist",
+  [ZONE_COMPLETION_ARCHETYPE.WANDERER]: "Wanderer",
+  [ZONE_COMPLETION_ARCHETYPE.AVOIDANT]: "Cautious Pathfinder",
+});
+
+const ZONE_ARCHETYPE_DESCRIPTION = Object.freeze({
+  [ZONE_COMPLETION_ARCHETYPE.GEAR_SEEKER]:
+    "Prioritizes high-end regions where useful gear can still drop.",
+  [ZONE_COMPLETION_ARCHETYPE.COMPLETIONIST]:
+    "Starts with lower-level regions and works upward through the world.",
+  [ZONE_COMPLETION_ARCHETYPE.WANDERER]:
+    "Lets favorite places and enemies pull them toward certain zones first.",
+  [ZONE_COMPLETION_ARCHETYPE.AVOIDANT]:
+    "Avoids disliked places and enemies when another unfinished zone is available.",
+});
+
+const formatPreferenceTag = (tag) =>
+  String(tag || "")
+    .split("_")
+    .filter(Boolean)
+    .map((part) => part.charAt(0).toUpperCase() + part.slice(1))
+    .join(" ");
+
+const PreferencePills = ({ values, tone = "emerald" }) => {
+  const entries = (Array.isArray(values) ? values : []).filter(Boolean);
+  if (entries.length === 0) {
+    return <span className="text-xs text-gray-500 italic">None</span>;
+  }
+  const toneClass =
+    tone === "red"
+      ? "border-red-800 bg-red-950/25 text-red-100"
+      : "border-emerald-800 bg-emerald-950/25 text-emerald-100";
+  return (
+    <div className="flex flex-wrap gap-1.5">
+      {entries.map((entry) => (
+        <span
+          key={entry}
+          className={`inline-flex rounded border px-2 py-1 text-xs font-semibold ${toneClass}`}
+        >
+          {formatPreferenceTag(entry)}
+        </span>
+      ))}
+    </div>
+  );
+};
 
 const ItemSlot = ({ slotName, item }) => {
   const borderColor = item ? getQualityColor(item.quality) : "#444";
@@ -82,6 +143,21 @@ const DetailModal = ({
   const [historyPage, setHistoryPage] = useState(0);
   const HISTORY_PAGE_SIZE = 8;
   const classData = DB_CLASSES[char?.charClass];
+  const zonePreference = getCharacterZonePreference(char);
+  const zoneArchetypeLabel =
+    ZONE_ARCHETYPE_LABEL[zonePreference.archetype] || "Adventurer";
+  const zoneArchetypeDescription =
+    ZONE_ARCHETYPE_DESCRIPTION[zonePreference.archetype] ||
+    "Follows their own instincts when choosing unfinished zones.";
+  const morale = getCharacterMorale(char);
+  const moraleLabel = getMoraleLabel(morale);
+  const moraleSuccessModifier = getMoraleSuccessModifier(char);
+  const moraleEffectText =
+    moraleSuccessModifier > 0
+      ? `+${moraleSuccessModifier}% dungeon/raid success`
+      : moraleSuccessModifier < 0
+        ? `${moraleSuccessModifier}% dungeon/raid success`
+        : "No dungeon/raid success modifier";
 
   const hardCap = getSkillCap(char?.level || 1);
   const averageItemLevel = getCharacterAverageItemLevel(char);
@@ -292,28 +368,34 @@ const DetailModal = ({
           </div>
         </div>
 
-        <div className="flex border-b border-gray-700 bg-gray-800">
+        <div className="flex flex-wrap border-b border-gray-700 bg-gray-800">
           <button
             onClick={() => setTab("stats")}
-            className={`flex-1 py-3 text-sm font-bold uppercase tracking-wider hover:bg-gray-700 ${tab === "stats" ? "text-white border-b-2 border-blue-500 bg-gray-700" : "text-gray-500"}`}
+            className={`min-w-[132px] flex-1 py-3 text-sm font-bold uppercase tracking-wider hover:bg-gray-700 ${tab === "stats" ? "text-white border-b-2 border-blue-500 bg-gray-700" : "text-gray-500"}`}
           >
             Stats & Gear
           </button>
           <button
             onClick={() => setTab("profs")}
-            className={`flex-1 py-3 text-sm font-bold uppercase tracking-wider hover:bg-gray-700 ${tab === "profs" ? "text-white border-b-2 border-yellow-500 bg-gray-700" : "text-gray-500"}`}
+            className={`min-w-[132px] flex-1 py-3 text-sm font-bold uppercase tracking-wider hover:bg-gray-700 ${tab === "profs" ? "text-white border-b-2 border-yellow-500 bg-gray-700" : "text-gray-500"}`}
           >
             Professions
           </button>
           <button
+            onClick={() => setTab("personality")}
+            className={`min-w-[132px] flex-1 py-3 text-sm font-bold uppercase tracking-wider hover:bg-gray-700 ${tab === "personality" ? "text-white border-b-2 border-purple-500 bg-gray-700" : "text-gray-500"}`}
+          >
+            Personality
+          </button>
+          <button
             onClick={() => setTab("zones")}
-            className={`flex-1 py-3 text-sm font-bold uppercase tracking-wider hover:bg-gray-700 ${tab === "zones" ? "text-white border-b-2 border-emerald-500 bg-gray-700" : "text-gray-500"}`}
+            className={`min-w-[132px] flex-1 py-3 text-sm font-bold uppercase tracking-wider hover:bg-gray-700 ${tab === "zones" ? "text-white border-b-2 border-emerald-500 bg-gray-700" : "text-gray-500"}`}
           >
             Zones
           </button>
           <button
             onClick={() => setTab("achievements")}
-            className={`flex-1 py-3 text-sm font-bold uppercase tracking-wider hover:bg-gray-700 ${tab === "achievements" ? "text-white border-b-2 border-amber-500 bg-gray-700" : "text-gray-500"}`}
+            className={`min-w-[132px] flex-1 py-3 text-sm font-bold uppercase tracking-wider hover:bg-gray-700 ${tab === "achievements" ? "text-white border-b-2 border-amber-500 bg-gray-700" : "text-gray-500"}`}
           >
             Achievements
           </button>
@@ -554,10 +636,7 @@ const DetailModal = ({
                   ))}
                 </div>
                 <p className="text-xs text-gray-500 mt-2 italic">
-                  {char.activityMode === "Leveling" && "Focuses purely on gaining XP."}
-                  {char.activityMode === "Professions" && "Pauses XP gain to level up skills."}
-                  {char.activityMode === "Auto" &&
-                    "Prioritizes leveling, but pauses every 5 levels to hit staged skill targets (25 to 275), then 300 at level 60."}
+                  {getCharacterActivityModeDescription(char.activityMode)}
                 </p>
               </div>
 
@@ -603,6 +682,80 @@ const DetailModal = ({
                     </div>
                   </div>
                 ))}
+              </div>
+            </div>
+          )}
+
+          {tab === "personality" && (
+            <div className="space-y-4">
+              <div className="rounded border border-cyan-900/60 bg-cyan-950/15 p-4">
+                <div className="flex items-start justify-between gap-3">
+                  <div>
+                    <h3 className="text-sm font-bold uppercase tracking-wide text-cyan-100">
+                      Morale
+                    </h3>
+                    <p className="mt-1 text-xs text-cyan-100/75">
+                      {moraleEffectText}
+                    </p>
+                  </div>
+                  <div className="text-right">
+                    <div className="text-lg font-bold text-white">{morale}/100</div>
+                    <div className="text-xs font-semibold text-cyan-200">{moraleLabel}</div>
+                  </div>
+                </div>
+                <div className="mt-3 h-3 overflow-hidden rounded-full border border-cyan-900/60 bg-gray-900">
+                  <div
+                    className={`h-full ${
+                      morale <= 25
+                        ? "bg-red-500"
+                        : morale >= 75
+                          ? "bg-emerald-500"
+                          : "bg-cyan-500"
+                    }`}
+                    style={{ width: `${morale}%` }}
+                  ></div>
+                </div>
+              </div>
+
+              <div className="rounded border border-purple-900/60 bg-purple-950/15 p-4">
+                <h3 className="text-sm font-bold uppercase tracking-wide text-purple-100">
+                  {zoneArchetypeLabel}
+                </h3>
+                <p className="mt-1 text-xs text-purple-100/75">
+                  {zoneArchetypeDescription}
+                </p>
+              </div>
+
+              <div className="grid grid-cols-1 gap-3 md:grid-cols-2">
+                <div className="rounded border border-gray-700 bg-gray-800/60 p-3">
+                  <h4 className="mb-2 text-[10px] font-bold uppercase tracking-widest text-emerald-300">
+                    Likes Biomes
+                  </h4>
+                  <PreferencePills values={zonePreference.likedBiomes} />
+                </div>
+                <div className="rounded border border-gray-700 bg-gray-800/60 p-3">
+                  <h4 className="mb-2 text-[10px] font-bold uppercase tracking-widest text-red-300">
+                    Avoids Biomes
+                  </h4>
+                  <PreferencePills values={zonePreference.dislikedBiomes} tone="red" />
+                </div>
+                <div className="rounded border border-gray-700 bg-gray-800/60 p-3">
+                  <h4 className="mb-2 text-[10px] font-bold uppercase tracking-widest text-emerald-300">
+                    Likes Enemies
+                  </h4>
+                  <PreferencePills values={zonePreference.likedEnemies} />
+                </div>
+                <div className="rounded border border-gray-700 bg-gray-800/60 p-3">
+                  <h4 className="mb-2 text-[10px] font-bold uppercase tracking-widest text-red-300">
+                    Avoids Enemies
+                  </h4>
+                  <PreferencePills values={zonePreference.dislikedEnemies} tone="red" />
+                </div>
+              </div>
+
+              <div className="rounded border border-gray-700 bg-gray-900/40 p-3 text-xs text-gray-400">
+                These traits are derived from the character identity and guide automatic
+                zone finishing at max level.
               </div>
             </div>
           )}

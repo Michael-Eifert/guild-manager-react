@@ -1,3 +1,9 @@
+import {
+  MORALE_DUNGEON_CLEAR_DELTA,
+  applyMoraleDelta,
+  isCharacterInMissionLevelRange,
+} from "../game/characterMorale";
+
 const DUNGEON_BONUS_UNCOMMON_DROP_CHANCE = 0.1;
 const DEFAULT_DUNGEON_BONUS_DROPS = Object.freeze([
   {
@@ -706,8 +712,15 @@ export const createMissionRewardProcessor = ({
         });
       });
 
+      const moraleAdjustedChar =
+        missionSucceeded &&
+        isDungeon &&
+        isCharacterInMissionLevelRange(char, mission)
+          ? applyMoraleDelta(char, MORALE_DUNGEON_CLEAR_DELTA)
+          : char;
+
       return {
-        ...char,
+        ...moraleAdjustedChar,
         status: "Idle",
         statusText: missionSucceeded
           ? "Returning from Mission..."

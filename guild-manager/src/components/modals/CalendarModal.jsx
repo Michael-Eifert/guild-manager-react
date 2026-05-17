@@ -16,8 +16,30 @@ import {
   formatRaidResetSchedule,
   getRaidLockoutStatus,
 } from "../../raids/raidLockouts";
-import { getCharacterAverageItemLevel, getRoleIcon } from "../../utils";
+import {
+  getCharacterAverageItemLevel,
+  getMissionSuccessPreview,
+  getMissionVeteranCoverage,
+  getRoleIcon,
+} from "../../utils";
+import { getPartyMoraleSuccessBonus } from "../../game/characterMorale";
 import BaseModal from "./BaseModal";
+
+const CALENDAR_AUTO_SELECT_MODES = Object.freeze({
+  MAX_SUCCESS: "maxSuccess",
+  ROLE_COVERAGE: "roleCoverage",
+  STRONGEST: "strongest",
+});
+
+const CALENDAR_AUTO_SELECT_MODE_OPTIONS = Object.freeze([
+  { value: CALENDAR_AUTO_SELECT_MODES.MAX_SUCCESS, label: "Max Success" },
+  { value: CALENDAR_AUTO_SELECT_MODES.ROLE_COVERAGE, label: "Role Coverage" },
+  { value: CALENDAR_AUTO_SELECT_MODES.STRONGEST, label: "Strongest" },
+]);
+
+const CALENDAR_AUTO_SELECT_MODE_LABEL = Object.fromEntries(
+  CALENDAR_AUTO_SELECT_MODE_OPTIONS.map((option) => [option.value, option.label]),
+);
 
 const getMissionRoleRequirement = (mission) => ({
   Tank: Math.max(0, Math.floor(Number(mission?.raidRoleRequirement?.Tank) || 0)),
@@ -76,6 +98,7 @@ const CalendarModal = ({
   roster,
   activeMissions,
   raidLockouts,
+  dungeonSuccessBonus = 0,
   onCreateEvent,
   onCreateSeries,
   onUpdateEventRoster,
@@ -102,6 +125,10 @@ const CalendarModal = ({
   const [selectedDurationWeeks, setSelectedDurationWeeks] = useState(8);
   const [eventTitle, setEventTitle] = useState("");
   const [selectedEventId, setSelectedEventId] = useState(null);
+  const [autoSelectMode, setAutoSelectMode] = useState(
+    CALENDAR_AUTO_SELECT_MODES.MAX_SUCCESS,
+  );
+  const [autoSelectSummary, setAutoSelectSummary] = useState("");
 
   useEffect(() => {
     if (!isOpen) return;
@@ -114,6 +141,8 @@ const CalendarModal = ({
     setSelectedDurationWeeks(8);
     setEventTitle("");
     setSelectedEventId(null);
+    setAutoSelectMode(CALENDAR_AUTO_SELECT_MODES.MAX_SUCCESS);
+    setAutoSelectSummary("");
   }, [
     currentDate.monthIndex,
     currentDate.weekdayIndex,
@@ -243,6 +272,16 @@ const CalendarModal = ({
         memberIds: selectedEvent?.approvedRosterIds || [],
       })
     : null;
+  const isSelectedEventEditable =
+    Boolean(selectedEvent) &&
+    selectedEvent.status !== CALENDAR_STATUS.RUNNING &&
+    selectedEvent.status !== CALENDAR_STATUS.COMPLETED &&
+    selectedEvent.status !== CALENDAR_STATUS.CANCELLED &&
+    selectedEvent.rosterLocked !== true;
+
+  useEffect(() => {
+    setAutoSelectSummary("");
+  }, [selectedEvent?.id]);
 
   const changeMonth = (delta) => {
     const nextMonth = viewMonthIndex + delta;
@@ -303,6 +342,130 @@ const CalendarModal = ({
       ? selectedEvent.approvedRosterIds.filter((id) => id !== characterId)
       : [...selectedEvent.approvedRosterIds, characterId].slice(0, maxPartySize);
     onUpdateEventRoster(selectedEvent.id, approved);
+  };
+
+  const getAdjustedCalendarMissionPreview = (mission, members) => {
+    const preview = getMissionSuccessPreview(mission, members);
+    const focusSuccessBonus =
+      mission?.type === "dungeon" ? Math.max(0, dungeonSuccessBonus) : 0;
+    const veteranCoverage = getMissionVeteranCoverage(mission, members);
+    const moraleSuccessBonus =
+      mission?.type === "dungeon" ? getPartyMoraleSuccessBonus(members) : 0;
+    const successChance = Math.min(
+      100,
+      Math.max(
+        0,
+        preview.successChance +
+          focusSuccessBonus +
+          veteranCoverage.successBonus +
+          moraleSuccessBonus,
+      ),
+    );
+    return {
+      ...preview,
+      successChance,
+      failChance: Math.max(0, 100 - successChance),
+      focusSuccessBonus,
+      veteranSuccessBonus: veteranCoverage.successBonus,
+      moraleSuccessBonus,
+    };
+  };
+
+  const handleAutoSelectRoster = () => {
+    if (!selectedEvent || !selectedEventMission || !isSelectedEventEditable) return;
+    const candidates = signupMembers.filter(Boolean);
+    if (candidates.length === 0) {
+      setAutoSelectSummary("No eligible signups available.");
+      return;
+    }
+
+    const targetRosterSize = Math.min(maxPartySize, candidates.length);
+    const roleRequirementForMission = getMissionRoleRequirement(selectedEventMission);
+    const selectedMembers = [];
+    const selectedMemberIds = new Set();
+    const getSupportScore = (member) =>
+      (Number(member?.level) || 1) * 3 + getCharacterAverageItemLevel(member);
+    const getSelectedRoleCount = (role) =>
+      selectedMembers.filter((member) => member.role === role).length;
+    const tryAddMember = (member) => {
+      if (!member || selectedMemberIds.has(member.id)) return false;
+      if (selectedMembers.length >= targetRosterSize) return false;
+      selectedMembers.push(member);
+      selectedMemberIds.add(member.id);
+      return true;
+    };
+    const compareCandidate = (left, right) => {
+      const leftRoleNeeded =
+        getSelectedRoleCount(left.role) < (roleRequirementForMission[left.role] || 0);
+      const rightRoleNeeded =
+        getSelectedRoleCount(right.role) < (roleRequirementForMission[right.role] || 0);
+      if (autoSelectMode === CALENDAR_AUTO_SELECT_MODES.ROLE_COVERAGE) {
+        if (Number(rightRoleNeeded) !== Number(leftRoleNeeded)) {
+          return Number(rightRoleNeeded) - Number(leftRoleNeeded);
+        }
+      }
+      const leftPreview = getAdjustedCalendarMissionPreview(selectedEventMission, [
+        ...selectedMembers,
+        left,
+      ]);
+      const rightPreview = getAdjustedCalendarMissionPreview(selectedEventMission, [
+        ...selectedMembers,
+        right,
+      ]);
+      if (autoSelectMode !== CALENDAR_AUTO_SELECT_MODES.STRONGEST) {
+        if (rightPreview.successChance !== leftPreview.successChance) {
+          return rightPreview.successChance - leftPreview.successChance;
+        }
+      }
+      const supportDiff = getSupportScore(right) - getSupportScore(left);
+      if (supportDiff !== 0) return supportDiff;
+      return String(left?.name || "").localeCompare(String(right?.name || ""));
+    };
+    const pickBest = (pool) => [...pool].sort(compareCandidate)[0];
+    const remainingCandidates = () =>
+      candidates.filter((member) => !selectedMemberIds.has(member.id));
+
+    if (autoSelectMode === CALENDAR_AUTO_SELECT_MODES.STRONGEST) {
+      [...candidates]
+        .sort((left, right) => {
+          const supportDiff = getSupportScore(right) - getSupportScore(left);
+          if (supportDiff !== 0) return supportDiff;
+          return String(left?.name || "").localeCompare(String(right?.name || ""));
+        })
+        .slice(0, targetRosterSize)
+        .forEach(tryAddMember);
+    } else {
+      ["Tank", "Healer", "DPS"].forEach((role) => {
+        const needed = roleRequirementForMission[role] || 0;
+        while (
+          getSelectedRoleCount(role) < needed &&
+          selectedMembers.length < targetRosterSize
+        ) {
+          const rolePool = remainingCandidates().filter(
+            (member) => member.role === role,
+          );
+          if (rolePool.length === 0) break;
+          tryAddMember(pickBest(rolePool));
+        }
+      });
+
+      while (selectedMembers.length < targetRosterSize) {
+        const pool = remainingCandidates();
+        if (pool.length === 0) break;
+        tryAddMember(pickBest(pool));
+      }
+    }
+
+    const selectedIds = selectedMembers.map((member) => member.id);
+    const preview = getAdjustedCalendarMissionPreview(
+      selectedEventMission,
+      selectedMembers,
+    );
+    const counts = getRoleCounts(selectedMembers);
+    onUpdateEventRoster(selectedEvent.id, selectedIds);
+    setAutoSelectSummary(
+      `${CALENDAR_AUTO_SELECT_MODE_LABEL[autoSelectMode]} - ${selectedIds.length}/${maxPartySize} heroes - Success ${preview.successChance}% - Tank ${counts.Tank}/${roleRequirementForMission.Tank} - Healer ${counts.Healer}/${roleRequirementForMission.Healer} - DPS ${counts.DPS}/${roleRequirementForMission.DPS}`,
+    );
   };
 
   return (
@@ -696,6 +859,44 @@ const CalendarModal = ({
                   {roleCounts.Healer}/{roleRequirement.Healer} - DPS {roleCounts.DPS}/
                   {roleRequirement.DPS}
                 </div>
+              </div>
+
+              <div className="mt-3 rounded border border-emerald-900/60 bg-emerald-950/15 p-2">
+                <div className="flex flex-wrap items-end gap-2">
+                  <label className="flex-1 min-w-[150px] text-[11px] text-gray-300">
+                    <span className="block mb-1 uppercase tracking-wide text-emerald-300">
+                      Quick Selection
+                    </span>
+                    <select
+                      value={autoSelectMode}
+                      onChange={(event) => {
+                        setAutoSelectMode(event.target.value);
+                        setAutoSelectSummary("");
+                      }}
+                      disabled={!isSelectedEventEditable}
+                      className="w-full rounded border border-gray-700 bg-gray-900 px-2 py-1.5 text-xs text-gray-100 focus:outline-none focus:border-emerald-500 disabled:opacity-50"
+                    >
+                      {CALENDAR_AUTO_SELECT_MODE_OPTIONS.map((option) => (
+                        <option key={option.value} value={option.value}>
+                          {option.label}
+                        </option>
+                      ))}
+                    </select>
+                  </label>
+                  <button
+                    type="button"
+                    onClick={handleAutoSelectRoster}
+                    disabled={!isSelectedEventEditable || signupMembers.length === 0}
+                    className="rounded border border-emerald-600 bg-emerald-900/45 px-3 py-2 text-xs font-bold uppercase tracking-wide text-emerald-100 hover:bg-emerald-800/55 disabled:cursor-not-allowed disabled:opacity-40"
+                  >
+                    Auto-Select
+                  </button>
+                </div>
+                {autoSelectSummary && (
+                  <div className="mt-2 rounded border border-emerald-900/70 bg-emerald-950/20 px-2 py-1 text-[11px] text-emerald-200">
+                    {autoSelectSummary}
+                  </div>
+                )}
               </div>
 
               <div className="mt-3 space-y-2">

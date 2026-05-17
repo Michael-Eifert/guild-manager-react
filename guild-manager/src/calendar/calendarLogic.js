@@ -280,13 +280,16 @@ export const isCharacterEligibleForCalendarEvent = ({
   character,
   mission,
   activeMemberIds = new Set(),
+  activeDungeonMemberIds = new Set(),
   raidLockoutStatus = null,
 }) => {
   if (!character || !mission) return false;
   if (raidLockoutStatus?.isCompletedLocked) return false;
   if (raidLockoutStatus?.hasLockoutConflict) return false;
-  if (activeMemberIds.has(character.id)) return false;
-  if (character.status === "Questing") return false;
+  const characterId = String(character.id || "");
+  const isActiveInDungeon = activeDungeonMemberIds.has(characterId);
+  if (activeMemberIds.has(characterId) && !isActiveInDungeon) return false;
+  if (character.status === "Questing" && !isActiveInDungeon) return false;
 
   const level = Number(character.level) || 1;
   const entryLevel = Number(mission.entryLevel);
@@ -318,6 +321,11 @@ export const getCalendarEventSignups = ({
       normalizeIdList(missionRun?.memberIds),
     ),
   );
+  const activeDungeonMemberIds = new Set(
+    (Array.isArray(activeMissions) ? activeMissions : [])
+      .filter((missionRun) => missionRun?.type === "dungeon")
+      .flatMap((missionRun) => normalizeIdList(missionRun?.memberIds)),
+  );
   return (Array.isArray(roster) ? roster : [])
     .filter((character) => {
       const raidLockoutStatus =
@@ -333,6 +341,7 @@ export const getCalendarEventSignups = ({
         character,
         mission,
         activeMemberIds,
+        activeDungeonMemberIds,
         raidLockoutStatus,
       });
     })

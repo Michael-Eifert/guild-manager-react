@@ -42,8 +42,29 @@ import {
 import {
   GUILD_DUNGEON_ACTIVITY,
   GUILD_FOCUS,
+  GUILD_FACTION,
   INITIAL_MISSIONS,
 } from "../constants";
+import {
+  applyProfessionSkillAttempts,
+  hasIncompleteAccessibleZones,
+  resolveCharacterActivityPlan,
+  resolveCharacterActivityIntent,
+} from "../game/characterActivity";
+import {
+  MORALE_BAND,
+  MORALE_DUNGEON_CLEAR_DELTA,
+  MORALE_WIPE_DELTA,
+  MORALE_ZONE_CLEAR_DELTA,
+  applyMoraleDelta,
+  clampMorale,
+  getCharacterMorale,
+  getMoraleBand,
+  getMoraleLabel,
+  getPartyMoraleSuccessBonus,
+  isCharacterInMissionLevelRange,
+  isCharacterInZoneLevelRange,
+} from "../game/characterMorale";
 import { getItemEffectiveLevel, isItemUsableByClass } from "../utils";
 import {
   AUTO_DUNGEON_MIN_SUCCESS_CHANCE,
@@ -74,6 +95,13 @@ import {
   startRaidLockout,
   updateRaidLockoutProgress,
 } from "../raids/raidLockouts";
+import {
+  ZONE_COMPLETION_ARCHETYPE,
+  getCharacterZonePreference,
+  getZonesForFaction,
+  pickNextZoneForCharacter,
+} from "../zones/zoneDefinitions";
+import { resolveZoneAutoTransition } from "../zones/zoneLogic";
 import { DB_ITEMS } from "../data/items";
 import {
   MOLTEN_CORE_ACTIVE_LOOT_MANIFEST,
@@ -187,6 +215,7 @@ describe("recruitment", () => {
     });
 
     expect(result.recruits.map((recruit) => recruit.id)).toEqual(["a", "b", "c"]);
+    expect(result.recruits.map((recruit) => recruit.morale)).toEqual([50, 50, 50]);
     expect(result.spentGold).toBe(10);
     expect(result.updatedGold).toBe(0);
     expect(result.updatedRoster).toHaveLength(4);
@@ -900,6 +929,75 @@ describe("calendar logic", () => {
     expect(result.newlyReadyEvents).toHaveLength(1);
   });
 
+  it("allows calendar signups for dungeon-busy characters but not other busy characters", () => {
+    const mission = {
+      id: 62,
+      name: "Molten Core",
+      isRaid: true,
+      entryLevel: 56,
+      requiredPartySize: 2,
+      raidRoleRequirement: { Tank: 1, Healer: 0, DPS: 1 },
+    };
+    const state = {
+      ...createInitialCalendarState(0),
+      calendarEvents: [
+        buildCalendarEvent({
+          id: "event-1",
+          title: "MC Raid",
+          missionId: 62,
+          scheduledDayIndex: 2,
+          createdAtDayIndex: 0,
+        }),
+      ],
+    };
+    const roster = [
+      {
+        id: "tank",
+        name: "Tank",
+        role: "Tank",
+        level: 60,
+        status: "Questing",
+      },
+      {
+        id: "dps",
+        name: "Dps",
+        role: "DPS",
+        level: 60,
+        status: "Questing",
+      },
+      {
+        id: "idle",
+        name: "Idle",
+        role: "DPS",
+        level: 60,
+        status: "Idle",
+      },
+    ];
+    const result = refreshCalendarState({
+      state,
+      currentDayIndex: 2,
+      roster,
+      activeMissions: [
+        {
+          instanceId: "dungeon-1",
+          type: "dungeon",
+          name: "Blackrock Spire",
+          memberIds: ["tank"],
+        },
+        {
+          instanceId: "zone-1",
+          type: "zone",
+          name: "Silithus",
+          memberIds: ["dps"],
+        },
+      ],
+      missionList: [mission],
+      createId: () => "new-id",
+    });
+
+    expect(result.state.calendarEvents[0].registrations).toEqual(["tank", "idle"]);
+  });
+
   it("keeps unlocked calendar events open while locked groups reserve same-day characters", () => {
     const mission = {
       id: 62,
@@ -1343,6 +1441,57 @@ describe("mission rewards", () => {
 
     expect(finalReward.missionLogs.filter((log) => log.type === "loot")).toEqual([]);
   });
+
+  it("raises morale for successful in-range dungeon clears only", () => {
+    const processor = buildProcessor();
+    const baseMission = {
+      id: "deadmines",
+      name: "The Deadmines",
+      type: "dungeon",
+      memberIds: ["mage"],
+      recommended: "18 - 23",
+      minLevel: 10,
+      level: 23,
+      exp: 100,
+      gold: 0,
+      dungeonBosses: ["Cookie"],
+      dungeonProgress: { clearedSteps: 1 },
+    };
+    const makeRoster = (level) => [
+      {
+        id: "mage",
+        name: "Mage",
+        charClass: "Mage",
+        level,
+        exp: 0,
+        morale: 50,
+        keys: [],
+        clearedMissionIds: [],
+        history: [],
+        equipment: {},
+      },
+    ];
+
+    const inRange = processor({
+      mission: baseMission,
+      currentRoster: makeRoster(20),
+      activeGuildStats: { expMultiplier: 1, goldMultiplier: 1 },
+      activeFocusBonuses: { expMultiplier: 1, fullPartyGoldMultiplier: 1 },
+      levelCap: 60,
+      failedMissionExpFactor: 0.2,
+    });
+    const outOfRange = processor({
+      mission: baseMission,
+      currentRoster: makeRoster(60),
+      activeGuildStats: { expMultiplier: 1, goldMultiplier: 1 },
+      activeFocusBonuses: { expMultiplier: 1, fullPartyGoldMultiplier: 1 },
+      levelCap: 60,
+      failedMissionExpFactor: 0.2,
+    });
+
+    expect(inRange.updatedRoster[0].morale).toBe(50 + MORALE_DUNGEON_CLEAR_DELTA);
+    expect(outOfRange.updatedRoster[0].morale).toBe(50);
+  });
 });
 
 describe("Molten Core loot manifest", () => {
@@ -1668,6 +1817,373 @@ describe("item level tuning", () => {
     expect(getItemEffectiveLevel({ minLevel: 10, quality: 3 })).toBe(17);
     expect(getItemEffectiveLevel({ minLevel: 10, quality: 4 })).toBe(20);
     expect(getItemEffectiveLevel({ minLevel: 60, quality: 5 })).toBe(80);
+  });
+});
+
+describe("character activity priority", () => {
+  it("keeps auto characters leveling when professions are near their natural target", () => {
+    const plan = resolveCharacterActivityPlan({
+      character: {
+        id: "natural-leveler",
+        level: 30,
+        activityMode: "Auto",
+        professionSkillBias: 0,
+        professions: [
+          { name: "Alchemy", skill: 145 },
+          { name: "Herbalism", skill: 145 },
+        ],
+        zonesCleared: [],
+      },
+      faction: GUILD_FACTION.ALLIANCE,
+      levelCap: 60,
+      zoneQuestingEnabled: true,
+    });
+
+    expect(plan).toMatchObject({
+      autoProfessionTarget: 150,
+      autoProfessionThreshold: 135,
+      gainXP: true,
+      gainSkill: false,
+      gainZoneProgress: false,
+    });
+  });
+
+  it("lets auto characters catch up professions when they lag behind", () => {
+    const plan = resolveCharacterActivityPlan({
+      character: {
+        id: "behind-crafter",
+        level: 30,
+        activityMode: "Auto",
+        professionSkillBias: 0,
+        professions: [
+          { name: "Alchemy", skill: 100 },
+          { name: "Herbalism", skill: 145 },
+        ],
+        zonesCleared: [],
+      },
+      faction: GUILD_FACTION.ALLIANCE,
+      levelCap: 60,
+      zoneQuestingEnabled: true,
+    });
+
+    expect(plan).toMatchObject({
+      professionSkillLimit: 150,
+      autoProfessionTarget: 150,
+      autoProfessionThreshold: 135,
+      gainXP: false,
+      gainSkill: true,
+      gainZoneProgress: false,
+      statusText: "🤖 Auto: Catching up professions...",
+    });
+  });
+
+  it("keeps the intent helper leveling when auto has no skill catch-up need", () => {
+    expect(
+      resolveCharacterActivityIntent({
+        activityMode: "Auto",
+        level: 59,
+        levelCap: 60,
+        canGainSkill: false,
+        hasIncompleteZones: true,
+      }),
+    ).toEqual({
+      gainXP: true,
+      gainSkill: false,
+      gainZoneProgress: false,
+    });
+  });
+
+  it("uses max-level professions before finishing zones", () => {
+    expect(
+      resolveCharacterActivityIntent({
+        activityMode: "Auto",
+        level: 60,
+        levelCap: 60,
+        canGainSkill: true,
+        hasIncompleteZones: true,
+      }),
+    ).toEqual({
+      gainXP: false,
+      gainSkill: true,
+      gainZoneProgress: false,
+    });
+  });
+
+  it("finishes zones once max-level professions are capped", () => {
+    expect(
+      resolveCharacterActivityIntent({
+        activityMode: "Auto",
+        level: 60,
+        levelCap: 60,
+        canGainSkill: false,
+        hasIncompleteZones: true,
+      }),
+    ).toEqual({
+      gainXP: false,
+      gainSkill: false,
+      gainZoneProgress: true,
+    });
+  });
+
+  it("builds the full idle activity plan from character state", () => {
+    const plan = resolveCharacterActivityPlan({
+      character: {
+        level: 60,
+        activityMode: "Auto",
+        professions: [
+          { name: "Alchemy", skill: 300 },
+          { name: "Herbalism", skill: 300 },
+        ],
+        zonesCleared: [],
+      },
+      faction: GUILD_FACTION.ALLIANCE,
+      levelCap: 60,
+      zoneQuestingEnabled: true,
+    });
+
+    expect(plan).toMatchObject({
+      hardCap: 300,
+      canGainSkill: false,
+      hasIncompleteZones: true,
+      gainXP: false,
+      gainSkill: false,
+      gainZoneProgress: true,
+      statusText: "Auto: Finishing zones...",
+    });
+  });
+
+  it("scales profession skill attempts by elapsed game time", () => {
+    const result = applyProfessionSkillAttempts({
+      professions: [{ name: "Alchemy", skill: 1 }],
+      currentLimit: 300,
+      elapsedGameMs: 8000,
+      tickRateMs: 1000,
+      random: () => 0.99,
+    });
+
+    expect(result.attempts).toBe(8);
+    expect(result.changed).toBe(true);
+    expect(result.professions[0].skill).toBe(9);
+  });
+
+  it("detects when all accessible zones are already complete", () => {
+    const allAllianceZoneIds = getZonesForFaction(GUILD_FACTION.ALLIANCE, true)
+      .map((zone) => zone.id);
+
+    expect(
+      hasIncompleteAccessibleZones({
+        faction: GUILD_FACTION.ALLIANCE,
+        zonesCleared: allAllianceZoneIds,
+      }),
+    ).toBe(false);
+  });
+
+  it("moves max-level characters off a current zone already marked cleared", () => {
+    const result = resolveZoneAutoTransition({
+      faction: GUILD_FACTION.ALLIANCE,
+      level: 60,
+      currentZoneId: "silithus",
+      currentZoneProgress: 100,
+      zoneProgressById: { silithus: 100 },
+      zonesCleared: ["silithus"],
+      zoneCheckpointRewardsClaimedByZone: { silithus: [25, 50, 75, 100] },
+      zoneManualOverride: false,
+      zoneOverlevelMoveThreshold: 10,
+    });
+
+    expect(result.currentZoneId).not.toBe("silithus");
+  });
+});
+
+describe("zone completion personality", () => {
+  const getClearedExcept = (...zoneIdsToKeep) => {
+    const keepSet = new Set(zoneIdsToKeep);
+    return getZonesForFaction(GUILD_FACTION.ALLIANCE, true)
+      .map((zone) => zone.id)
+      .filter((zoneId) => !keepSet.has(zoneId));
+  };
+
+  it("derives stable but varied zone preferences from character identity", () => {
+    const first = getCharacterZonePreference({
+      id: "stable-hero",
+      name: "Stable",
+      race: "Human",
+      charClass: "Warrior",
+    });
+    const repeat = getCharacterZonePreference({
+      id: "stable-hero",
+      name: "Stable",
+      race: "Human",
+      charClass: "Warrior",
+    });
+    const variedArchetypes = new Set(
+      ["alpha", "bravo", "charlie", "delta", "echo", "foxtrot"].map(
+        (id) => getCharacterZonePreference({ id }).archetype,
+      ),
+    );
+
+    expect(repeat).toEqual(first);
+    expect(variedArchetypes.size).toBeGreaterThan(1);
+  });
+
+  it("lets gear seekers prioritize high-end unfinished zones", () => {
+    const nextZone = pickNextZoneForCharacter({
+      faction: GUILD_FACTION.ALLIANCE,
+      level: 60,
+      zonesCleared: [],
+      currentZoneId: "elwynn_forest",
+      zonePreference: {
+        archetype: ZONE_COMPLETION_ARCHETYPE.GEAR_SEEKER,
+        likedBiomes: [],
+        dislikedBiomes: [],
+        likedEnemies: [],
+        dislikedEnemies: [],
+      },
+    });
+
+    expect(nextZone.maxLevel).toBeGreaterThanOrEqual(50);
+  });
+
+  it("lets completionists start low and move upward", () => {
+    const nextZone = pickNextZoneForCharacter({
+      faction: GUILD_FACTION.ALLIANCE,
+      level: 60,
+      zonesCleared: [],
+      currentZoneId: "eastern_plaguelands",
+      zonePreference: {
+        archetype: ZONE_COMPLETION_ARCHETYPE.COMPLETIONIST,
+        likedBiomes: [],
+        dislikedBiomes: [],
+        likedEnemies: [],
+        dislikedEnemies: [],
+      },
+    });
+
+    expect(nextZone.minLevel).toBe(1);
+  });
+
+  it("lets favorite biomes lift matching zones above default order", () => {
+    const nextZone = pickNextZoneForCharacter({
+      faction: GUILD_FACTION.ALLIANCE,
+      level: 60,
+      zonesCleared: getClearedExcept("tanaris", "feralas"),
+      currentZoneId: "feralas",
+      zonePreference: {
+        archetype: ZONE_COMPLETION_ARCHETYPE.WANDERER,
+        likedBiomes: ["desert"],
+        dislikedBiomes: [],
+        likedEnemies: [],
+        dislikedEnemies: [],
+      },
+    });
+
+    expect(nextZone.id).toBe("tanaris");
+  });
+
+  it("penalizes disliked zones without blocking the last remaining option", () => {
+    const avoidDesert = {
+      archetype: ZONE_COMPLETION_ARCHETYPE.AVOIDANT,
+      likedBiomes: [],
+      dislikedBiomes: ["desert"],
+      likedEnemies: [],
+      dislikedEnemies: [],
+    };
+    const withAlternative = pickNextZoneForCharacter({
+      faction: GUILD_FACTION.ALLIANCE,
+      level: 60,
+      zonesCleared: getClearedExcept("tanaris", "feralas"),
+      currentZoneId: "tanaris",
+      zonePreference: avoidDesert,
+    });
+    const onlyDisliked = pickNextZoneForCharacter({
+      faction: GUILD_FACTION.ALLIANCE,
+      level: 60,
+      zonesCleared: getClearedExcept("tanaris"),
+      currentZoneId: "tanaris",
+      zonePreference: avoidDesert,
+    });
+
+    expect(withAlternative.id).toBe("feralas");
+    expect(onlyDisliked.id).toBe("tanaris");
+  });
+
+  it("never selects cleared or inaccessible zones", () => {
+    const nextZone = pickNextZoneForCharacter({
+      faction: GUILD_FACTION.ALLIANCE,
+      level: 60,
+      zonesCleared: getClearedExcept("the_barrens", "darkshore"),
+      currentZoneId: "darkshore",
+      zonePreference: {
+        archetype: ZONE_COMPLETION_ARCHETYPE.WANDERER,
+        likedBiomes: ["barren"],
+        dislikedBiomes: [],
+        likedEnemies: [],
+        dislikedEnemies: [],
+      },
+    });
+
+    expect(nextZone.id).toBe("darkshore");
+    expect(nextZone.faction).not.toBe(GUILD_FACTION.HORDE);
+  });
+});
+
+describe("character morale", () => {
+  it("defaults, clamps, and resolves morale bands", () => {
+    expect(getCharacterMorale({})).toBe(50);
+    expect(clampMorale(-10)).toBe(0);
+    expect(clampMorale(111)).toBe(100);
+    expect(getMoraleBand(25)).toBe(MORALE_BAND.LOW);
+    expect(getMoraleBand(26)).toBe(MORALE_BAND.STEADY);
+    expect(getMoraleBand(74)).toBe(MORALE_BAND.STEADY);
+    expect(getMoraleBand(75)).toBe(MORALE_BAND.HIGH);
+    expect(getMoraleLabel(25)).toBe("\u2193 Low");
+    expect(getMoraleLabel(50)).toBe("\u2192 Steady");
+    expect(getMoraleLabel(75)).toBe("\u2191 High");
+  });
+
+  it("applies morale deltas while staying within the 0-100 scale", () => {
+    expect(applyMoraleDelta({ morale: 3 }, MORALE_WIPE_DELTA).morale).toBe(0);
+    expect(applyMoraleDelta({ morale: 98 }, MORALE_ZONE_CLEAR_DELTA).morale).toBe(
+      100,
+    );
+    expect(applyMoraleDelta({ morale: 50 }, MORALE_DUNGEON_CLEAR_DELTA).morale).toBe(
+      58,
+    );
+  });
+
+  it("caps party morale success bonuses", () => {
+    const highParty = Array.from({ length: 8 }, (_, index) => ({
+      id: `high-${index}`,
+      morale: 90,
+    }));
+    const lowParty = Array.from({ length: 8 }, (_, index) => ({
+      id: `low-${index}`,
+      morale: 10,
+    }));
+    const mixedParty = [
+      { morale: 90 },
+      { morale: 90 },
+      { morale: 50 },
+      { morale: 10 },
+    ];
+
+    expect(getPartyMoraleSuccessBonus(highParty)).toBe(5);
+    expect(getPartyMoraleSuccessBonus(lowParty)).toBe(-5);
+    expect(getPartyMoraleSuccessBonus(mixedParty)).toBe(1);
+  });
+
+  it("only treats level-appropriate content as morale-rewarding", () => {
+    const zone = { minLevel: 20, maxLevel: 30 };
+    const mission = {
+      recommended: "18 - 23",
+      minLevel: 10,
+      level: 23,
+    };
+
+    expect(isCharacterInZoneLevelRange({ level: 25 }, zone)).toBe(true);
+    expect(isCharacterInZoneLevelRange({ level: 60 }, zone)).toBe(false);
+    expect(isCharacterInMissionLevelRange({ level: 20 }, mission)).toBe(true);
+    expect(isCharacterInMissionLevelRange({ level: 60 }, mission)).toBe(false);
   });
 });
 

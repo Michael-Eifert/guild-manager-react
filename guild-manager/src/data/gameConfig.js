@@ -192,6 +192,7 @@ export const GUILD_DUNGEON_ACTIVITY_OPTIONS = Object.freeze(
 export const MEMBER_RANKING_MODES = Object.freeze({
   STANDARD: "standard",
   EQUIP_CHECK: "equipCheck",
+  PERSONALITY: "personality",
 });
 
 export const GUILD_MEMBER_SORT = Object.freeze({

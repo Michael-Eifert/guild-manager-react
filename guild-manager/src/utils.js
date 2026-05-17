@@ -613,35 +613,6 @@ export const getMissionSuccessPreview = (mission, partyMembers) => {
   };
 };
 
-export const getSkillCap = (level) => {
-  if (level >= 30) return 300;
-  if (level >= 20) return 225;
-  if (level >= 10) return 150;
-  return 75;
-};
-
-export const getAutoSkillTarget = (level) => {
-  if (level >= 60) return 300;
-  if (level >= 55) return 275;
-  if (level >= 50) return 250;
-  if (level >= 40) return 225;
-  if (level >= 35) return 200;
-  if (level >= 30) return 175;
-  if (level >= 25) return 150;
-  if (level >= 20) return 125;
-  if (level >= 15) return 100;
-  if (level >= 10) return 75;
-  if (level >= 5) return 25;
-  return 0;
-};
-
-export const getNextTierLevel = (level) => {
-  if (level < 10) return 10;
-  if (level < 20) return 20;
-  if (level < 30) return 30;
-  return "Max";
-};
-
 export const getClassArmorTypes = (charClass, level = 1) => {
   const classInfo = DB_CLASSES[charClass];
   if (!classInfo) return [];
@@ -1038,6 +1009,7 @@ export const generateCharacter = (
     status: "Idle",
     statusText: "Waiting for orders...",
     activityMode: "Auto",
+    morale: 50,
     professions: professions,
     history: [],
     keys: [],

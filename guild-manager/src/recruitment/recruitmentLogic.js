@@ -3,6 +3,7 @@ import {
   getItemEffectiveLevel,
   isItemUsableByClass,
 } from "../utils";
+import { getCharacterMorale } from "../game/characterMorale";
 
 const RECRUITMENT_GEAR_SLOTS = Object.freeze([
   "head",
@@ -366,7 +367,10 @@ export const resolveRecruitmentResult = ({
     recruitCostGold: safeRecruitCost,
   });
 
-  const recruits = candidateList.slice(0, availableSlots);
+  const recruits = candidateList.slice(0, availableSlots).map((candidate) => ({
+    ...candidate,
+    morale: getCharacterMorale(candidate),
+  }));
   const spentGold = Math.max(0, recruits.length - 1) * safeRecruitCost;
   const updatedGold = Math.max(0, safeGold - spentGold);
   const updatedRoster = [...rosterList, ...recruits];

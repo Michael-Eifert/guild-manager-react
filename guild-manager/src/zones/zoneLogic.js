@@ -51,6 +51,7 @@ export const normalizeZoneOverlevelMoveThreshold = (value) => {
 };
 
 export const resolveZoneAutoTransition = ({
+  character = null,
   faction,
   level,
   currentZoneId,
@@ -80,9 +81,12 @@ export const resolveZoneAutoTransition = ({
     };
   }
 
+  const currentZoneCleared = (Array.isArray(zonesCleared) ? zonesCleared : [])
+    .map((zoneId) => String(zoneId || "").trim())
+    .includes(currentZone.id);
   const shouldAdvanceByOverlevel =
     getZoneOverlevel(level, currentZone) >= safeThreshold;
-  if (!forceAdvance && !shouldAdvanceByOverlevel) {
+  if (!forceAdvance && !currentZoneCleared && !shouldAdvanceByOverlevel) {
     return {
       currentZoneId: currentZone.id,
       currentZoneProgress: getClampedZoneProgress(currentZoneProgress),
@@ -96,6 +100,7 @@ export const resolveZoneAutoTransition = ({
   }
 
   const nextZone = pickNextZoneForCharacter({
+    character,
     faction,
     level,
     zonesCleared,
@@ -231,6 +236,7 @@ export const normalizeCharacterZoneState = (
   );
   const starterZoneId = getStarterZoneIdForRace(char?.race);
   const pickedZoneId = pickNextZoneForCharacter({
+    character: char,
     faction: fallbackFaction,
     level: char?.level,
     zonesCleared,
