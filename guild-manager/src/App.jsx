@@ -88,6 +88,11 @@ import {
   resolveMissionRewardQualities,
 } from "./missions/missionHelpers";
 import { createMissionRewardProcessor } from "./missions/missionRewards";
+import {
+  getActiveMissionMemberIdSet,
+  isMissionMemberGroupAvailable,
+  pruneOverlappingActiveMissions,
+} from "./missions/missionRosterGuards";
 import { cloneMissionTemplate } from "./missions/missionTemplates";
 import {
   getDungeonStepLootConfig,
@@ -102,6 +107,7 @@ import {
   getFactionDefaultGuildName,
   getGuildFocusBonuses,
   getGuildServerLabel,
+  getGuildServerPopulation,
   getGuildServerStyle,
   getFactionFallbackManagerName,
   normalizeGuildSetup,
@@ -141,6 +147,7 @@ import {
   resolveZoneAutoTransition,
 } from "./zones/zoneLogic";
 import {
+  buildRecruitmentEquipment,
   resolveRecruitmentResult,
 } from "./recruitment/recruitmentLogic";
 import {
@@ -160,11 +167,16 @@ import {
   applyProfessionSkillAttempts,
   resolveCharacterActivityPlan,
 } from "./game/characterActivity";
+import {
+  getCharacterLevelingExpMultiplier,
+  getCharacterZoneProgressMultiplier,
+} from "./game/characterPersonality";
 import { getLevelingTickExpGain } from "./game/levelingProgression";
 import {
   MORALE_WIPE_DELTA,
   MORALE_ZONE_CLEAR_DELTA,
   applyMoraleDelta,
+  getCharacterMorale,
   getPartyMoraleSuccessBonus,
   isCharacterInZoneLevelRange,
 } from "./game/characterMorale";
@@ -193,6 +205,14 @@ import {
   updateRaidLockoutProgress,
 } from "./raids/raidLockouts";
 import { resolveAutoDungeonAttempt } from "./automation/dungeonAutomation";
+import { ensureRealmState } from "./server/realmGeneration";
+import { advanceRealmSimulation } from "./server/realmSimulation";
+import { buildPlayerGuildSnapshot } from "./server/realmRankings";
+import {
+  getRealmGuildApplications,
+  markRealmPlayersRecruited,
+  resolvePlayerGuildDeparturesForDay,
+} from "./server/realmPopulation";
 import { createDebugActions } from "./debug/debugActions";
 
 const RecruitModal = lazy(() => import("./components/modals/RecruitModal"));
@@ -201,6 +221,9 @@ const LootTableModal = lazy(() => import("./components/modals/LootTableModal"));
 const GuildLogModal = lazy(() => import("./components/modals/GuildLogModal"));
 const DebugModal = lazy(() => import("./components/modals/DebugModal"));
 const WorldMapModal = lazy(() => import("./components/modals/WorldMapModal"));
+const RealmOverviewModal = lazy(
+  () => import("./components/modals/RealmOverviewModal"),
+);
 const GuildTalentsModal = lazy(
   () => import("./components/modals/GuildTalentsModal"),
 );
@@ -303,9 +326,13 @@ const App = () => {
     createInitialCalendarState(Date.now()),
   );
   const [raidLockouts, setRaidLockouts] = useState({});
+  const [realmState, setRealmState] = useState(() =>
+    ensureRealmState(null, DEFAULT_GUILD_SETUP, 0),
+  );
   const [showRecruit, setShowRecruit] = useState(false);
   const [showMissions, setShowMissions] = useState(false);
   const [showCalendar, setShowCalendar] = useState(false);
+  const [showRealm, setShowRealm] = useState(false);
   const [showLootTable, setShowLootTable] = useState(false);
   const [showGuildLog, setShowGuildLog] = useState(false);
   const [showGuildTalents, setShowGuildTalents] = useState(false);
@@ -347,6 +374,7 @@ const App = () => {
   const guildProgressRef = useRef(guildProgress);
   const guildSetupRef = useRef(guildSetup);
   const guildRelationshipsRef = useRef(guildRelationships);
+  const realmStateRef = useRef(realmState);
   const gameTimeRef = useRef(gameTimeMs);
   const calendarStateRef = useRef(calendarState);
   const raidLockoutsRef = useRef(raidLockouts);
@@ -437,6 +465,9 @@ const App = () => {
   useEffect(() => {
     guildRelationshipsRef.current = guildRelationships;
   }, [guildRelationships]);
+  useEffect(() => {
+    realmStateRef.current = realmState;
+  }, [realmState]);
   useEffect(() => {
     gameTimeRef.current = gameTimeMs;
   }, [gameTimeMs]);
@@ -1370,7 +1401,7 @@ const App = () => {
 
       const currentFaction =
         guildSetupRef.current?.faction || GUILD_FACTION.ALLIANCE;
-      const currentRoster = normalizeRosterZones(
+      let currentRoster = normalizeRosterZones(
         rosterRef.current,
         currentFaction,
       );
@@ -1383,6 +1414,25 @@ const App = () => {
         now,
         calendarStateRef.current.calendarEpochGameTimeMs,
       );
+      const playerGuildSnapshot = buildPlayerGuildSnapshot({
+        guildSetup: guildSetupRef.current,
+        roster: currentRoster,
+        missionList: missionListRef.current,
+        guildProgress: guildProgressRef.current,
+        raidLockouts: raidLockoutsRef.current,
+      });
+      const nextRealmState = advanceRealmSimulation({
+        realmState: realmStateRef.current,
+        currentDayIndex: calendarDayIndex,
+        playerGuildSnapshot,
+        guildSetup: guildSetupRef.current,
+      });
+      if (
+        JSON.stringify(nextRealmState) !== JSON.stringify(realmStateRef.current)
+      ) {
+        realmStateRef.current = nextRealmState;
+        setRealmState(nextRealmState);
+      }
       const normalizedRaidLockouts = normalizeRaidLockouts(
         raidLockoutsRef.current,
         calendarDayIndex,
@@ -1405,6 +1455,40 @@ const App = () => {
       let finishedMissions = [];
       let newLogs = [];
       let newGold = currentGold;
+
+      const playerMarket = resolvePlayerGuildDeparturesForDay({
+        realmState: realmStateRef.current,
+        roster: currentRoster,
+        activeMissions: currentMissions,
+        currentDayIndex: calendarDayIndex,
+        guildFaction: currentFaction,
+      });
+      if (playerMarket.events.length > 0) {
+        currentRoster = playerMarket.roster;
+        newRoster = [...playerMarket.roster];
+        rosterRef.current = playerMarket.roster;
+        setRoster(playerMarket.roster);
+        realmStateRef.current = playerMarket.realmState;
+        setRealmState(playerMarket.realmState);
+        newLogs = [
+          ...newLogs,
+          ...playerMarket.events.map((event) => ({
+            type: "realm",
+            message: event.message,
+          })),
+        ];
+        playerMarket.events.forEach((event) => {
+          pushNotification({
+            type: event.type === "player-departure" ? "error" : "warning",
+            title:
+              event.type === "player-departure"
+                ? "Member Left Guild"
+                : "Member Considering Offers",
+            message: event.message,
+            durationMs: 6500,
+          });
+        });
+      }
 
       const refreshedCalendar = refreshCalendarState({
         state: calendarStateRef.current,
@@ -1483,6 +1567,30 @@ const App = () => {
             message: `${event.title} auto-started at ${getCalendarTimeOfDayOption(event.scheduledTimeOfDay).label}.`,
           });
         });
+
+      const missionOverlapPrune =
+        pruneOverlappingActiveMissions(currentMissions);
+      if (missionOverlapPrune.canceledMissions.length > 0) {
+        currentMissions = missionOverlapPrune.activeMissions;
+        const canceledMissionNames = [
+          ...new Set(
+            missionOverlapPrune.canceledMissions.map(
+              (mission) => mission?.name || "Mission",
+            ),
+          ),
+        ].join(", ");
+        newLogs.push({
+          type: "mission",
+          message: `Cancelled overlapping mission${missionOverlapPrune.canceledMissions.length === 1 ? "" : "s"}: ${canceledMissionNames}.`,
+        });
+        pushNotification({
+          type: "info",
+          title: "Duplicate Mission Cancelled",
+          message:
+            "A hero was already in another active mission, so the overlapping mission was removed.",
+          durationMs: 4200,
+        });
+      }
 
       // 1. Advance missions and separate finished/active
       const missionTick = advanceActiveMissionsForTick({
@@ -1563,17 +1671,46 @@ const App = () => {
           rosterSnapshot: newRoster,
           startTime: now,
         });
-        newRoster = chainResolution.updatedRoster;
+        let chainQueued = false;
+        let chainBlockedByActiveMember = false;
         if (chainResolution.queuedMission) {
-          newMissions.push(chainResolution.queuedMission);
+          const busyMemberIds = getActiveMissionMemberIdSet(newMissions);
+          const queuedMemberIds = Array.isArray(
+            chainResolution.queuedMission.memberIds,
+          )
+            ? chainResolution.queuedMission.memberIds
+            : [];
+          const hasBusyMember = queuedMemberIds.some((memberId) =>
+            busyMemberIds.has(String(memberId || "")),
+          );
+          if (!hasBusyMember) {
+            newRoster = chainResolution.updatedRoster;
+            newMissions.push(chainResolution.queuedMission);
+            chainQueued = true;
+          } else {
+            chainBlockedByActiveMember = true;
+            newLogs.push({
+              type: "dungeon-chain",
+              outcome: "stopped",
+              chainName:
+                m.chainContext?.setName || m.dungeonSetName || m.name,
+              missionName: m.name,
+              message: `${m.name} chain stopped because a party member is already in another active mission.`,
+            });
+          }
+        } else {
+          newRoster = chainResolution.updatedRoster;
         }
-        if (chainResolution.chainLogs.length > 0) {
+        if (
+          !chainBlockedByActiveMember &&
+          chainResolution.chainLogs.length > 0
+        ) {
           newLogs = [...newLogs, ...chainResolution.chainLogs];
         }
-        if (chainResolution.notification) {
+        if (!chainBlockedByActiveMember && chainResolution.notification) {
           pushNotification(chainResolution.notification);
         }
-        if (m.calendarEventId && !chainResolution.queuedMission) {
+        if (m.calendarEventId && !chainQueued) {
           completeCalendarEvent({
             eventId: m.calendarEventId,
             missionName: m.dungeonSetName || m.name,
@@ -1612,6 +1749,15 @@ const App = () => {
           : [];
       autoDungeonCandidates.forEach((candidate) => {
         const { mission, memberIds, successChance } = candidate;
+        if (
+          !isMissionMemberGroupAvailable({
+            memberIds,
+            roster: newRoster,
+            activeMissions: newMissions,
+          })
+        ) {
+          return;
+        }
         const isAttunementGoal = candidate.goalType === "attunement";
         const attunementLabel = isAttunementGoal
           ? getKeyLabel(candidate.keyId) || "Attunement"
@@ -1715,6 +1861,15 @@ const App = () => {
           supporterMemberIds,
           successChance,
         } = candidate;
+        if (
+          !isMissionMemberGroupAvailable({
+            memberIds,
+            roster: newRoster,
+            activeMissions: newMissions,
+          })
+        ) {
+          return;
+        }
         const isAttunementGoal = candidate.goalType === "attunement";
         const attunementLabel = isAttunementGoal
           ? getKeyLabel(candidate.keyId) || "Attunement"
@@ -1762,6 +1917,23 @@ const App = () => {
         });
       });
 
+      const activeMissionMemberIds = getActiveMissionMemberIdSet(newMissions);
+      newRoster = newRoster.map((char) => {
+        const memberId = String(char?.id || "");
+        if (
+          char?.status === "Questing" &&
+          memberId &&
+          !activeMissionMemberIds.has(memberId)
+        ) {
+          return {
+            ...char,
+            status: "Idle",
+            statusText: "Resting...",
+          };
+        }
+        return char;
+      });
+
       // 3. Process Character Status (Idle/Professions)
       newRoster = newRoster.map((char) => {
         const normalizedChar = normalizeCharacterZoneState(
@@ -1806,7 +1978,8 @@ const App = () => {
               normalizedChar.level,
               currentGuildStats.expMultiplier *
                 currentFocusBonuses.expMultiplier *
-                zoneExpMultiplier,
+                zoneExpMultiplier *
+                getCharacterLevelingExpMultiplier(normalizedChar),
             );
             newExp += expGain;
             while (newExp >= maxExp && newLevel < CONFIG.LEVEL_CAP) {
@@ -1847,7 +2020,7 @@ const App = () => {
               zone: activeZone,
               characterLevel: normalizedChar.level,
               durationVariance: normalizedChar.zoneDurationVariance,
-            });
+            }) * getCharacterZoneProgressMultiplier(normalizedChar);
             const nextProgress = getClampedZoneProgress(
               storedProgress + progressGain,
             );
@@ -2117,7 +2290,11 @@ const App = () => {
       0,
       guildDerivedStats.maxRoster - rosterRef.current.length,
     );
-    if (openSlots <= 0) {
+    const openApplications = getRealmGuildApplications({
+      realmState: realmStateRef.current,
+      faction: guildSetupRef.current?.faction || GUILD_FACTION.ALLIANCE,
+    }).length;
+    if (openSlots <= 0 && openApplications <= 0) {
       pushNotification({
         type: "error",
         title: "Recruitment Blocked",
@@ -2150,6 +2327,64 @@ const App = () => {
     return true;
   };
 
+  const buildRealmRecruitmentCandidate = useCallback(
+    ({ player, application }) => {
+      const level = Math.max(
+        1,
+        Math.min(CONFIG.LEVEL_CAP, Number(player?.level) || 1),
+      );
+      const candidate = {
+        id: player.id,
+        realmPlayerId: player.id,
+        realmApplicationId: application?.id || null,
+        realmSourceGuildId: player.guildId || null,
+        realmRecruitmentSource: player.guildId
+          ? `From ${player.sourceGuildName || "another guild"}`
+          : "Free Agent",
+        realmApplicationDayIndex: application?.dayIndex,
+        name: player.name,
+        race: player.race,
+        gender: player.gender || "Male",
+        charClass: player.charClass,
+        role: player.role,
+        personalityTraits: player.personalityTraits,
+        level,
+        exp: 0,
+        maxExp: CONFIG.XP_TABLE[level] || CONFIG.XP_TABLE[1],
+      };
+      return {
+        ...candidate,
+        equipment: buildRecruitmentEquipment({
+          character: candidate,
+          itemDatabase,
+        }),
+      };
+    },
+    [itemDatabase],
+  );
+
+  const realmApplicationCandidates = useMemo(() => {
+    const usedNameSet = new Set(
+      roster
+        .map((member) => String(member?.name || "").trim().toLowerCase())
+        .filter(Boolean),
+    );
+    return getRealmGuildApplications({
+      realmState,
+      faction: guildSetup.faction || GUILD_FACTION.ALLIANCE,
+    })
+      .filter(
+        ({ player }) =>
+          !usedNameSet.has(String(player?.name || "").trim().toLowerCase()),
+      )
+      .map(buildRealmRecruitmentCandidate);
+  }, [
+    buildRealmRecruitmentCandidate,
+    guildSetup.faction,
+    realmState,
+    roster,
+  ]);
+
   const handleRecruit = (chars, tier = {}) => {
     const recruitCostGold = Math.max(1, Number(tier?.recruitCostGold) || 1);
     const { recruits, spentGold, updatedGold, updatedRoster } =
@@ -2171,6 +2406,18 @@ const App = () => {
       return;
     }
 
+    const recruitedRealmPlayerIds = recruits
+      .map((candidate) => candidate.realmPlayerId)
+      .filter(Boolean);
+    if (recruitedRealmPlayerIds.length > 0) {
+      const nextRealmState = markRealmPlayersRecruited({
+        realmState: realmStateRef.current,
+        playerIds: recruitedRealmPlayerIds,
+      });
+      realmStateRef.current = nextRealmState;
+      setRealmState(nextRealmState);
+    }
+
     const zoneReadyRoster = normalizeRosterZones(updatedRoster);
     rosterRef.current = zoneReadyRoster;
     goldRef.current = updatedGold;
@@ -2180,6 +2427,53 @@ const App = () => {
       type: "info",
       title: "Recruitment Complete",
       message: `${recruits.length} hero${recruits.length > 1 ? "es" : ""} recruited from ${tier?.label || "applicants"}. Additional recruitment cost: ${spentGold}g.`,
+    });
+    setShowRecruit(false);
+  };
+
+  const handleRecruitApplications = (chars = []) => {
+    const openSlots = Math.max(
+      0,
+      guildDerivedStats.maxRoster - rosterRef.current.length,
+    );
+    const recruits = (Array.isArray(chars) ? chars : [])
+      .slice(0, openSlots)
+      .map((candidate) => ({
+        ...candidate,
+        morale: getCharacterMorale(candidate),
+      }));
+
+    if (recruits.length === 0) {
+      pushNotification({
+        type: "error",
+        title: "Applications Blocked",
+        message: "Need free roster slots to accept applications.",
+      });
+      return;
+    }
+
+    const recruitedRealmPlayerIds = recruits
+      .map((candidate) => candidate.realmPlayerId)
+      .filter(Boolean);
+    if (recruitedRealmPlayerIds.length > 0) {
+      const nextRealmState = markRealmPlayersRecruited({
+        realmState: realmStateRef.current,
+        playerIds: recruitedRealmPlayerIds,
+      });
+      realmStateRef.current = nextRealmState;
+      setRealmState(nextRealmState);
+    }
+
+    const zoneReadyRoster = normalizeRosterZones([
+      ...rosterRef.current,
+      ...recruits,
+    ]);
+    rosterRef.current = zoneReadyRoster;
+    setRoster(zoneReadyRoster);
+    pushNotification({
+      type: "info",
+      title: "Applications Accepted",
+      message: `${recruits.length} applicant${recruits.length === 1 ? "" : "s"} joined your guild for free.`,
     });
     setShowRecruit(false);
   };
@@ -2345,6 +2639,7 @@ const App = () => {
           ...prev,
           server: normalizedServer,
           serverStyle: getGuildServerStyle(normalizedServer),
+          serverPopulation: getGuildServerPopulation(normalizedServer),
         };
       }
       return prev;
@@ -2373,10 +2668,13 @@ const App = () => {
     guildRelationshipsRef.current = {};
     calendarStateRef.current = calendarStart;
     raidLockoutsRef.current = {};
+    const starterRealmState = ensureRealmState(null, guildSetup, 0);
+    realmStateRef.current = starterRealmState;
     setRoster(starterRoster);
     setActiveMissions([]);
     setCalendarState(calendarStart);
     setRaidLockouts({});
+    setRealmState(starterRealmState);
     setMissionList(
       getMissionListWithZones(INITIAL_MISSIONS.map(cloneMissionTemplate)),
     );
@@ -3420,6 +3718,7 @@ const App = () => {
         guildProgress,
         guildSetup,
         guildRelationships,
+        realmState,
         calendarState,
         raidLockouts,
         gameSpeed,
@@ -3465,6 +3764,7 @@ const App = () => {
             guildProgress: guildProgressRef,
             guildSetup: guildSetupRef,
             guildRelationships: guildRelationshipsRef,
+            realmState: realmStateRef,
             calendarState: calendarStateRef,
             raidLockouts: raidLockoutsRef,
             gameTime: gameTimeRef,
@@ -3479,6 +3779,7 @@ const App = () => {
             setGuildProgress,
             setGuildSetup,
             setGuildRelationships,
+            setRealmState,
             setCalendarState,
             setRaidLockouts,
             setIsPaused,
@@ -3490,6 +3791,7 @@ const App = () => {
             setShowRecruit(false);
             setShowMissions(false);
             setShowCalendar(false);
+            setShowRealm(false);
             setShowLootTable(false);
             setShowGuildLog(false);
             setShowDebug(false);
@@ -3662,6 +3964,7 @@ const App = () => {
     [missionList],
   );
   const openRecruitSlots = Math.max(0, guildDerivedStats.maxRoster - roster.length);
+  const openRealmApplicationCount = realmApplicationCandidates.length;
   const activeCharacterNames = useMemo(
     () => roster.map((member) => member?.name).filter(Boolean),
     [roster],
@@ -3698,13 +4001,24 @@ const App = () => {
         onDismiss={dismissNotification}
       />
       <header className="wow-header flex justify-between items-center mb-6 border-b border-gray-700 pb-4 px-2 rounded-md">
-        <div>
+        <div className="min-w-0 flex flex-1 items-start gap-3">
+          <div className="flex h-14 w-11 shrink-0 items-center justify-center rounded border border-amber-700/70 bg-gray-950/60 shadow-inner md:h-16 md:w-12">
+            <img
+              src={factionMissionIconUrl}
+              alt={`${guildSetup.faction} banner`}
+              className="h-11 w-8 object-contain drop-shadow md:h-12 md:w-9"
+              onError={(event) => {
+                event.currentTarget.src = getWowIconUrl("inv_misc_questionmark");
+              }}
+            />
+          </div>
+          <div className="min-w-0">
           <h1 className="wow-header-title fantasy-font text-xl md:text-3xl font-bold truncate">
             {guildSetup.name ||
               getFactionFallbackManagerName(guildSetup.faction)}
           </h1>
           <p className="text-amber-100/70 text-xs md:text-sm tracking-wide">
-            {guildSetup.faction} Command • Server:{" "}
+            {guildSetup.faction} Command • Realm:{" "}
             {getGuildServerLabel(guildSetup.server, guildSetup.serverStyle)} •
             Focus: {guildSetup.focus}
           </p>
@@ -3723,6 +4037,7 @@ const App = () => {
               <span>Day progress</span>
               <span>{currentCalendarDayProgressPercent}%</span>
             </div>
+          </div>
           </div>
         </div>
         <div className="text-right flex-none ml-2">
@@ -3746,8 +4061,18 @@ const App = () => {
             {GUILD_POINT_LABEL}: {guildProgress.renownPoints}
           </div>
           <button
+            onClick={() => setShowOptions(true)}
+            aria-label="Settings"
+            title="Settings"
+            className="mt-2 inline-grid h-8 w-8 place-items-center rounded border border-gray-500 bg-gray-800 text-gray-200 shadow hover:bg-gray-700 align-top"
+          >
+            <span className="text-base" aria-hidden="true">
+              &#9881;&#65039;
+            </span>
+          </button>
+          <button
             onClick={() => setIsPaused(!isPaused)}
-            className={`mt-2 px-3 py-1 rounded text-xs md:text-sm font-bold shadow border ${isPaused ? "bg-gray-800 border-yellow-600 text-yellow-500" : "bg-gray-800 border-gray-600 text-green-400"}`}
+            className={`mt-2 ml-2 px-3 py-1 rounded text-xs md:text-sm font-bold shadow border ${isPaused ? "bg-gray-800 border-yellow-600 text-yellow-500" : "bg-gray-800 border-gray-600 text-green-400"}`}
           >
             {isPaused ? "▶" : "⏸"}
           </button>
@@ -3763,10 +4088,17 @@ const App = () => {
       <div className="flex flex-wrap gap-2 md:gap-3 mb-6 pb-2">
         <button
           onClick={handleOpenRecruit}
-          disabled={openRecruitSlots <= 0}
-          className="flex-none snap-start btn-recruit text-yellow-100 font-bold py-3 px-6 rounded border border-yellow-900 shadow-lg flex items-center gap-2 select-none disabled:opacity-50 whitespace-nowrap"
+          disabled={openRecruitSlots <= 0 && openRealmApplicationCount <= 0}
+          className={`flex-none snap-start btn-recruit text-yellow-100 font-bold py-3 px-6 rounded border border-yellow-900 shadow-lg flex items-center gap-2 select-none disabled:opacity-50 whitespace-nowrap ${
+            openRealmApplicationCount > 0 ? "btn-recruit-applications" : ""
+          }`}
         >
-          <span className="text-xl">📜</span> Recruit
+          <span className="text-xl">&#128220;</span> Recruit
+          {openRealmApplicationCount > 0 && (
+            <span className="rounded-full border border-yellow-200/70 bg-yellow-300/20 px-2 py-0.5 text-xs text-yellow-50">
+              {openRealmApplicationCount}
+            </span>
+          )}
         </button>
         <button
           onClick={() => setShowGuildTalents(true)}
@@ -3803,16 +4135,24 @@ const App = () => {
           Calendar
         </button>
         <button
+          onClick={() => setShowRealm(true)}
+          className="wow-command flex-none px-4 py-3 rounded bg-gradient-to-b from-amber-950/80 to-gray-900 border border-amber-600 text-amber-100 hover:from-amber-900/80 hover:to-gray-800 shadow flex items-center gap-2 whitespace-nowrap"
+        >
+          <span
+            aria-hidden="true"
+            className="grid h-5 w-5 grid-cols-3 items-end gap-0.5 rounded-sm border border-amber-500/70 bg-slate-950/80 px-1 py-0.5 shadow"
+          >
+            <span className="h-2 rounded-sm bg-amber-700" />
+            <span className="h-4 rounded-sm bg-amber-300" />
+            <span className="h-3 rounded-sm bg-amber-500" />
+          </span>
+          Realm
+        </button>
+        <button
           onClick={() => setShowMap(true)}
           className="btn-adventure-board flex-none snap-start px-5 py-3 rounded border shadow flex items-center gap-2 whitespace-nowrap"
         >
           <span className="text-xl">🗺️</span> Adventure Board
-        </button>
-        <button
-          onClick={() => setShowOptions(true)}
-          className="wow-command flex-none snap-start px-4 py-3 rounded bg-gray-800 border border-gray-500 text-gray-200 hover:bg-gray-700 shadow flex items-center gap-2 whitespace-nowrap"
-        >
-          <span className="text-xl">⚙️</span> Options
         </button>
         <button
           onClick={() => setShowLootTable(true)}
@@ -4217,6 +4557,8 @@ const App = () => {
             isOpen={showRecruit}
             onClose={() => setShowRecruit(false)}
             onRecruit={handleRecruit}
+            onRecruitApplications={handleRecruitApplications}
+            applications={realmApplicationCandidates}
             openSlots={openRecruitSlots}
             guildGold={guildGold}
             maxRoster={guildDerivedStats.maxRoster}
@@ -4285,6 +4627,19 @@ const App = () => {
             onStartEvent={handleStartCalendarEvent}
           />
         )}
+        {showRealm && (
+          <RealmOverviewModal
+            isOpen={showRealm}
+            onClose={() => setShowRealm(false)}
+            realmState={realmState}
+            guildSetup={guildSetup}
+            roster={roster}
+            missionList={missionList}
+            guildProgress={guildProgress}
+            raidLockouts={raidLockouts}
+            currentDayIndex={currentCalendarDayIndex}
+          />
+        )}
         {showLootTable && (
           <LootTableModal
             isOpen={showLootTable}
@@ -4322,8 +4677,11 @@ const App = () => {
             roster={roster}
             missionList={missionList}
             activeMissions={activeMissions}
+            realmState={realmState}
+            guildName={guildSetup.name}
             gameTimeMs={gameTimeMs}
             guildFaction={guildSetup.faction}
+            realmType={guildSetup.serverStyle}
             onDeploy={handleDeploy}
             onQueueAdventureGoal={handleQueueAdventureGoal}
             onClearAdventureGoal={handleClearAdventureGoal}

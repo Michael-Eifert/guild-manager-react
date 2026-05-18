@@ -1,4 +1,4 @@
-import { GUILD_FACTION } from "../constants";
+import { GUILD_FACTION, GUILD_SERVER_STYLE } from "../constants";
 
 export const ZONE_FACTION = Object.freeze({
   ALLIANCE: GUILD_FACTION.ALLIANCE,
@@ -7,6 +7,10 @@ export const ZONE_FACTION = Object.freeze({
 });
 
 export const ZONE_PROGRESS_CHECKPOINTS = Object.freeze([25, 50, 75, 100]);
+export const ZONE_PVP_TERRITORY = Object.freeze({
+  SAFE: "Safe Territory",
+  CONTESTED: "Contested Territory",
+});
 export const ZONE_COMPLETION_ARCHETYPE = Object.freeze({
   GEAR_SEEKER: "gear_seeker",
   COMPLETIONIST: "completionist",
@@ -568,6 +572,25 @@ export const isZoneAccessibleForFaction = (zone, faction) => {
   if (!zone || !faction) return false;
   if (zone.faction === ZONE_FACTION.NEUTRAL) return true;
   return zone.faction === faction;
+};
+
+export const isStarterZone = (zone) =>
+  Boolean(zone?.id && STARTER_ZONE_IDS.has(zone.id));
+
+export const getZonePvpTerritory = (zone, realmType) => {
+  if (realmType !== GUILD_SERVER_STYLE.PVP) return null;
+  if (isStarterZone(zone)) {
+    return {
+      key: "safe",
+      label: ZONE_PVP_TERRITORY.SAFE,
+      description: "Starting area - PvP pressure is suppressed here.",
+    };
+  }
+  return {
+    key: "contested",
+    label: ZONE_PVP_TERRITORY.CONTESTED,
+    description: "PvP realm territory - future world PvP events can happen here.",
+  };
 };
 
 const getStableCharacterZoneHash = (character) => {

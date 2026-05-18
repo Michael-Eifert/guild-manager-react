@@ -4,6 +4,7 @@ import {
   getMoraleLabel,
   getMoraleSuccessModifier,
 } from "../game/characterMorale";
+import { getCharacterPersonalityTraits } from "../game/characterPersonality";
 import {
   ZONE_COMPLETION_ARCHETYPE,
   getCharacterZonePreference,
@@ -86,6 +87,7 @@ const CharacterPersonalityCard = ({ char, onClick }) => {
       : morale >= 75
         ? "bg-emerald-500"
         : "bg-cyan-500";
+  const personalityTraits = getCharacterPersonalityTraits(char);
 
   return (
     <div
@@ -133,6 +135,29 @@ const CharacterPersonalityCard = ({ char, onClick }) => {
 
       <div className="rounded border border-purple-900/60 bg-purple-950/15 p-2">
         <div className="text-xs text-purple-100/80">{archetypeBlurb}</div>
+      </div>
+
+      <div className="mt-3 rounded border border-amber-900/60 bg-amber-950/15 p-2">
+        <div className="mb-1 text-[10px] font-bold uppercase tracking-wide text-amber-300">
+          Trait
+        </div>
+        {personalityTraits.length === 0 ? (
+          <div className="text-xs text-amber-100/70">No notable modifier.</div>
+        ) : (
+          personalityTraits.map((trait) => (
+            <div key={trait.id}>
+              <div className="flex items-center justify-between gap-2">
+                <span className="text-xs font-bold text-white">{trait.name}</span>
+                <span className="text-[10px] font-bold uppercase text-amber-300">
+                  {trait.rarity}
+                </span>
+              </div>
+              <div className="mt-1 text-xs text-amber-100/75">
+                {trait.description}
+              </div>
+            </div>
+          ))
+        )}
       </div>
 
       <div className="mt-3 rounded border border-cyan-900/60 bg-cyan-950/15 p-2">

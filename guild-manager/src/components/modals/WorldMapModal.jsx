@@ -2,7 +2,7 @@ import { useEffect, useMemo, useState } from "react";
 
 import BaseModal from "./BaseModal";
 import ActiveMissionCard from "../ActiveMissionCard";
-import { DB_CLASSES, GUILD_FACTION } from "../../constants";
+import { DB_CLASSES, GUILD_FACTION, GUILD_SERVER_STYLE } from "../../constants";
 import {
   getKeyIconUrl,
   getKeyLabel,
@@ -14,6 +14,8 @@ import {
 import { getZoneRegionalMap } from "../../zones/zoneMapLayout";
 import {
   ZONE_DEFINITIONS,
+  ZONE_PVP_TERRITORY,
+  getZonePvpTerritory,
   isZoneAccessibleForFaction,
 } from "../../zones/zoneDefinitions";
 import {
@@ -27,6 +29,7 @@ import {
   getAdventureGoalQueue,
   hasCharacterKey,
 } from "../../automation/adventureGoals";
+import { getRealmPlayersInZone } from "../../server/realmPopulation";
 
 const MAP_SOURCE = {
   name: "Classic Azeroth",
@@ -173,8 +176,11 @@ export default function WorldMapModal({
   roster = [],
   missionList = [],
   activeMissions = [],
+  realmState = null,
+  guildName = "Player Guild",
   gameTimeMs,
   guildFaction = GUILD_FACTION.ALLIANCE,
+  realmType = GUILD_SERVER_STYLE.PVE,
   onDeploy,
   onQueueAdventureGoal,
   onClearAdventureGoal,
@@ -609,12 +615,16 @@ export default function WorldMapModal({
             <ZoneSelectionPanel
               summaries={visibleSummaries}
               selectedZoneId={selectedSummary?.zone.id}
+              realmType={realmType}
               onSelect={setSelectedZoneId}
             />
 
             <SelectedZoneMap
               selectedSummary={selectedSummary}
               zoneMap={selectedZoneMap}
+              realmType={realmType}
+              realmState={realmState}
+              guildName={guildName}
               imageFailed={zoneMapImageFailed}
               onImageError={() => setZoneMapImageFailed(true)}
             />
@@ -631,6 +641,7 @@ export default function WorldMapModal({
               <ZoneDetail
                 summary={selectedSummary}
                 guildFaction={guildFaction}
+                realmType={realmType}
                 availableHeroes={availableHeroes}
                 selectedMemberIds={selectedMemberIds}
                 onToggleAssignment={(memberId) =>
@@ -701,7 +712,7 @@ export default function WorldMapModal({
   );
 }
 
-function ZoneSelectionPanel({ summaries, selectedZoneId, onSelect }) {
+function ZoneSelectionPanel({ summaries, selectedZoneId, realmType, onSelect }) {
   return (
     <div className="rounded-lg border border-cyan-900/45 bg-slate-950/85 overflow-hidden">
       <div className="flex items-center justify-between gap-3 border-b border-slate-800 px-3 py-2">
@@ -720,6 +731,7 @@ function ZoneSelectionPanel({ summaries, selectedZoneId, onSelect }) {
       <ZoneList
         summaries={summaries}
         selectedZoneId={selectedZoneId}
+        realmType={realmType}
         onSelect={onSelect}
       />
     </div>
@@ -1177,6 +1189,9 @@ function Stat({ label, value }) {
 function SelectedZoneMap({
   selectedSummary,
   zoneMap,
+  realmType,
+  realmState,
+  guildName,
   imageFailed,
   onImageError,
 }) {
@@ -1189,6 +1204,32 @@ function SelectedZoneMap({
   }
 
   const { zone } = selectedSummary;
+  const pvpTerritory = getZonePvpTerritory(zone, realmType);
+  const realmRows = getRealmPlayersInZone({
+    realmState,
+    zoneId: zone.id,
+    limit: 24,
+  }).map((player) => ({
+    memberId: player.id,
+    id: player.id,
+    name: player.name,
+    race: player.race,
+    gender: player.gender || "Male",
+    charClass: player.charClass,
+    role: player.role,
+    level: player.level,
+    progress: Math.round(Number(player.zoneProgress) || 0),
+    inZone: true,
+    guildName: player.sourceGuildName || "Unguilded",
+    isRealmPlayer: true,
+  }));
+  const playerRows = selectedSummary.heroesInZone.map((row) => ({
+    ...row,
+    guildName: guildName || "Your Guild",
+    isPlayerGuild: true,
+  }));
+  const currentActivityRows = [...playerRows, ...realmRows];
+  const shownActivityRows = currentActivityRows.slice(0, 18);
 
   return (
     <div className="rounded-lg border border-cyan-900/45 bg-slate-950/85 overflow-hidden">
@@ -1199,10 +1240,11 @@ function SelectedZoneMap({
           </h4>
           <p className="truncate text-xs text-slate-500">
             {zone.name} - Level {zone.minLevel}-{zone.maxLevel}
+            {pvpTerritory ? ` - ${pvpTerritory.label}` : ""}
           </p>
         </div>
         <div className="grid grid-cols-3 gap-2 text-right text-xs">
-          <MiniStat label="Here" value={selectedSummary.heroCount} />
+          <MiniStat label="Here" value={currentActivityRows.length} />
           <MiniStat label="Best" value={`${selectedSummary.guildBestProgress}%`} />
           <MiniStat
             label="Avg"
@@ -1211,7 +1253,7 @@ function SelectedZoneMap({
         </div>
       </div>
 
-      <div className="grid grid-cols-1 lg:grid-cols-[minmax(0,1fr)_210px] gap-0">
+      <div>
         <div className="relative min-h-[230px] bg-slate-950">
           {zoneMap && !imageFailed ? (
             <img
@@ -1232,49 +1274,60 @@ function SelectedZoneMap({
               </div>
             </div>
           )}
-        </div>
-
-        <div className="border-t border-slate-800 bg-slate-900/55 p-3 lg:border-l lg:border-t-0">
-          <h5 className="text-xs font-bold uppercase tracking-wide text-slate-300">
-            Current Activity
-          </h5>
-          <div className="mt-2 space-y-2">
-            {selectedSummary.heroesInZone.length === 0 ? (
-              <EmptyText>No heroes are in this zone.</EmptyText>
-            ) : (
-              selectedSummary.heroesInZone.slice(0, 5).map((row) => (
-                <div
-                  key={row.memberId}
-                  className="grid grid-cols-[minmax(0,1fr)_auto] items-center gap-2 text-xs"
-                >
-                  <span className="min-w-0">
-                    <HeroIdentity hero={row} compact />
-                    <span className="mt-1 block">
-                      <ActivityBadge row={row} />
-                    </span>
-                  </span>
-                  <span className="font-semibold text-amber-100">
-                    {row.progress}%
-                  </span>
-                </div>
-              ))
-            )}
-            {selectedSummary.heroesInZone.length > 5 && (
-              <div className="text-xs text-slate-500">
-                +{selectedSummary.heroesInZone.length - 5} more
-              </div>
-            )}
-          </div>
           {zoneMap && (
             <a
               href={zoneMap.sourceUrl}
               target="_blank"
               rel="noreferrer"
-              className="mt-3 inline-block text-xs text-cyan-300 hover:text-cyan-100"
+              className="absolute bottom-2 right-3 rounded border border-slate-800 bg-slate-950/80 px-2 py-1 text-xs text-cyan-300 shadow hover:text-cyan-100"
             >
               Source: {zoneMap.sourceName}
             </a>
           )}
+        </div>
+
+        <div className="border-t border-slate-800 bg-slate-900/55 p-3">
+          <div className="flex flex-wrap items-center justify-between gap-2">
+            <h5 className="text-xs font-bold uppercase tracking-wide text-slate-300">
+              Current Activity
+            </h5>
+            <span className="text-xs text-slate-500">
+              Your guild is highlighted in gold
+            </span>
+          </div>
+          <div className="mt-2 max-h-[260px] overflow-y-auto pr-1">
+            {shownActivityRows.length === 0 ? (
+              <EmptyText>No characters are in this zone.</EmptyText>
+            ) : (
+              <div className="grid grid-cols-1 gap-2 md:grid-cols-2 xl:grid-cols-3">
+                {shownActivityRows.map((row) => (
+                  <div
+                    key={row.memberId}
+                    className={`grid grid-cols-[minmax(0,1fr)_auto] items-center gap-2 rounded border px-2 py-1.5 text-xs ${
+                      row.isPlayerGuild
+                        ? "border-amber-500/45 bg-amber-950/20"
+                        : "border-slate-800/80 bg-slate-950/35"
+                    }`}
+                  >
+                    <span className="min-w-0">
+                      <HeroIdentity hero={row} compact showGuildTag />
+                      <span className="mt-1 block">
+                        <ActivityBadge row={row} />
+                      </span>
+                    </span>
+                    <span className="font-semibold text-amber-100">
+                      {row.progress}%
+                    </span>
+                  </div>
+                ))}
+              </div>
+            )}
+            {currentActivityRows.length > shownActivityRows.length && (
+              <div className="mt-2 text-xs text-slate-500">
+                +{currentActivityRows.length - shownActivityRows.length} more
+              </div>
+            )}
+          </div>
         </div>
       </div>
     </div>
@@ -1292,7 +1345,7 @@ function MiniStat({ label, value }) {
   );
 }
 
-function ZoneList({ summaries, selectedZoneId, onSelect }) {
+function ZoneList({ summaries, selectedZoneId, realmType, onSelect }) {
   return (
     <div className="max-h-64 overflow-y-auto p-2">
       {summaries.length === 0 ? (
@@ -1301,6 +1354,7 @@ function ZoneList({ summaries, selectedZoneId, onSelect }) {
         <div className="grid grid-cols-1 md:grid-cols-2 2xl:grid-cols-3 gap-2">
           {summaries.map((summary) => {
             const selected = selectedZoneId === summary.zone.id;
+            const pvpTerritory = getZonePvpTerritory(summary.zone, realmType);
             return (
               <button
                 key={summary.zone.id}
@@ -1318,6 +1372,7 @@ function ZoneList({ summaries, selectedZoneId, onSelect }) {
                   </strong>
                   <span className="block truncate text-xs text-slate-500">
                     Level {summary.zone.minLevel}-{summary.zone.maxLevel}
+                    {pvpTerritory ? `, ${pvpTerritory.label}` : ""}
                     {summary.activeEliteCount > 0
                       ? `, ${summary.activeEliteCount} elite active`
                       : ""}
@@ -1344,6 +1399,7 @@ function ZoneList({ summaries, selectedZoneId, onSelect }) {
 function ZoneDetail({
   summary,
   guildFaction,
+  realmType,
   availableHeroes,
   selectedMemberIds,
   onToggleAssignment,
@@ -1366,7 +1422,9 @@ function ZoneDetail({
   successChance,
 }) {
   const { zone } = summary;
+  const pvpTerritory = getZonePvpTerritory(zone, realmType);
   const tags = [
+    pvpTerritory?.label,
     zone.faction,
     ...(Array.isArray(zone.biomes) ? zone.biomes : []),
     ...(Array.isArray(zone.enemies) ? zone.enemies : []),
@@ -1450,6 +1508,7 @@ function ZoneDetail({
             </h3>
             <p className="text-sm text-slate-400">
               Level {zone.minLevel}-{zone.maxLevel}
+              {pvpTerritory ? ` - ${pvpTerritory.label}` : ""}
               {isZoneLocked ? " - faction locked" : ""}
             </p>
           </div>
@@ -1467,7 +1526,14 @@ function ZoneDetail({
           {tags.map((tag) => (
             <span
               key={tag}
-              className="rounded-full border border-slate-700 bg-slate-900 px-2 py-1 text-xs text-slate-300"
+              title={tag === pvpTerritory?.label ? pvpTerritory.description : undefined}
+              className={`rounded-full border px-2 py-1 text-xs ${
+                tag === ZONE_PVP_TERRITORY.CONTESTED
+                  ? "border-rose-500/60 bg-rose-950/35 text-rose-100"
+                  : tag === ZONE_PVP_TERRITORY.SAFE
+                    ? "border-emerald-500/60 bg-emerald-950/35 text-emerald-100"
+                    : "border-slate-700 bg-slate-900 text-slate-300"
+              }`}
             >
               {tag}
             </span>
@@ -1686,7 +1752,7 @@ function EmptyText({ children }) {
   return <div className="text-sm text-slate-400">{children}</div>;
 }
 
-function HeroIdentity({ hero, compact = false }) {
+function HeroIdentity({ hero, compact = false, showGuildTag = false }) {
   const charClass = hero?.charClass ?? hero?.className ?? hero?.class;
   const classInfo = DB_CLASSES?.[charClass];
   const raceIconUrl = hero?.race
@@ -1717,12 +1783,19 @@ function HeroIdentity({ hero, compact = false }) {
           }}
         />
       </span>
-      <strong
-        className="block min-w-0 truncate text-sm font-bold text-slate-100"
-        style={classInfo?.color ? { color: classInfo.color } : undefined}
-      >
-        {hero?.name || "Unknown Hero"}
-      </strong>
+      <span className="block min-w-0 truncate text-sm">
+        <strong
+          className="font-bold text-slate-100"
+          style={classInfo?.color ? { color: classInfo.color } : undefined}
+        >
+          {hero?.name || "Unknown Hero"}
+        </strong>
+        {showGuildTag && hero?.guildName && (
+          <span className="ml-1 text-[11px] font-semibold text-cyan-200/80">
+            &lt;{hero.guildName}&gt;
+          </span>
+        )}
+      </span>
     </div>
   );
 }

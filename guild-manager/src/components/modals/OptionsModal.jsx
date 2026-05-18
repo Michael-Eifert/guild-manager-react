@@ -16,7 +16,7 @@ const OptionsModal = ({
       panelClassName="wow-modal-panel bg-gray-900 border-2 border-gray-700 rounded-lg w-full max-w-sm shadow-2xl"
     >
       <div className="p-4 border-b border-gray-700 flex items-center justify-between">
-        <h2 className="text-lg font-bold fantasy-font text-gray-100">Options</h2>
+        <h2 className="text-lg font-bold fantasy-font text-gray-100">Settings</h2>
         <button onClick={onClose} className="text-gray-500 hover:text-white text-2xl px-1">
           &times;
         </button>

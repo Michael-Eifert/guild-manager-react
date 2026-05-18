@@ -3,6 +3,8 @@ import {
   DB_CLASSES,
   DB_RACES,
   DB_NAMES,
+  DB_CLASS_NAMES,
+  DB_RACE_CLASS_NAMES,
   DB_FUNNY_NAMES,
   PROF_PAIRS,
   DEFAULT_PROF_PAIR,
@@ -10,6 +12,11 @@ import {
   GUILD_FACTION,
   FACTION_RACES,
 } from "./constants";
+import {
+  getCharacterDungeonSuccessBonus,
+  getCharacterRaidSuccessBonus,
+  rollCharacterPersonalityTraits,
+} from "./game/characterPersonality";
 
 const ARMOR_HIERARCHY = ["Plate", "Mail", "Leather", "Cloth"];
 const WOW_ICON_BASE_URL = "https://wow.zamimg.com/images/wow/icons/large";
@@ -541,6 +548,7 @@ export const getMissionSuccessPreview = (mission, partyMembers) => {
       averagePartyItemLevel: 0,
       partySizeBonus: 0,
       roleCompositionBonus,
+      personalitySuccessBonus: 0,
       raidRoleRequirement,
       raidRoleRequirementBonus: 0,
       hasRaidRoleCoverage: false,
@@ -583,16 +591,25 @@ export const getMissionSuccessPreview = (mission, partyMembers) => {
   const raidRoleDeficitPenalty = isRaid
     ? raidMissingTank * 3 + raidMissingHealer * 2 + raidMissingDps
     : 0;
+  const personalityBonusSource = isRaid
+    ? getCharacterRaidSuccessBonus
+    : getCharacterDungeonSuccessBonus;
+  const personalitySuccessBonus = members.reduce(
+    (sum, member) => sum + personalityBonusSource(member),
+    0,
+  );
   const rawFailChance = isRaid
     ? baseFail +
       (missionPower - partyPower) * 4 +
       raidRoleDeficitPenalty -
       partySizeBonus -
-      raidRoleRequirementBonus
+      raidRoleRequirementBonus -
+      personalitySuccessBonus
     : baseFail +
       (missionPower - partyPower) * 5 -
       partySizeBonus -
-      roleCompositionBonus;
+      roleCompositionBonus -
+      personalitySuccessBonus;
   const failChance = Math.max(0, Math.min(95, Math.round(rawFailChance)));
 
   return {
@@ -602,6 +619,7 @@ export const getMissionSuccessPreview = (mission, partyMembers) => {
     averagePartyItemLevel,
     partySizeBonus,
     roleCompositionBonus,
+    personalitySuccessBonus,
     raidRoleRequirement,
     raidRoleRequirementBonus,
     hasRaidRoleCoverage,
@@ -798,8 +816,9 @@ const normalizePreferredRole = (preferredRole) => {
 
 const normalizeNameValue = (value) => String(value || "").trim();
 const normalizeNameKey = (value) => normalizeNameValue(value).toLocaleLowerCase();
+const stripNameDigits = (value) => normalizeNameValue(value).replace(/\d+/g, "");
 
-const buildUsedNameKeySet = (usedNames) => {
+export const buildUsedNameKeySet = (usedNames) => {
   if (usedNames instanceof Set) {
     const normalizedSet = new Set();
     usedNames.forEach((name) => {
@@ -816,18 +835,21 @@ const buildUsedNameKeySet = (usedNames) => {
   );
 };
 
-const pickRandomEntry = (entries, fallback = "") => {
+const pickRandomEntry = (entries, fallback = "", random = Math.random) => {
   if (!Array.isArray(entries) || entries.length === 0) return fallback;
-  return entries[Math.floor(Math.random() * entries.length)] || fallback;
+  const safeRandom = typeof random === "function" ? random : Math.random;
+  return entries[Math.floor(safeRandom() * entries.length)] || fallback;
 };
 
 const buildNameVariants = (baseName) => {
-  const source = normalizeNameValue(baseName);
+  const source = stripNameDigits(baseName);
   if (!source) return [];
   const variants = new Set([source]);
-  const vowelMatch = source.match(/[aeiouy]/i);
-  if (vowelMatch?.index != null) {
-    const vowelIndex = vowelMatch.index;
+  const vowelIndexes = [...source.matchAll(/[aeiouy]/gi)].map(
+    (match) => match.index,
+  );
+  vowelIndexes.forEach((vowelIndex) => {
+    if (vowelIndex == null) return;
     const originalChar = source[vowelIndex];
     const lowerOriginal = originalChar.toLocaleLowerCase();
     const accentOptions = ACCENT_VARIANTS[lowerOriginal] || [];
@@ -842,33 +864,93 @@ const buildNameVariants = (baseName) => {
     if (vowelIndex > 1) {
       variants.add(`${source.slice(0, vowelIndex)}'${source.slice(vowelIndex)}`);
     }
-  }
+  });
+  [...source.matchAll(/[a-z]/gi)].forEach((match) => {
+    const letterIndex = match.index;
+    if (letterIndex == null) return;
+    variants.add(
+      `${source.slice(0, letterIndex + 1)}${source[letterIndex]}${source.slice(letterIndex + 1)}`,
+    );
+  });
   return [...variants];
 };
 
-const buildProceduralName = (race, gender) => {
+const buildAlphabeticNameMutation = (baseName, mutationIndex) => {
+  const source = stripNameDigits(baseName).replace(/[^A-Za-zÀ-ÿ']/g, "");
+  const fallback = source || "Adventurer";
+  const letterIndexes = [...fallback.matchAll(/[A-Za-zÀ-ÿ]/g)].map(
+    (match) => match.index,
+  );
+  if (letterIndexes.length === 0) return "Adventurer";
+  if (mutationIndex <= 0) return fallback;
+  const targetIndex = letterIndexes[(mutationIndex - 1) % letterIndexes.length];
+  const repeatCount = Math.floor((mutationIndex - 1) / letterIndexes.length) + 1;
+  const repeatedLetter = fallback[targetIndex].repeat(repeatCount);
+  return `${fallback.slice(0, targetIndex + 1)}${repeatedLetter}${fallback.slice(targetIndex + 1)}`;
+};
+
+const reserveAlphabeticNameVariants = ({
+  baseName,
+  reserveIfAvailable,
+  maxAttempts = 10000,
+}) => {
+  for (let mutationIndex = 0; mutationIndex < maxAttempts; mutationIndex += 1) {
+    const candidate = buildAlphabeticNameMutation(baseName, mutationIndex);
+    const variants = buildNameVariants(candidate);
+    for (const variant of variants) {
+      const reserved = reserveIfAvailable(variant);
+      if (reserved) return reserved;
+    }
+  }
+  return null;
+};
+
+const buildProceduralName = (race, gender, random = Math.random) => {
+  const safeRandom = typeof random === "function" ? random : Math.random;
   const raceBank = RACE_NAME_SYLLABLES[race] || DEFAULT_NAME_SYLLABLES;
   const genderBank =
     raceBank[gender] || raceBank.Male || raceBank.Female || DEFAULT_NAME_SYLLABLES.Male;
-  const start = pickRandomEntry(genderBank.start, "Ar");
-  const mid = pickRandomEntry(genderBank.mid, "a");
-  const end = pickRandomEntry(genderBank.end, "an");
-  const includeMiddle = Math.random() < 0.65;
+  const start = pickRandomEntry(genderBank.start, "Ar", safeRandom);
+  const mid = pickRandomEntry(genderBank.mid, "a", safeRandom);
+  const end = pickRandomEntry(genderBank.end, "an", safeRandom);
+  const includeMiddle = safeRandom() < 0.65;
   const raw = `${start}${includeMiddle ? mid : ""}${end}`.replace(/[^A-Za-z]/g, "");
   if (!raw) return "Adventurer";
   const normalized = raw.length > 12 ? raw.slice(0, 12) : raw;
   return `${normalized.charAt(0).toUpperCase()}${normalized.slice(1)}`;
 };
 
-const pickUniqueCharacterName = ({
+export const buildCharacterNamePool = ({
+  race,
+  gender,
+  charClass,
+  includeFunnyName = false,
+} = {}) => {
+  const raceNames = DB_NAMES[race] || DB_NAMES.Human || {};
+  const genderNames = raceNames[gender] || raceNames.Male || [];
+  const raceClassNames = DB_RACE_CLASS_NAMES?.[race]?.[charClass] || [];
+  const classNames = DB_CLASS_NAMES?.[charClass] || [];
+  const funnyNames =
+    includeFunnyName && Array.isArray(DB_FUNNY_NAMES) ? DB_FUNNY_NAMES : [];
+  return [
+    ...raceClassNames,
+    ...classNames,
+    ...genderNames,
+    ...funnyNames,
+  ];
+};
+
+export const pickUniqueCharacterName = ({
   race,
   gender,
   curatedPool,
   fallbackPool,
   usedNameKeys,
+  random = Math.random,
 }) => {
+  const safeRandom = typeof random === "function" ? random : Math.random;
   const reserveIfAvailable = (candidate) => {
-    const cleanCandidate = normalizeNameValue(candidate);
+    const cleanCandidate = stripNameDigits(candidate);
     if (!cleanCandidate) return null;
     const key = normalizeNameKey(cleanCandidate);
     if (!key || usedNameKeys.has(key)) return null;
@@ -881,7 +963,7 @@ const pickUniqueCharacterName = ({
     : fallbackPool;
   const poolAttempts = Math.max(30, (selectedPool?.length || 0) * 3);
   for (let attempt = 0; attempt < poolAttempts; attempt += 1) {
-    const baseName = pickRandomEntry(selectedPool, "Adventurer");
+    const baseName = pickRandomEntry(selectedPool, "Adventurer", safeRandom);
     const variants = buildNameVariants(baseName);
     for (const variant of variants) {
       const reserved = reserveIfAvailable(variant);
@@ -891,7 +973,7 @@ const pickUniqueCharacterName = ({
 
   const proceduralAttempts = 220;
   for (let attempt = 0; attempt < proceduralAttempts; attempt += 1) {
-    const generatedName = buildProceduralName(race, gender);
+    const generatedName = buildProceduralName(race, gender, safeRandom);
     const variants = buildNameVariants(generatedName);
     for (const variant of variants) {
       const reserved = reserveIfAvailable(variant);
@@ -899,14 +981,16 @@ const pickUniqueCharacterName = ({
     }
   }
 
-  const hardFallbackBase = "Adventurer";
-  for (let suffix = 1; suffix < 10000; suffix += 1) {
-    const candidate = suffix === 1 ? hardFallbackBase : `${hardFallbackBase}${suffix}`;
-    const reserved = reserveIfAvailable(candidate);
-    if (reserved) return reserved;
-  }
+  const selectedFallbackBase = stripNameDigits(
+    pickRandomEntry(fallbackPool, "Adventurer", safeRandom),
+  );
+  const alphabeticFallback = reserveAlphabeticNameVariants({
+    baseName: selectedFallbackBase || "Adventurer",
+    reserveIfAvailable,
+  });
+  if (alphabeticFallback) return alphabeticFallback;
 
-  return `${hardFallbackBase}${createId().slice(0, 6)}`;
+  return buildAlphabeticNameMutation("Adventurer", 10000 + usedNameKeys.size);
 };
 
 export const generateCharacter = (
@@ -962,8 +1046,6 @@ export const generateCharacter = (
     selectedCombination?.charClass ||
     allowedClasses[Math.floor(Math.random() * allowedClasses.length)];
   const gender = Math.random() > 0.5 ? "Male" : "Female";
-  const raceNames = DB_NAMES[selectedRace] || DB_NAMES["Human"];
-  const namesList = raceNames[gender] || raceNames["Male"] || [];
   const fallbackPool =
     DB_NAMES?.Human?.Male && DB_NAMES.Human.Male.length > 0
       ? DB_NAMES.Human.Male
@@ -973,15 +1055,16 @@ export const generateCharacter = (
       ? DB_FUNNY_NAMES
       : null;
   const useFunnyName = Boolean(funnyPool) && Math.random() < FUNNY_NAME_CHANCE;
-  const selectedPool = useFunnyName
-    ? funnyPool
-    : namesList.length > 0
-      ? namesList
-      : fallbackPool;
+  const selectedPool = buildCharacterNamePool({
+    race: selectedRace,
+    gender,
+    charClass,
+    includeFunnyName: useFunnyName,
+  });
   const firstName = pickUniqueCharacterName({
     race: selectedRace,
     gender,
-    curatedPool: selectedPool,
+    curatedPool: selectedPool.length > 0 ? selectedPool : fallbackPool,
     fallbackPool,
     usedNameKeys,
   });
@@ -1010,6 +1093,7 @@ export const generateCharacter = (
     statusText: "Waiting for orders...",
     activityMode: "Auto",
     morale: 50,
+    personalityTraits: rollCharacterPersonalityTraits(),
     professions: professions,
     history: [],
     keys: [],

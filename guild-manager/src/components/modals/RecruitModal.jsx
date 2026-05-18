@@ -32,12 +32,15 @@ const RecruitModal = ({
   guildProgress,
   raidUnlocked = false,
   onScoutTier,
+  applications = [],
+  onRecruitApplications,
   guildFaction = GUILD_FACTION.ALLIANCE,
   existingNames = [],
 }) => {
   const [candidates, setCandidates] = useState([]);
   const [isLoading, setIsLoading] = useState(false);
   const [selectedIds, setSelectedIds] = useState([]);
+  const [selectedApplicationIds, setSelectedApplicationIds] = useState([]);
   const [limitWarning, setLimitWarning] = useState(false);
   const [selectedTierId, setSelectedTierId] = useState("level_1_10");
   const [activeTier, setActiveTier] = useState(null);
@@ -61,6 +64,7 @@ const RecruitModal = ({
     guildGold,
     recruitCostGold: activeRecruitCostGold,
   });
+  const applicationList = Array.isArray(applications) ? applications : [];
 
   const existingNamesSignature = useMemo(() => {
     const source = Array.isArray(existingNames) ? existingNames : [];
@@ -87,6 +91,7 @@ const RecruitModal = ({
     setIsLoading(false);
     setCandidates([]);
     setSelectedIds([]);
+    setSelectedApplicationIds([]);
     setLimitWarning(false);
     setActiveTier(null);
     setSelectedTierId("level_1_10");
@@ -113,6 +118,7 @@ const RecruitModal = ({
     setSelectedTierId(tier.id);
     setCandidates([]);
     setSelectedIds([]);
+    setSelectedApplicationIds([]);
     setActiveTier(null);
     setLimitWarning(false);
   };
@@ -155,12 +161,39 @@ const RecruitModal = ({
     });
   };
 
+  const toggleApplication = (candidateId) => {
+    setSelectedApplicationIds((prev) => {
+      if (prev.includes(candidateId)) {
+        setLimitWarning(false);
+        return prev.filter((id) => id !== candidateId);
+      }
+
+      if (openSlots <= 0 || prev.length >= openSlots) {
+        setLimitWarning(true);
+        return prev;
+      }
+
+      setLimitWarning(false);
+      return [...prev, candidateId];
+    });
+  };
+
   const handleRecruitSelected = () => {
     const selectedCandidates = candidates.filter((char) =>
       selectedIds.includes(char.id),
     );
     if (selectedCandidates.length === 0) return;
     onRecruit(selectedCandidates, activeTier);
+  };
+
+  const handleAcceptApplications = () => {
+    const selectedApplications = applicationList.filter((char) =>
+      selectedApplicationIds.includes(char.id),
+    );
+    if (selectedApplications.length === 0) return;
+    if (typeof onRecruitApplications === "function") {
+      onRecruitApplications(selectedApplications);
+    }
   };
 
   return (
@@ -206,7 +239,7 @@ const RecruitModal = ({
                   </span>
                 </div>
                 <div className="text-[11px] text-gray-400 mt-1">
-                  5 applicants - first free - +{tier.recruitCostGold}g each
+                  5 scouted prospects - first free - +{tier.recruitCostGold}g each
                 </div>
                 {!tier.unlocked && (
                   <div className="text-[11px] text-red-300 mt-1">
@@ -307,6 +340,11 @@ const RecruitModal = ({
                   <div className="text-[11px] text-amber-200 font-bold mb-3">
                     iLvl {getCharacterAverageItemLevel(char).toFixed(1)}
                   </div>
+                  {char.realmRecruitmentSource && (
+                    <div className="mb-3 rounded border border-cyan-900/60 bg-cyan-950/30 px-2 py-1 text-[11px] font-semibold text-cyan-100">
+                      {char.realmRecruitmentSource}
+                    </div>
+                  )}
                   <button
                     onClick={(event) => {
                       event.stopPropagation();
@@ -361,6 +399,129 @@ const RecruitModal = ({
             </div>
           </div>
         )}
+
+        <div className="mt-8 border-t border-yellow-900/40 pt-6">
+          <div className="mb-4 flex flex-col gap-1 md:flex-row md:items-end md:justify-between">
+            <div>
+              <h3 className="fantasy-font text-lg text-yellow-100">
+                Guild Applications
+              </h3>
+              <p className="text-xs text-gray-400">
+                Realm players who asked to join. Accepting them is free.
+              </p>
+            </div>
+            <div className="text-xs text-cyan-100">
+              Open applications:{" "}
+              <span className="font-bold text-yellow-200">
+                {applicationList.length}
+              </span>
+            </div>
+          </div>
+
+          {applicationList.length === 0 ? (
+            <div className="rounded border border-gray-800 bg-gray-950/30 px-4 py-8 text-center text-sm text-gray-400">
+              No open applications right now. New ones can arrive as realm days
+              pass.
+            </div>
+          ) : (
+            <>
+              <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3 mb-5">
+                {applicationList.map((char) => (
+                  <div
+                    key={char.id}
+                    onClick={() => toggleApplication(char.id)}
+                    className={`bg-gray-800 p-3 rounded flex flex-col items-center text-center cursor-pointer border hover:bg-gray-700 transition-all active:scale-95 ${
+                      selectedApplicationIds.includes(char.id)
+                        ? "border-green-500 bg-green-900/20"
+                        : "border-cyan-900/50 hover:border-yellow-500"
+                    } ${openSlots <= 0 ? "opacity-60 cursor-not-allowed" : ""}`}
+                  >
+                    <img
+                      src={getRacePortraitUrl(char.race, char.gender)}
+                      alt={`${char.race} ${char.gender}`}
+                      className="w-14 h-14 mb-2 rounded border border-gray-600 object-cover"
+                      onError={(event) => {
+                        event.currentTarget.src = getWowIconUrl("inv_misc_questionmark");
+                      }}
+                    />
+                    <div
+                      className="font-bold text-sm inline-flex items-center gap-1"
+                      style={{
+                        color: DB_CLASSES[char.charClass]
+                          ? DB_CLASSES[char.charClass].color
+                          : "#fff",
+                      }}
+                    >
+                      <span>{char.name}</span>
+                      <span className="text-xs text-gray-400">
+                        {char.gender === "Male" ? "M" : "F"}
+                      </span>
+                    </div>
+                    <div className="text-xs text-gray-500 mb-2 flex items-center gap-1">
+                      {DB_CLASSES[char.charClass]?.icon && (
+                        <img
+                          src={DB_CLASSES[char.charClass].icon}
+                          alt={char.charClass}
+                          className="w-4 h-4 rounded-sm border border-gray-600"
+                          onError={(event) => {
+                            event.currentTarget.style.display = "none";
+                          }}
+                        />
+                      )}
+                      <span>
+                        Lvl {char.level} - {char.role} {getRoleIcon(char.role)}
+                      </span>
+                    </div>
+                    <div className="mb-2 text-[11px] font-bold text-amber-200">
+                      iLvl {getCharacterAverageItemLevel(char).toFixed(1)}
+                    </div>
+                    <div className="mb-2 rounded border border-cyan-900/60 bg-cyan-950/30 px-2 py-1 text-[11px] font-semibold text-cyan-100">
+                      {char.realmRecruitmentSource || "Free Agent"}
+                    </div>
+                    {Number.isFinite(Number(char.realmApplicationDayIndex)) && (
+                      <div className="mb-3 text-[10px] uppercase tracking-wide text-gray-500">
+                        Applied day {char.realmApplicationDayIndex}
+                      </div>
+                    )}
+                    <button
+                      onClick={(event) => {
+                        event.stopPropagation();
+                        toggleApplication(char.id);
+                      }}
+                      disabled={openSlots <= 0}
+                      className={`mt-auto px-3 py-2 border rounded text-xs uppercase tracking-wider w-full disabled:opacity-50 disabled:cursor-not-allowed ${
+                        selectedApplicationIds.includes(char.id)
+                          ? "text-green-200 border-green-500 bg-green-900/40"
+                          : "text-cyan-200 border-gray-600 hover:bg-cyan-900/40"
+                      }`}
+                    >
+                      {selectedApplicationIds.includes(char.id)
+                        ? "Selected"
+                        : "Select"}
+                    </button>
+                  </div>
+                ))}
+              </div>
+
+              <div className="flex flex-col items-center justify-center gap-2 text-center">
+                <div className="text-xs text-gray-500">
+                  Open slots: {openSlots} - Applications cost 0g.
+                </div>
+                <button
+                  onClick={handleAcceptApplications}
+                  disabled={
+                    selectedApplicationIds.length === 0 ||
+                    openSlots <= 0 ||
+                    typeof onRecruitApplications !== "function"
+                  }
+                  className="px-4 py-2 border border-cyan-700 rounded text-xs uppercase tracking-wider text-cyan-200 hover:bg-cyan-900/40 disabled:opacity-50 disabled:cursor-not-allowed"
+                >
+                  Accept Applications ({selectedApplicationIds.length}) - Free
+                </button>
+              </div>
+            </>
+          )}
+        </div>
       </div>
     </BaseModal>
   );

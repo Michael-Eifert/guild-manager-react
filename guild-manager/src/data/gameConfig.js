@@ -147,9 +147,16 @@ export const GUILD_SERVER_STYLE = Object.freeze({
   PVP: "PvP",
 });
 
+export const GUILD_SERVER_POPULATION = Object.freeze({
+  HIGH: "High",
+  MEDIUM: "Medium",
+});
+
 export const GUILD_SERVER = Object.freeze({
   EVERLOOK: "Everlook",
   FIREMAW: "Firemaw",
+  LORDAERON: "Lordaeron",
+  BLACKROCK: "Blackrock",
 });
 
 export const GUILD_SERVER_OPTIONS = Object.freeze([
@@ -157,11 +164,25 @@ export const GUILD_SERVER_OPTIONS = Object.freeze([
     value: GUILD_SERVER.EVERLOOK,
     label: `${GUILD_SERVER.EVERLOOK} (${GUILD_SERVER_STYLE.PVE})`,
     style: GUILD_SERVER_STYLE.PVE,
+    population: GUILD_SERVER_POPULATION.HIGH,
+  },
+  {
+    value: GUILD_SERVER.BLACKROCK,
+    label: `${GUILD_SERVER.BLACKROCK} (${GUILD_SERVER_STYLE.PVP})`,
+    style: GUILD_SERVER_STYLE.PVP,
+    population: GUILD_SERVER_POPULATION.HIGH,
+  },
+  {
+    value: GUILD_SERVER.LORDAERON,
+    label: `${GUILD_SERVER.LORDAERON} (${GUILD_SERVER_STYLE.PVE})`,
+    style: GUILD_SERVER_STYLE.PVE,
+    population: GUILD_SERVER_POPULATION.MEDIUM,
   },
   {
     value: GUILD_SERVER.FIREMAW,
     label: `${GUILD_SERVER.FIREMAW} (${GUILD_SERVER_STYLE.PVP})`,
     style: GUILD_SERVER_STYLE.PVP,
+    population: GUILD_SERVER_POPULATION.MEDIUM,
   },
 ]);
 
@@ -232,6 +253,10 @@ export const DEFAULT_GUILD_SETUP = Object.freeze({
     GUILD_SERVER_OPTIONS.find(
       (option) => option.value === GUILD_SERVER.EVERLOOK,
     )?.style || GUILD_SERVER_STYLE.PVE,
+  serverPopulation:
+    GUILD_SERVER_OPTIONS.find(
+      (option) => option.value === GUILD_SERVER.EVERLOOK,
+    )?.population || GUILD_SERVER_POPULATION.HIGH,
   focus: GUILD_FOCUS.LEVELING,
   lastFocusChangeDayIndex: null,
   dungeonActivity: GUILD_DUNGEON_ACTIVITY.NONE,

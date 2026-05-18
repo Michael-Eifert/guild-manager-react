@@ -19,6 +19,10 @@ import {
   getMissionLevelExpMultiplier,
   resolveMissionRewardQualities,
 } from "../missions/missionHelpers";
+import {
+  isMissionMemberGroupAvailable,
+  pruneOverlappingActiveMissions,
+} from "../missions/missionRosterGuards";
 import { createMissionRewardProcessor } from "../missions/missionRewards";
 import {
   buildRecruitmentEquipment,
@@ -31,6 +35,26 @@ import {
   buildSessionPayload,
   SESSION_FORMAT,
 } from "../session/sessionPersistence";
+import { ensureRealmState, generateNpcGuilds } from "../server/realmGeneration";
+import { advanceRealmSimulation } from "../server/realmSimulation";
+import {
+  buildPlayerGuildSnapshot,
+  buildRealmRankings,
+  getPlayerRealmRanking,
+} from "../server/realmRankings";
+import { getRealmRaidProgressList } from "../server/realmRaidProgress";
+import {
+  getRealmMaxLevelCount,
+  getRealmRosterCap,
+} from "../server/realmRosters";
+import {
+  getRealmGuildApplications,
+  getRealmPlayersInZone,
+  getRealmPopulationStats,
+  markRealmPlayersRecruited,
+  resolvePlayerGuildDeparturesForDay,
+  selectRealmRecruitmentCandidates,
+} from "../server/realmPopulation";
 import {
   advanceDungeonMission,
   getDefaultDungeonProgress,
@@ -43,7 +67,9 @@ import {
   GUILD_DUNGEON_ACTIVITY,
   GUILD_FOCUS,
   GUILD_FACTION,
+  GUILD_SERVER_STYLE,
   INITIAL_MISSIONS,
+  DB_FUNNY_NAMES,
 } from "../constants";
 import {
   applyProfessionSkillAttempts,
@@ -67,7 +93,24 @@ import {
   isCharacterInMissionLevelRange,
   isCharacterInZoneLevelRange,
 } from "../game/characterMorale";
-import { getItemEffectiveLevel, isItemUsableByClass } from "../utils";
+import {
+  PERSONALITY_TRAIT_ID,
+  getCharacterLevelingExpMultiplier,
+  getCharacterPersonalityTraits,
+  getCharacterZoneProgressMultiplier,
+  getCharacterDungeonSuccessBonus,
+  getCharacterRaidSuccessBonus,
+  normalizeCharacterPersonalityTraits,
+  rollCharacterPersonalityTraits,
+} from "../game/characterPersonality";
+import {
+  buildCharacterNamePool,
+  generateCharacters,
+  getItemEffectiveLevel,
+  getMissionSuccessPreview,
+  isItemUsableByClass,
+  pickUniqueCharacterName,
+} from "../utils";
 import {
   AUTO_DUNGEON_MIN_SUCCESS_CHANCE,
   getAutoDungeonLevelRange,
@@ -113,6 +156,7 @@ import {
 } from "../raids/raidLockouts";
 import {
   ZONE_COMPLETION_ARCHETYPE,
+  getZonePvpTerritory,
   getCharacterZonePreference,
   getZonesForFaction,
   pickNextZoneForCharacter,
@@ -195,6 +239,137 @@ const getRosterEquipmentSources = (roster) =>
       .map((item) => item.dungeonSetId || item.dungeon)
       .filter(Boolean),
   );
+
+describe("character name generation", () => {
+  it("adds class and race/class names without putting class labels in the general funny pool", () => {
+    expect(DB_FUNNY_NAMES).not.toContain("Paladin");
+    expect(
+      buildCharacterNamePool({
+        race: "Human",
+        gender: "Male",
+        charClass: "Paladin",
+      }),
+    ).toEqual(expect.arrayContaining(["Paladin", "Silverhand", "Varian"]));
+    expect(
+      buildCharacterNamePool({
+        race: "Human",
+        gender: "Male",
+        charClass: "Mage",
+      }),
+    ).not.toContain("Paladin");
+  });
+
+  it("can generate over one thousand unique player names", () => {
+    const roster = generateCharacters(1100, GUILD_FACTION.ALLIANCE);
+    const normalizedNames = new Set(
+      roster.map((member) => String(member.name || "").toLocaleLowerCase()),
+    );
+
+    expect(roster).toHaveLength(1100);
+    expect(normalizedNames.size).toBe(roster.length);
+    expect(roster.every((member) => !/\d/.test(member.name))).toBe(true);
+  });
+
+  it("mutates duplicate names with accents and doubled letters instead of numbers", () => {
+    const usedNameKeys = new Set();
+    const names = Array.from({ length: 25 }, () =>
+      pickUniqueCharacterName({
+        race: "Human",
+        gender: "Male",
+        curatedPool: ["Hello25"],
+        fallbackPool: ["Hello25"],
+        usedNameKeys,
+        random: () => 0,
+      }),
+    );
+
+    expect(new Set(names.map((name) => name.toLocaleLowerCase())).size).toBe(
+      names.length,
+    );
+    expect(names.every((name) => !/\d/.test(name))).toBe(true);
+    expect(names).toContain("Hello");
+    expect(names).toContain("Helloo");
+  });
+});
+
+describe("character personality traits", () => {
+  it("rolls rare power levelers and common casual gamers by chance bands", () => {
+    expect(rollCharacterPersonalityTraits({ random: () => 0.01 })).toEqual([
+      PERSONALITY_TRAIT_ID.POWER_LEVELER,
+    ]);
+    expect(rollCharacterPersonalityTraits({ random: () => 0.1 })).toEqual([
+      PERSONALITY_TRAIT_ID.DUNGEON_EXPERT,
+    ]);
+    expect(rollCharacterPersonalityTraits({ random: () => 0.25 })).toEqual([
+      PERSONALITY_TRAIT_ID.RAIDER,
+    ]);
+    expect(rollCharacterPersonalityTraits({ random: () => 0.4 })).toEqual([
+      PERSONALITY_TRAIT_ID.CASUAL_GAMER,
+    ]);
+    expect(rollCharacterPersonalityTraits({ random: () => 0.9 })).toEqual([]);
+  });
+
+  it("normalizes saved traits and applies power leveler progression modifiers", () => {
+    const character = {
+      personalityTraits: [
+        PERSONALITY_TRAIT_ID.POWER_LEVELER,
+        "unknown",
+        PERSONALITY_TRAIT_ID.POWER_LEVELER,
+      ],
+    };
+
+    expect(normalizeCharacterPersonalityTraits(character.personalityTraits)).toEqual([
+      PERSONALITY_TRAIT_ID.POWER_LEVELER,
+    ]);
+    expect(getCharacterPersonalityTraits(character)[0].name).toBe("Power Leveler");
+    expect(getCharacterLevelingExpMultiplier(character)).toBe(1.5);
+    expect(getCharacterZoneProgressMultiplier(character)).toBe(1.5);
+  });
+
+  it("keeps casual gamers mechanically neutral", () => {
+    const character = {
+      personalityTraits: [PERSONALITY_TRAIT_ID.CASUAL_GAMER],
+    };
+
+    expect(getCharacterPersonalityTraits(character)[0].name).toBe("Casual Gamer");
+    expect(getCharacterLevelingExpMultiplier(character)).toBe(1);
+    expect(getCharacterZoneProgressMultiplier(character)).toBe(1);
+  });
+
+  it("applies dungeon expert and raider mission success bonuses", () => {
+    const dungeonExpert = {
+      level: 20,
+      role: "Tank",
+      personalityTraits: [PERSONALITY_TRAIT_ID.DUNGEON_EXPERT],
+    };
+    const raider = {
+      level: 20,
+      role: "Tank",
+      personalityTraits: [PERSONALITY_TRAIT_ID.RAIDER],
+    };
+    const dungeon = { level: 20, baseFailChance: 50, type: "dungeon" };
+    const raid = {
+      level: 20,
+      baseFailChance: 50,
+      type: "dungeon",
+      isRaid: true,
+      requiredPartySize: 1,
+      raidRoleRequirement: { Tank: 0, Healer: 0, DPS: 0, bonus: 0 },
+    };
+
+    expect(getCharacterDungeonSuccessBonus(dungeonExpert)).toBe(5);
+    expect(getCharacterRaidSuccessBonus(raider)).toBe(1);
+    expect(
+      getMissionSuccessPreview(dungeon, [dungeonExpert]).personalitySuccessBonus,
+    ).toBe(5);
+    expect(
+      getMissionSuccessPreview(raid, [dungeonExpert]).personalitySuccessBonus,
+    ).toBe(0);
+    expect(getMissionSuccessPreview(raid, [raider]).personalitySuccessBonus).toBe(
+      1,
+    );
+  });
+});
 
 describe("debug raid setup presets", () => {
   it("builds a BWL test roster with MC and BWL attunements plus BWL-ready gear", () => {
@@ -1087,6 +1262,14 @@ describe("session persistence", () => {
       guildGold: 7,
       guildProgress: createInitialGuildProgress(),
       guildSetup: { hasStarted: true },
+      realmState: {
+        id: "realm:test",
+        name: "Everlook",
+        type: "PvE",
+        ageDays: 2,
+        npcGuilds: [],
+        news: [],
+      },
       gameSpeed: DEFAULT_GAME_SPEED,
       isPaused: false,
       gameTimeMs: 1000,
@@ -1094,6 +1277,7 @@ describe("session persistence", () => {
 
     expect(payload.format).toBe(SESSION_FORMAT);
     expect(payload.data.activeMissions[0].remainingMs).toBe(1500);
+    expect(payload.data.realmState.name).toBe("Everlook");
   });
 
   it("hydrates active missions and normalizes questing roster status", () => {
@@ -1125,6 +1309,8 @@ describe("session persistence", () => {
     expect(result.normalizedRoster[0].status).toBe("Questing");
     expect(result.normalizedRoster[1].status).toBe("Idle");
     expect(result.normalizedRoster[1].adventureGoalQueue).toEqual([]);
+    expect(result.loadedRealmState.name).toBe("Everlook");
+    expect(result.loadedRealmState.npcGuilds.length).toBeGreaterThan(0);
     expect(result.loadedGuildGold).toBe(getGuildDerivedStats(createInitialGuildProgress()).goldCap);
   });
 
@@ -1546,7 +1732,7 @@ describe("calendar logic", () => {
     expect(result.newlyReadyEvents).toHaveLength(1);
   });
 
-  it("allows calendar signups for dungeon-busy characters but not other busy characters", () => {
+  it("allows raid calendar signups for busy characters", () => {
     const mission = {
       id: 62,
       name: "Molten Core",
@@ -1589,6 +1775,13 @@ describe("calendar logic", () => {
         level: 60,
         status: "Idle",
       },
+      {
+        id: "raid-busy",
+        name: "Raid Busy",
+        role: "DPS",
+        level: 60,
+        status: "Questing",
+      },
     ];
     const result = refreshCalendarState({
       state,
@@ -1607,12 +1800,24 @@ describe("calendar logic", () => {
           name: "Silithus",
           memberIds: ["dps"],
         },
+        {
+          instanceId: "raid-1",
+          type: "dungeon",
+          isRaid: true,
+          name: "Zul'Gurub",
+          memberIds: ["raid-busy"],
+        },
       ],
       missionList: [mission],
       createId: () => "new-id",
     });
 
-    expect(result.state.calendarEvents[0].registrations).toEqual(["tank", "idle"]);
+    expect(result.state.calendarEvents[0].registrations).toEqual([
+      "tank",
+      "dps",
+      "idle",
+      "raid-busy",
+    ]);
   });
 
   it("keeps unlocked calendar events open while locked groups reserve same-day characters", () => {
@@ -2843,6 +3048,23 @@ describe("character activity priority", () => {
     ).toBe(false);
   });
 
+  it("labels PvP realm starter zones as safe and 10+ zones as contested", () => {
+    const elwynn = getZonesForFaction(GUILD_FACTION.ALLIANCE, true).find(
+      (zone) => zone.id === "elwynn_forest",
+    );
+    const ashenvale = getZonesForFaction(GUILD_FACTION.ALLIANCE, true).find(
+      (zone) => zone.id === "ashenvale",
+    );
+
+    expect(getZonePvpTerritory(elwynn, GUILD_SERVER_STYLE.PVP)?.label).toBe(
+      "Safe Territory",
+    );
+    expect(getZonePvpTerritory(ashenvale, GUILD_SERVER_STYLE.PVP)?.label).toBe(
+      "Contested Territory",
+    );
+    expect(getZonePvpTerritory(ashenvale, GUILD_SERVER_STYLE.PVE)).toBeNull();
+  });
+
   it("moves max-level characters off a current zone already marked cleared", () => {
     const result = resolveZoneAutoTransition({
       faction: GUILD_FACTION.ALLIANCE,
@@ -3103,6 +3325,419 @@ describe("character morale", () => {
     expect(isCharacterInZoneLevelRange({ level: 60 }, zone)).toBe(false);
     expect(isCharacterInMissionLevelRange({ level: 20 }, mission)).toBe(true);
     expect(isCharacterInMissionLevelRange({ level: 60 }, mission)).toBe(false);
+  });
+});
+
+describe("realm overview domain", () => {
+  it("generates deterministic NPC guilds for the same realm", () => {
+    const first = generateNpcGuilds({
+      realmName: "Everlook",
+      realmType: GUILD_SERVER_STYLE.PVE,
+    });
+    const second = generateNpcGuilds({
+      realmName: "Everlook",
+      realmType: GUILD_SERVER_STYLE.PVE,
+    });
+
+    expect(first).toEqual(second);
+    expect(first).toHaveLength(12);
+  });
+
+  it("ensures missing realm state from guild setup without simulating old days", () => {
+    const realm = ensureRealmState(
+      null,
+      { server: "Firemaw", serverStyle: GUILD_SERVER_STYLE.PVP },
+      12,
+    );
+
+    expect(realm).toMatchObject({
+      name: "Firemaw",
+      type: GUILD_SERVER_STYLE.PVP,
+      ageDays: 12,
+      lastSimulatedDayIndex: 12,
+    });
+    expect(realm.npcGuilds).toHaveLength(12);
+  });
+
+  it("initializes realm population to 600 including player roster size", () => {
+    const realm = ensureRealmState(
+      null,
+      { server: "Everlook", serverStyle: GUILD_SERVER_STYLE.PVE },
+      0,
+      10,
+    );
+    const stats = getRealmPopulationStats(realm, Array.from({ length: 10 }));
+
+    expect(stats.totalPopulation).toBe(600);
+    expect(realm.population.players).toHaveLength(590);
+    expect(stats.softCap).toBe(1000);
+  });
+
+  it("generates deterministic NPC rosters with max-level counts", () => {
+    const first = generateNpcGuilds({
+      realmName: "Everlook",
+      realmType: GUILD_SERVER_STYLE.PVE,
+    });
+    const repeat = generateNpcGuilds({
+      realmName: "Everlook",
+      realmType: GUILD_SERVER_STYLE.PVE,
+    });
+    const guild = first[0];
+
+    expect(first[0].roster).toEqual(repeat[0].roster);
+    expect(guild.roster.length).toBeLessThanOrEqual(getRealmRosterCap());
+    expect(guild.maxLevelCount).toBe(getRealmMaxLevelCount(guild.roster));
+  });
+
+  it("includes and highlights the player guild in PvE rankings", () => {
+    const realmState = {
+      npcGuilds: [
+        {
+          id: "npc:1",
+          name: "Dawnspire",
+          faction: GUILD_FACTION.ALLIANCE,
+          archetype: "Hardcore Raiders",
+          rosterSize: 40,
+          averageLevel: 60,
+          averageGearScore: 50,
+          activityLevel: 90,
+          pveScore: 500,
+          raidProgress: 20,
+          dungeonScore: 300,
+          reputation: 70,
+        },
+      ],
+    };
+    const playerSnapshot = buildPlayerGuildSnapshot({
+      guildSetup: { name: "Player Guild", faction: GUILD_FACTION.HORDE },
+      roster: [
+        { id: "hero", level: 60, equipment: {}, clearedMissionIds: [] },
+      ],
+      missionList: [],
+      guildProgress: createInitialGuildProgress(),
+    });
+    const rankings = buildRealmRankings({ realmState, playerGuildSnapshot: playerSnapshot });
+    const playerRow = getPlayerRealmRanking(rankings);
+
+    expect(playerRow).toMatchObject({
+      name: "Player Guild",
+      isPlayerGuild: true,
+      maxLevelCount: 1,
+    });
+    expect(rankings.map((row) => row.rank)).toEqual([1, 2]);
+  });
+
+  it("ranks meaningful raid boss progress above a no-raid dungeon lead", () => {
+    const realmState = {
+      npcGuilds: [
+        {
+          id: "npc:storm",
+          name: "Stormcallers",
+          faction: GUILD_FACTION.HORDE,
+          archetype: "Hardcore Raiders",
+          rosterSize: 63,
+          averageLevel: 48.3,
+          averageGearScore: 42,
+          activityLevel: 90,
+          pveScore: 1000,
+          raidProgress: 28,
+          raidProgressByRaid: {
+            molten_core: { clearedBosses: 7, completed: false },
+          },
+          dungeonScore: 450,
+          reputation: 70,
+        },
+      ],
+    };
+    const playerGuildSnapshot = {
+      id: "player:guild",
+      name: "Player Guild",
+      faction: GUILD_FACTION.ALLIANCE,
+      isPlayerGuild: true,
+      archetype: "Player Guild",
+      rosterSize: 21,
+      maxLevelCount: 0,
+      averageLevel: 42.2,
+      averageGearScore: 50,
+      pveScore: 1600,
+      raidProgress: 0,
+      raidProgressByRaid: {},
+      dungeonScore: 1200,
+      raidBossesCleared: 0,
+      raidClearCount: 0,
+      roster: [],
+    };
+    const rankings = buildRealmRankings({ realmState, playerGuildSnapshot });
+
+    expect(rankings[0]).toMatchObject({
+      id: "npc:storm",
+      raidBossesCleared: 7,
+    });
+    expect(rankings[1].id).toBe("player:guild");
+  });
+
+  it("builds readable raid progression from player raid clears", () => {
+    const moltenCore = INITIAL_MISSIONS.find((mission) => mission.name === "Molten Core");
+    const playerSnapshot = buildPlayerGuildSnapshot({
+      guildSetup: { name: "Player Guild", faction: GUILD_FACTION.HORDE },
+      roster: [
+        {
+          id: "hero",
+          level: 60,
+          equipment: {},
+          clearedMissionIds: [moltenCore.id],
+        },
+      ],
+      missionList: INITIAL_MISSIONS,
+      guildProgress: createInitialGuildProgress(),
+    });
+    const raidRows = getRealmRaidProgressList(playerSnapshot);
+    const moltenCoreProgress = raidRows.find((row) => row.raidId === "molten_core");
+
+    expect(moltenCoreProgress).toMatchObject({
+      clearedBosses: 10,
+      totalBosses: 10,
+      completed: true,
+    });
+    expect(playerSnapshot.raidProgressSummary).toBe("MC cleared");
+  });
+
+  it("tracks player guild dungeon clear details for realm overview", () => {
+    const dungeon = INITIAL_MISSIONS.find(
+      (mission) => mission.type === "dungeon" && mission.isRaid !== true,
+    );
+    const playerSnapshot = buildPlayerGuildSnapshot({
+      guildSetup: { name: "Player Guild", faction: GUILD_FACTION.HORDE },
+      roster: [
+        {
+          id: "hero",
+          level: 30,
+          equipment: {},
+          clearedMissionIds: [dungeon.id],
+        },
+      ],
+      missionList: INITIAL_MISSIONS,
+      guildProgress: createInitialGuildProgress(),
+    });
+
+    expect(playerSnapshot.dungeonClearCount).toBe(1);
+    expect(String(playerSnapshot.clearedDungeonMissions[0].id)).toBe(
+      String(dungeon.id),
+    );
+  });
+
+  it("advances realm simulation once per day and caps news", () => {
+    const realm = ensureRealmState(
+      null,
+      { server: "Everlook", serverStyle: GUILD_SERVER_STYLE.PVE },
+      0,
+    );
+    const playerGuildSnapshot = {
+      id: "player:guild",
+      name: "Player Guild",
+      faction: GUILD_FACTION.ALLIANCE,
+      isPlayerGuild: true,
+      rosterSize: 5,
+      averageLevel: 20,
+      averageGearScore: 10,
+      pveScore: 100,
+      raidProgress: 0,
+      dungeonScore: 20,
+      archetype: "Player Guild",
+    };
+    const advanced = advanceRealmSimulation({
+      realmState: realm,
+      currentDayIndex: 30,
+      playerGuildSnapshot,
+      guildSetup: { server: "Everlook", serverStyle: GUILD_SERVER_STYLE.PVE },
+    });
+    const repeated = advanceRealmSimulation({
+      realmState: advanced,
+      currentDayIndex: 30,
+      playerGuildSnapshot,
+      guildSetup: { server: "Everlook", serverStyle: GUILD_SERVER_STYLE.PVE },
+    });
+
+    expect(advanced.ageDays).toBeGreaterThanOrEqual(30);
+    expect(advanced.lastSimulatedDayIndex).toBe(30);
+    expect(getRealmPopulationStats(advanced, []).totalPopulation).toBeLessThanOrEqual(1000);
+    expect(advanced.news.length).toBeLessThanOrEqual(25);
+    expect(repeated).toEqual(advanced);
+  });
+
+  it("scouts and removes realm recruitment candidates from the market", () => {
+    const realm = ensureRealmState(
+      null,
+      { server: "Everlook", serverStyle: GUILD_SERVER_STYLE.PVE },
+      0,
+    );
+    const candidates = selectRealmRecruitmentCandidates({
+      realmState: realm,
+      faction: GUILD_FACTION.ALLIANCE,
+      tier: { minLevel: 1, maxLevel: 60 },
+      count: 3,
+    });
+    const nextRealm = markRealmPlayersRecruited({
+      realmState: realm,
+      playerIds: [candidates[0].id],
+    });
+
+    expect(candidates.length).toBeGreaterThan(0);
+    expect(
+      nextRealm.population.players.some((player) => player.id === candidates[0].id),
+    ).toBe(false);
+  });
+
+  it("generates persistent same-faction guild applications during realm simulation", () => {
+    const realm = ensureRealmState(
+      null,
+      { server: "Everlook", serverStyle: GUILD_SERVER_STYLE.PVE },
+      0,
+    );
+    const advanced = advanceRealmSimulation({
+      realmState: realm,
+      currentDayIndex: 12,
+      playerGuildSnapshot: null,
+      guildSetup: {
+        faction: GUILD_FACTION.ALLIANCE,
+        server: "Everlook",
+        serverStyle: GUILD_SERVER_STYLE.PVE,
+      },
+    });
+    const applications = getRealmGuildApplications({
+      realmState: advanced,
+      faction: GUILD_FACTION.ALLIANCE,
+    });
+
+    expect(applications.length).toBeGreaterThan(0);
+    expect(applications.length).toBeLessThanOrEqual(8);
+    expect(applications.every(({ player }) => player.faction === GUILD_FACTION.ALLIANCE)).toBe(true);
+  });
+
+  it("assigns realm players to zones and advances their zone leveling", () => {
+    const realm = ensureRealmState(
+      null,
+      { server: "Everlook", serverStyle: GUILD_SERVER_STYLE.PVE },
+      0,
+    );
+    const initialPlayers = realm.population.players;
+    const initialProgressById = new Map(
+      initialPlayers.map((player) => [
+        player.id,
+        `${player.level}:${player.currentZoneId}:${player.zoneProgress}`,
+      ]),
+    );
+    const advanced = advanceRealmSimulation({
+      realmState: realm,
+      currentDayIndex: 8,
+      playerGuildSnapshot: null,
+      guildSetup: {
+        faction: GUILD_FACTION.ALLIANCE,
+        server: "Everlook",
+        serverStyle: GUILD_SERVER_STYLE.PVE,
+      },
+    });
+    const changedPlayers = advanced.population.players.filter(
+      (player) =>
+        initialProgressById.get(player.id) !==
+        `${player.level}:${player.currentZoneId}:${player.zoneProgress}`,
+    );
+    const occupiedZoneId = advanced.population.players.find(
+      (player) => player.currentZoneId,
+    )?.currentZoneId;
+
+    expect(initialPlayers.every((player) => player.currentZoneId)).toBe(true);
+    expect(changedPlayers.length).toBeGreaterThan(0);
+    expect(
+      getRealmPlayersInZone({
+        realmState: advanced,
+        zoneId: occupiedZoneId,
+      }).length,
+    ).toBeGreaterThan(0);
+  });
+
+  it("removes accepted realm applications from the application queue", () => {
+    const realm = ensureRealmState(
+      null,
+      { server: "Everlook", serverStyle: GUILD_SERVER_STYLE.PVE },
+      0,
+    );
+    const advanced = advanceRealmSimulation({
+      realmState: realm,
+      currentDayIndex: 12,
+      playerGuildSnapshot: null,
+      guildSetup: {
+        faction: GUILD_FACTION.ALLIANCE,
+        server: "Everlook",
+        serverStyle: GUILD_SERVER_STYLE.PVE,
+      },
+    });
+    const [application] = getRealmGuildApplications({
+      realmState: advanced,
+      faction: GUILD_FACTION.ALLIANCE,
+    });
+    const nextRealm = markRealmPlayersRecruited({
+      realmState: advanced,
+      playerIds: [application.player.id],
+    });
+
+    expect(
+      getRealmGuildApplications({
+        realmState: nextRealm,
+        faction: GUILD_FACTION.ALLIANCE,
+      }).some(({ player }) => player.id === application.player.id),
+    ).toBe(false);
+  });
+
+  it("warns low morale player guild members before departure", () => {
+    const realm = ensureRealmState(
+      null,
+      { server: "Everlook", serverStyle: GUILD_SERVER_STYLE.PVE },
+      0,
+    );
+    const result = resolvePlayerGuildDeparturesForDay({
+      realmState: {
+        ...realm,
+        population: { ...realm.population, lastPlayerMarketDayIndex: 0 },
+      },
+      roster: [
+        {
+          id: "sad",
+          name: "Sad",
+          level: 20,
+          morale: 20,
+          race: "Human",
+          charClass: "Warrior",
+          role: "DPS",
+        },
+      ],
+      activeMissions: [],
+      currentDayIndex: 1,
+      guildFaction: GUILD_FACTION.ALLIANCE,
+    });
+
+    expect(result.events[0].type).toBe("player-departure-warning");
+    expect(result.roster[0].realmDepartureWarningDayIndex).toBe(1);
+  });
+
+  it("tracks NPC raid boss progress during realm simulation", () => {
+    const realm = ensureRealmState(
+      null,
+      { server: "Everlook", serverStyle: GUILD_SERVER_STYLE.PVE },
+      0,
+    );
+    const advanced = advanceRealmSimulation({
+      realmState: realm,
+      currentDayIndex: 180,
+      playerGuildSnapshot: null,
+      guildSetup: { server: "Everlook", serverStyle: GUILD_SERVER_STYLE.PVE },
+    });
+    const topNpcGuild = advanced.npcGuilds.find(
+      (guild) => getRealmRaidProgressList(guild).some((raid) => raid.clearedBosses > 0),
+    );
+
+    expect(topNpcGuild).toBeTruthy();
+    expect(getRealmRaidProgressList(topNpcGuild).length).toBeGreaterThan(0);
   });
 });
 
@@ -3477,6 +4112,49 @@ describe("auto dungeon activity", () => {
     expect(result.candidates).toHaveLength(2);
     const allMemberIds = result.candidates.flatMap((candidate) => candidate.memberIds);
     expect(new Set(allMemberIds).size).toBe(10);
+  });
+
+  it("blocks automatic mission starts when any member is already active", () => {
+    const roster = [
+      makeMember("tank", 20, "Tank"),
+      makeMember("healer", 20, "Healer"),
+      makeMember("dps-1", 20),
+      makeMember("dps-2", 20),
+      makeMember("dps-3", 20),
+    ];
+
+    expect(
+      isMissionMemberGroupAvailable({
+        memberIds: ["tank", "healer", "dps-1", "dps-2", "dps-3"],
+        roster,
+        activeMissions: [{ id: "active", memberIds: ["tank"] }],
+      }),
+    ).toBe(false);
+    expect(
+      isMissionMemberGroupAvailable({
+        memberIds: ["tank", "healer", "dps-1", "dps-2", "dps-3"],
+        roster: roster.map((member) =>
+          member.id === "healer" ? { ...member, status: "Questing" } : member,
+        ),
+        activeMissions: [],
+      }),
+    ).toBe(false);
+  });
+
+  it("prunes overlapping active missions so each character stays in one mission", () => {
+    const result = pruneOverlappingActiveMissions([
+      { id: "first", name: "Blackrock Spire", memberIds: ["tank", "healer"] },
+      { id: "duplicate", name: "Blackrock Spire", memberIds: ["tank", "dps"] },
+      { id: "other", name: "Dire Maul", memberIds: ["mage"] },
+    ]);
+
+    expect(result.activeMissions.map((mission) => mission.id)).toEqual([
+      "first",
+      "other",
+    ]);
+    expect(result.canceledMissions.map((mission) => mission.id)).toEqual([
+      "duplicate",
+    ]);
   });
 
   it("rotates away from a dungeon the same party just auto-ran", () => {

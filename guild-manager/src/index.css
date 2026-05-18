@@ -86,12 +86,62 @@ body::after {
 }
 
 .btn-recruit {
+  position: relative;
+  isolation: isolate;
+  overflow: hidden;
   background:
     linear-gradient(180deg, #a5762f 0%, #6e471a 55%, #4a2f10 100%);
   border-color: #9f722e !important;
   box-shadow:
     0 0 0 1px rgb(255 214 132 / 12%) inset,
     0 10px 20px rgb(0 0 0 / 35%);
+}
+
+.btn-recruit-applications {
+  animation: recruit-application-glow 1.8s ease-in-out infinite;
+}
+
+.btn-recruit-applications::after {
+  content: "";
+  position: absolute;
+  inset: -30% auto -30% -45%;
+  z-index: 0;
+  width: 42%;
+  pointer-events: none;
+  transform: rotate(18deg);
+  background: linear-gradient(
+    90deg,
+    transparent,
+    rgb(255 241 181 / 42%),
+    transparent
+  );
+  animation: recruit-application-shine 2.6s ease-in-out infinite;
+}
+
+@keyframes recruit-application-glow {
+  0%,
+  100% {
+    box-shadow:
+      0 0 0 1px rgb(255 214 132 / 16%) inset,
+      0 10px 20px rgb(0 0 0 / 35%),
+      0 0 0 rgb(255 217 105 / 0%);
+  }
+  50% {
+    box-shadow:
+      0 0 0 1px rgb(255 241 181 / 35%) inset,
+      0 10px 20px rgb(0 0 0 / 35%),
+      0 0 18px rgb(255 217 105 / 34%);
+  }
+}
+
+@keyframes recruit-application-shine {
+  0% {
+    left: -45%;
+  }
+  45%,
+  100% {
+    left: 125%;
+  }
 }
 
 .btn-quest {

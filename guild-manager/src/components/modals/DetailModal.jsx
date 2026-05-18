@@ -27,6 +27,7 @@ import {
   getMoraleLabel,
   getMoraleSuccessModifier,
 } from "../../game/characterMorale";
+import { getCharacterPersonalityTraits } from "../../game/characterPersonality";
 import {
   ZONE_COMPLETION_ARCHETYPE,
   ZONE_DEFINITIONS,
@@ -179,6 +180,7 @@ const DetailModal = ({
       : moraleSuccessModifier < 0
         ? `${moraleSuccessModifier}% mission success`
         : "No mission success modifier";
+  const personalityTraits = getCharacterPersonalityTraits(char);
 
   const hardCap = getSkillCap(char?.level || 1);
   const averageItemLevel = getCharacterAverageItemLevel(char);
@@ -752,6 +754,35 @@ const DetailModal = ({
                 <p className="mt-1 text-xs text-purple-100/75">
                   {zoneArchetypeDescription}
                 </p>
+              </div>
+
+              <div className="rounded border border-amber-900/60 bg-amber-950/15 p-4">
+                <h3 className="text-sm font-bold uppercase tracking-wide text-amber-100">
+                  Trait
+                </h3>
+                {personalityTraits.length === 0 ? (
+                  <p className="mt-1 text-xs text-amber-100/70">
+                    No notable modifier.
+                  </p>
+                ) : (
+                  <div className="mt-2 space-y-2">
+                    {personalityTraits.map((trait) => (
+                      <div key={trait.id}>
+                        <div className="flex items-center justify-between gap-3">
+                          <span className="text-sm font-bold text-white">
+                            {trait.name}
+                          </span>
+                          <span className="text-[10px] font-bold uppercase tracking-wide text-amber-300">
+                            {trait.rarity}
+                          </span>
+                        </div>
+                        <p className="mt-1 text-xs text-amber-100/75">
+                          {trait.description}
+                        </p>
+                      </div>
+                    ))}
+                  </div>
+                )}
               </div>
 
               <div className="grid grid-cols-1 gap-3 md:grid-cols-2">

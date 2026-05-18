@@ -1,7 +1,7 @@
 import React from "react";
 import {
   GUILD_FACTION,
-  GUILD_SERVER,
+  GUILD_SERVER_POPULATION,
   GUILD_SERVER_OPTIONS,
 } from "../constants";
 
@@ -11,9 +11,17 @@ const GUILD_FOCUS_COPY = {
   Social: "Social (+5% mission gold with full squad)",
 };
 
+const getPopulationClassName = (population) =>
+  population === GUILD_SERVER_POPULATION.HIGH
+    ? "text-red-400"
+    : "text-yellow-300";
+
 const GuildSetupScreen = ({ guildSetup, onChange, onStart, onLoadSession }) => {
   const guildName = String(guildSetup?.name || "");
   const canStart = guildName.trim().length > 0;
+  const selectedRealm =
+    GUILD_SERVER_OPTIONS.find((option) => option.value === guildSetup?.server) ||
+    GUILD_SERVER_OPTIONS[0];
   const handleSubmit = (event) => {
     event.preventDefault();
     if (canStart) onStart();
@@ -82,27 +90,91 @@ const GuildSetupScreen = ({ guildSetup, onChange, onStart, onLoadSession }) => {
               </select>
             </label>
 
-            <label className="block space-y-2">
-              <span className="text-xs uppercase tracking-wider text-gray-300 font-bold">
-                Server
-              </span>
-              <select
-                value={guildSetup?.server || GUILD_SERVER.EVERLOOK}
-                onChange={(event) => onChange("server", event.target.value)}
-                className="w-full rounded border border-gray-600 bg-gray-800 px-3 py-2 text-gray-100 focus:outline-none focus:border-amber-500"
-              >
-                {GUILD_SERVER_OPTIONS.map((option) => (
-                  <option key={option.value} value={option.value}>
-                    {option.label}
-                  </option>
-                ))}
-              </select>
-            </label>
+            <div className="space-y-2">
+              <div className="flex items-center justify-between gap-3">
+                <span className="text-xs uppercase tracking-wider text-gray-300 font-bold">
+                  Realm
+                </span>
+                <span className="text-[11px] uppercase tracking-wide text-gray-500">
+                  Choose one
+                </span>
+              </div>
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                {GUILD_SERVER_OPTIONS.map((option) => {
+                  const selected = option.value === selectedRealm.value;
+                  return (
+                    <button
+                      key={option.value}
+                      type="button"
+                      onClick={() => onChange("server", option.value)}
+                      aria-pressed={selected}
+                      className={`min-h-[112px] rounded border p-3 text-left transition-colors ${
+                        selected
+                          ? "border-amber-400 bg-amber-950/35 shadow-[0_0_0_1px_rgba(251,191,36,0.28)]"
+                          : "border-gray-700 bg-gray-800/65 hover:border-amber-700 hover:bg-gray-800"
+                      }`}
+                    >
+                      <div className="flex items-start justify-between gap-3">
+                        <div className="min-w-0">
+                          <div className="truncate text-base font-bold text-amber-100">
+                            {option.value}
+                          </div>
+                          <div className="mt-1 text-xs text-gray-400">
+                            Realm Type:{" "}
+                            <span className="font-bold text-gray-200">
+                              {option.style}
+                            </span>
+                          </div>
+                        </div>
+                        <span
+                          className={`shrink-0 rounded border px-2 py-1 text-[10px] font-bold uppercase ${
+                            selected
+                              ? "border-amber-400/70 bg-amber-900/30 text-amber-100"
+                              : "border-gray-600 bg-gray-900/70 text-gray-300"
+                          }`}
+                        >
+                          {selected ? "Selected" : "Select"}
+                        </span>
+                      </div>
+                      <div className="mt-4 flex items-end justify-between gap-3">
+                        <div>
+                          <div className="text-[10px] font-bold uppercase tracking-wide text-gray-500">
+                            Population
+                          </div>
+                          <div
+                            className={`text-sm font-bold ${getPopulationClassName(
+                              option.population,
+                            )}`}
+                          >
+                            {option.population}
+                          </div>
+                        </div>
+                        <div className="text-right text-[11px] text-gray-500">
+                          {option.style === "PvP"
+                            ? "Open world conflict"
+                            : "Adventure focus"}
+                        </div>
+                      </div>
+                    </button>
+                  );
+                })}
+              </div>
+            </div>
 
             <div className="rounded border border-gray-700 bg-gray-800/60 p-3 text-xs text-gray-300">
               <div>Default faction: {GUILD_FACTION.ALLIANCE} (can be changed)</div>
               <div>Default focus: Leveling</div>
-              <div>Default server: Everlook (PvE)</div>
+              <div>
+                Selected realm: {selectedRealm.value} ({selectedRealm.style}) -{" "}
+                Population:{" "}
+                <span
+                  className={`font-bold ${getPopulationClassName(
+                    selectedRealm.population,
+                  )}`}
+                >
+                  {selectedRealm.population}
+                </span>
+              </div>
               <div>Starting resources: 5 heroes and 5 gold</div>
               <div className="text-gray-400 mt-1">You can expand this setup later.</div>
             </div>

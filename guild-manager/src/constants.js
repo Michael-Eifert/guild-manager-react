@@ -3,6 +3,7 @@ export {
   GUILD_FACTION,
   GUILD_FACTION_OPTIONS,
   GUILD_SERVER_STYLE,
+  GUILD_SERVER_POPULATION,
   GUILD_SERVER,
   GUILD_SERVER_OPTIONS,
   GAMEPLAY_TUNING,
@@ -113,4 +114,9 @@ export const KEY_DEFINITIONS = Object.freeze({
 
 export { DB_CLASSES } from './data/classes';
 export { DB_RACES } from './data/races';
-export { DB_NAMES, DB_FUNNY_NAMES } from './data/names';
+export {
+  DB_NAMES,
+  DB_CLASS_NAMES,
+  DB_RACE_CLASS_NAMES,
+  DB_FUNNY_NAMES,
+} from './data/names';

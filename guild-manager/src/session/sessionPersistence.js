@@ -7,6 +7,8 @@ import {
 import { normalizeAdventureGoalQueue } from "../automation/adventureGoals";
 import { normalizeRaidLockouts } from "../raids/raidLockouts";
 import { normalizeGuildRelationships } from "../social/relationshipSystem";
+import { ensureRealmState } from "../server/realmGeneration";
+import { normalizeCharacterPersonalityTraits } from "../game/characterPersonality";
 
 export const SESSION_FORMAT = "guild-manager-session";
 export const SESSION_VERSION = 5;
@@ -146,6 +148,7 @@ export const buildSessionPayload = ({
   guildProgress,
   guildSetup,
   guildRelationships,
+  realmState,
   calendarState,
   raidLockouts,
   gameSpeed,
@@ -177,6 +180,7 @@ export const buildSessionPayload = ({
       guildProgress: toObject(guildProgress),
       guildSetup: toObject(guildSetup),
       guildRelationships: normalizeGuildRelationships(guildRelationships),
+      realmState: realmState ? toObject(realmState) : null,
       calendarState: normalizeCalendarState(
         calendarState || createInitialCalendarState(now),
         now,
@@ -288,6 +292,12 @@ export const hydrateSessionData = ({
     safePayload.raidLockouts,
     loadedCalendarDayIndex,
   );
+  const loadedRealmState = ensureRealmState(
+    safePayload.realmState,
+    loadedGuildSetup,
+    loadedCalendarDayIndex,
+    loadedRoster.length,
+  );
 
   const loadedActiveMissions = Array.isArray(safePayload.activeMissions)
     ? safePayload.activeMissions.map((mission) => {
@@ -342,12 +352,16 @@ export const hydrateSessionData = ({
     const normalizedAdventureGoalQueue = normalizeAdventureGoalQueue(
       char?.adventureGoalQueue,
     );
+    const normalizedPersonalityTraits = normalizeCharacterPersonalityTraits(
+      char?.personalityTraits || char?.personalityTrait,
+    );
     if (activeMemberIds.has(char.id)) {
       return {
         ...char,
         keys: normalizedKeys,
         adventureGoalQueue: normalizedAdventureGoalQueue,
         clearedMissionIds: normalizedClearedMissionIds,
+        personalityTraits: normalizedPersonalityTraits,
         status: "Questing",
         statusText: "On Mission",
       };
@@ -358,6 +372,7 @@ export const hydrateSessionData = ({
         keys: normalizedKeys,
         adventureGoalQueue: normalizedAdventureGoalQueue,
         clearedMissionIds: normalizedClearedMissionIds,
+        personalityTraits: normalizedPersonalityTraits,
         status: "Idle",
         statusText: "Awaiting Orders",
       };
@@ -367,6 +382,7 @@ export const hydrateSessionData = ({
       keys: normalizedKeys,
       adventureGoalQueue: normalizedAdventureGoalQueue,
       clearedMissionIds: normalizedClearedMissionIds,
+      personalityTraits: normalizedPersonalityTraits,
     };
   });
 
@@ -379,6 +395,7 @@ export const hydrateSessionData = ({
     loadedGuildGold,
     loadedGuildSetup,
     loadedGuildRelationships,
+    loadedRealmState,
     loadedProgression,
     loadedCalendarState,
     loadedRaidLockouts,

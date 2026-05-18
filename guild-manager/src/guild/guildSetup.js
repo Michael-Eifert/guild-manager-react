@@ -23,6 +23,10 @@ const getServerOptionByValue = (serverValue) =>
 export const getGuildServerStyle = (serverValue) =>
   getServerOptionByValue(serverValue)?.style || DEFAULT_GUILD_SETUP.serverStyle;
 
+export const getGuildServerPopulation = (serverValue) =>
+  getServerOptionByValue(serverValue)?.population ||
+  DEFAULT_GUILD_SETUP.serverPopulation;
+
 export const getGuildServerLabel = (serverValue, serverStyle) => {
   const option = getServerOptionByValue(serverValue);
   const resolvedStyle =
@@ -67,6 +71,7 @@ export const normalizeGuildSetup = (value, payloadData = {}) => {
     ? safe.server
     : DEFAULT_GUILD_SETUP.server;
   const normalizedServerStyle = getGuildServerStyle(normalizedServer);
+  const normalizedServerPopulation = getGuildServerPopulation(normalizedServer);
 
   const hasStarted = Boolean(
     safe.hasStarted || normalizedName || hasLegacyGameData,
@@ -82,6 +87,7 @@ export const normalizeGuildSetup = (value, payloadData = {}) => {
     faction: normalizedFaction,
     server: normalizedServer,
     serverStyle: normalizedServerStyle,
+    serverPopulation: normalizedServerPopulation,
     focus: normalizedFocus,
     lastFocusChangeDayIndex: Number.isFinite(
       Number(safe.lastFocusChangeDayIndex),
