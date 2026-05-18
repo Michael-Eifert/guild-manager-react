@@ -113,6 +113,92 @@ const getMissionSetTypeLabel = (missions) =>
     ? "Raid Set"
     : "Dungeon Set";
 
+const RAID_PROGRESSION_ORDER = {
+  "Molten Core": 10,
+  "Zul'Gurub": 20,
+  "Ruins of Ahn'Qiraj": 21,
+  "Onyxia's Lair": 30,
+  "Blackwing Lair": 31,
+  "Temple of Ahn'Qiraj": 40,
+  Naxxramas: 41,
+};
+
+const LOOT_LEVEL_RANGE_BY_SOURCE = DB_ITEMS.reduce((ranges, item) => {
+  const source = getItemSource(item);
+  const itemLevel = getItemEffectiveLevel(item);
+  if (!source || !Number.isFinite(itemLevel) || itemLevel <= 0) return ranges;
+  const current = ranges.get(source);
+  if (!current) {
+    ranges.set(source, { min: itemLevel, max: itemLevel });
+    return ranges;
+  }
+  current.min = Math.min(current.min, itemLevel);
+  current.max = Math.max(current.max, itemLevel);
+  return ranges;
+}, new Map());
+
+const getMissionLootLevelInfo = (mission) => {
+  const source = getMissionLootSource(mission);
+  return LOOT_LEVEL_RANGE_BY_SOURCE.get(source) || null;
+};
+
+const getMissionLootLevelLabel = (mission) => {
+  const range = getMissionLootLevelInfo(mission);
+  if (!range) return null;
+  return range.min === range.max
+    ? `iLvl ${range.max}`
+    : `iLvl ${range.min}-${range.max}`;
+};
+
+const getMissionSetLootLevelInfo = (missions) => {
+  const ranges = (Array.isArray(missions) ? missions : [])
+    .map(getMissionLootLevelInfo)
+    .filter(Boolean);
+  if (ranges.length === 0) return null;
+  return ranges.reduce(
+    (acc, range) => ({
+      min: Math.min(acc.min, range.min),
+      max: Math.max(acc.max, range.max),
+    }),
+    { min: ranges[0].min, max: ranges[0].max },
+  );
+};
+
+const getMissionSetLootLevelLabel = (missions) => {
+  const range = getMissionSetLootLevelInfo(missions);
+  if (!range) return null;
+  return range.min === range.max
+    ? `Drops iLvl ${range.max}`
+    : `Drops iLvl ${range.min}-${range.max}`;
+};
+
+const getRaidProgressionOrder = (mission) =>
+  RAID_PROGRESSION_ORDER[mission?.dungeonSetName || mission?.name] ??
+  Number.POSITIVE_INFINITY;
+
+const compareRaidProgression = (left, right) => {
+  const leftOrder = getRaidProgressionOrder(left);
+  const rightOrder = getRaidProgressionOrder(right);
+  if (leftOrder !== rightOrder) return leftOrder - rightOrder;
+
+  const leftLoot = getMissionLootLevelInfo(left);
+  const rightLoot = getMissionLootLevelInfo(right);
+  const leftMax = leftLoot?.max ?? Number.POSITIVE_INFINITY;
+  const rightMax = rightLoot?.max ?? Number.POSITIVE_INFINITY;
+  if (leftMax !== rightMax) return leftMax - rightMax;
+  const leftMin = leftLoot?.min ?? Number.POSITIVE_INFINITY;
+  const rightMin = rightLoot?.min ?? Number.POSITIVE_INFINITY;
+  if (leftMin !== rightMin) return leftMin - rightMin;
+
+  const leftWingOrder = Number(left?.wingOrder) || 0;
+  const rightWingOrder = Number(right?.wingOrder) || 0;
+  if (leftWingOrder !== rightWingOrder) return leftWingOrder - rightWingOrder;
+
+  return String(left?.dungeonSetName || left?.name || "").localeCompare(
+    String(right?.dungeonSetName || right?.name || ""),
+  );
+};
+
 const getMissionPartySize = (mission) =>
   Math.max(1, Number(mission?.requiredPartySize) || (mission?.isRaid ? 40 : 5));
 
@@ -1002,6 +1088,7 @@ const MissionModal = ({
   );
 
   const orderedMissions = [...availableMissionList].sort((left, right) => {
+    if (left?.isRaid && right?.isRaid) return compareRaidProgression(left, right);
     if ((left?.level || 0) !== (right?.level || 0)) return (left?.level || 0) - (right?.level || 0);
     return String(left?.name || "").localeCompare(String(right?.name || ""));
   });
@@ -1256,6 +1343,7 @@ const MissionModal = ({
       level: inRangeReferenceLevel,
     });
     const missionExpLabel = formatXpRewardText(inRangeMissionExpPerHero);
+    const missionLootLevelLabel = getMissionLootLevelLabel(mission);
 
     return (
       <div
@@ -1318,6 +1406,11 @@ const MissionModal = ({
                       )
                       .join(", ")}`
                   : ""}
+              </div>
+            )}
+            {mission.isRaid && missionLootLevelLabel && (
+              <div className="text-xs text-cyan-200/85 mt-0.5">
+                Drops: {missionLootLevelLabel}
               </div>
             )}
             {mission.isRaid && raidLockoutStatus?.isWingLocked && (
@@ -1973,6 +2066,7 @@ const MissionModal = ({
                           const isExpanded = Boolean(expandedDungeonGroups[group.key]);
                           const levelRangeLabel = getDungeonGroupLevelRangeLabel(group.missions);
                           const setTypeLabel = getMissionSetTypeLabel(group.missions);
+                          const setLootLevelLabel = getMissionSetLootLevelLabel(group.missions);
                           return (
                             <div
                               key={group.key}
@@ -1989,6 +2083,7 @@ const MissionModal = ({
                                   </div>
                                   <div className="text-[11px] text-blue-200/80">
                                     {setTypeLabel} - Lvl {levelRangeLabel}
+                                    {setLootLevelLabel ? ` - ${setLootLevelLabel}` : ""}
                                   </div>
                                 </div>
                                 <div className="flex items-center gap-3 text-xs text-blue-200/90">
