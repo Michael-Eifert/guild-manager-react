@@ -337,9 +337,20 @@ const getZoneEliteGoldReward = (zone, tierIndex) => {
   return baseline + tierIndex;
 };
 
+const getZoneElitePartySizing = (zone) => {
+  if (zone.maxLevel <= 20) {
+    return { requiredPartySize: 2, minPartySize: 2 };
+  }
+  if (zone.maxLevel <= 40) {
+    return { requiredPartySize: 3, minPartySize: 2 };
+  }
+  return { requiredPartySize: 5, minPartySize: 3 };
+};
+
 const buildZoneEliteQuestTemplates = (zone) => {
   const count = getZoneEliteQuestCount(zone);
   const rewardQualities = getZoneEliteRewardQualities(zone);
+  const partySizing = getZoneElitePartySizing(zone);
   const generated = Array.from({ length: count }, (_, index) => {
     const tierIndex = index + 1;
     const title = ZONE_ELITE_TITLE_POOL[index] || `Elite Objective ${tierIndex}`;
@@ -366,13 +377,16 @@ const buildZoneEliteQuestTemplates = (zone) => {
       gold: getZoneEliteGoldReward(zone, tierIndex),
       elite: true,
       rewardQualities: [...rewardQualities],
-      requiredPartySize: 5,
+      ...partySizing,
     };
   });
 
   const overrides = Array.isArray(SPECIAL_ZONE_ELITE_QUESTS[zone.id])
     ? SPECIAL_ZONE_ELITE_QUESTS[zone.id].map((mission) => ({
         ...mission,
+        requiredPartySize:
+          mission.requiredPartySize ?? partySizing.requiredPartySize,
+        minPartySize: mission.minPartySize ?? partySizing.minPartySize,
         rewardQualities: Array.isArray(mission.rewardQualities)
           ? [...mission.rewardQualities]
           : [],

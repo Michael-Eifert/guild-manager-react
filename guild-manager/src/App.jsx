@@ -4056,7 +4056,16 @@ const App = () => {
           />
         )}
         {showMap && (
-          <WorldMapModal isOpen={showMap} onClose={() => setShowMap(false)} />
+          <WorldMapModal
+            isOpen={showMap}
+            onClose={() => setShowMap(false)}
+            roster={roster}
+            missionList={missionList}
+            activeMissions={activeMissions}
+            guildFaction={guildSetup.faction}
+            onDeploy={handleDeploy}
+            getMissionPreview={getAdjustedMissionSuccessPreview}
+          />
         )}
         {detailCharId && (
           <DetailModal
