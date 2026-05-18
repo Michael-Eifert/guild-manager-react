@@ -5,7 +5,15 @@ import {
 } from "../missions/missionHelpers";
 import { getRacePortraitUrl, getRoleIcon, getWowIconUrl } from "../utils";
 
-const ActiveMissionCard = ({ mission, onFinish, gameTimeMs, roster }) => {
+const ActiveMissionCard = ({
+  mission,
+  onFinish,
+  gameTimeMs,
+  roster,
+  showFinishAction = true,
+  variant = "default",
+}) => {
+  const compact = variant === "compact";
   const now = Number.isFinite(gameTimeMs) ? gameTimeMs : mission.startTime || 0;
   const timeLeft = Math.max(0, mission.finishTime - now);
   const progress = 100 - (timeLeft / mission.totalDuration) * 100;
@@ -51,7 +59,11 @@ const ActiveMissionCard = ({ mission, onFinish, gameTimeMs, roster }) => {
           .filter(Boolean)
       : [];
   return (
-    <div className="wow-card p-3 rounded flex flex-col gap-2 shadow-lg relative overflow-hidden border border-gray-600 bg-gray-800">
+    <div
+      className={`wow-card rounded flex flex-col gap-2 shadow-lg relative overflow-hidden border border-gray-600 bg-gray-800 ${
+        compact ? "p-2.5" : "p-3"
+      }`}
+    >
       <div className="flex justify-between items-center z-10 relative">
         <span className="font-bold text-sm text-white flex items-center gap-1">
           {mission.isRaid
@@ -80,7 +92,7 @@ const ActiveMissionCard = ({ mission, onFinish, gameTimeMs, roster }) => {
             Cleared: {dungeonProgress?.clearedSteps || 0}/{dungeonBossCount}{" "}
             bosses
           </div>
-          {mission.isRaid !== true && partyMembers.length > 0 && (
+          {mission.isRaid !== true && partyMembers.length > 0 && !compact && (
             <div className="rounded border border-gray-700 bg-gray-900/60 p-2">
               <div className="text-[10px] uppercase tracking-wider text-gray-400 font-bold mb-2">
                 Dungeon Party
@@ -204,12 +216,14 @@ const ActiveMissionCard = ({ mission, onFinish, gameTimeMs, roster }) => {
           style={{ width: `${progress}%` }}
         ></div>
       </div>
-      <button
-        onClick={() => onFinish(mission)}
-        className="mt-1 text-[10px] uppercase font-bold tracking-wider bg-green-900/50 hover:bg-green-700 text-green-100 px-3 py-2 rounded border border-green-800 transition-colors shadow-sm active:scale-95"
-      >
-        {"\u26A1"} Instant Finish
-      </button>
+      {showFinishAction && typeof onFinish === "function" && (
+        <button
+          onClick={() => onFinish(mission)}
+          className="mt-1 text-[10px] uppercase font-bold tracking-wider bg-green-900/50 hover:bg-green-700 text-green-100 px-3 py-2 rounded border border-green-800 transition-colors shadow-sm active:scale-95"
+        >
+          {"\u26A1"} Instant Finish
+        </button>
+      )}
     </div>
   );
 };

@@ -189,6 +189,12 @@ export const GUILD_DUNGEON_ACTIVITY_OPTIONS = Object.freeze(
   Object.values(GUILD_DUNGEON_ACTIVITY),
 );
 
+export const AUTO_GROUP_SUCCESS_RATE = Object.freeze({
+  MIN: 10,
+  MAX: 100,
+  DEFAULT: 70,
+});
+
 export const MEMBER_RANKING_MODES = Object.freeze({
   STANDARD: "standard",
   EQUIP_CHECK: "equipCheck",
@@ -229,6 +235,8 @@ export const DEFAULT_GUILD_SETUP = Object.freeze({
   focus: GUILD_FOCUS.LEVELING,
   lastFocusChangeDayIndex: null,
   dungeonActivity: GUILD_DUNGEON_ACTIVITY.NONE,
+  eliteQuestMinSuccessChance: AUTO_GROUP_SUCCESS_RATE.DEFAULT,
+  dungeonMinSuccessChance: AUTO_GROUP_SUCCESS_RATE.DEFAULT,
   hasStarted: false,
 });
 

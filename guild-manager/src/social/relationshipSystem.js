@@ -17,9 +17,14 @@ export const RELATIONSHIP_THRESHOLDS = Object.freeze({
 });
 
 export const RELATIONSHIP_PROGRESS = Object.freeze({
-  SHARED_ATTEMPT: 6,
-  SUCCESS_BONUS: 4,
-  FAILURE_PENALTY: -12,
+  SHARED_ATTEMPT: 3,
+  SUCCESS_BONUS: 2,
+  FAILURE_PENALTY: -6,
+});
+
+export const RELATIONSHIP_POINT_RANGE = Object.freeze({
+  MIN: -100,
+  MAX: 100,
 });
 
 export const RELATIONSHIP_SUCCESS_MODIFIER = Object.freeze({
@@ -37,11 +42,29 @@ const EMPTY_RELATIONSHIP_COUNTERS = Object.freeze({
   dungeonRuns: 0,
   raidRuns: 0,
   eliteRuns: 0,
+  successfulDungeonRuns: 0,
+  failedDungeonRuns: 0,
+  successfulRaidRuns: 0,
+  failedRaidRuns: 0,
+  successfulEliteRuns: 0,
+  failedEliteRuns: 0,
 });
 
 const MAX_RELATIONSHIP_EVENTS = 30;
 
 const normalizeId = (value) => String(value || "").trim();
+
+const clampRelationshipPoints = (value) =>
+  Math.max(
+    RELATIONSHIP_POINT_RANGE.MIN,
+    Math.min(
+      RELATIONSHIP_POINT_RANGE.MAX,
+      Math.floor(Number(value) || 0),
+    ),
+  );
+
+const getNonNegativeInteger = (value) =>
+  Math.max(0, Math.floor(Number(value) || 0));
 
 const uniqueSortedIds = (ids) =>
   [...new Set((Array.isArray(ids) ? ids : []).map(normalizeId).filter(Boolean))]
@@ -97,10 +120,23 @@ export const getRelationshipLevelSuccessModifier = (level) => {
 export const getRelationshipFlairs = (relationship) => {
   if (!relationship) return [];
   const flairs = [];
-  if ((Number(relationship.dungeonRuns) || 0) >= 3) flairs.push("Dungeon Mate");
-  if ((Number(relationship.raidRuns) || 0) >= 2) flairs.push("Raid Companion");
-  if ((Number(relationship.eliteRuns) || 0) >= 2) flairs.push("Elite Duo");
-  if ((Number(relationship.successfulRuns) || 0) >= 5) flairs.push("Reliable Pair");
+  const netDungeonSuccess =
+    getNonNegativeInteger(relationship.successfulDungeonRuns) -
+    getNonNegativeInteger(relationship.failedDungeonRuns);
+  const netRaidSuccess =
+    getNonNegativeInteger(relationship.successfulRaidRuns) -
+    getNonNegativeInteger(relationship.failedRaidRuns);
+  const netEliteSuccess =
+    getNonNegativeInteger(relationship.successfulEliteRuns) -
+    getNonNegativeInteger(relationship.failedEliteRuns);
+  const netTotalSuccess =
+    getNonNegativeInteger(relationship.successfulRuns) -
+    getNonNegativeInteger(relationship.failedRuns);
+
+  if (netDungeonSuccess >= 3) flairs.push("Dungeon Mate");
+  if (netRaidSuccess >= 2) flairs.push("Raid Companion");
+  if (netEliteSuccess >= 2) flairs.push("Elite Duo");
+  if (netTotalSuccess >= 5) flairs.push("Reliable Pair");
   return flairs;
 };
 
@@ -134,17 +170,47 @@ const normalizeRelationshipEntry = (key, entry) => {
   if (pairIds.length !== 2) return null;
   const normalizedKey = getRelationshipPairKey(pairIds[0], pairIds[1]);
   if (!normalizedKey) return null;
+  const successfulRuns = getNonNegativeInteger(entry?.successfulRuns);
+  const failedRuns = getNonNegativeInteger(entry?.failedRuns);
+  const dungeonRuns = getNonNegativeInteger(entry?.dungeonRuns);
+  const raidRuns = getNonNegativeInteger(entry?.raidRuns);
+  const eliteRuns = getNonNegativeInteger(entry?.eliteRuns);
+  const successfulDungeonRuns = Number.isFinite(Number(entry?.successfulDungeonRuns))
+    ? getNonNegativeInteger(entry.successfulDungeonRuns)
+    : Math.min(dungeonRuns, successfulRuns);
+  const failedDungeonRuns = Number.isFinite(Number(entry?.failedDungeonRuns))
+    ? getNonNegativeInteger(entry.failedDungeonRuns)
+    : Math.max(0, dungeonRuns - successfulDungeonRuns);
+  const successfulRaidRuns = Number.isFinite(Number(entry?.successfulRaidRuns))
+    ? getNonNegativeInteger(entry.successfulRaidRuns)
+    : Math.min(raidRuns, successfulRuns);
+  const failedRaidRuns = Number.isFinite(Number(entry?.failedRaidRuns))
+    ? getNonNegativeInteger(entry.failedRaidRuns)
+    : Math.max(0, raidRuns - successfulRaidRuns);
+  const successfulEliteRuns = Number.isFinite(Number(entry?.successfulEliteRuns))
+    ? getNonNegativeInteger(entry.successfulEliteRuns)
+    : Math.min(eliteRuns, successfulRuns);
+  const failedEliteRuns = Number.isFinite(Number(entry?.failedEliteRuns))
+    ? getNonNegativeInteger(entry.failedEliteRuns)
+    : Math.max(0, eliteRuns - successfulEliteRuns);
+
   return [
     normalizedKey,
     {
       memberIds: pairIds,
-      points: Math.floor(Number(entry?.points) || 0),
-      runsTogether: Math.max(0, Math.floor(Number(entry?.runsTogether) || 0)),
-      successfulRuns: Math.max(0, Math.floor(Number(entry?.successfulRuns) || 0)),
-      failedRuns: Math.max(0, Math.floor(Number(entry?.failedRuns) || 0)),
-      dungeonRuns: Math.max(0, Math.floor(Number(entry?.dungeonRuns) || 0)),
-      raidRuns: Math.max(0, Math.floor(Number(entry?.raidRuns) || 0)),
-      eliteRuns: Math.max(0, Math.floor(Number(entry?.eliteRuns) || 0)),
+      points: clampRelationshipPoints(entry?.points),
+      runsTogether: getNonNegativeInteger(entry?.runsTogether),
+      successfulRuns,
+      failedRuns,
+      dungeonRuns,
+      raidRuns,
+      eliteRuns,
+      successfulDungeonRuns,
+      failedDungeonRuns,
+      successfulRaidRuns,
+      failedRaidRuns,
+      successfulEliteRuns,
+      failedEliteRuns,
       lastMissionName: String(entry?.lastMissionName || "").trim(),
       lastInteractionAt: Math.max(0, Math.floor(Number(entry?.lastInteractionAt) || 0)),
       events: normalizeRelationshipEvents(entry?.events),
@@ -295,7 +361,7 @@ export const updateRelationshipsForSharedActivity = (
     nextRelationships[key] = {
       ...current,
       memberIds: [leftId, rightId],
-      points: current.points + pointChange,
+      points: clampRelationshipPoints(current.points + pointChange),
       runsTogether: current.runsTogether + 1,
       successfulRuns: current.successfulRuns + (missionSucceeded ? 1 : 0),
       failedRuns: current.failedRuns + (missionSucceeded ? 0 : 1),
@@ -303,6 +369,24 @@ export const updateRelationshipsForSharedActivity = (
         current.dungeonRuns + (resolvedActivityType === "dungeon" ? 1 : 0),
       raidRuns: current.raidRuns + (resolvedActivityType === "raid" ? 1 : 0),
       eliteRuns: current.eliteRuns + (resolvedActivityType === "elite" ? 1 : 0),
+      successfulDungeonRuns:
+        current.successfulDungeonRuns +
+        (resolvedActivityType === "dungeon" && missionSucceeded ? 1 : 0),
+      failedDungeonRuns:
+        current.failedDungeonRuns +
+        (resolvedActivityType === "dungeon" && !missionSucceeded ? 1 : 0),
+      successfulRaidRuns:
+        current.successfulRaidRuns +
+        (resolvedActivityType === "raid" && missionSucceeded ? 1 : 0),
+      failedRaidRuns:
+        current.failedRaidRuns +
+        (resolvedActivityType === "raid" && !missionSucceeded ? 1 : 0),
+      successfulEliteRuns:
+        current.successfulEliteRuns +
+        (resolvedActivityType === "elite" && missionSucceeded ? 1 : 0),
+      failedEliteRuns:
+        current.failedEliteRuns +
+        (resolvedActivityType === "elite" && !missionSucceeded ? 1 : 0),
       lastMissionName: missionName,
       lastInteractionAt: timestamp,
       events,

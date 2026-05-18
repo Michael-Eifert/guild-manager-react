@@ -1,5 +1,15 @@
 import { getCharacterPowerScore } from "../utils";
-import { getZoneEliteQuestTemplates } from "../zones/zoneDefinitions";
+import {
+  ADVENTURE_GOAL_TYPE,
+  getAdventureGoalQueue,
+  hasCharacterKey,
+} from "./adventureGoals";
+import {
+  ZONE_DEFINITIONS,
+  getZoneEliteQuestTemplates,
+} from "../zones/zoneDefinitions";
+
+export const AUTO_ZONE_ELITE_MIN_SUCCESS_CHANCE = 70;
 
 const getMissionQuestId = (mission) =>
   String(
@@ -63,9 +73,29 @@ const sortByRoleThenPower = (left, right) => {
   return String(left?.name || "").localeCompare(String(right?.name || ""));
 };
 
-const buildZoneEliteParty = ({ quest, zoneMembers }) => {
+const clampSuccessChance = (value) =>
+  Math.max(0, Math.min(100, Math.round(Number(value) || 0)));
+
+const normalizeMinSuccessChance = (value) =>
+  Math.max(
+    0,
+    Math.min(
+      100,
+      Math.round(Number(value) || AUTO_ZONE_ELITE_MIN_SUCCESS_CHANCE),
+    ),
+  );
+
+const buildZoneEliteParty = ({
+  quest,
+  zoneMembers,
+  minSuccessChance = AUTO_ZONE_ELITE_MIN_SUCCESS_CHANCE,
+  getSuccessPreview,
+}) => {
   const bounds = getPartyBounds(quest);
   const minimumLevel = Math.max(1, Math.floor(Number(quest?.minLevel) || 1));
+  const safeMinSuccessChance = normalizeMinSuccessChance(minSuccessChance);
+  const previewMission =
+    typeof getSuccessPreview === "function" ? getSuccessPreview : null;
   const eligibleMembers = zoneMembers.filter(
     (member) => Math.max(1, Number(member?.level) || 1) >= minimumLevel,
   );
@@ -75,11 +105,11 @@ const buildZoneEliteParty = ({ quest, zoneMembers }) => {
 
   if (starters.length === 0 || eligibleMembers.length < bounds.min) return null;
 
-  const party = [];
+  const partyOrder = [];
   const addMember = (member) => {
-    if (!member || party.some((entry) => entry.id === member.id)) return;
-    if (party.length >= bounds.max) return;
-    party.push(member);
+    if (!member || partyOrder.some((entry) => entry.id === member.id)) return;
+    if (partyOrder.length >= bounds.max) return;
+    partyOrder.push(member);
   };
 
   addMember(starters[0]);
@@ -89,22 +119,147 @@ const buildZoneEliteParty = ({ quest, zoneMembers }) => {
 
   [...starters, ...eligibleMembers].sort(sortByRoleThenPower).forEach(addMember);
 
-  if (party.length < bounds.min) return null;
-  return {
-    party,
-    starterMemberIds: party
-      .filter((member) => !hasCompletedZoneEliteQuest(member, quest))
-      .map((member) => member.id),
-    supporterMemberIds: party
-      .filter((member) => hasCompletedZoneEliteQuest(member, quest))
-      .map((member) => member.id),
-  };
+  if (partyOrder.length < bounds.min) return null;
+
+  for (
+    let partySize = bounds.min;
+    partySize <= Math.min(bounds.max, partyOrder.length);
+    partySize += 1
+  ) {
+    const party = partyOrder.slice(0, partySize);
+    const successChance = previewMission
+      ? clampSuccessChance(previewMission(quest, party)?.successChance)
+      : 100;
+    if (successChance < safeMinSuccessChance) continue;
+
+    return {
+      party,
+      successChance,
+      starterMemberIds: party
+        .filter((member) => !hasCompletedZoneEliteQuest(member, quest))
+        .map((member) => member.id),
+      supporterMemberIds: party
+        .filter((member) => hasCompletedZoneEliteQuest(member, quest))
+        .map((member) => member.id),
+    };
+  }
+
+  return null;
+};
+
+const getMissionRewardKeyIds = (mission) =>
+  Array.isArray(mission?.rewardKeys)
+    ? mission.rewardKeys.map((keyId) => String(keyId || "")).filter(Boolean)
+    : [];
+
+const getAvailableMembers = ({ roster, activeMissions }) => {
+  const busyMemberIds = getBusyMemberIds(activeMissions);
+  return (Array.isArray(roster) ? roster : []).filter((member) => {
+    const memberId = String(member?.id || "");
+    return member && memberId && member.status !== "Questing" && !busyMemberIds.has(memberId);
+  });
+};
+
+const getAllZoneEliteQuestTemplates = () =>
+  ZONE_DEFINITIONS.flatMap((zone) => getZoneEliteQuestTemplates(zone.id));
+
+const resolveQueuedZoneEliteAttunementGroups = ({
+  roster,
+  activeMissions,
+  missionList,
+  minSuccessChance,
+  getSuccessPreview,
+}) => {
+  const availableMembers = getAvailableMembers({ roster, activeMissions });
+  const activeQuestIds = getActiveZoneEliteQuestIds(activeMissions);
+  const consumedMemberIds = new Set();
+  const missionLookup = new Map(
+    [...(Array.isArray(missionList) ? missionList : []), ...getAllZoneEliteQuestTemplates()]
+      .filter((mission) => mission?.id != null)
+      .map((mission) => [String(mission.id), mission]),
+  );
+  const queuedGroups = new Map();
+
+  availableMembers.forEach((member) => {
+    getAdventureGoalQueue(member).forEach((goal) => {
+      if (
+        goal.type !== ADVENTURE_GOAL_TYPE.ATTUNEMENT ||
+        hasCharacterKey(member, goal.keyId)
+      ) {
+        return;
+      }
+      const quest = missionLookup.get(String(goal.sourceMissionId));
+      if (!quest?.isZoneElite) return;
+      if (!getMissionRewardKeyIds(quest).includes(goal.keyId)) return;
+      const questId = getMissionQuestId(quest);
+      if (!questId || activeQuestIds.has(questId)) return;
+      const groupKey = `${goal.sourceMissionId}:${goal.keyId}`;
+      if (!queuedGroups.has(groupKey)) {
+        queuedGroups.set(groupKey, { quest, keyId: goal.keyId, members: [] });
+      }
+      queuedGroups.get(groupKey).members.push(member);
+    });
+  });
+
+  const candidates = [];
+  [...queuedGroups.values()].forEach(({ quest, keyId, members }) => {
+    const availableQueuedMembers = members.filter(
+      (member) => !consumedMemberIds.has(String(member.id)),
+    );
+    const queuedMemberIds = new Set(
+      availableQueuedMembers.map((member) => String(member.id)),
+    );
+    if (queuedMemberIds.size === 0) return;
+    const partyResult = buildZoneEliteParty({
+      quest,
+      zoneMembers: availableMembers.filter(
+        (member) =>
+          !consumedMemberIds.has(String(member.id)) &&
+          (queuedMemberIds.has(String(member.id)) || !hasCharacterKey(member, keyId)),
+      ),
+      minSuccessChance,
+      getSuccessPreview,
+    });
+    if (!partyResult) return;
+    const hasQueuedStarter = partyResult.party.some((member) =>
+      queuedMemberIds.has(String(member.id)),
+    );
+    if (!hasQueuedStarter) return;
+    const memberIds = partyResult.party.map((member) => member.id);
+    memberIds.forEach((memberId) => consumedMemberIds.add(String(memberId)));
+    activeQuestIds.add(getMissionQuestId(quest));
+    candidates.push({
+      mission: quest,
+      memberIds,
+      starterMemberIds: partyResult.starterMemberIds,
+      supporterMemberIds: partyResult.supporterMemberIds,
+      successChance: partyResult.successChance,
+      zoneId: quest.zoneId,
+      questId: getMissionQuestId(quest),
+      goalType: ADVENTURE_GOAL_TYPE.ATTUNEMENT,
+      keyId,
+    });
+  });
+
+  return candidates;
 };
 
 export const resolveAutoZoneEliteGroups = ({
   roster = [],
   activeMissions = [],
+  missionList = [],
+  minSuccessChance = AUTO_ZONE_ELITE_MIN_SUCCESS_CHANCE,
+  getSuccessPreview,
 } = {}) => {
+  const queuedGroups = resolveQueuedZoneEliteAttunementGroups({
+    roster,
+    activeMissions,
+    missionList,
+    minSuccessChance,
+    getSuccessPreview,
+  });
+  if (queuedGroups.length > 0) return queuedGroups;
+
   const busyMemberIds = getBusyMemberIds(activeMissions);
   const activeQuestIds = getActiveZoneEliteQuestIds(activeMissions);
   const consumedMemberIds = new Set();
@@ -132,6 +287,8 @@ export const resolveAutoZoneEliteGroups = ({
         const partyResult = buildZoneEliteParty({
           quest,
           zoneMembers: availableZoneMembers(),
+          minSuccessChance,
+          getSuccessPreview,
         });
         if (!partyResult) return;
 
@@ -143,6 +300,7 @@ export const resolveAutoZoneEliteGroups = ({
           memberIds,
           starterMemberIds: partyResult.starterMemberIds,
           supporterMemberIds: partyResult.supporterMemberIds,
+          successChance: partyResult.successChance,
           zoneId,
           questId,
         });

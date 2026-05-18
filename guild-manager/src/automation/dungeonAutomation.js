@@ -2,6 +2,11 @@ import { GUILD_DUNGEON_ACTIVITY, GUILD_FOCUS } from "../constants";
 import { CALENDAR_DAY_MS } from "../calendar/calendarLogic";
 import { evaluateMissionKeyAccess } from "../missions/missionHelpers";
 import { getCharacterPowerScore } from "../utils";
+import {
+  ADVENTURE_GOAL_TYPE,
+  getAdventureGoalQueue,
+  hasCharacterKey,
+} from "./adventureGoals";
 
 export const AUTO_DUNGEON_MIN_SUCCESS_CHANCE = 70;
 
@@ -265,6 +270,204 @@ const buildDungeonParty = ({ missions, eligibleMembers, partySize, initiator }) 
   return party;
 };
 
+const getAvailableDungeonMembers = ({ roster, activeMissions }) => {
+  const busyMemberIds = new Set(
+    (Array.isArray(activeMissions) ? activeMissions : []).flatMap((mission) =>
+      Array.isArray(mission?.memberIds)
+        ? mission.memberIds.map((id) => String(id || "")).filter(Boolean)
+        : [],
+    ),
+  );
+  return (Array.isArray(roster) ? roster : []).filter(
+    (member) =>
+      member &&
+      member.status !== "Questing" &&
+      !busyMemberIds.has(String(member.id || "")),
+  );
+};
+
+const buildAttunementGoalParty = ({
+  mission,
+  eligibleMembers,
+  queuedMembers,
+  partySize,
+}) => {
+  const party = [];
+  const sortedQueuedMembers = [...queuedMembers].sort(sortByRecentDungeonThenPower);
+  const sortedMembers = [...eligibleMembers].sort(sortByRecentDungeonThenPower);
+
+  sortedQueuedMembers.forEach((member) => {
+    if (party.length < partySize) addMember(party, member);
+  });
+
+  if (mission?.requiresKey && mission?.requiresKeyForAllMembers !== true) {
+    addMember(
+      party,
+      sortedMembers.find((member) => hasCharacterKey(member, mission.keyId)),
+    );
+  }
+
+  ["Tank", "Healer", "DPS"].forEach((role) => {
+    if (party.length >= partySize) return;
+    addMember(
+      party,
+      sortedMembers.find((member) => member?.role === role),
+    );
+  });
+
+  sortedMembers.forEach((member) => {
+    if (party.length >= partySize) return;
+    addMember(party, member);
+  });
+
+  return party;
+};
+
+const resolveQueuedAttunementCandidates = ({
+  missionList,
+  availableMembers,
+  minSuccessChance,
+  getSuccessPreview,
+}) => {
+  const missionLookup = new Map(
+    (Array.isArray(missionList) ? missionList : [])
+      .filter((mission) => mission?.id != null)
+      .map((mission) => [String(mission.id), mission]),
+  );
+  const queuedGoalGroups = new Map();
+
+  availableMembers.forEach((member) => {
+    getAdventureGoalQueue(member).forEach((goal) => {
+      if (
+        goal.type !== ADVENTURE_GOAL_TYPE.ATTUNEMENT ||
+        hasCharacterKey(member, goal.keyId)
+      ) {
+        return;
+      }
+      const mission = missionLookup.get(String(goal.sourceMissionId));
+      if (!mission || mission.type !== "dungeon") return;
+      if (!getMissionRewardKeyIds(mission).includes(goal.keyId)) return;
+      const groupKey = `${goal.sourceMissionId}:${goal.keyId}:${
+        goal.targetMissionId || ""
+      }`;
+      if (!queuedGoalGroups.has(groupKey)) {
+        queuedGoalGroups.set(groupKey, {
+          goal,
+          mission,
+          members: [],
+        });
+      }
+      queuedGoalGroups.get(groupKey).members.push(member);
+    });
+  });
+
+  const previewMission =
+    typeof getSuccessPreview === "function" ? getSuccessPreview : null;
+  const candidates = [];
+
+  queuedGoalGroups.forEach(({ goal, mission, members }) => {
+    const levelRange = getAutoDungeonLevelRange(mission);
+    const partyBounds = getMissionPartyBounds(mission);
+    const queuedMembers = members.filter((member) => {
+      const level = Math.max(1, Number(member?.level) || 1);
+      return level >= levelRange.min && level <= levelRange.max;
+    });
+    if (queuedMembers.length === 0) return;
+
+    const eligibleMembers = availableMembers.filter((member) => {
+      const level = Math.max(1, Number(member?.level) || 1);
+      if (level < levelRange.min || level > levelRange.max) return false;
+      return memberMeetsSequenceKeyRequirements(member, [mission]);
+    });
+    if (eligibleMembers.length < partyBounds.min) return;
+
+    for (
+      let partySize = partyBounds.min;
+      partySize <= Math.min(partyBounds.max, eligibleMembers.length);
+      partySize += 1
+    ) {
+      const party = buildAttunementGoalParty({
+        mission,
+        eligibleMembers,
+        queuedMembers,
+        partySize,
+      });
+      if (party.length < partySize) continue;
+      if (!party.some((member) => queuedMembers.includes(member))) continue;
+
+      const keyAccess = evaluateMissionKeyAccess({
+        missions: [mission],
+        partyMembers: party,
+      });
+      if (!keyAccess.canEnter) continue;
+
+      const successChance = Math.max(
+        0,
+        Math.min(
+          100,
+          Number(previewMission?.(mission, party)?.successChance) || 0,
+        ),
+      );
+      if (successChance < minSuccessChance) continue;
+
+      const queuedGoalMemberIds = party
+        .filter((member) =>
+          queuedMembers.some((queuedMember) => queuedMember.id === member.id),
+        )
+        .map((member) => member.id);
+      candidates.push({
+        mission,
+        missions: [mission],
+        chainMissionIds: [],
+        memberIds: party.map((member) => member.id),
+        party,
+        partySize,
+        successChance,
+        initiatorId: queuedGoalMemberIds[0] || party[0]?.id,
+        goalType: ADVENTURE_GOAL_TYPE.ATTUNEMENT,
+        keyId: goal.keyId,
+        targetMissionId: goal.targetMissionId,
+        sourceMissionId: goal.sourceMissionId,
+        queuedGoalMemberIds,
+        score:
+          queuedGoalMemberIds.length * 1_000_000 +
+          (mission?.isRaid ? 100_000 : 0) +
+          successChance * 100 +
+          (Number(mission?.level) || 0),
+      });
+      break;
+    }
+  });
+
+  candidates.sort((left, right) => {
+    if (right.score !== left.score) return right.score - left.score;
+    if (right.successChance !== left.successChance) {
+      return right.successChance - left.successChance;
+    }
+    return String(left.mission?.name || "").localeCompare(
+      String(right.mission?.name || ""),
+    );
+  });
+
+  const selectedCandidates = [];
+  let remainingCandidates = [...candidates];
+  while (remainingCandidates.length > 0) {
+    const nextCandidate = remainingCandidates[0];
+    selectedCandidates.push(nextCandidate);
+    const reservedMemberIds = new Set(
+      nextCandidate.memberIds.map((memberId) => String(memberId)),
+    );
+    remainingCandidates = remainingCandidates.filter(
+      (candidate) =>
+        !candidate.memberIds.some((memberId) =>
+          reservedMemberIds.has(String(memberId)),
+        ),
+    );
+  }
+
+  return selectedCandidates;
+};
+
 export const getAutoDungeonIntervalMs = (mode) =>
   Math.max(
     0,
@@ -286,6 +489,28 @@ export const resolveAutoDungeonAttempt = ({
   getSuccessPreview,
 }) => {
   const intervalMs = getAutoDungeonIntervalMs(mode);
+  const safeMinSuccessChance =
+    Number.isFinite(Number(minSuccessChance)) && Number(minSuccessChance) > 0
+      ? Number(minSuccessChance)
+      : AUTO_DUNGEON_MIN_SUCCESS_CHANCE;
+  const safeNow = Math.max(0, Number(now) || 0);
+  const safeNextAttemptAt = Math.max(0, Number(nextAttemptAt) || 0);
+  const availableMembers = getAvailableDungeonMembers({ roster, activeMissions });
+  const queuedAttunementCandidates = resolveQueuedAttunementCandidates({
+    missionList,
+    availableMembers,
+    minSuccessChance: safeMinSuccessChance,
+    getSuccessPreview,
+  });
+  if (queuedAttunementCandidates.length > 0) {
+    return {
+      nextAttemptAt: safeNextAttemptAt,
+      lastCheckpointKey,
+      candidate: queuedAttunementCandidates[0],
+      candidates: queuedAttunementCandidates,
+    };
+  }
+
   if (!intervalMs) {
     return {
       nextAttemptAt: Number.POSITIVE_INFINITY,
@@ -295,12 +520,10 @@ export const resolveAutoDungeonAttempt = ({
     };
   }
 
-  const safeNow = Math.max(0, Number(now) || 0);
   const checkpointKey = getAutoDungeonCheckpointKey(
     safeNow,
     calendarEpochGameTimeMs,
   );
-  const safeNextAttemptAt = Math.max(0, Number(nextAttemptAt) || 0);
   if (!checkpointKey || checkpointKey === lastCheckpointKey) {
     return {
       nextAttemptAt: safeNextAttemptAt,
@@ -310,19 +533,6 @@ export const resolveAutoDungeonAttempt = ({
     };
   }
 
-  const busyMemberIds = new Set(
-    (Array.isArray(activeMissions) ? activeMissions : []).flatMap((mission) =>
-      Array.isArray(mission?.memberIds)
-        ? mission.memberIds.map((id) => String(id || "")).filter(Boolean)
-        : [],
-    ),
-  );
-  const availableMembers = (Array.isArray(roster) ? roster : []).filter(
-    (member) =>
-      member &&
-      member.status !== "Questing" &&
-      !busyMemberIds.has(String(member.id || "")),
-  );
   const previewMission =
     typeof getSuccessPreview === "function" ? getSuccessPreview : null;
   const searchingMembers = availableMembers
@@ -399,7 +609,7 @@ export const resolveAutoDungeonAttempt = ({
             ...previews.map((preview) => Number(preview?.successChance) || 0),
           ),
         );
-        if (successChance < minSuccessChance) continue;
+        if (successChance < safeMinSuccessChance) continue;
 
         const level =
           Math.max(...missions.map((mission) => Number(mission?.level) || 0)) ||

@@ -77,6 +77,69 @@ const getRaidResetShortLabel = (mission) => {
   return `${mission?.name || "Raid"} Reset`;
 };
 
+const sortRaidWingsByProgression = (left, right) => {
+  const leftWingOrder = Number(left?.wingOrder) || 0;
+  const rightWingOrder = Number(right?.wingOrder) || 0;
+  if (leftWingOrder !== rightWingOrder) return leftWingOrder - rightWingOrder;
+  if ((left?.level || 0) !== (right?.level || 0)) return (left?.level || 0) - (right?.level || 0);
+  return String(left?.dungeonWing || left?.name || "").localeCompare(
+    String(right?.dungeonWing || right?.name || ""),
+  );
+};
+
+const getRaidMissionOptions = (raidMissions) => {
+  const options = [];
+  const groupedSets = new Map();
+
+  (Array.isArray(raidMissions) ? raidMissions : []).forEach((mission) => {
+    if (mission?.dungeonSetId && mission?.dungeonSetName) {
+      const groupKey = `set:${mission.dungeonSetId}`;
+      if (!groupedSets.has(groupKey)) {
+        const option = {
+          key: groupKey,
+          label: mission.dungeonSetName,
+          missions: [],
+        };
+        groupedSets.set(groupKey, option);
+        options.push(option);
+      }
+      groupedSets.get(groupKey).missions.push(mission);
+      return;
+    }
+
+    options.push({
+      key: `mission:${mission.id}`,
+      label: mission?.name || "Raid",
+      missions: [mission],
+    });
+  });
+
+  return options
+    .map((option) => {
+      const missions = [...option.missions].sort(sortRaidWingsByProgression);
+      return {
+        ...option,
+        missionId: missions[0]?.id ?? "",
+        missions,
+      };
+    })
+    .sort((left, right) => {
+      const leftMission = left.missions[0] || {};
+      const rightMission = right.missions[0] || {};
+      if ((leftMission.level || 0) !== (rightMission.level || 0)) {
+        return (leftMission.level || 0) - (rightMission.level || 0);
+      }
+      return String(left.label).localeCompare(String(right.label));
+    });
+};
+
+const getEventMissionIds = (event) =>
+  Array.isArray(event?.missionIds) && event.missionIds.length > 0
+    ? event.missionIds
+    : event?.missionId
+      ? [event.missionId]
+      : [];
+
 const isRaidResetDay = (mission, dayIndex) => {
   if (mission?.isRaid !== true) return false;
   const schedule = mission.raidReset || {};
@@ -112,14 +175,22 @@ const CalendarModal = ({
     () => (Array.isArray(missionList) ? missionList : []).filter((mission) => mission?.isRaid),
     [missionList],
   );
+  const raidMissionOptions = useMemo(
+    () => getRaidMissionOptions(raidMissions),
+    [raidMissions],
+  );
   const defaultMissionId =
-    raidMissions.find((mission) => mission.name === "Molten Core")?.id ||
-    raidMissions[0]?.id ||
+    raidMissionOptions.find((option) => option.label === "Molten Core")?.missionId ||
+    raidMissionOptions[0]?.missionId ||
     "";
   const [viewYear, setViewYear] = useState(currentDate.year);
   const [viewMonthIndex, setViewMonthIndex] = useState(currentDate.monthIndex);
   const [selectedDayIndex, setSelectedDayIndex] = useState(currentDayIndex);
   const [selectedMissionId, setSelectedMissionId] = useState(defaultMissionId);
+  const [selectedMissionIds, setSelectedMissionIds] = useState(
+    raidMissionOptions.find((option) => String(option.missionId) === String(defaultMissionId))
+      ?.missions.map((mission) => mission.id) || (defaultMissionId ? [defaultMissionId] : []),
+  );
   const [selectedWeekday, setSelectedWeekday] = useState(currentDate.weekdayIndex);
   const [selectedTimeOfDay, setSelectedTimeOfDay] = useState("evening");
   const [selectedDurationWeeks, setSelectedDurationWeeks] = useState(8);
@@ -136,6 +207,12 @@ const CalendarModal = ({
     setViewMonthIndex(currentDate.monthIndex);
     setSelectedDayIndex(currentDayIndex);
     setSelectedMissionId(defaultMissionId);
+    setSelectedMissionIds(
+      raidMissionOptions
+        .find((option) => String(option.missionId) === String(defaultMissionId))
+        ?.missions.map((mission) => mission.id) ||
+        (defaultMissionId ? [defaultMissionId] : []),
+    );
     setSelectedWeekday(currentDate.weekdayIndex);
     setSelectedTimeOfDay("evening");
     setSelectedDurationWeeks(8);
@@ -150,6 +227,7 @@ const CalendarModal = ({
     currentDayIndex,
     defaultMissionId,
     isOpen,
+    raidMissionOptions,
   ]);
 
   const events = useMemo(
@@ -176,6 +254,21 @@ const CalendarModal = ({
       ),
     [missionList],
   );
+  const selectedRaidOption = useMemo(
+    () =>
+      raidMissionOptions.find(
+        (option) => String(option.missionId) === String(selectedMissionId),
+      ) || null,
+    [raidMissionOptions, selectedMissionId],
+  );
+  const selectedRaidWingMissions = selectedRaidOption?.missions || [];
+  const selectedRaidMissionIdSet = new Set(selectedMissionIds.map((id) => String(id)));
+  const selectedRaidChainMissionIds = selectedRaidWingMissions
+    .filter((mission) => selectedRaidMissionIdSet.has(String(mission.id)))
+    .map((mission) => mission.id);
+  const selectedRaidIsFullRun =
+    selectedRaidWingMissions.length > 1 &&
+    selectedRaidChainMissionIds.length === selectedRaidWingMissions.length;
   const rosterLookup = useMemo(
     () =>
       new Map(
@@ -205,13 +298,14 @@ const CalendarModal = ({
     const grouped = new Map();
     monthGrid.forEach((day) => {
       if (!day) return;
-      const resetLabels = raidMissions
+      const resetLabels = raidMissionOptions
+        .map((option) => option.missions[0])
         .filter((mission) => isRaidResetDay(mission, day.dayIndex))
         .map(getRaidResetShortLabel);
       if (resetLabels.length > 0) grouped.set(day.dayIndex, resetLabels);
     });
     return grouped;
-  }, [monthGrid, raidMissions]);
+  }, [monthGrid, raidMissionOptions]);
   const visibleEvents = [...events]
     .filter(
       (event) =>
@@ -239,6 +333,26 @@ const CalendarModal = ({
   const selectedEventMission = selectedEvent
     ? missionLookup.get(String(selectedEvent.missionId))
     : null;
+  const selectedEventMissions = selectedEvent
+    ? getEventMissionIds(selectedEvent)
+        .map((missionId) => missionLookup.get(String(missionId)))
+        .filter(Boolean)
+        .sort(sortRaidWingsByProgression)
+    : [];
+  const selectedEventRaidOption =
+    selectedEventMissions.length > 0
+      ? raidMissionOptions.find((option) =>
+          option.missions.some(
+            (mission) => String(mission.id) === String(selectedEventMissions[0].id),
+          ),
+        ) || null
+      : null;
+  const selectedEventRunLabel =
+    selectedEventMissions.length > 1
+      ? `${selectedEventMissions.length === selectedEventRaidOption?.missions.length ? "Full run" : `${selectedEventMissions.length} wings`}: ${selectedEventMissions
+          .map((mission) => mission.dungeonWing || mission.name)
+          .join(" + ")}`
+      : selectedEventMissions[0]?.dungeonWing || selectedEventMission?.name || "";
   const signupMembers = selectedEvent
     ? selectedEvent.registrations
         .map((id) => rosterLookup.get(id))
@@ -298,26 +412,76 @@ const CalendarModal = ({
     setViewMonthIndex(nextMonth);
   };
 
+  const selectRaidMissionOption = (missionId) => {
+    const option =
+      raidMissionOptions.find(
+        (entry) => String(entry.missionId) === String(missionId),
+      ) || null;
+    setSelectedMissionId(missionId);
+    setSelectedMissionIds(
+      option?.missions.map((mission) => mission.id) || (missionId ? [missionId] : []),
+    );
+  };
+
+  const selectFullRaidRun = () => {
+    if (!selectedRaidOption) return;
+    setSelectedMissionIds(selectedRaidOption.missions.map((mission) => mission.id));
+  };
+
+  const toggleSelectedRaidWing = (missionId) => {
+    setSelectedMissionIds((currentIds) => {
+      const current = new Set(currentIds.map((id) => String(id)));
+      const key = String(missionId);
+      if (current.has(key)) {
+        current.delete(key);
+      } else {
+        current.add(key);
+      }
+      const nextIds = selectedRaidWingMissions
+        .filter((mission) => current.has(String(mission.id)))
+        .map((mission) => mission.id);
+      return nextIds.length > 0 ? nextIds : [missionId];
+    });
+  };
+
   const handleCreateEvent = () => {
     if (!selectedMissionId) return;
-    const mission = missionLookup.get(String(selectedMissionId));
+    const missionIds =
+      selectedRaidChainMissionIds.length > 0
+        ? selectedRaidChainMissionIds
+        : [selectedMissionId];
+    const primaryMissionId = missionIds[0] || selectedMissionId;
+    const mission = missionLookup.get(String(primaryMissionId));
     onCreateEvent({
-      missionId: selectedMissionId,
+      missionId: primaryMissionId,
+      missionIds,
       scheduledDayIndex: selectedDayIndex,
       scheduledTimeOfDay: selectedTimeOfDay,
-      title: eventTitle.trim() || mission?.name || "Raid Event",
+      title:
+        eventTitle.trim() ||
+        (selectedRaidIsFullRun
+          ? `${mission?.dungeonSetName || mission?.name || "Raid"} Full Run`
+          : missionIds.length > 1
+            ? `${mission?.dungeonSetName || mission?.name || "Raid"} ${missionIds.length} Wings`
+          : mission?.dungeonWing || mission?.name || "Raid Event"),
     });
     setEventTitle("");
   };
 
   const handleCreateSeries = () => {
     if (!selectedMissionId) return;
-    const mission = missionLookup.get(String(selectedMissionId));
+    const missionIds =
+      selectedRaidChainMissionIds.length > 0
+        ? selectedRaidChainMissionIds
+        : [selectedMissionId];
+    const primaryMissionId = missionIds[0] || selectedMissionId;
+    const mission = missionLookup.get(String(primaryMissionId));
     const startDay =
       selectedDayIndex >= currentDayIndex ? selectedDayIndex : currentDayIndex;
     const isIntervalRaid = mission?.raidReset?.type === "interval";
     onCreateSeries({
-      missionId: selectedMissionId,
+      missionId: primaryMissionId,
+      missionIds,
       weekday: selectedWeekday,
       scheduledTimeOfDay: selectedTimeOfDay,
       startsOnDayIndex: startDay,
@@ -329,8 +493,8 @@ const CalendarModal = ({
       title:
         eventTitle.trim() ||
         (isIntervalRaid
-          ? `${mission?.name || "Raid"} Reset`
-          : `${mission?.name || "Raid"} ${CALENDAR_WEEKDAYS[selectedWeekday]}`),
+          ? `${mission?.dungeonSetName || mission?.name || "Raid"} Reset`
+          : `${mission?.dungeonSetName || mission?.name || "Raid"} ${CALENDAR_WEEKDAYS[selectedWeekday]}`),
     });
     setEventTitle("");
   };
@@ -581,12 +745,12 @@ const CalendarModal = ({
                 <span className="block mb-1 text-gray-500 uppercase tracking-wide">Raid</span>
                 <select
                   value={selectedMissionId}
-                  onChange={(event) => setSelectedMissionId(event.target.value)}
+                  onChange={(event) => selectRaidMissionOption(event.target.value)}
                   className="w-full bg-gray-800 border border-gray-600 rounded px-2 py-2 text-gray-100"
                 >
-                  {raidMissions.map((mission) => (
-                    <option key={mission.id} value={mission.id}>
-                      {mission.name}
+                  {raidMissionOptions.map((option) => (
+                    <option key={option.key} value={option.missionId}>
+                      {option.label}
                     </option>
                   ))}
                 </select>
@@ -615,6 +779,58 @@ const CalendarModal = ({
                 </select>
               </label>
             </div>
+            {selectedRaidWingMissions.length > 1 && (
+              <div className="rounded border border-indigo-900/60 bg-indigo-950/10 p-3">
+                <div className="flex flex-wrap items-center justify-between gap-2">
+                  <div>
+                    <h4 className="text-xs font-bold uppercase tracking-wide text-indigo-200">
+                      Run Selection
+                    </h4>
+                    <div className="mt-1 text-xs text-gray-400">
+                      {selectedRaidIsFullRun
+                        ? "Full run selected"
+                        : `${selectedRaidChainMissionIds.length} wing${selectedRaidChainMissionIds.length === 1 ? "" : "s"} selected`}
+                    </div>
+                  </div>
+                  <button
+                    type="button"
+                    onClick={selectFullRaidRun}
+                    className={`rounded border px-3 py-1.5 text-xs font-bold ${
+                      selectedRaidIsFullRun
+                        ? "border-indigo-500 bg-indigo-800/40 text-indigo-100"
+                        : "border-gray-700 bg-gray-800 text-gray-300 hover:bg-gray-700"
+                    }`}
+                  >
+                    Full Run
+                  </button>
+                </div>
+                <div className="mt-2 grid grid-cols-1 sm:grid-cols-2 gap-2">
+                  {selectedRaidWingMissions.map((mission) => {
+                    const checked = selectedRaidMissionIdSet.has(String(mission.id));
+                    return (
+                      <label
+                        key={`calendar-wing-${mission.id}`}
+                        className={`flex items-center gap-2 rounded border px-2 py-1.5 text-[11px] ${
+                          checked
+                            ? "border-indigo-600 bg-indigo-900/25 text-indigo-100"
+                            : "border-gray-700 bg-gray-900/50 text-gray-300"
+                        }`}
+                      >
+                        <input
+                          type="checkbox"
+                          checked={checked}
+                          onChange={() => toggleSelectedRaidWing(mission.id)}
+                          className="accent-indigo-500"
+                        />
+                        <span className="font-semibold">
+                          {mission.dungeonWing || mission.name}
+                        </span>
+                      </label>
+                    );
+                  })}
+                </div>
+              </div>
+            )}
             <div className="grid grid-cols-1 xl:grid-cols-2 gap-3">
               <div className="rounded border border-cyan-900/60 bg-cyan-950/10 p-3 space-y-2">
                 <div className="flex items-start justify-between gap-3">
@@ -751,6 +967,9 @@ const CalendarModal = ({
                     </div>
                     <div className="text-xs text-gray-400">
                       {getCalendarTimeOfDayOption(event.scheduledTimeOfDay).label}
+                      {getEventMissionIds(event).length > 1
+                        ? ` - ${getEventMissionIds(event).length} wings`
+                        : ""}
                     </div>
                   </button>
                 ))}
@@ -793,10 +1012,15 @@ const CalendarModal = ({
                         {event.status}
                       </span>
                     </div>
-                    <div className="text-xs text-gray-400">
-                      {formatCalendarDate(event.scheduledDayIndex)} -{" "}
-                      {getCalendarTimeOfDayOption(event.scheduledTimeOfDay).label}
-                    </div>
+                  <div className="text-xs text-gray-400">
+                    {formatCalendarDate(event.scheduledDayIndex)} -{" "}
+                    {getCalendarTimeOfDayOption(event.scheduledTimeOfDay).label}
+                  </div>
+                    {getEventMissionIds(event).length > 1 && (
+                      <div className="text-[11px] text-indigo-200/80">
+                        {getEventMissionIds(event).length} wings
+                      </div>
+                    )}
                   </button>
                 ))
               )}
@@ -812,6 +1036,11 @@ const CalendarModal = ({
                     {formatCalendarDate(selectedEvent.scheduledDayIndex)} -{" "}
                     {getCalendarTimeOfDayOption(selectedEvent.scheduledTimeOfDay).label}
                   </div>
+                  {selectedEventRunLabel && (
+                    <div className="mt-1 text-[11px] text-indigo-200/80">
+                      {selectedEventRunLabel}
+                    </div>
+                  )}
                 </div>
                 <span className={`text-xs uppercase ${getEventStatusClass(selectedEvent.status)}`}>
                   {selectedEvent.rosterLocked ? "locked" : selectedEvent.status}

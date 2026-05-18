@@ -4,6 +4,7 @@ import { GUILD_FACTION } from "../constants";
 import { ZONE_DEFINITIONS, getZoneEliteQuestTemplates } from "../zones/zoneDefinitions";
 import { getZoneMapLayout, getZoneRegionalMap } from "../zones/zoneMapLayout";
 import {
+  AUTO_ZONE_ELITE_MIN_SUCCESS_CHANCE,
   hasCompletedZoneEliteQuest,
   resolveAutoZoneEliteGroups,
 } from "../automation/zoneEliteAutomation";
@@ -104,7 +105,7 @@ describe("world map zone summaries", () => {
     expect(teldrassil.eliteQuests[0].isZoneElite).toBe(true);
   });
 
-  it("uses smaller party sizes for lower-level generated elites", () => {
+  it("uses 3-5 party sizes for generated elites", () => {
     const summaries = buildWorldMapZoneSummaries({
       roster: [],
       missionList: [zoneMission("teldrassil")],
@@ -115,8 +116,8 @@ describe("world map zone summaries", () => {
       (summary) => summary.zone.id === "teldrassil",
     );
 
-    expect(teldrassil.eliteQuests[0].requiredPartySize).toBe(2);
-    expect(teldrassil.eliteQuests[0].minPartySize).toBe(2);
+    expect(teldrassil.eliteQuests[0].requiredPartySize).toBe(5);
+    expect(teldrassil.eliteQuests[0].minPartySize).toBe(3);
   });
 
   it("marks active zone elite objectives", () => {
@@ -207,14 +208,76 @@ describe("zone elite automation", () => {
           currentZoneId: "westfall",
           clearedMissionIds: [],
         },
+        {
+          id: "dps",
+          name: "DPS",
+          role: "DPS",
+          level: eliteQuest.minLevel,
+          currentZoneId: "westfall",
+          clearedMissionIds: [],
+        },
       ],
       activeMissions: [],
+      getSuccessPreview: () => ({
+        successChance: AUTO_ZONE_ELITE_MIN_SUCCESS_CHANCE,
+      }),
     });
 
     expect(groups).toHaveLength(1);
     expect(groups[0].mission.id).toBe(eliteQuest.id);
-    expect(groups[0].memberIds).toEqual(expect.arrayContaining(["tank", "healer"]));
+    expect(groups[0].memberIds).toEqual(
+      expect.arrayContaining(["tank", "healer", "dps"]),
+    );
     expect(groups[0].starterMemberIds.length).toBeGreaterThan(0);
+  });
+
+  it("does not form an elite group below the configured success rate", () => {
+    const [eliteQuest] = getZoneEliteQuestTemplates("westfall");
+    const roster = [
+      {
+        id: "tank",
+        name: "Tank",
+        role: "Tank",
+        level: eliteQuest.minLevel,
+        currentZoneId: "westfall",
+        clearedMissionIds: [],
+      },
+      {
+        id: "healer",
+        name: "Healer",
+        role: "Healer",
+        level: eliteQuest.minLevel,
+        currentZoneId: "westfall",
+        clearedMissionIds: [],
+      },
+      {
+        id: "dps",
+        name: "DPS",
+        role: "DPS",
+        level: eliteQuest.minLevel,
+        currentZoneId: "westfall",
+        clearedMissionIds: [],
+      },
+    ];
+
+    const blocked = resolveAutoZoneEliteGroups({
+      roster,
+      activeMissions: [],
+      getSuccessPreview: () => ({
+        successChance: AUTO_ZONE_ELITE_MIN_SUCCESS_CHANCE - 1,
+      }),
+    });
+    const formed = resolveAutoZoneEliteGroups({
+      roster,
+      activeMissions: [],
+      getSuccessPreview: () => ({
+        successChance: AUTO_ZONE_ELITE_MIN_SUCCESS_CHANCE,
+      }),
+    });
+
+    expect(blocked).toEqual([]);
+    expect(formed).toHaveLength(1);
+    expect(formed[0].successChance).toBe(AUTO_ZONE_ELITE_MIN_SUCCESS_CHANCE);
   });
 
   it("lets a cleared hero support when another hero still needs the elite", () => {
@@ -237,15 +300,28 @@ describe("zone elite automation", () => {
           currentZoneId: "westfall",
           clearedMissionIds: [],
         },
+        {
+          id: "healer",
+          name: "Healer",
+          role: "Healer",
+          level: eliteQuest.minLevel,
+          currentZoneId: "westfall",
+          clearedMissionIds: [eliteQuest.id],
+        },
         supportHero,
       ],
       activeMissions: [],
+      getSuccessPreview: () => ({
+        successChance: AUTO_ZONE_ELITE_MIN_SUCCESS_CHANCE,
+      }),
     });
 
     expect(groups).toHaveLength(1);
     expect(hasCompletedZoneEliteQuest(supportHero, eliteQuest)).toBe(true);
     expect(groups[0].starterMemberIds).toEqual(["starter"]);
-    expect(groups[0].supporterMemberIds).toEqual(["support"]);
+    expect(groups[0].supporterMemberIds).toEqual(
+      expect.arrayContaining(["support", "healer"]),
+    );
   });
 
   it("does not start an elite when all available heroes already cleared it", () => {
@@ -253,13 +329,19 @@ describe("zone elite automation", () => {
     const groups = resolveAutoZoneEliteGroups({
       roster: [
         {
-          id: "a",
+          id: "healer",
           level: eliteQuest.minLevel,
           currentZoneId: "westfall",
           clearedMissionIds: [eliteQuest.id],
         },
         {
-          id: "b",
+          id: "dps",
+          level: eliteQuest.minLevel,
+          currentZoneId: "westfall",
+          clearedMissionIds: [eliteQuest.id],
+        },
+        {
+          id: "tank",
           level: eliteQuest.minLevel,
           currentZoneId: "westfall",
           clearedMissionIds: [eliteQuest.id],
@@ -276,13 +358,7 @@ describe("zone elite automation", () => {
     const groups = resolveAutoZoneEliteGroups({
       roster: [
         {
-          id: "a",
-          level: eliteQuest.minLevel,
-          currentZoneId: "westfall",
-          clearedMissionIds: [],
-        },
-        {
-          id: "b",
+          id: "c",
           level: eliteQuest.minLevel,
           currentZoneId: "westfall",
           clearedMissionIds: [],
@@ -292,5 +368,53 @@ describe("zone elite automation", () => {
     });
 
     expect(groups).toEqual([]);
+  });
+
+  it("forms queued attunement groups for zone elite key sources", () => {
+    const scholomanceKeyQuest = getZoneEliteQuestTemplates(
+      "western_plaguelands",
+    ).find((quest) => quest.rewardKeys?.includes("scholomance_key"));
+    const roster = [
+      ["tank", "Tank"],
+      ["healer", "Healer"],
+      ["dps-1", "DPS"],
+      ["dps-2", "DPS"],
+      ["dps-3", "DPS"],
+    ].map(([id, role]) => ({
+      id,
+      role,
+      level: 60,
+      status: "Idle",
+      keys: [],
+      clearedMissionIds: [],
+      adventureGoalQueue: [
+        {
+          id: `goal-${id}`,
+          type: "attunement",
+          keyId: "scholomance_key",
+          sourceMissionId: scholomanceKeyQuest.id,
+          targetMissionId: "key:scholomance_key",
+        },
+      ],
+    }));
+
+    const groups = resolveAutoZoneEliteGroups({
+      roster,
+      activeMissions: [],
+      missionList: [],
+      getSuccessPreview: () => ({
+        successChance: AUTO_ZONE_ELITE_MIN_SUCCESS_CHANCE,
+      }),
+    });
+
+    expect(groups).toHaveLength(1);
+    expect(groups[0]).toMatchObject({
+      mission: scholomanceKeyQuest,
+      goalType: "attunement",
+      keyId: "scholomance_key",
+    });
+    expect(groups[0].memberIds).toEqual(
+      expect.arrayContaining(["dps-1", "healer", "tank"]),
+    );
   });
 });

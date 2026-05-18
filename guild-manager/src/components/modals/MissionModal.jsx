@@ -108,6 +108,11 @@ const getMissionDisplayName = (mission) => {
   return mission?.name || "Mission";
 };
 
+const getMissionSetTypeLabel = (missions) =>
+  (Array.isArray(missions) ? missions : []).some((mission) => mission?.isRaid)
+    ? "Raid Set"
+    : "Dungeon Set";
+
 const getMissionPartySize = (mission) =>
   Math.max(1, Number(mission?.requiredPartySize) || (mission?.isRaid ? 40 : 5));
 
@@ -336,7 +341,16 @@ const getDungeonMissionGroups = (missions) => {
     });
   });
 
-  return groups;
+  return groups.map((group) =>
+    group.type === "set" && group.missions.length === 1
+      ? {
+          key: `mission:${group.missions[0].id}`,
+          type: "single",
+          name: group.missions[0]?.name || "Dungeon",
+          missions: group.missions,
+        }
+      : group,
+  );
 };
 
 const sortDungeonWingsByProgression = (left, right) => {
@@ -1950,7 +1964,7 @@ const MissionModal = ({
                       </span>
                     </div>
                     <div className="space-y-3">
-                      {section.key === "dungeon" ? (
+                      {section.key === "dungeon" || section.key === "raid" ? (
                         getDungeonMissionGroups(section.missions).map((group) => {
                           if (group.type !== "set") {
                             return renderMissionCard(group.missions[0], true);
@@ -1958,6 +1972,7 @@ const MissionModal = ({
 
                           const isExpanded = Boolean(expandedDungeonGroups[group.key]);
                           const levelRangeLabel = getDungeonGroupLevelRangeLabel(group.missions);
+                          const setTypeLabel = getMissionSetTypeLabel(group.missions);
                           return (
                             <div
                               key={group.key}
@@ -1973,7 +1988,7 @@ const MissionModal = ({
                                     {group.name}
                                   </div>
                                   <div className="text-[11px] text-blue-200/80">
-                                    Dungeon Set • Lvl {levelRangeLabel}
+                                    {setTypeLabel} - Lvl {levelRangeLabel}
                                   </div>
                                 </div>
                                 <div className="flex items-center gap-3 text-xs text-blue-200/90">

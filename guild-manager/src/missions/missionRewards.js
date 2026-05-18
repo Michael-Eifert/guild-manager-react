@@ -5,6 +5,7 @@ import {
   applyMoraleDelta,
   isCharacterInMissionLevelRange,
 } from "../game/characterMorale";
+import { clearCompletedAdventureGoals } from "../automation/adventureGoals";
 
 const DUNGEON_BONUS_UNCOMMON_DROP_CHANCE = 0.1;
 const DEFAULT_DUNGEON_BONUS_DROPS = Object.freeze([
@@ -730,8 +731,16 @@ export const createMissionRewardProcessor = ({
               )
             : char;
 
+      const goalAdjustedChar =
+        missionSucceeded && newlyAwardedKeys.length > 0
+          ? clearCompletedAdventureGoals({
+              character: moraleAdjustedChar,
+              awardedKeyIds: newlyAwardedKeys,
+            })
+          : moraleAdjustedChar;
+
       return {
-        ...moraleAdjustedChar,
+        ...goalAdjustedChar,
         status: "Idle",
         statusText: missionSucceeded
           ? "Returning from Mission..."

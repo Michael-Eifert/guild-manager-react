@@ -337,14 +337,13 @@ const getZoneEliteGoldReward = (zone, tierIndex) => {
   return baseline + tierIndex;
 };
 
-const getZoneElitePartySizing = (zone) => {
-  if (zone.maxLevel <= 20) {
-    return { requiredPartySize: 2, minPartySize: 2 };
-  }
-  if (zone.maxLevel <= 40) {
-    return { requiredPartySize: 3, minPartySize: 2 };
-  }
+const getZoneElitePartySizing = () => {
   return { requiredPartySize: 5, minPartySize: 3 };
+};
+
+const getZoneEliteBaseFailChance = (zone) => {
+  if (zone.maxLevel <= 40) return 22;
+  return 25;
 };
 
 const buildZoneEliteQuestTemplates = (zone) => {
@@ -375,6 +374,7 @@ const buildZoneEliteQuestTemplates = (zone) => {
       duration: Math.max(45, Math.round(zone.baseDurationSeconds / 3) + index * 10),
       exp: getZoneEliteExpReward(zone, tierIndex),
       gold: getZoneEliteGoldReward(zone, tierIndex),
+      baseFailChance: getZoneEliteBaseFailChance(zone),
       elite: true,
       rewardQualities: [...rewardQualities],
       ...partySizing,
@@ -387,6 +387,8 @@ const buildZoneEliteQuestTemplates = (zone) => {
         requiredPartySize:
           mission.requiredPartySize ?? partySizing.requiredPartySize,
         minPartySize: mission.minPartySize ?? partySizing.minPartySize,
+        baseFailChance:
+          mission.baseFailChance ?? getZoneEliteBaseFailChance(zone),
         rewardQualities: Array.isArray(mission.rewardQualities)
           ? [...mission.rewardQualities]
           : [],

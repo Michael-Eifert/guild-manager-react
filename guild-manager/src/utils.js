@@ -1013,6 +1013,7 @@ export const generateCharacter = (
     professions: professions,
     history: [],
     keys: [],
+    adventureGoalQueue: [],
     clearedMissionIds: [],
     equipment: getStarterGear(charClass),
     lastLevelUp: 0,

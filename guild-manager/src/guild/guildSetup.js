@@ -1,5 +1,6 @@
 import {
   DEFAULT_GUILD_SETUP,
+  AUTO_GROUP_SUCCESS_RATE,
   GUILD_DUNGEON_ACTIVITY,
   GUILD_DUNGEON_ACTIVITY_OPTIONS,
   GUILD_FACTION,
@@ -29,6 +30,15 @@ export const getGuildServerLabel = (serverValue, serverStyle) => {
   const resolvedServer =
     serverValue || option?.value || DEFAULT_GUILD_SETUP.server;
   return `${resolvedServer} (${resolvedStyle})`;
+};
+
+export const normalizeAutoGroupSuccessRate = (value) => {
+  const numeric = Number(value);
+  if (!Number.isFinite(numeric)) return AUTO_GROUP_SUCCESS_RATE.DEFAULT;
+  return Math.max(
+    AUTO_GROUP_SUCCESS_RATE.MIN,
+    Math.min(AUTO_GROUP_SUCCESS_RATE.MAX, Math.round(numeric)),
+  );
 };
 
 export const normalizeGuildSetup = (value, payloadData = {}) => {
@@ -79,6 +89,12 @@ export const normalizeGuildSetup = (value, payloadData = {}) => {
       ? Number(safe.lastFocusChangeDayIndex)
       : null,
     dungeonActivity: normalizedDungeonActivity,
+    eliteQuestMinSuccessChance: normalizeAutoGroupSuccessRate(
+      safe.eliteQuestMinSuccessChance,
+    ),
+    dungeonMinSuccessChance: normalizeAutoGroupSuccessRate(
+      safe.dungeonMinSuccessChance,
+    ),
     hasStarted,
   };
 };

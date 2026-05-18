@@ -74,6 +74,7 @@ import {
   getAutoDungeonIntervalMs,
   resolveAutoDungeonAttempt,
 } from "../automation/dungeonAutomation";
+import { buildDungeonAttunementTargets } from "../automation/adventureGoals";
 import {
   getGuildClassSummary,
   getGuildRoleSummary,
@@ -721,9 +722,11 @@ describe("relationship system", () => {
     ]);
     expect(relationships["healer::tank"]).toMatchObject({
       memberIds: ["healer", "tank"],
-      points: -6,
+      points: -3,
       runsTogether: 1,
       dungeonRuns: 1,
+      successfulDungeonRuns: 0,
+      failedDungeonRuns: 1,
       successfulRuns: 0,
       failedRuns: 1,
       lastMissionName: "Deadmines",
@@ -732,7 +735,7 @@ describe("relationship system", () => {
       missionName: "Deadmines",
       activityType: "dungeon",
       missionSucceeded: false,
-      pointsDelta: -6,
+      pointsDelta: -3,
       occurredAt: 1000,
     });
   });
@@ -755,17 +758,19 @@ describe("relationship system", () => {
 
     expect(succeeded["a::b"].points).toBeGreaterThan(failed["a::b"].points);
     expect(succeeded["a::b"]).toMatchObject({
-      points: 10,
+      points: 5,
       successfulRuns: 1,
+      successfulDungeonRuns: 1,
     });
     expect(succeeded["a::b"].events[0]).toMatchObject({
       missionName: "Wailing Caverns",
-      pointsDelta: 10,
+      pointsDelta: 5,
       missionSucceeded: true,
     });
     expect(failed["a::b"]).toMatchObject({
-      points: -6,
+      points: -3,
       failedRuns: 1,
+      failedDungeonRuns: 1,
     });
   });
 
@@ -774,7 +779,7 @@ describe("relationship system", () => {
       {
         "a::b": {
           memberIds: ["a", "b"],
-          points: 4,
+          points: 2,
           runsTogether: 1,
           successfulRuns: 0,
           failedRuns: 0,
@@ -786,7 +791,7 @@ describe("relationship system", () => {
       },
     );
 
-    expect(relationships["a::b"].points).toBe(-2);
+    expect(relationships["a::b"].points).toBe(-1);
     expect(getRelationshipLevel(relationships["a::b"])).toBe("Unfriendly");
     expect(relationships["a::b"].events).toHaveLength(1);
   });
@@ -817,15 +822,17 @@ describe("relationship system", () => {
     });
 
     expect(failed["a::b"]).toMatchObject({
-      points: 4,
+      points: 2,
       eliteRuns: 2,
+      successfulEliteRuns: 1,
+      failedEliteRuns: 1,
       successfulRuns: 1,
       failedRuns: 1,
       lastMissionName: "Redridge Mountains Elite: Hunt the Warband",
     });
     expect(failed["a::b"].events.map((event) => event.pointsDelta)).toEqual([
-      -6,
-      10,
+      -3,
+      5,
     ]);
     expect(failed["a::b"].events[0]).toMatchObject({
       activityType: "elite",
@@ -851,12 +858,16 @@ describe("relationship system", () => {
     expect(relationships).toEqual({});
   });
 
-  it("derives flairs from shared run counters", () => {
+  it("derives flairs from net successful shared run counters", () => {
     const relationship = {
-      dungeonRuns: 3,
-      raidRuns: 2,
-      eliteRuns: 2,
+      successfulDungeonRuns: 3,
+      failedDungeonRuns: 0,
+      successfulRaidRuns: 2,
+      failedRaidRuns: 0,
+      successfulEliteRuns: 2,
+      failedEliteRuns: 0,
       successfulRuns: 5,
+      failedRuns: 0,
     };
 
     expect(getRelationshipFlairs(relationship)).toEqual([
@@ -865,6 +876,43 @@ describe("relationship system", () => {
       "Elite Duo",
       "Reliable Pair",
     ]);
+    expect(
+      getRelationshipFlairs({
+        ...relationship,
+        failedDungeonRuns: 1,
+        failedRuns: 1,
+      }),
+    ).toEqual(["Raid Companion", "Elite Duo"]);
+  });
+
+  it("keeps relationship points inside the -100 to 100 range", () => {
+    const high = updateRelationshipsForSharedActivity(
+      {
+        "a::b": {
+          memberIds: ["a", "b"],
+          points: 99,
+        },
+      },
+      {
+        mission: { name: "Wailing Caverns", type: "dungeon", memberIds: ["a", "b"] },
+        missionSucceeded: true,
+      },
+    );
+    const low = updateRelationshipsForSharedActivity(
+      {
+        "a::b": {
+          memberIds: ["a", "b"],
+          points: -99,
+        },
+      },
+      {
+        mission: { name: "Wailing Caverns", type: "dungeon", memberIds: ["a", "b"] },
+        missionSucceeded: false,
+      },
+    );
+
+    expect(high["a::b"].points).toBe(100);
+    expect(low["a::b"].points).toBe(-100);
   });
 
   it("derives capped success modifiers from the strongest group relationship", () => {
@@ -981,6 +1029,12 @@ describe("session persistence", () => {
         dungeonRuns: 5,
         raidRuns: 0,
         eliteRuns: 0,
+        successfulDungeonRuns: 4,
+        failedDungeonRuns: 0,
+        successfulRaidRuns: 0,
+        failedRaidRuns: 0,
+        successfulEliteRuns: 0,
+        failedEliteRuns: 0,
         lastMissionName: "Scarlet Monastery",
         lastInteractionAt: 12345,
         events: [
@@ -988,7 +1042,7 @@ describe("session persistence", () => {
             missionName: "Scarlet Monastery",
             activityType: "dungeon",
             missionSucceeded: true,
-            pointsDelta: 10,
+            pointsDelta: 5,
             occurredAt: 12345,
           },
         ],
@@ -1070,6 +1124,7 @@ describe("session persistence", () => {
     expect(result.loadedActiveMissions[0].finishTime).toBe(6000);
     expect(result.normalizedRoster[0].status).toBe("Questing");
     expect(result.normalizedRoster[1].status).toBe("Idle");
+    expect(result.normalizedRoster[1].adventureGoalQueue).toEqual([]);
     expect(result.loadedGuildGold).toBe(getGuildDerivedStats(createInitialGuildProgress()).goldCap);
   });
 
@@ -1191,6 +1246,37 @@ describe("calendar logic", () => {
       CALENDAR_TIME_OF_DAY.MIDDAY,
     );
     expect(second.calendarEvents).toHaveLength(first.calendarEvents.length);
+  });
+
+  it("preserves selected raid wing chains when materializing calendar series", () => {
+    const state = {
+      ...createInitialCalendarState(0),
+      calendarSeries: [
+        buildCalendarSeries({
+          id: "naxx-series",
+          title: "Naxxramas Full Run",
+          missionId: 68,
+          missionIds: [68, 69, 70, 71, 72],
+          weekday: 2,
+          startsOnDayIndex: 0,
+        }),
+      ],
+    };
+    const result = materializeCalendarSeriesEvents({
+      state,
+      currentDayIndex: 0,
+      createId: () => "fallback-id",
+      horizonDays: 7,
+    });
+
+    expect(result.calendarEvents[0].missionId).toBe(68);
+    expect(result.calendarEvents[0].missionIds).toEqual([
+      "68",
+      "69",
+      "70",
+      "71",
+      "72",
+    ]);
   });
 
   it("limits weekly series materialization to the configured duration", () => {
@@ -1773,6 +1859,54 @@ describe("mission rewards", () => {
     expect(result.updatedRoster[0].equipment.chest.name).toBe("Better Robe");
     expect(result.updatedRoster[0].keys).toEqual(["road_key"]);
     expect(result.missionLogs.some((log) => log.type === "loot")).toBe(true);
+  });
+
+  it("clears matching attunement goals when a rewarded key is earned", () => {
+    vi.spyOn(Math, "random").mockReturnValue(0);
+    const processor = buildProcessor();
+    const result = processor({
+      mission: {
+        id: "library",
+        name: "Scarlet Monastery - Library",
+        type: "dungeon",
+        memberIds: ["mage"],
+        level: 34,
+        exp: 100,
+        rewardQualities: [],
+        rewardKeys: ["scarlet_monastery_key"],
+        dungeonProgress: { clearedSteps: 4 },
+      },
+      currentRoster: [
+        {
+          id: "mage",
+          name: "Mage",
+          charClass: "Mage",
+          level: 34,
+          exp: 0,
+          keys: [],
+          adventureGoalQueue: [
+            {
+              id: "goal-1",
+              type: "attunement",
+              keyId: "scarlet_monastery_key",
+              sourceMissionId: "library",
+              targetMissionId: "armory",
+              createdAt: 10,
+            },
+          ],
+          history: [],
+          equipment: {},
+        },
+      ],
+      activeGuildStats: { expMultiplier: 1, goldMultiplier: 1 },
+      activeFocusBonuses: { expMultiplier: 1, fullPartyGoldMultiplier: 1 },
+      levelCap: 60,
+      failedMissionExpFactor: 0.2,
+    });
+
+    expect(result.missionSucceeded).toBe(true);
+    expect(result.updatedRoster[0].keys).toEqual(["scarlet_monastery_key"]);
+    expect(result.updatedRoster[0].adventureGoalQueue).toEqual([]);
   });
 
   it("records successful zone elite quests as cleared mission ids", () => {
@@ -2997,6 +3131,90 @@ describe("auto dungeon activity", () => {
     });
   });
 
+  it("derives attunement planner targets from mission key metadata", () => {
+    const targets = buildDungeonAttunementTargets({
+      missionList: [
+        {
+          id: "library",
+          type: "dungeon",
+          name: "Scarlet Monastery - Library",
+          rewardKeys: ["scarlet_monastery_key"],
+        },
+        {
+          id: "armory",
+          type: "dungeon",
+          name: "Scarlet Monastery - Armory",
+          requiresKey: true,
+          keyId: "scarlet_monastery_key",
+        },
+      ],
+      roster: [
+        { id: "holder", keys: ["scarlet_monastery_key"] },
+        { id: "missing", keys: [] },
+      ],
+    });
+
+    expect(targets).toHaveLength(1);
+    expect(targets[0]).toMatchObject({
+      keyId: "scarlet_monastery_key",
+      sourceMission: { id: "library" },
+      targetMission: { id: "armory" },
+      isReady: true,
+    });
+    expect(targets[0].holders.map((member) => member.id)).toEqual(["holder"]);
+    expect(targets[0].missing.map((member) => member.id)).toEqual(["missing"]);
+  });
+
+  it("groups attunement planner targets by key id", () => {
+    const targets = buildDungeonAttunementTargets({
+      missionList: [
+        {
+          id: "arena",
+          type: "dungeon",
+          name: "Blackrock Depths - Arena",
+          rewardKeys: ["shadowforge_key"],
+        },
+        {
+          id: "shadowforge",
+          type: "dungeon",
+          name: "Blackrock Depths - Shadowforge",
+          requiresKey: true,
+          keyId: "shadowforge_key",
+        },
+        {
+          id: "city",
+          type: "dungeon",
+          name: "Blackrock Depths - Shadowforge City",
+          requiresKey: true,
+          keyId: "shadowforge_key",
+        },
+      ],
+      roster: [],
+    });
+
+    expect(targets).toHaveLength(1);
+    expect(targets[0].keyId).toBe("shadowforge_key");
+    expect(targets[0].targetMissionIds.sort()).toEqual(["city", "shadowforge"]);
+  });
+
+  it("uses keyed zone elite quests as attunement planner sources", () => {
+    const targets = buildDungeonAttunementTargets({
+      missionList: INITIAL_MISSIONS,
+      roster: [],
+    });
+    const scholomanceTarget = targets.find(
+      (target) => target.keyId === "scholomance_key",
+    );
+
+    expect(scholomanceTarget).toMatchObject({
+      keyId: "scholomance_key",
+      isReady: true,
+      sourceMission: {
+        id: "zone_elite:western_plaguelands:scholomance_key",
+      },
+    });
+  });
+
   it("uses calendar-day intervals for dungeon group search frequency", () => {
     expect(getAutoDungeonIntervalMs(GUILD_DUNGEON_ACTIVITY.MINIMAL)).toBe(
       CALENDAR_DAY_MS * 2,
@@ -3093,6 +3311,111 @@ describe("auto dungeon activity", () => {
       "healer",
     ].sort());
     expect(formed.candidate.memberIds).not.toContain("too-high");
+  });
+
+  it("forms queued attunement groups before generic auto dungeon searches", () => {
+    const attunementMission = {
+      id: "attune-run",
+      type: "dungeon",
+      name: "Attunement Run",
+      level: 60,
+      minLevel: 55,
+      recommended: "55 - 60",
+      requiredPartySize: 5,
+      minPartySize: 5,
+      rewardKeys: ["molten_core_attunement"],
+      exp: 1,
+    };
+    const roster = [
+      makeMember("tank", 60, "Tank"),
+      makeMember("healer", 60, "Healer"),
+      makeMember("dps-1", 60),
+      makeMember("dps-2", 60),
+      makeMember("dps-3", 60),
+    ].map((member) => ({
+      ...member,
+      adventureGoalQueue: [
+        {
+          id: `goal-${member.id}`,
+          type: "attunement",
+          keyId: "molten_core_attunement",
+          sourceMissionId: "attune-run",
+          targetMissionId: "molten-core",
+          createdAt: 1,
+        },
+      ],
+    }));
+
+    const result = resolveAutoDungeonAttempt({
+      mode: GUILD_DUNGEON_ACTIVITY.NONE,
+      now: CALENDAR_DAY_MS * 0.1,
+      missionList: [attunementMission],
+      roster,
+      activeMissions: [],
+      minSuccessChance: 70,
+      getSuccessPreview: () => ({ successChance: 70 }),
+    });
+
+    expect(result.candidate).toMatchObject({
+      mission: attunementMission,
+      goalType: "attunement",
+      keyId: "molten_core_attunement",
+      successChance: 70,
+    });
+    expect(result.candidate.memberIds).toHaveLength(5);
+  });
+
+  it("keeps queued attunement groups waiting while busy or below threshold", () => {
+    const attunementMission = {
+      id: "attune-run",
+      type: "dungeon",
+      name: "Attunement Run",
+      level: 60,
+      minLevel: 55,
+      recommended: "55 - 60",
+      requiredPartySize: 5,
+      minPartySize: 5,
+      rewardKeys: ["molten_core_attunement"],
+    };
+    const roster = [
+      makeMember("tank", 60, "Tank"),
+      makeMember("healer", 60, "Healer"),
+      makeMember("dps-1", 60),
+      makeMember("dps-2", 60),
+      makeMember("dps-3", 60),
+    ].map((member) => ({
+      ...member,
+      adventureGoalQueue: [
+        {
+          id: `goal-${member.id}`,
+          type: "attunement",
+          keyId: "molten_core_attunement",
+          sourceMissionId: "attune-run",
+          targetMissionId: "molten-core",
+        },
+      ],
+    }));
+    const busy = resolveAutoDungeonAttempt({
+      mode: GUILD_DUNGEON_ACTIVITY.NONE,
+      now: CALENDAR_DAY_MS * 0.1,
+      missionList: [attunementMission],
+      roster,
+      activeMissions: [{ id: "active", memberIds: ["tank"] }],
+      minSuccessChance: 70,
+      getSuccessPreview: () => ({ successChance: 100 }),
+    });
+    const lowChance = resolveAutoDungeonAttempt({
+      mode: GUILD_DUNGEON_ACTIVITY.NONE,
+      now: CALENDAR_DAY_MS * 0.1,
+      missionList: [attunementMission],
+      roster,
+      activeMissions: [],
+      minSuccessChance: 70,
+      getSuccessPreview: () => ({ successChance: 69 }),
+    });
+
+    expect(busy.candidate).toBeNull();
+    expect(lowChance.candidate).toBeNull();
   });
 
   it("rotates dungeon searchers by each character's last auto dungeon time", () => {

@@ -19,6 +19,7 @@ import {
   GUILD_ACTIVITY_MODES,
   GUILD_DUNGEON_ACTIVITY,
   GUILD_DUNGEON_ACTIVITY_OPTIONS,
+  AUTO_GROUP_SUCCESS_RATE,
   MEMBER_RANKING_MODES,
   GUILD_MEMBER_SORT,
   GUILD_MEMBER_SORT_OPTIONS,
@@ -104,6 +105,7 @@ import {
   getGuildServerStyle,
   getFactionFallbackManagerName,
   normalizeGuildSetup,
+  normalizeAutoGroupSuccessRate,
 } from "./guild/guildSetup";
 import {
   getGuildMemberSearchScore,
@@ -145,6 +147,11 @@ import {
   hasCompletedZoneEliteQuest,
   resolveAutoZoneEliteGroups,
 } from "./automation/zoneEliteAutomation";
+import {
+  addAdventureGoalToCharacter,
+  buildAdventureGoal,
+  removeAdventureGoalFromCharacter,
+} from "./automation/adventureGoals";
 import {
   advanceDungeonMission,
   getDefaultDungeonProgress,
@@ -202,6 +209,31 @@ const OptionsModal = lazy(() => import("./components/modals/OptionsModal"));
 const CalendarModal = lazy(() => import("./components/modals/CalendarModal"));
 
 const GUILD_FOCUS_CHANGE_COST_GOLD = 10;
+
+const SuccessRateSlider = ({ label, value, onChange }) => {
+  const normalizedValue = normalizeAutoGroupSuccessRate(value);
+  return (
+    <div className="border-t border-gray-700/70 pt-3">
+      <div className="flex items-center justify-between gap-3 text-xs text-gray-300">
+        <label className="font-bold text-gray-200">{label}</label>
+        <span className="font-mono text-emerald-200">{normalizedValue}%</span>
+      </div>
+      <div className="mt-2 grid grid-cols-[auto_1fr_auto] items-center gap-2 text-[10px] font-bold uppercase tracking-wide text-gray-500">
+        <span>{AUTO_GROUP_SUCCESS_RATE.MIN}%</span>
+        <input
+          type="range"
+          min={AUTO_GROUP_SUCCESS_RATE.MIN}
+          max={AUTO_GROUP_SUCCESS_RATE.MAX}
+          step="1"
+          value={normalizedValue}
+          onChange={(event) => onChange(event.target.value)}
+          className="w-full accent-emerald-500"
+        />
+        <span>{AUTO_GROUP_SUCCESS_RATE.MAX}%</span>
+      </div>
+    </div>
+  );
+};
 
 const DEFAULT_DASHBOARD_SECTIONS = Object.freeze({
   guildActivity: true,
@@ -1013,6 +1045,39 @@ const App = () => {
           },
         };
       }
+      if (nextMissionTemplate?.isRaid === true) {
+        const nextRaidStatus = getRaidLockoutStatus({
+          raidLockouts: raidLockoutsRef.current,
+          mission: nextMissionTemplate,
+          currentDayIndex: getCurrentCalendarDayIndex(),
+          memberIds: mission.memberIds,
+        });
+        if (nextRaidStatus.isWingLocked) {
+          const missingWings =
+            nextRaidStatus.missingRequiredWingLabels?.join(", ") ||
+            nextRaidStatus.missingRequiredWingIds?.join(", ") ||
+            "required wings";
+          return {
+            queuedMission: null,
+            updatedRoster: rosterSnapshot,
+            chainLogs: [
+              {
+                type: "dungeon-chain",
+                outcome: "stopped",
+                chainName,
+                missionName: nextMissionTemplate.name,
+                position: currentPosition,
+                total: totalMissions,
+              },
+            ],
+            notification: {
+              type: "error",
+              title: "Raid Chain Stopped",
+              message: `${nextMissionTemplate.dungeonWing || nextMissionTemplate.name} unlocks after clearing: ${missingWings}.`,
+            },
+          };
+        }
+      }
 
       const nextPosition = Math.min(totalMissions, currentPosition + 1);
       const nextChainContext = {
@@ -1029,6 +1094,9 @@ const App = () => {
         rosterSnapshot,
         nextChainContext,
       );
+      const queuedMissionWithCalendar = mission.calendarEventId
+        ? { ...queuedMission, calendarEventId: mission.calendarEventId }
+        : queuedMission;
 
       const updatedRoster = rosterSnapshot.map((char) =>
         mission.memberIds.includes(char.id)
@@ -1041,7 +1109,7 @@ const App = () => {
       );
 
       return {
-        queuedMission,
+        queuedMission: queuedMissionWithCalendar,
         updatedRoster,
         chainLogs: [
           {
@@ -1061,7 +1129,7 @@ const App = () => {
         },
       };
     },
-    [buildMissionRun],
+    [buildMissionRun, getCurrentCalendarDayIndex],
   );
 
   const missionRewardProcessor = useMemo(
@@ -1467,13 +1535,6 @@ const App = () => {
             registerDungeonWipeMilestone(m.name);
           }
         }
-        if (m.calendarEventId) {
-          completeCalendarEvent({
-            eventId: m.calendarEventId,
-            missionName: m.name,
-            missionSucceeded: result.missionSucceeded,
-          });
-        }
         if (!result.missionSucceeded) {
           pushNotification({
             type: "error",
@@ -1512,6 +1573,13 @@ const App = () => {
         if (chainResolution.notification) {
           pushNotification(chainResolution.notification);
         }
+        if (m.calendarEventId && !chainResolution.queuedMission) {
+          completeCalendarEvent({
+            eventId: m.calendarEventId,
+            missionName: m.dungeonSetName || m.name,
+            missionSucceeded: result.missionSucceeded,
+          });
+        }
       });
 
       const autoDungeonAttempt = resolveAutoDungeonAttempt({
@@ -1530,6 +1598,7 @@ const App = () => {
         missionList: missionListRef.current,
         roster: newRoster,
         activeMissions: newMissions,
+        minSuccessChance: guildSetupRef.current?.dungeonMinSuccessChance,
         getSuccessPreview: getAdjustedMissionSuccessPreview,
       });
       autoDungeonStateRef.current = {
@@ -1543,6 +1612,10 @@ const App = () => {
           : [];
       autoDungeonCandidates.forEach((candidate) => {
         const { mission, memberIds, successChance } = candidate;
+        const isAttunementGoal = candidate.goalType === "attunement";
+        const attunementLabel = isAttunementGoal
+          ? getKeyLabel(candidate.keyId) || "Attunement"
+          : "";
         const chainMissionIds = Array.isArray(candidate.chainMissionIds)
           ? candidate.chainMissionIds
           : [];
@@ -1585,7 +1658,9 @@ const App = () => {
                 status: "Questing",
                 statusText: hasDungeonChain
                   ? `Auto Chain: ${chainContext.setName}`
-                  : `Auto Dungeon: ${openingMission.dungeonWing || openingMission.name}`,
+                  : isAttunementGoal
+                    ? `Attunement: ${attunementLabel}`
+                    : `Auto Dungeon: ${openingMission.dungeonWing || openingMission.name}`,
                 autoDungeonLastStartedAt: now,
                 autoDungeonLastMissionId: String(
                   openingMission.id ?? openingMission.questId ?? "",
@@ -1597,18 +1672,30 @@ const App = () => {
         );
         newMissions.push(missionRun);
         newLogs.push({
-          type: "auto-dungeon",
+          type: isAttunementGoal ? "attunement-goal" : "auto-dungeon",
           missionName: hasDungeonChain
             ? chainContext.setName
             : openingMission.dungeonWing || openingMission.name,
-          message: `${memberIds.length} heroes formed an automatic ${hasDungeonChain ? "dungeon chain" : "dungeon group"} for ${hasDungeonChain ? chainMissions.map((missionEntry) => missionEntry.dungeonWing || missionEntry.name).join(" + ") : openingMission.dungeonWing || openingMission.name} (${successChance}% success).`,
+          message: `${memberIds.length} heroes formed ${
+            isAttunementGoal
+              ? `an attunement group for ${attunementLabel}`
+              : `an automatic ${hasDungeonChain ? "dungeon chain" : "dungeon group"}`
+          } for ${
+            hasDungeonChain
+              ? chainMissions.map((missionEntry) => missionEntry.dungeonWing || missionEntry.name).join(" + ")
+              : openingMission.dungeonWing || openingMission.name
+          } (${successChance}% success).`,
         });
         pushNotification({
           type: "info",
-          title: hasDungeonChain
+          title: isAttunementGoal
+            ? "Attunement Group Formed"
+            : hasDungeonChain
             ? "Dungeon Chain Formed"
             : "Dungeon Group Formed",
-          message: `${hasDungeonChain ? chainMissions.map((missionEntry) => missionEntry.dungeonWing || missionEntry.name).join(" + ") : openingMission.dungeonWing || openingMission.name}: ${memberIds.length} heroes, ${successChance}% success.`,
+          message: `${isAttunementGoal ? `${attunementLabel}: ` : ""}${
+            hasDungeonChain ? chainMissions.map((missionEntry) => missionEntry.dungeonWing || missionEntry.name).join(" + ") : openingMission.dungeonWing || openingMission.name
+          }: ${memberIds.length} heroes, ${successChance}% success.`,
           durationMs: 4200,
         });
       });
@@ -1616,10 +1703,22 @@ const App = () => {
       const autoZoneEliteGroups = resolveAutoZoneEliteGroups({
         roster: newRoster,
         activeMissions: newMissions,
+        missionList: missionListRef.current,
+        minSuccessChance: guildSetupRef.current?.eliteQuestMinSuccessChance,
+        getSuccessPreview: getAdjustedMissionSuccessPreview,
       });
       autoZoneEliteGroups.forEach((candidate) => {
-        const { mission, memberIds, starterMemberIds, supporterMemberIds } =
-          candidate;
+        const {
+          mission,
+          memberIds,
+          starterMemberIds,
+          supporterMemberIds,
+          successChance,
+        } = candidate;
+        const isAttunementGoal = candidate.goalType === "attunement";
+        const attunementLabel = isAttunementGoal
+          ? getKeyLabel(candidate.keyId) || "Attunement"
+          : "";
         const missionRun = buildMissionRun(
           mission,
           memberIds,
@@ -1631,7 +1730,9 @@ const App = () => {
             ? {
                 ...char,
                 status: "Questing",
-                statusText: `Group Quest: ${mission.name}`,
+                statusText: isAttunementGoal
+                  ? `Attunement: ${attunementLabel}`
+                  : `Group Quest: ${mission.name}`,
                 autoZoneEliteLastStartedAt: now,
                 autoZoneEliteLastMissionId: String(mission.id ?? ""),
               }
@@ -1639,14 +1740,20 @@ const App = () => {
         );
         newMissions.push(missionRun);
         newLogs.push({
-          type: "zone-elite",
+          type: isAttunementGoal ? "attunement-goal" : "zone-elite",
           missionName: mission.name,
-          message: `${memberIds.length} heroes formed a zone elite group for ${mission.name}.`,
+          message: `${memberIds.length} heroes formed ${
+            isAttunementGoal
+              ? `an attunement group for ${attunementLabel}`
+              : "a zone elite group"
+          } via ${mission.name} (${successChance}% success).`,
         });
         pushNotification({
           type: "info",
-          title: "Zone Elite Group Formed",
-          message: `${mission.name}: ${starterMemberIds.length} need it${
+          title: isAttunementGoal
+            ? "Attunement Group Formed"
+            : "Zone Elite Group Formed",
+          message: `${isAttunementGoal ? `${attunementLabel}: ` : ""}${mission.name}: ${memberIds.length} heroes, ${successChance}% success. ${starterMemberIds.length} need it${
             supporterMemberIds.length > 0
               ? `, ${supporterMemberIds.length} helping`
               : ""
@@ -2116,6 +2223,16 @@ const App = () => {
           : `Automatic dungeon grouping set to ${mode}.`,
     });
   };
+  const handleGuildSuccessRateChange = (field, value) => {
+    const normalizedValue = normalizeAutoGroupSuccessRate(value);
+    if (field === "dungeonMinSuccessChance") {
+      autoDungeonStateRef.current = { nextAttemptAt: 0 };
+    }
+    setGuildSetup((prev) => ({
+      ...prev,
+      [field]: normalizedValue,
+    }));
+  };
   const toggleDashboardSection = useCallback((sectionKey) => {
     setDashboardSectionsOpen((prev) => ({
       ...prev,
@@ -2207,6 +2324,15 @@ const App = () => {
           dungeonActivity: GUILD_DUNGEON_ACTIVITY_OPTIONS.includes(value)
             ? value
             : GUILD_DUNGEON_ACTIVITY.NONE,
+        };
+      }
+      if (
+        field === "eliteQuestMinSuccessChance" ||
+        field === "dungeonMinSuccessChance"
+      ) {
+        return {
+          ...prev,
+          [field]: normalizeAutoGroupSuccessRate(value),
         };
       }
       if (field === "server") {
@@ -2500,10 +2626,10 @@ const App = () => {
           (Array.isArray(missionListRef.current)
             ? missionListRef.current
             : []
-          ).map((missionEntry) => [missionEntry.id, missionEntry]),
+          ).map((missionEntry) => [String(missionEntry.id), missionEntry]),
         );
         chainMissions = requestedChainMissionIds
-          .map((missionId) => missionLookup.get(missionId))
+          .map((missionId) => missionLookup.get(String(missionId)))
           .filter(
             (missionEntry) =>
               missionEntry &&
@@ -2731,6 +2857,96 @@ const App = () => {
     ],
   );
 
+  const handleQueueAdventureGoal = useCallback(
+    ({ memberIds, keyId, sourceMissionId, targetMissionId }) => {
+      const selectedMemberIds = Array.isArray(memberIds)
+        ? memberIds.map((memberId) => String(memberId)).filter(Boolean)
+        : [];
+      const normalizedKeyId = String(keyId || "").trim();
+      const normalizedSourceMissionId = String(sourceMissionId || "").trim();
+      if (selectedMemberIds.length === 0 || !normalizedKeyId || !normalizedSourceMissionId) {
+        return false;
+      }
+      const selectedMemberIdSet = new Set(selectedMemberIds);
+      const goalTemplate = buildAdventureGoal({
+        id: createId(),
+        keyId: normalizedKeyId,
+        sourceMissionId: normalizedSourceMissionId,
+        targetMissionId,
+        createdAt: gameTimeRef.current,
+      });
+      let queuedCount = 0;
+      const nextRoster = (Array.isArray(rosterRef.current) ? rosterRef.current : roster).map(
+        (member) => {
+          if (!selectedMemberIdSet.has(String(member.id))) return member;
+          const nextMember = addAdventureGoalToCharacter({
+            character: member,
+            goal: {
+              ...goalTemplate,
+              id: createId(),
+            },
+          });
+          if (nextMember !== member) queuedCount += 1;
+          return nextMember;
+        },
+      );
+      if (queuedCount === 0) return false;
+      rosterRef.current = nextRoster;
+      setRoster(nextRoster);
+      const sourceMission = missionListRef.current.find(
+        (mission) => String(mission?.id) === normalizedSourceMissionId,
+      );
+      pushNotification({
+        type: "info",
+        title: "Attunement Goal Queued",
+        message: `${queuedCount} hero${queuedCount === 1 ? "" : "es"} queued for ${
+          sourceMission?.dungeonWing || sourceMission?.name || getKeyLabel(normalizedKeyId)
+        }.`,
+        durationMs: 3600,
+      });
+      return true;
+    },
+    [pushNotification, roster],
+  );
+
+  const handleClearAdventureGoal = useCallback(
+    ({ memberIds, goalId, keyId, sourceMissionId, targetMissionId }) => {
+      const selectedMemberIds = Array.isArray(memberIds)
+        ? memberIds.map((memberId) => String(memberId)).filter(Boolean)
+        : [];
+      if (selectedMemberIds.length === 0 && !goalId && !keyId) return false;
+      const selectedMemberIdSet = new Set(selectedMemberIds);
+      let clearedCount = 0;
+      const nextRoster = (Array.isArray(rosterRef.current) ? rosterRef.current : roster).map(
+        (member) => {
+          if (selectedMemberIdSet.size > 0 && !selectedMemberIdSet.has(String(member.id))) {
+            return member;
+          }
+          const nextMember = removeAdventureGoalFromCharacter({
+            character: member,
+            goalId,
+            keyId,
+            sourceMissionId,
+            targetMissionId,
+          });
+          if (nextMember !== member) clearedCount += 1;
+          return nextMember;
+        },
+      );
+      if (clearedCount === 0) return false;
+      rosterRef.current = nextRoster;
+      setRoster(nextRoster);
+      pushNotification({
+        type: "info",
+        title: "Attunement Goal Cleared",
+        message: `${clearedCount} queued goal${clearedCount === 1 ? "" : "s"} removed.`,
+        durationMs: 2600,
+      });
+      return true;
+    },
+    [pushNotification, roster],
+  );
+
   const refreshCalendarStateNow = useCallback(
     (nextState) => {
       const currentDayIndex = getCalendarDayIndex(
@@ -2761,7 +2977,7 @@ const App = () => {
   );
 
   const handleCreateCalendarEvent = useCallback(
-    ({ missionId, scheduledDayIndex, scheduledTimeOfDay, title }) => {
+    ({ missionId, missionIds = [], scheduledDayIndex, scheduledTimeOfDay, title }) => {
       const currentDayIndex = getCalendarDayIndex(
         gameTimeRef.current,
         calendarStateRef.current.calendarEpochGameTimeMs,
@@ -2774,6 +2990,7 @@ const App = () => {
         id: createId(),
         title: title || mission.name,
         missionId: mission.id,
+        missionIds,
         scheduledDayIndex,
         scheduledTimeOfDay,
         createdAtDayIndex: currentDayIndex,
@@ -2801,6 +3018,7 @@ const App = () => {
       seriesType,
       intervalDays,
       durationWeeks,
+      missionIds = [],
     }) => {
       const mission = missionListRef.current.find(
         (entry) => String(entry?.id) === String(missionId),
@@ -2810,6 +3028,7 @@ const App = () => {
         id: createId(),
         title: title || `${mission.name} Raid Day`,
         missionId: mission.id,
+        missionIds,
         weekday,
         scheduledTimeOfDay,
         startsOnDayIndex,
@@ -2933,9 +3152,15 @@ const App = () => {
         Boolean,
       );
       if (approvedRosterIds.length === 0) return false;
+      const calendarMissionIds = Array.isArray(event.missionIds)
+        ? event.missionIds
+        : [];
+      const chainMissionIds =
+        calendarMissionIds.length > 1 ? calendarMissionIds : undefined;
 
       const deployed = handleDeploy(mission, approvedRosterIds, {
         calendarEventId: event.id,
+        ...(chainMissionIds ? { chainMissionIds } : null),
       });
       if (!deployed) return false;
 
@@ -3090,14 +3315,6 @@ const App = () => {
         registerDungeonWipeMilestone(missionWithStepLoot.name);
       }
     }
-    if (missionWithStepLoot.calendarEventId) {
-      completeCalendarEvent({
-        eventId: missionWithStepLoot.calendarEventId,
-        missionName: missionWithStepLoot.name,
-        missionSucceeded: result.missionSucceeded,
-      });
-    }
-
     const openGoldSpace = guildDerivedStats.goldCap - currentGoldAfterWipes;
     const gainedGold = Math.max(0, Math.min(result.missionGold, openGoldSpace));
 
@@ -3137,6 +3354,13 @@ const App = () => {
           ...prev,
         ].slice(0, 50),
       );
+    }
+    if (missionWithStepLoot.calendarEventId && !chainResolution.queuedMission) {
+      completeCalendarEvent({
+        eventId: missionWithStepLoot.calendarEventId,
+        missionName: missionWithStepLoot.dungeonSetName || missionWithStepLoot.name,
+        missionSucceeded: result.missionSucceeded,
+      });
     }
 
     if (!result.missionSucceeded) {
@@ -3580,9 +3804,9 @@ const App = () => {
         </button>
         <button
           onClick={() => setShowMap(true)}
-          className="wow-command flex-none snap-start px-4 py-3 rounded bg-gray-800 border border-cyan-800 text-cyan-200 hover:bg-gray-700 shadow flex items-center gap-2 whitespace-nowrap"
+          className="btn-adventure-board flex-none snap-start px-5 py-3 rounded border shadow flex items-center gap-2 whitespace-nowrap"
         >
-          <span className="text-xl">🗺️</span> Map
+          <span className="text-xl">🗺️</span> Adventure Board
         </button>
         <button
           onClick={() => setShowOptions(true)}
@@ -3634,6 +3858,18 @@ const App = () => {
               );
             })}
           </div>
+          <div className="mt-3">
+            <SuccessRateSlider
+              label="Start Elite Quest with min. Success Rate"
+              value={guildSetup.eliteQuestMinSuccessChance}
+              onChange={(value) =>
+                handleGuildSuccessRateChange(
+                  "eliteQuestMinSuccessChance",
+                  value,
+                )
+              }
+            />
+          </div>
         </DashboardAccordionSection>
 
         <DashboardAccordionSection
@@ -3668,6 +3904,18 @@ const App = () => {
           <p className="mt-2 text-[11px] text-gray-500">
             {dungeonActivityInfoText}
           </p>
+          <div className="mt-3">
+            <SuccessRateSlider
+              label="Start Dungeon with min. Success Rate"
+              value={guildSetup.dungeonMinSuccessChance}
+              onChange={(value) =>
+                handleGuildSuccessRateChange(
+                  "dungeonMinSuccessChance",
+                  value,
+                )
+              }
+            />
+          </div>
         </DashboardAccordionSection>
 
         <DashboardAccordionSection
@@ -4074,8 +4322,11 @@ const App = () => {
             roster={roster}
             missionList={missionList}
             activeMissions={activeMissions}
+            gameTimeMs={gameTimeMs}
             guildFaction={guildSetup.faction}
             onDeploy={handleDeploy}
+            onQueueAdventureGoal={handleQueueAdventureGoal}
+            onClearAdventureGoal={handleClearAdventureGoal}
             getMissionPreview={getAdjustedMissionSuccessPreview}
           />
         )}

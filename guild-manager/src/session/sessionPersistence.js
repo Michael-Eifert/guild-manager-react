@@ -4,6 +4,7 @@ import {
   createInitialCalendarState,
   normalizeCalendarState,
 } from "../calendar/calendarLogic";
+import { normalizeAdventureGoalQueue } from "../automation/adventureGoals";
 import { normalizeRaidLockouts } from "../raids/raidLockouts";
 import { normalizeGuildRelationships } from "../social/relationshipSystem";
 
@@ -338,10 +339,14 @@ export const hydrateSessionData = ({
           ),
         ]
       : [];
+    const normalizedAdventureGoalQueue = normalizeAdventureGoalQueue(
+      char?.adventureGoalQueue,
+    );
     if (activeMemberIds.has(char.id)) {
       return {
         ...char,
         keys: normalizedKeys,
+        adventureGoalQueue: normalizedAdventureGoalQueue,
         clearedMissionIds: normalizedClearedMissionIds,
         status: "Questing",
         statusText: "On Mission",
@@ -351,6 +356,7 @@ export const hydrateSessionData = ({
       return {
         ...char,
         keys: normalizedKeys,
+        adventureGoalQueue: normalizedAdventureGoalQueue,
         clearedMissionIds: normalizedClearedMissionIds,
         status: "Idle",
         statusText: "Awaiting Orders",
@@ -359,6 +365,7 @@ export const hydrateSessionData = ({
     return {
       ...char,
       keys: normalizedKeys,
+      adventureGoalQueue: normalizedAdventureGoalQueue,
       clearedMissionIds: normalizedClearedMissionIds,
     };
   });
