@@ -2470,6 +2470,18 @@ const App = () => {
           });
           return false;
         }
+        if (raidStatus.isWingLocked) {
+          const missingWings =
+            raidStatus.missingRequiredWingLabels?.join(", ") ||
+            raidStatus.missingRequiredWingIds?.join(", ") ||
+            "required wings";
+          pushNotification({
+            type: "error",
+            title: "Raid Wing Locked",
+            message: `${quest.dungeonWing || quest.name} unlocks after clearing: ${missingWings}.`,
+          });
+          return false;
+        }
       }
 
       const selectedMemberIdSet = new Set(memberIds.map((id) => String(id)));

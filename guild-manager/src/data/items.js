@@ -6,6 +6,7 @@ import { LOWER_BLACKROCK_SPIRE_ITEMS } from "./imports/lowerBlackrockSpireLootMa
 import { UPPER_BLACKROCK_SPIRE_ITEMS } from "./imports/upperBlackrockSpireLootManifest";
 import { ONYXIAS_LAIR_ITEMS } from "./imports/onyxiasLairLootManifest";
 import { BLACKWING_LAIR_ITEMS } from "./imports/blackwingLairLootManifest";
+import { NAXXRAMAS_ITEMS } from "./imports/naxxramasLootManifest";
 
 const wowItemIcon = (iconCode) =>
   `https://wow.zamimg.com/images/wow/icons/large/${iconCode.toLowerCase()}.jpg`;
@@ -21,12 +22,14 @@ const ITEM_LEVEL_BANDS_BY_SOURCE = Object.freeze({
   onyxias_lair: { min: 76, max: 76 },
   blackwing_lair: { min: 76, max: 76 },
   ahn_qiraj_temple: { min: 73, max: 88 },
+  naxxramas: { min: 88, max: 92 },
 });
 
 const SET_TIER_ITEM_LEVEL = Object.freeze({
   t0_: 66,
   t1_: 70,
   t2_: 76,
+  t3_: 90,
 });
 
 const RAID_FINAL_BOSS_ITEM_LEVEL = Object.freeze({
@@ -50,6 +53,10 @@ const RAID_FINAL_BOSS_ITEM_LEVEL = Object.freeze({
     "C'Thun": 88,
     Ouro: 84,
     "Twin Emperors": 83,
+  },
+  naxxramas: {
+    Sapphiron: 91,
+    "Kel'Thuzad": 92,
   },
 });
 
@@ -6136,6 +6143,8 @@ const RAW_DB_ITEMS = [
   ...BLACKWING_LAIR_ITEMS,
   // Temple of Ahn'Qiraj remains the highest pre-Naxxramas raid tier.
   ...AHN_QIRAJ_TEMPLE_ITEMS,
+  // Naxxramas raid loot is generated from the raid loot manifest.
+  ...NAXXRAMAS_ITEMS,
 ];
 
 export const DB_ITEMS = Object.freeze(RAW_DB_ITEMS.map(applyItemLevelTuning));

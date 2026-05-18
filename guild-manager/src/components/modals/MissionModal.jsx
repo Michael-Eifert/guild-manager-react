@@ -868,6 +868,7 @@ const MissionModal = ({
   const isSelectedRaidLockoutConflicted = Boolean(
     selectedRaidLockoutStatus?.hasLockoutConflict,
   );
+  const isSelectedRaidWingLocked = Boolean(selectedRaidLockoutStatus?.isWingLocked);
   const missionPreview = activePrepMission
     ? getAdjustedMissionPreview(activePrepMission, selectedPartyMembers)
     : null;
@@ -1101,7 +1102,8 @@ const MissionModal = ({
     isKeyBlocked ||
     isRaidPartySizeInvalid ||
     isSelectedRaidCompletedLocked ||
-    isSelectedRaidLockoutConflicted;
+    isSelectedRaidLockoutConflicted ||
+    isSelectedRaidWingLocked;
 
   const handleDeploySelectedMission = () => {
     if (isDeployDisabled) return;
@@ -1224,6 +1226,11 @@ const MissionModal = ({
                       )
                       .join(", ")}`
                   : ""}
+              </div>
+            )}
+            {mission.isRaid && raidLockoutStatus?.isWingLocked && (
+              <div className="text-xs text-rose-300/85 mt-0.5 font-semibold">
+                Locked: clear {raidLockoutStatus.missingRequiredWingLabels.join(", ")} first.
               </div>
             )}
             {mission.type === "dungeon" && missionWipeCost > 0 && (
@@ -1941,6 +1948,9 @@ const MissionModal = ({
                       ? ` - cleared until day ${selectedRaidLockoutStatus.resetWindow.nextResetDayIndex}`
                       : ""}
                     {isSelectedRaidLockoutConflicted ? " - conflicting raid IDs selected" : ""}
+                    {isSelectedRaidWingLocked
+                      ? ` - locked: clear ${selectedRaidLockoutStatus.missingRequiredWingLabels.join(", ")} first`
+                      : ""}
                   </div>
                 )}
                 {shouldShowTacticalOdds && (

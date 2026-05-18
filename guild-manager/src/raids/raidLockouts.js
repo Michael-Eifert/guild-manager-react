@@ -14,10 +14,35 @@ const normalizeIdList = (value) => [
   ),
 ];
 
+const normalizeWingId = (value) =>
+  String(value || "")
+    .trim()
+    .toLowerCase()
+    .replace(/['\u2019]/g, "")
+    .replace(/[^a-z0-9]+/g, "_")
+    .replace(/^_+|_+$/g, "");
+
 const normalizeLockoutId = (value) => {
   const raw = String(value || "").trim();
   return raw || null;
 };
+
+const getMissionRaidWingId = (mission) =>
+  normalizeWingId(mission?.raidWingId || mission?.dungeonWing);
+
+const getMissionRequiredRaidWingIds = (mission) =>
+  normalizeIdList(mission?.requiredRaidWingIds).map(normalizeWingId).filter(Boolean);
+
+const getMissionRaidLockoutTotalBosses = (mission, fallbackTotalBosses = 1) =>
+  Math.max(
+    1,
+    Math.floor(
+      Number(mission?.raidLockoutTotalBosses) ||
+        Number(fallbackTotalBosses) ||
+        Number(mission?.dungeonBosses?.length) ||
+        1,
+    ),
+  );
 
 export const getRaidLockoutKey = (mission) => {
   const raw =
@@ -134,6 +159,9 @@ const buildNormalizedLockout = ({
   );
   const lockoutId =
     normalizeLockoutId(source.lockoutId) || String(fallbackLockoutId || numericDisplayId);
+  const clearedWingIds = normalizeIdList(source.clearedWingIds)
+    .map(normalizeWingId)
+    .filter(Boolean);
 
   return {
     lockoutId,
@@ -150,6 +178,7 @@ const buildNormalizedLockout = ({
     totalBosses,
     completed: Boolean(source.completed) || clearedSteps >= totalBosses,
     participantIds: normalizeIdList(source.participantIds),
+    clearedWingIds,
   };
 };
 
@@ -208,6 +237,9 @@ const normalizeRaidEntry = ({ key, lockout, currentDayIndex }) => {
     completed: lockouts.every((raidLockout) => raidLockout.completed),
     participantIds: normalizeIdList(
       lockouts.flatMap((raidLockout) => raidLockout.participantIds),
+    ),
+    clearedWingIds: normalizeIdList(
+      lockouts.flatMap((raidLockout) => raidLockout.clearedWingIds),
     ),
   };
 };
@@ -296,6 +328,25 @@ export const getRaidLockoutStatus = ({
     activeLockouts.find((activeLockout) => !activeLockout.completed) ||
     activeLockouts[0] ||
     null;
+  const requiredWingIds = getMissionRequiredRaidWingIds(mission);
+  const wingRequirementLockout =
+    selectedIds.length > 0 ? partyLockouts[0] || null : lockout;
+  const clearedWingIds = new Set(
+    normalizeIdList(wingRequirementLockout?.clearedWingIds)
+      .map(normalizeWingId)
+      .filter(Boolean),
+  );
+  const missingRequiredWingIds = requiredWingIds.filter(
+    (wingId) => !clearedWingIds.has(wingId),
+  );
+  const requiredWingLabels =
+    mission?.requiredRaidWingLabels && typeof mission.requiredRaidWingLabels === "object"
+      ? mission.requiredRaidWingLabels
+      : {};
+  const missingRequiredWingLabels = missingRequiredWingIds.map(
+    (wingId) => requiredWingLabels[wingId] || wingId,
+  );
+  const isWingLocked = missingRequiredWingIds.length > 0;
   const window = mission?.isRaid
     ? getRaidResetWindow(mission, currentDayIndex)
     : null;
@@ -307,8 +358,11 @@ export const getRaidLockoutStatus = ({
     resetWindow: window,
     isCompletedLocked,
     hasLockoutConflict,
+    isWingLocked,
+    missingRequiredWingIds,
+    missingRequiredWingLabels,
     completedMemberIds,
-    canEnter: !isCompletedLocked && !hasLockoutConflict,
+    canEnter: !isCompletedLocked && !hasLockoutConflict && !isWingLocked,
     clearedSteps: Math.max(0, Math.floor(Number(lockout?.clearedSteps) || 0)),
     totalBosses: Math.max(1, Math.floor(Number(lockout?.totalBosses) || 1)),
   };
@@ -359,9 +413,9 @@ export const startRaidLockout = ({
     return current;
   }
 
-  const bossCount = Math.max(
-    1,
-    Math.floor(Number(totalBosses) || Number(partyLockouts[0]?.totalBosses) || 1),
+  const bossCount = getMissionRaidLockoutTotalBosses(
+    mission,
+    Number(totalBosses) || Number(partyLockouts[0]?.totalBosses) || 1,
   );
   const targetLockout = partyLockouts[0] || null;
   const identity = targetLockout
@@ -390,6 +444,9 @@ export const startRaidLockout = ({
       ...(targetLockout?.participantIds || []),
       ...selectedIds,
     ]),
+    clearedWingIds: normalizeIdList(targetLockout?.clearedWingIds)
+      .map(normalizeWingId)
+      .filter(Boolean),
   };
   const nextLockouts = [
     ...existingEntry.lockouts.filter(
@@ -442,14 +499,36 @@ export const updateRaidLockoutProgress = ({
   const partyLockouts = getPartyLockouts({ activeLockouts, memberIds: selectedIds });
   if (partyLockouts.length !== 1) return started;
   const existing = partyLockouts[0];
-  const bossCount = Math.max(
+  const bossCount = getMissionRaidLockoutTotalBosses(
+    mission,
+    Number(totalBosses) || Number(existing.totalBosses) || 1,
+  );
+  const wingId = getMissionRaidWingId(mission);
+  const wingBossCount = Math.max(
     1,
-    Math.floor(Number(totalBosses) || Number(existing.totalBosses) || 1),
+    Math.floor(Number(mission?.raidWingBossCount) || Number(clearedSteps) || 1),
   );
-  const nextClearedSteps = Math.max(
-    Math.floor(Number(existing.clearedSteps) || 0),
-    Math.min(bossCount, Math.floor(Number(clearedSteps) || 0)),
-  );
+  const didClearWing =
+    wingId &&
+    Math.floor(Number(clearedSteps) || 0) >=
+      Math.max(1, Math.floor(Number(mission?.raidWingBossCount) || wingBossCount));
+  const currentClearedWingIds = normalizeIdList(existing.clearedWingIds)
+    .map(normalizeWingId)
+    .filter(Boolean);
+  const nextClearedWingIds =
+    didClearWing && !currentClearedWingIds.includes(wingId)
+      ? [...currentClearedWingIds, wingId]
+      : currentClearedWingIds;
+  const nextClearedSteps = wingId
+    ? Math.min(
+        bossCount,
+        Math.max(0, Math.floor(Number(existing.clearedSteps) || 0)) +
+          (didClearWing && !currentClearedWingIds.includes(wingId) ? wingBossCount : 0),
+      )
+    : Math.max(
+        Math.floor(Number(existing.clearedSteps) || 0),
+        Math.min(bossCount, Math.floor(Number(clearedSteps) || 0)),
+      );
   const nextLockout = {
     ...existing,
     totalBosses: bossCount,
@@ -459,6 +538,7 @@ export const updateRaidLockoutProgress = ({
       ...(existing.participantIds || []),
       ...selectedIds,
     ]),
+    clearedWingIds: nextClearedWingIds,
   };
   return normalizeRaidLockouts(
     {
@@ -490,5 +570,6 @@ export const getRaidResumeProgress = ({
     memberIds,
   });
   if (!status.canEnter || status.isCompletedLocked) return 0;
+  if (getMissionRaidWingId(mission)) return 0;
   return status.partyLockouts.length === 1 ? status.clearedSteps : 0;
 };

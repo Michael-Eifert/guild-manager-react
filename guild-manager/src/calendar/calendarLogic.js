@@ -286,6 +286,7 @@ export const isCharacterEligibleForCalendarEvent = ({
   if (!character || !mission) return false;
   if (raidLockoutStatus?.isCompletedLocked) return false;
   if (raidLockoutStatus?.hasLockoutConflict) return false;
+  if (raidLockoutStatus?.isWingLocked) return false;
   const characterId = String(character.id || "");
   const isActiveInDungeon = activeDungeonMemberIds.has(characterId);
   if (activeMemberIds.has(characterId) && !isActiveInDungeon) return false;

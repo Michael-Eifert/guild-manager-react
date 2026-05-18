@@ -142,6 +142,11 @@ import {
   unsupportedBlackwingLairDrops,
 } from "../data/imports/blackwingLairLootManifest";
 import {
+  NAXXRAMAS_ACTIVE_LOOT_MANIFEST,
+  NAXXRAMAS_ITEMS,
+  unsupportedNaxxramasDrops,
+} from "../data/imports/naxxramasLootManifest";
+import {
   ONYXIAS_LAIR_ACTIVE_LOOT_MANIFEST,
   ONYXIAS_LAIR_ITEMS,
 } from "../data/imports/onyxiasLairLootManifest";
@@ -2108,6 +2113,117 @@ describe("Tier 2 raid integration", () => {
   });
 });
 
+describe("Naxxramas raid integration", () => {
+  const naxxMissions = INITIAL_MISSIONS.filter(
+    (mission) => mission.dungeonSetId === "naxxramas",
+  );
+  const frostwyrmMission = naxxMissions.find(
+    (mission) => mission.dungeonWing === "Frostwyrm Lair",
+  );
+  const baseWingMissions = naxxMissions.filter(
+    (mission) => mission.dungeonWing !== "Frostwyrm Lair",
+  );
+  const naxxItems = DB_ITEMS.filter((item) => item.dungeonSetId === "naxxramas");
+  const tierThreeItems = naxxItems.filter((item) =>
+    String(item.setId || "").startsWith("t3_"),
+  );
+
+  it("defines Naxxramas as four base wings plus locked Frostwyrm Lair", () => {
+    expect(naxxMissions).toHaveLength(5);
+    expect(baseWingMissions.map((mission) => mission.dungeonWing)).toEqual([
+      "Spider Wing",
+      "Plague Wing",
+      "Military Wing",
+      "Construct Wing",
+    ]);
+    naxxMissions.forEach((mission) => {
+      expect(mission.isRaid).toBe(true);
+      expect(mission.requiredPartySize).toBe(40);
+      expect(mission.raidLockoutId).toBe("naxxramas");
+      expect(mission.raidLockoutTotalBosses).toBe(15);
+      expect(mission.raidReset).toMatchObject({
+        type: "weekly",
+        weekday: 2,
+      });
+    });
+    expect(getDungeonBossCount(frostwyrmMission)).toBe(2);
+    expect(frostwyrmMission.requiredRaidWingIds).toEqual([
+      "spider_wing",
+      "plague_wing",
+      "military_wing",
+      "construct_wing",
+    ]);
+  });
+
+  it("unlocks Frostwyrm Lair after all four Naxxramas wings are cleared in one ID", () => {
+    const members = ["tank", "healer", "dps"];
+    const currentDayIndex = 2;
+    const beforeClears = getRaidLockoutStatus({
+      raidLockouts: {},
+      mission: frostwyrmMission,
+      currentDayIndex,
+      memberIds: members,
+    });
+    expect(beforeClears.canEnter).toBe(false);
+    expect(beforeClears.isWingLocked).toBe(true);
+
+    const clearedLockouts = baseWingMissions.reduce(
+      (lockouts, mission) =>
+        updateRaidLockoutProgress({
+          raidLockouts: lockouts,
+          mission,
+          currentDayIndex,
+          memberIds: members,
+          clearedSteps: getDungeonBossCount(mission),
+          totalBosses: getDungeonBossCount(mission),
+        }),
+      {},
+    );
+
+    const unlocked = getRaidLockoutStatus({
+      raidLockouts: clearedLockouts,
+      mission: frostwyrmMission,
+      currentDayIndex,
+      memberIds: members,
+    });
+    expect(unlocked.canEnter).toBe(true);
+    expect(unlocked.isWingLocked).toBe(false);
+    expect(unlocked.lockout.clearedWingIds.sort()).toEqual([
+      "construct_wing",
+      "military_wing",
+      "plague_wing",
+      "spider_wing",
+    ]);
+    expect(unlocked.clearedSteps).toBe(13);
+    expect(unlocked.totalBosses).toBe(15);
+    expect(unlocked.isCompletedLocked).toBe(false);
+  });
+
+  it("converts Naxxramas loot and supported Tier 3 pieces into database items", () => {
+    expect(NAXXRAMAS_ACTIVE_LOOT_MANIFEST.length).toBeGreaterThan(60);
+    expect(NAXXRAMAS_ITEMS.length).toBe(NAXXRAMAS_ACTIVE_LOOT_MANIFEST.length);
+    expect(tierThreeItems).toHaveLength(45);
+    expect(unsupportedNaxxramasDrops.length).toBeGreaterThan(30);
+    naxxItems.forEach((item) => {
+      expect(item.id).toBeTypeOf("number");
+      expect(item.icon).toContain("wow/icons/large/");
+      expect(item.dungeonSetId).toBe("naxxramas");
+      expect(item.dungeonSetName).toBe("Naxxramas");
+      expect(item.slot).toBeTruthy();
+      expect(item.quality).toBe(4);
+      expect(item.minLevel).toBe(60);
+      expect(item.sourceBosses.length).toBeGreaterThan(0);
+    });
+  });
+
+  it("keeps unsupported Naxxramas drops out of active reward items", () => {
+    const activeIds = new Set(naxxItems.map((item) => item.id));
+    unsupportedNaxxramasDrops.forEach((item) => {
+      expect(activeIds.has(item.internalId)).toBe(false);
+    });
+  });
+});
+
 describe("item level tuning", () => {
   const getItemsBySource = (sourceId) =>
     DB_ITEMS.filter((item) => item.dungeonSetId === sourceId);
@@ -2167,6 +2283,8 @@ describe("item level tuning", () => {
     expectItemLevelsWithin(getItemsBySource("onyxias_lair"), 76, 76);
     expectItemLevelsWithin(getItemsBySource("blackwing_lair"), 76, 76);
     expectItemLevelsWithin(getItemsBySource("ahn_qiraj_temple"), 73, 88);
+    expectItemLevelsWithin(getItemsBySource("naxxramas"), 88, 92);
+    expectItemLevelsEqual(getItemsBySetPrefix("t3_"), 90);
   });
 
   it("supports explicit itemLevel over min-level quality fallback", () => {
