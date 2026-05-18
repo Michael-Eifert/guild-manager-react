@@ -39,6 +39,8 @@ const EMPTY_RELATIONSHIP_COUNTERS = Object.freeze({
   eliteRuns: 0,
 });
 
+const MAX_RELATIONSHIP_EVENTS = 30;
+
 const normalizeId = (value) => String(value || "").trim();
 
 const uniqueSortedIds = (ids) =>
@@ -102,6 +104,31 @@ export const getRelationshipFlairs = (relationship) => {
   return flairs;
 };
 
+const normalizeRelationshipEvent = (event) => {
+  if (!event || typeof event !== "object") return null;
+  const missionName = String(event.missionName || "").trim();
+  const activityType = String(event.activityType || "").trim();
+  const pointsDelta = Math.floor(Number(event.pointsDelta) || 0);
+  const occurredAt = Math.max(0, Math.floor(Number(event.occurredAt) || 0));
+  if (!missionName && !activityType && pointsDelta === 0 && occurredAt === 0) {
+    return null;
+  }
+  return {
+    missionName,
+    activityType,
+    missionSucceeded: event.missionSucceeded === true,
+    pointsDelta,
+    occurredAt,
+  };
+};
+
+const normalizeRelationshipEvents = (events) =>
+  (Array.isArray(events) ? events : [])
+    .map(normalizeRelationshipEvent)
+    .filter(Boolean)
+    .sort((left, right) => right.occurredAt - left.occurredAt)
+    .slice(0, MAX_RELATIONSHIP_EVENTS);
+
 const normalizeRelationshipEntry = (key, entry) => {
   const pairIds = uniqueSortedIds(entry?.memberIds || key.split("::"));
   if (pairIds.length !== 2) return null;
@@ -120,6 +147,7 @@ const normalizeRelationshipEntry = (key, entry) => {
       eliteRuns: Math.max(0, Math.floor(Number(entry?.eliteRuns) || 0)),
       lastMissionName: String(entry?.lastMissionName || "").trim(),
       lastInteractionAt: Math.max(0, Math.floor(Number(entry?.lastInteractionAt) || 0)),
+      events: normalizeRelationshipEvents(entry?.events),
     },
   ];
 };
@@ -139,7 +167,7 @@ const getMissionRelationshipActivityType = (mission, activityType = "") => {
   const explicitType = String(activityType || "").trim();
   if (explicitType) return explicitType;
   if (mission?.type === "dungeon") return mission?.isRaid ? "raid" : "dungeon";
-  if (mission?.elite === true) return "elite";
+  if (mission?.elite === true || mission?.isZoneElite === true) return "elite";
   return "";
 };
 
@@ -252,7 +280,18 @@ export const updateRelationshipsForSharedActivity = (
       ...EMPTY_RELATIONSHIP_COUNTERS,
       lastMissionName: "",
       lastInteractionAt: 0,
+      events: [],
     };
+    const events = normalizeRelationshipEvents([
+      {
+        missionName,
+        activityType: resolvedActivityType,
+        missionSucceeded,
+        pointsDelta: pointChange,
+        occurredAt: timestamp,
+      },
+      ...(Array.isArray(current.events) ? current.events : []),
+    ]);
     nextRelationships[key] = {
       ...current,
       memberIds: [leftId, rightId],
@@ -266,6 +305,7 @@ export const updateRelationshipsForSharedActivity = (
       eliteRuns: current.eliteRuns + (resolvedActivityType === "elite" ? 1 : 0),
       lastMissionName: missionName,
       lastInteractionAt: timestamp,
+      events,
     };
   });
 

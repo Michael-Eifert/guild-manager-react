@@ -6,6 +6,8 @@ export const MORALE_MAX = 100;
 export const MORALE_WIPE_DELTA = -5;
 export const MORALE_DUNGEON_CLEAR_DELTA = 8;
 export const MORALE_ZONE_CLEAR_DELTA = 4;
+export const MORALE_ELITE_SUCCESS_DELTA = 4;
+export const MORALE_ELITE_FAILURE_DELTA = -4;
 export const MORALE_PARTY_BONUS_CAP = 5;
 
 export const MORALE_BAND = Object.freeze({

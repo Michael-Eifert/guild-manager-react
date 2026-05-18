@@ -684,6 +684,135 @@ const getZonePreferenceTieBreaker = (zone, preference) => {
   return ((zoneHash + (Number(preference?.hash) || 0)) % 97) / 1000;
 };
 
+const ZONE_ROUTE_WEIGHTS_BY_ZONE_ID = Object.freeze({
+  elwynn_forest: Object.freeze([
+    ["westfall", 72],
+    ["loch_modan", 12],
+    ["darkshore", 10],
+    ["redridge_mountains", 6],
+  ]),
+  dun_morogh: Object.freeze([
+    ["loch_modan", 70],
+    ["westfall", 14],
+    ["darkshore", 10],
+    ["redridge_mountains", 6],
+  ]),
+  teldrassil: Object.freeze([
+    ["darkshore", 72],
+    ["loch_modan", 12],
+    ["westfall", 10],
+    ["ashenvale", 6],
+  ]),
+  westfall: Object.freeze([
+    ["redridge_mountains", 46],
+    ["duskwood", 30],
+    ["loch_modan", 14],
+    ["darkshore", 10],
+  ]),
+  loch_modan: Object.freeze([
+    ["redridge_mountains", 40],
+    ["wetlands", 28],
+    ["westfall", 18],
+    ["darkshore", 14],
+  ]),
+  darkshore: Object.freeze([
+    ["ashenvale", 42],
+    ["loch_modan", 22],
+    ["westfall", 20],
+    ["redridge_mountains", 16],
+  ]),
+  redridge_mountains: Object.freeze([
+    ["duskwood", 48],
+    ["wetlands", 22],
+    ["ashenvale", 16],
+    ["hillsbrad_foothills", 14],
+  ]),
+  duskwood: Object.freeze([
+    ["stranglethorn_vale_north", 40],
+    ["wetlands", 24],
+    ["ashenvale", 20],
+    ["hillsbrad_foothills", 16],
+  ]),
+  wetlands: Object.freeze([
+    ["arathi_highlands", 34],
+    ["hillsbrad_foothills", 28],
+    ["duskwood", 20],
+    ["stranglethorn_vale_north", 18],
+  ]),
+  ashenvale: Object.freeze([
+    ["stonetalon_mountains", 34],
+    ["hillsbrad_foothills", 24],
+    ["stranglethorn_vale_north", 22],
+    ["thousand_needles", 20],
+  ]),
+});
+
+const pickWeightedRouteCandidate = ({
+  candidates,
+  currentZoneId,
+  zonePreference,
+}) => {
+  const route = ZONE_ROUTE_WEIGHTS_BY_ZONE_ID[currentZoneId];
+  if (!Array.isArray(route) || route.length === 0) return null;
+  const candidateById = new Map(candidates.map((zone) => [zone.id, zone]));
+  const routeCandidates = route
+    .map(([zoneId, weight]) => ({
+      zone: candidateById.get(zoneId),
+      weight: Math.max(0, Math.floor(Number(weight) || 0)),
+    }))
+    .filter((entry) => entry.zone && entry.weight > 0);
+  if (routeCandidates.length === 0) return null;
+
+  const totalWeight = routeCandidates.reduce(
+    (sum, entry) => sum + entry.weight,
+    0,
+  );
+  if (totalWeight <= 0) return null;
+
+  let roll = Math.abs(Number(zonePreference?.hash) || 0) % totalWeight;
+  for (const entry of routeCandidates) {
+    if (roll < entry.weight) return entry.zone;
+    roll -= entry.weight;
+  }
+  return routeCandidates[0].zone;
+};
+
+const pickPreferredZoneCandidate = ({
+  candidates,
+  level,
+  faction,
+  currentZoneId,
+  zonePreference,
+}) => {
+  if (candidates.length === 0) return null;
+  const routeCandidate = pickWeightedRouteCandidate({
+    candidates,
+    currentZoneId,
+    zonePreference,
+  });
+  if (routeCandidate) return routeCandidate;
+
+  return [...candidates].sort((left, right) => {
+    const scoreDiff =
+      scoreZoneForCharacterPreference({
+        zone: right,
+        level,
+        faction,
+        zonePreference,
+      }) -
+      scoreZoneForCharacterPreference({
+        zone: left,
+        level,
+        faction,
+        zonePreference,
+      });
+    if (scoreDiff !== 0) return scoreDiff;
+    if (left.minLevel !== right.minLevel) return left.minLevel - right.minLevel;
+    if (left.maxLevel !== right.maxLevel) return left.maxLevel - right.maxLevel;
+    return left.name.localeCompare(right.name);
+  })[0];
+};
+
 export const scoreZoneForCharacterPreference = ({
   zone,
   level,
@@ -765,11 +894,11 @@ export const pickNextZoneForCharacter = ({
   if (candidates.length === 0) return getZoneById(currentZoneId);
 
   const safeLevel = clampLevel(level);
+  const preference =
+    zonePreference && typeof zonePreference === "object"
+      ? zonePreference
+      : getCharacterZonePreference(character || {});
   if (safeLevel >= 60) {
-    const preference =
-      zonePreference && typeof zonePreference === "object"
-        ? zonePreference
-        : getCharacterZonePreference(character || {});
     return [...candidates].sort((left, right) => {
       const scoreDiff =
         scoreZoneForCharacterPreference({
@@ -793,12 +922,34 @@ export const pickNextZoneForCharacter = ({
   const inRange = candidates.filter(
     (zone) => safeLevel >= zone.minLevel && safeLevel <= zone.maxLevel,
   );
-  if (inRange.length > 0) return inRange[0];
+  if (inRange.length > 0) {
+    return pickPreferredZoneCandidate({
+      candidates: inRange,
+      level: safeLevel,
+      faction,
+      currentZoneId,
+      zonePreference: preference,
+    });
+  }
 
   const upcoming = candidates.filter((zone) => zone.minLevel > safeLevel);
-  if (upcoming.length > 0) return upcoming[0];
+  if (upcoming.length > 0) {
+    return pickPreferredZoneCandidate({
+      candidates: upcoming,
+      level: safeLevel,
+      faction,
+      currentZoneId,
+      zonePreference: preference,
+    });
+  }
 
-  return candidates[candidates.length - 1];
+  return pickPreferredZoneCandidate({
+    candidates,
+    level: safeLevel,
+    faction,
+    currentZoneId,
+    zonePreference: preference,
+  });
 };
 
 export const mergeZoneMissionsIntoList = (missionList) => {

@@ -54,6 +54,8 @@ import {
 import {
   MORALE_BAND,
   MORALE_DUNGEON_CLEAR_DELTA,
+  MORALE_ELITE_FAILURE_DELTA,
+  MORALE_ELITE_SUCCESS_DELTA,
   MORALE_WIPE_DELTA,
   MORALE_ZONE_CLEAR_DELTA,
   applyMoraleDelta,
@@ -159,9 +161,106 @@ import {
   UPPER_BLACKROCK_SPIRE_ITEMS,
   unsupportedUpperBlackrockSpireDrops,
 } from "../data/imports/upperBlackrockSpireLootManifest";
+import {
+  DEBUG_BLACKWING_LAIR_TEST_GUILD_ID,
+  DEBUG_NAXXRAMAS_TEST_GUILD_ID,
+  buildDebugRosterPreset,
+  resolveDebugPreset,
+} from "../debug/rosterPresets";
 
 afterEach(() => {
   vi.restoreAllMocks();
+});
+
+const getEquippedItemLevels = (member) =>
+  Object.values(member?.equipment || {})
+    .filter(Boolean)
+    .map((item) => getItemEffectiveLevel(item));
+
+const getRosterAverageItemLevel = (roster) => {
+  const itemLevels = roster.flatMap(getEquippedItemLevels);
+  if (itemLevels.length === 0) return 0;
+  return (
+    itemLevels.reduce((total, itemLevel) => total + itemLevel, 0) /
+    itemLevels.length
+  );
+};
+
+const getRosterEquipmentSources = (roster) =>
+  new Set(
+    roster
+      .flatMap((member) => Object.values(member?.equipment || {}))
+      .filter(Boolean)
+      .map((item) => item.dungeonSetId || item.dungeon)
+      .filter(Boolean),
+  );
+
+describe("debug raid setup presets", () => {
+  it("builds a BWL test roster with MC and BWL attunements plus BWL-ready gear", () => {
+    const preset = resolveDebugPreset(DEBUG_BLACKWING_LAIR_TEST_GUILD_ID);
+    const roster = buildDebugRosterPreset({
+      faction: GUILD_FACTION.ALLIANCE,
+      level: preset.level,
+      count: preset.count,
+      roleOrder: preset.roleOrder,
+      guaranteedKeys: preset.guaranteedKeys,
+      gearProfile: preset.gearProfile,
+    });
+    const averageItemLevel = getRosterAverageItemLevel(roster);
+    const sources = getRosterEquipmentSources(roster);
+
+    expect(roster).toHaveLength(40);
+    roster.forEach((member) => {
+      expect(member.keys).toEqual(
+        expect.arrayContaining([
+          "molten_core_attunement",
+          "blackwing_lair_attunement",
+        ]),
+      );
+      expect(member.statusText).toBe("BWL-ready and attuned.");
+    });
+    expect(averageItemLevel).toBeGreaterThanOrEqual(58);
+    expect(averageItemLevel).toBeLessThanOrEqual(70);
+    expect(
+      ["molten_core", "zul_gurub", "ahn_qiraj_ruins"].some((sourceId) =>
+        sources.has(sourceId),
+      ),
+    ).toBe(true);
+    expect(sources.has("blackwing_lair")).toBe(false);
+  });
+
+  it("builds a Naxx test roster with raid attunements plus T2/AQ-level gear", () => {
+    const preset = resolveDebugPreset(DEBUG_NAXXRAMAS_TEST_GUILD_ID);
+    const roster = buildDebugRosterPreset({
+      faction: GUILD_FACTION.ALLIANCE,
+      level: preset.level,
+      count: preset.count,
+      roleOrder: preset.roleOrder,
+      guaranteedKeys: preset.guaranteedKeys,
+      gearProfile: preset.gearProfile,
+    });
+    const averageItemLevel = getRosterAverageItemLevel(roster);
+    const sources = getRosterEquipmentSources(roster);
+
+    expect(roster).toHaveLength(40);
+    roster.forEach((member) => {
+      expect(member.keys).toEqual(
+        expect.arrayContaining([
+          "molten_core_attunement",
+          "blackwing_lair_attunement",
+        ]),
+      );
+      expect(member.statusText).toBe("Naxx-ready and attuned.");
+    });
+    expect(averageItemLevel).toBeGreaterThanOrEqual(70);
+    expect(averageItemLevel).toBeLessThanOrEqual(80);
+    expect(
+      ["blackwing_lair", "onyxias_lair", "ahn_qiraj_temple"].some((sourceId) =>
+        sources.has(sourceId),
+      ),
+    ).toBe(true);
+    expect(sources.has("naxxramas")).toBe(false);
+  });
 });
 
 describe("mission key access", () => {
@@ -629,6 +728,13 @@ describe("relationship system", () => {
       failedRuns: 1,
       lastMissionName: "Deadmines",
     });
+    expect(relationships["healer::tank"].events[0]).toMatchObject({
+      missionName: "Deadmines",
+      activityType: "dungeon",
+      missionSucceeded: false,
+      pointsDelta: -6,
+      occurredAt: 1000,
+    });
   });
 
   it("grants extra progress for successful shared runs", () => {
@@ -651,6 +757,11 @@ describe("relationship system", () => {
     expect(succeeded["a::b"]).toMatchObject({
       points: 10,
       successfulRuns: 1,
+    });
+    expect(succeeded["a::b"].events[0]).toMatchObject({
+      missionName: "Wailing Caverns",
+      pointsDelta: 10,
+      missionSucceeded: true,
     });
     expect(failed["a::b"]).toMatchObject({
       points: -6,
@@ -677,6 +788,50 @@ describe("relationship system", () => {
 
     expect(relationships["a::b"].points).toBe(-2);
     expect(getRelationshipLevel(relationships["a::b"])).toBe("Unfriendly");
+    expect(relationships["a::b"].events).toHaveLength(1);
+  });
+
+  it("records successful and failed zone elite events in relationship history", () => {
+    const success = updateRelationshipsForSharedActivity(
+      {},
+      {
+        mission: {
+          name: "Redridge Mountains Elite: Hunt the Warband",
+          type: "quest",
+          isZoneElite: true,
+          memberIds: ["a", "b"],
+        },
+        missionSucceeded: true,
+        occurredAt: 2000,
+      },
+    );
+    const failed = updateRelationshipsForSharedActivity(success, {
+      mission: {
+        name: "Redridge Mountains Elite: Hunt the Warband",
+        type: "quest",
+        isZoneElite: true,
+        memberIds: ["a", "b"],
+      },
+      missionSucceeded: false,
+      occurredAt: 3000,
+    });
+
+    expect(failed["a::b"]).toMatchObject({
+      points: 4,
+      eliteRuns: 2,
+      successfulRuns: 1,
+      failedRuns: 1,
+      lastMissionName: "Redridge Mountains Elite: Hunt the Warband",
+    });
+    expect(failed["a::b"].events.map((event) => event.pointsDelta)).toEqual([
+      -6,
+      10,
+    ]);
+    expect(failed["a::b"].events[0]).toMatchObject({
+      activityType: "elite",
+      missionSucceeded: false,
+      occurredAt: 3000,
+    });
   });
 
   it("ignores normal non-elite quests", () => {
@@ -828,6 +983,15 @@ describe("session persistence", () => {
         eliteRuns: 0,
         lastMissionName: "Scarlet Monastery",
         lastInteractionAt: 12345,
+        events: [
+          {
+            missionName: "Scarlet Monastery",
+            activityType: "dungeon",
+            missionSucceeded: true,
+            pointsDelta: 10,
+            occurredAt: 12345,
+          },
+        ],
       },
     };
     const payload = buildSessionPayload({
@@ -1609,6 +1773,93 @@ describe("mission rewards", () => {
     expect(result.updatedRoster[0].equipment.chest.name).toBe("Better Robe");
     expect(result.updatedRoster[0].keys).toEqual(["road_key"]);
     expect(result.missionLogs.some((log) => log.type === "loot")).toBe(true);
+  });
+
+  it("records successful zone elite quests as cleared mission ids", () => {
+    vi.spyOn(Math, "random").mockReturnValue(0);
+    const processor = buildProcessor();
+    const result = processor({
+      mission: {
+        id: "zone_elite:westfall:1",
+        name: "Westfall Elite: Hunt the Warband",
+        type: "quest",
+        isZoneElite: true,
+        memberIds: ["mage"],
+        level: 15,
+        exp: 100,
+        gold: 4,
+        rewardQualities: [2],
+      },
+      currentRoster: [
+        {
+          id: "mage",
+          name: "Mage",
+          charClass: "Mage",
+          level: 15,
+          exp: 0,
+          keys: [],
+          clearedMissionIds: [],
+          history: [],
+          equipment: {
+            chest: { slot: "chest", quality: 1, type: "Cloth", minLevel: 1 },
+          },
+        },
+      ],
+      activeGuildStats: { expMultiplier: 1, goldMultiplier: 1 },
+      activeFocusBonuses: { expMultiplier: 1, fullPartyGoldMultiplier: 1 },
+      levelCap: 60,
+      failedMissionExpFactor: 0.2,
+    });
+
+    expect(result.missionSucceeded).toBe(true);
+    expect(result.updatedRoster[0].clearedMissionIds).toEqual([
+      "zone_elite:westfall:1",
+    ]);
+    expect(result.updatedRoster[0].morale).toBe(
+      50 + MORALE_ELITE_SUCCESS_DELTA,
+    );
+  });
+
+  it("reduces morale after failed zone elite quests", () => {
+    const processor = buildProcessor();
+    const result = processor({
+      mission: {
+        id: "zone_elite:redridge:1",
+        name: "Redridge Mountains Elite: Hunt the Warband",
+        type: "quest",
+        isZoneElite: true,
+        memberIds: ["mage"],
+        level: 18,
+        exp: 100,
+        gold: 4,
+        rewardQualities: [2],
+        missionSuccess: false,
+      },
+      currentRoster: [
+        {
+          id: "mage",
+          name: "Mage",
+          charClass: "Mage",
+          level: 18,
+          exp: 0,
+          morale: 50,
+          keys: [],
+          clearedMissionIds: [],
+          history: [],
+          equipment: {},
+        },
+      ],
+      activeGuildStats: { expMultiplier: 1, goldMultiplier: 1 },
+      activeFocusBonuses: { expMultiplier: 1, fullPartyGoldMultiplier: 1 },
+      levelCap: 60,
+      failedMissionExpFactor: 0.2,
+    });
+
+    expect(result.missionSucceeded).toBe(false);
+    expect(result.updatedRoster[0].morale).toBe(
+      50 + MORALE_ELITE_FAILURE_DELTA,
+    );
+    expect(result.updatedRoster[0].clearedMissionIds).toEqual([]);
   });
 
   it("prefers boss-specific dungeon drops before falling back to the shared pool", () => {
@@ -2540,6 +2791,60 @@ describe("zone completion personality", () => {
     });
 
     expect(nextZone.minLevel).toBe(1);
+  });
+
+  it("routes Elwynn characters mostly toward Westfall while preserving variety", () => {
+    const pickedZoneIds = Array.from({ length: 40 }, (_, index) =>
+      pickNextZoneForCharacter({
+        faction: GUILD_FACTION.ALLIANCE,
+        level: 10,
+        zonesCleared: ["elwynn_forest"],
+        currentZoneId: "elwynn_forest",
+        character: {
+          id: `human-route-${index}`,
+          race: "Human",
+          charClass: "Warrior",
+        },
+      }).id,
+    );
+    const counts = pickedZoneIds.reduce((acc, zoneId) => {
+      acc[zoneId] = (acc[zoneId] || 0) + 1;
+      return acc;
+    }, {});
+
+    expect(counts.westfall).toBeGreaterThan(counts.darkshore || 0);
+    expect(counts.westfall).toBeGreaterThan(counts.loch_modan || 0);
+    expect(new Set(pickedZoneIds).size).toBeGreaterThan(1);
+  });
+
+  it("keeps race starter routes distinct after the first zone", () => {
+    const dwarfRoutes = Array.from({ length: 30 }, (_, index) =>
+      pickNextZoneForCharacter({
+        faction: GUILD_FACTION.ALLIANCE,
+        level: 10,
+        zonesCleared: ["dun_morogh"],
+        currentZoneId: "dun_morogh",
+        character: { id: `dwarf-route-${index}`, race: "Dwarf" },
+      }).id,
+    );
+    const nightElfRoutes = Array.from({ length: 30 }, (_, index) =>
+      pickNextZoneForCharacter({
+        faction: GUILD_FACTION.ALLIANCE,
+        level: 10,
+        zonesCleared: ["teldrassil"],
+        currentZoneId: "teldrassil",
+        character: { id: `night-elf-route-${index}`, race: "Night Elf" },
+      }).id,
+    );
+
+    expect(
+      dwarfRoutes.filter((zoneId) => zoneId === "loch_modan").length,
+    ).toBeGreaterThan(dwarfRoutes.filter((zoneId) => zoneId === "darkshore").length);
+    expect(
+      nightElfRoutes.filter((zoneId) => zoneId === "darkshore").length,
+    ).toBeGreaterThan(
+      nightElfRoutes.filter((zoneId) => zoneId === "westfall").length,
+    );
   });
 
   it("lets favorite biomes lift matching zones above default order", () => {

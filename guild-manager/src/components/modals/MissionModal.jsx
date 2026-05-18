@@ -42,6 +42,7 @@ import {
 } from "../../raids/raidLockouts";
 import { getRelationshipSuccessModifier } from "../../social/relationshipSystem";
 import { getPartyMoraleSuccessBonus } from "../../game/characterMorale";
+import { hasCompletedZoneEliteQuest } from "../../automation/zoneEliteAutomation";
 import BaseModal from "./BaseModal";
 import {
   getZoneById,
@@ -352,6 +353,7 @@ const MissionModal = ({
   roster,
   onDeploy,
   missionList,
+  activeMissions = [],
   showLegacyQuests = true,
   guildFaction = GUILD_FACTION.ALLIANCE,
   dungeonSuccessBonus = 0,
@@ -540,8 +542,41 @@ const MissionModal = ({
   const toggleMember = (charId) => {
     setAutoAssignSummary("");
     setParty((prev) => {
-      if (prev.includes(charId)) return prev.filter((id) => id !== charId);
+      const memberById = new Map(roster.map((member) => [member.id, member]));
+      if (prev.includes(charId)) {
+        const nextIds = prev.filter((id) => id !== charId);
+        if (!selectedZoneEliteQuest) return nextIds;
+        const hasQuestStarter = nextIds.some((id) => {
+          const member = memberById.get(id);
+          return (
+            member &&
+            !hasCompletedZoneEliteQuest(member, selectedZoneEliteQuest)
+          );
+        });
+        return hasQuestStarter
+          ? nextIds
+          : nextIds.filter((id) => {
+              const member = memberById.get(id);
+              return (
+                member &&
+                !hasCompletedZoneEliteQuest(member, selectedZoneEliteQuest)
+              );
+            });
+      }
       if (!isSelectedZoneMission && prev.length >= selectedMissionPartySize) return prev;
+      if (selectedZoneEliteQuest) {
+        const member = memberById.get(charId);
+        const memberCompleted =
+          member && hasCompletedZoneEliteQuest(member, selectedZoneEliteQuest);
+        const hasQuestStarter = prev.some((id) => {
+          const selectedMember = memberById.get(id);
+          return (
+            selectedMember &&
+            !hasCompletedZoneEliteQuest(selectedMember, selectedZoneEliteQuest)
+          );
+        });
+        if (memberCompleted && !hasQuestStarter) return prev;
+      }
       return [...prev, charId];
     });
   };
@@ -600,6 +635,22 @@ const MissionModal = ({
       ? zoneEliteMissionOptions.find((mission) => mission.id === selectedZoneEliteQuestId) ||
         null
       : null;
+  useEffect(() => {
+    if (!selectedZoneEliteQuest) return;
+    setParty((currentIds) => {
+      const memberById = new Map(roster.map((member) => [member.id, member]));
+      const hasQuestStarter = currentIds.some((memberId) => {
+        const member = memberById.get(memberId);
+        return member && !hasCompletedZoneEliteQuest(member, selectedZoneEliteQuest);
+      });
+      if (hasQuestStarter) return currentIds;
+      const nextIds = currentIds.filter((memberId) => {
+        const member = memberById.get(memberId);
+        return member && !hasCompletedZoneEliteQuest(member, selectedZoneEliteQuest);
+      });
+      return nextIds.length === currentIds.length ? currentIds : nextIds;
+    });
+  }, [roster, selectedZoneEliteQuest]);
   const activePrepMission = selectedZoneEliteQuest || chainStartMission || selectedQuest;
   const isSelectedZoneMission = activePrepMission?.type === "zone";
 
@@ -623,8 +674,28 @@ const MissionModal = ({
     );
   }, [isSelectedZoneMission, selectedMissionPartySize]);
 
-  const idleRoster = roster.filter(
-    (char) =>
+  const activeMissionByMemberId = useMemo(() => {
+    const missionMap = new Map();
+    (Array.isArray(activeMissions) ? activeMissions : []).forEach((mission) => {
+      (Array.isArray(mission?.memberIds) ? mission.memberIds : []).forEach(
+        (memberId) => {
+          const normalizedMemberId = String(memberId || "").trim();
+          if (normalizedMemberId) missionMap.set(normalizedMemberId, mission);
+        },
+      );
+    });
+    return missionMap;
+  }, [activeMissions]);
+
+  const isPreparingDungeon = activePrepMission?.type === "dungeon";
+  const isInterruptibleActiveMission = (mission) =>
+    mission && mission.type !== "dungeon";
+  const idleRoster = roster.filter((char) => {
+    const activeMission = activeMissionByMemberId.get(String(char?.id || ""));
+    if (isPreparingDungeon && isInterruptibleActiveMission(activeMission)) {
+      return true;
+    }
+    return (
       char.status === "Idle" ||
       char.status.includes("Mining") ||
       char.status.includes("Herbs") ||
@@ -633,8 +704,9 @@ const MissionModal = ({
       char.status.includes("Stitching") ||
       char.status.includes("Weaving") ||
       char.status.includes("Disenchanting") ||
-      char.status.includes("Brewing"),
-  );
+      char.status.includes("Brewing")
+    );
+  });
 
   const eligibleRoster = idleRoster.filter((char) => char.level >= minLevel);
   const getDungeonAvailabilityParty = (mission, useProgressionRange = false) => {
@@ -792,6 +864,11 @@ const MissionModal = ({
   };
 
   const selectedPartyMembers = roster.filter((char) => party.includes(char.id));
+  const selectedPartyHasZoneEliteStarter =
+    !selectedZoneEliteQuest ||
+    selectedPartyMembers.some(
+      (member) => !hasCompletedZoneEliteQuest(member, selectedZoneEliteQuest),
+    );
   const selectedMissionSequence =
     selectedZoneEliteQuest
       ? [selectedZoneEliteQuest]
@@ -1100,6 +1177,7 @@ const MissionModal = ({
   const isDeployDisabled =
     party.length === 0 ||
     isKeyBlocked ||
+    !selectedPartyHasZoneEliteStarter ||
     isRaidPartySizeInvalid ||
     isSelectedRaidCompletedLocked ||
     isSelectedRaidLockoutConflicted ||
@@ -1610,6 +1688,12 @@ const MissionModal = ({
         hasAnyKeyHolder:
           !requiresAnyKeyHolder ||
           members.some((member) => keyHolderIdSet.has(member.id)),
+        hasZoneEliteStarter:
+          !selectedZoneEliteQuest ||
+          members.some(
+            (member) =>
+              !hasCompletedZoneEliteQuest(member, selectedZoneEliteQuest),
+          ),
         partySize: members.length,
       });
     };
@@ -1644,6 +1728,17 @@ const MissionModal = ({
     const expFloor = maxTotalExp > 0 ? Math.floor(maxTotalExp * 0.9) : 0;
 
     let selectionPool = allCandidates;
+    if (selectedZoneEliteQuest) {
+      selectionPool = selectionPool.filter(
+        (candidate) => candidate.hasZoneEliteStarter,
+      );
+      if (selectionPool.length === 0) {
+        setAutoAssignSummary(
+          "Auto-select needs at least one hero who has not completed this elite quest.",
+        );
+        return;
+      }
+    }
     if (requiresAnyKeyHolder) {
       const withKeyHolder = selectionPool.filter((candidate) => candidate.hasAnyKeyHolder);
       if (withKeyHolder.length === 0) {
@@ -2022,6 +2117,9 @@ const MissionModal = ({
                       </button>
                       {zoneEliteMissionOptions.map((mission) => {
                         const isSelected = selectedZoneEliteQuestId === mission.id;
+                        const doneCount = roster.filter((member) =>
+                          hasCompletedZoneEliteQuest(member, mission),
+                        ).length;
                         return (
                           <button
                             key={mission.id}
@@ -2034,6 +2132,7 @@ const MissionModal = ({
                             }`}
                           >
                             {mission.name}
+                            {doneCount > 0 ? ` [DONE ${doneCount}]` : ""}
                           </button>
                         );
                       })}
@@ -2632,6 +2731,12 @@ const MissionModal = ({
             {tacticalCharacterRoster.map((char) => {
               const isEligible = char.level >= minLevel;
               const isSelected = party.includes(char.id);
+              const interruptibleActiveMission = activeMissionByMemberId.get(
+                String(char.id || ""),
+              );
+              const willAbandonQuest =
+                isPreparingDungeon &&
+                isInterruptibleActiveMission(interruptibleActiveMission);
               const ownedKeys = Array.isArray(char.keys)
                 ? char.keys.map((keyId) => String(keyId || "").trim()).filter(Boolean)
                 : [];
@@ -2682,13 +2787,25 @@ const MissionModal = ({
                 selectedRaidLockout.lockoutId !== charRaidLockout.lockoutId;
               const raidLockedForMember =
                 isRaidCompletedForMember || hasRaidIdConflict;
+              const hasCompletedSelectedZoneElite =
+                selectedZoneEliteQuest &&
+                hasCompletedZoneEliteQuest(char, selectedZoneEliteQuest);
+              const zoneEliteDoneLocked =
+                hasCompletedSelectedZoneElite &&
+                !isSelected &&
+                !selectedPartyHasZoneEliteStarter;
               const canSelectMember =
-                isEligible && !keyLockedForMember && !raidLockedForMember;
+                isEligible &&
+                !keyLockedForMember &&
+                !raidLockedForMember &&
+                !zoneEliteDoneLocked;
               return (
                 <div
                   key={char.id}
-                  onClick={() => canSelectMember && toggleMember(char.id)}
-                  className={`p-3 rounded flex items-center gap-3 transition-all cursor-pointer border ${!isEligible ? "opacity-40 cursor-not-allowed bg-black border-transparent" : keyLockedForMember || raidLockedForMember ? "opacity-50 cursor-not-allowed bg-red-950/20 border-red-800/60" : isSelected ? "bg-green-900/30 border-green-500" : isKeyHolder ? "bg-amber-950/20 border-amber-600 hover:bg-amber-900/20" : "bg-gray-700 border-gray-600 hover:bg-gray-600"}`}
+                  onClick={() =>
+                    (isSelected || canSelectMember) && toggleMember(char.id)
+                  }
+                  className={`p-3 rounded flex items-center gap-3 transition-all cursor-pointer border ${!isEligible ? "opacity-40 cursor-not-allowed bg-black border-transparent" : keyLockedForMember || raidLockedForMember || zoneEliteDoneLocked ? "opacity-50 cursor-not-allowed bg-red-950/20 border-red-800/60" : isSelected ? "bg-green-900/30 border-green-500" : isKeyHolder ? "bg-amber-950/20 border-amber-600 hover:bg-amber-900/20" : "bg-gray-700 border-gray-600 hover:bg-gray-600"}`}
                 >
                   <img
                     src={getRacePortraitUrl(char.race, char.gender)}
@@ -2731,6 +2848,21 @@ const MissionModal = ({
                         🔒 Missing Required Key
                       </div>
                     )}
+                    {hasCompletedSelectedZoneElite && (
+                      <div
+                        className={`text-[10px] uppercase tracking-wide font-bold mt-0.5 ${
+                          zoneEliteDoneLocked
+                            ? "text-gray-500"
+                            : "text-emerald-300"
+                        }`}
+                      >
+                        [DONE] Zone Elite
+                        {zoneEliteDoneLocked ? " - needs a quest starter" : ""}
+                      </div>
+                    )}
+                    {willAbandonQuest && (
+                      <OnQuestBadge />
+                    )}
                     {charRaidLockout && (
                       <div
                         className={`text-[10px] uppercase tracking-wide font-bold mt-0.5 ${
@@ -2770,5 +2902,20 @@ const MissionModal = ({
     </BaseModal>
   );
 };
+
+function OnQuestBadge() {
+  return (
+    <span
+      title="Quest can be paused for dungeon"
+      className="mt-1 inline-flex w-fit items-center gap-1 rounded-full border border-cyan-400/35 bg-cyan-950/45 px-1.5 py-0.5 text-[10px] font-bold uppercase tracking-wide text-cyan-100"
+    >
+      <span className="relative h-3 w-3 flex-none animate-pulse" aria-hidden="true">
+        <span className="absolute left-1/2 top-0 h-3 w-0.5 -translate-x-1/2 rotate-45 rounded bg-cyan-100 shadow-[0_0_6px_rgba(165,243,252,0.9)]" />
+        <span className="absolute left-1/2 top-0 h-3 w-0.5 -translate-x-1/2 -rotate-45 rounded bg-sky-200 shadow-[0_0_6px_rgba(125,211,252,0.9)]" />
+      </span>
+      On Quest
+    </span>
+  );
+}
 
 export default MissionModal;

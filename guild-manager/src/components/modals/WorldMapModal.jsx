@@ -1,13 +1,19 @@
 import { useEffect, useMemo, useState } from "react";
 
 import BaseModal from "./BaseModal";
-import { GUILD_FACTION } from "../../constants";
+import { DB_CLASSES, GUILD_FACTION } from "../../constants";
+import { getRacePortraitUrl, getRoleIcon, getWowIconUrl } from "../../utils";
 import { getZoneRegionalMap } from "../../zones/zoneMapLayout";
+import {
+  ZONE_DEFINITIONS,
+  isZoneAccessibleForFaction,
+} from "../../zones/zoneDefinitions";
 import {
   WORLD_MAP_FILTERS,
   buildWorldMapZoneSummaries,
   filterWorldMapZoneSummaries,
 } from "../../zones/zoneMapSummary";
+import { hasCompletedZoneEliteQuest } from "../../automation/zoneEliteAutomation";
 
 const MAP_SOURCE = {
   name: "Classic Azeroth",
@@ -20,6 +26,16 @@ const FILTER_ORDER = [
   WORLD_MAP_FILTERS.AVAILABLE,
   WORLD_MAP_FILTERS.CLEARED,
   WORLD_MAP_FILTERS.ALL,
+];
+
+const ZONE_PROGRESS_FILTERS = Object.freeze({
+  IN_PROGRESS: "In Progress",
+  COMPLETED: "Completed",
+});
+
+const ZONE_PROGRESS_FILTER_ORDER = [
+  ZONE_PROGRESS_FILTERS.IN_PROGRESS,
+  ZONE_PROGRESS_FILTERS.COMPLETED,
 ];
 
 const getMemberId = (member) => member?.id ?? member?.name;
@@ -60,6 +76,43 @@ const toggleLimitedSelection = (currentIds, memberId, maxSize) => {
     return currentIds.filter((id) => id !== memberId);
   }
   if (currentIds.length >= maxSize) return currentIds;
+  return [...currentIds, memberId];
+};
+
+const toggleZoneEliteSelection = ({
+  currentIds,
+  memberId,
+  heroes,
+  quest,
+  maxSize,
+}) => {
+  if (!quest) return toggleLimitedSelection(currentIds, memberId, maxSize);
+  const heroById = new Map(
+    (Array.isArray(heroes) ? heroes : []).map((hero) => [getMemberId(hero), hero]),
+  );
+  const member = heroById.get(memberId);
+  const isCompleted = member ? hasCompletedZoneEliteQuest(member, quest) : false;
+
+  if (currentIds.includes(memberId)) {
+    const nextIds = currentIds.filter((id) => id !== memberId);
+    const hasQuestStarter = nextIds.some((id) => {
+      const selectedHero = heroById.get(id);
+      return selectedHero && !hasCompletedZoneEliteQuest(selectedHero, quest);
+    });
+    return hasQuestStarter
+      ? nextIds
+      : nextIds.filter((id) => {
+          const selectedHero = heroById.get(id);
+          return selectedHero && !hasCompletedZoneEliteQuest(selectedHero, quest);
+        });
+  }
+
+  if (currentIds.length >= maxSize) return currentIds;
+  const hasQuestStarter = currentIds.some((id) => {
+    const selectedHero = heroById.get(id);
+    return selectedHero && !hasCompletedZoneEliteQuest(selectedHero, quest);
+  });
+  if (isCompleted && !hasQuestStarter) return currentIds;
   return [...currentIds, memberId];
 };
 
@@ -192,6 +245,31 @@ export default function WorldMapModal({
       ),
     [roster, selectedEliteMemberIds],
   );
+  const selectedEliteHasQuestStarter = useMemo(
+    () =>
+      !selectedEliteQuest ||
+      selectedEliteMembers.some(
+        (member) => !hasCompletedZoneEliteQuest(member, selectedEliteQuest),
+      ),
+    [selectedEliteMembers, selectedEliteQuest],
+  );
+
+  useEffect(() => {
+    if (!selectedEliteQuest) return;
+    setSelectedEliteMemberIds((currentIds) => {
+      const memberById = new Map(roster.map((member) => [getMemberId(member), member]));
+      const hasQuestStarter = currentIds.some((memberId) => {
+        const member = memberById.get(memberId);
+        return member && !hasCompletedZoneEliteQuest(member, selectedEliteQuest);
+      });
+      if (hasQuestStarter) return currentIds;
+      const nextIds = currentIds.filter((memberId) => {
+        const member = memberById.get(memberId);
+        return member && !hasCompletedZoneEliteQuest(member, selectedEliteQuest);
+      });
+      return nextIds.length === currentIds.length ? currentIds : nextIds;
+    });
+  }, [roster, selectedEliteQuest]);
 
   const elitePreview = useMemo(() => {
     if (
@@ -216,6 +294,12 @@ export default function WorldMapModal({
     if (!selectedEliteQuest || selectedEliteMemberIds.length === 0) return;
     const deployed = onDeploy?.(selectedEliteQuest, selectedEliteMemberIds);
     if (deployed !== false) setSelectedEliteMemberIds([]);
+  };
+
+  const moveHeroToZone = (memberId, zoneId) => {
+    const targetSummary = summaries.find((summary) => summary.zone.id === zoneId);
+    if (!targetSummary?.zoneMission) return;
+    return onDeploy?.(targetSummary.zoneMission, [memberId]);
   };
 
   const eliteMaxSize = selectedEliteQuest?.requiredPartySize ?? 5;
@@ -319,6 +403,7 @@ export default function WorldMapModal({
             {selectedSummary && (
               <ZoneDetail
                 summary={selectedSummary}
+                guildFaction={guildFaction}
                 availableHeroes={availableHeroes}
                 selectedMemberIds={selectedMemberIds}
                 onToggleAssignment={(memberId) =>
@@ -328,16 +413,24 @@ export default function WorldMapModal({
                 }
                 selectedMembers={selectedMembers}
                 onDeployZone={deployZoneAssignment}
+                onMoveHeroToZone={moveHeroToZone}
                 selectedEliteQuest={selectedEliteQuest}
                 selectedEliteQuestId={selectedEliteQuestId}
                 onSelectEliteQuest={setSelectedEliteQuestId}
                 selectedEliteMemberIds={selectedEliteMemberIds}
                 onToggleEliteMember={(memberId) =>
                   setSelectedEliteMemberIds((currentIds) =>
-                    toggleLimitedSelection(currentIds, memberId, eliteMaxSize),
+                    toggleZoneEliteSelection({
+                      currentIds,
+                      memberId,
+                      heroes: availableHeroes,
+                      quest: selectedEliteQuest,
+                      maxSize: eliteMaxSize,
+                    }),
                   )
                 }
                 selectedEliteMembers={selectedEliteMembers}
+                selectedEliteHasQuestStarter={selectedEliteHasQuestStarter}
                 onDeployElite={deployEliteQuest}
                 eliteMaxSize={eliteMaxSize}
                 eliteMinSize={eliteMinSize}
@@ -459,9 +552,14 @@ function SelectedZoneMap({
               selectedSummary.heroesInZone.slice(0, 5).map((row) => (
                 <div
                   key={row.memberId}
-                  className="grid grid-cols-[1fr_auto] gap-2 text-xs"
+                  className="grid grid-cols-[minmax(0,1fr)_auto] items-center gap-2 text-xs"
                 >
-                  <span className="truncate text-slate-300">{row.name}</span>
+                  <span className="min-w-0">
+                    <HeroIdentity hero={row} compact />
+                    <span className="mt-1 block">
+                      <ActivityBadge row={row} />
+                    </span>
+                  </span>
                   <span className="font-semibold text-amber-100">
                     {row.progress}%
                   </span>
@@ -552,17 +650,20 @@ function ZoneList({ summaries, selectedZoneId, onSelect }) {
 
 function ZoneDetail({
   summary,
+  guildFaction,
   availableHeroes,
   selectedMemberIds,
   onToggleAssignment,
   selectedMembers,
   onDeployZone,
+  onMoveHeroToZone,
   selectedEliteQuest,
   selectedEliteQuestId,
   onSelectEliteQuest,
   selectedEliteMemberIds,
   onToggleEliteMember,
   selectedEliteMembers,
+  selectedEliteHasQuestStarter,
   onDeployElite,
   eliteMaxSize,
   eliteMinSize,
@@ -576,6 +677,44 @@ function ZoneDetail({
     ...(Array.isArray(zone.enemies) ? zone.enemies : []),
   ].filter(Boolean);
   const isZoneLocked = !summary.accessible;
+  const [isZoneProgressOpen, setIsZoneProgressOpen] = useState(false);
+  const [zoneProgressFilter, setZoneProgressFilter] = useState(
+    ZONE_PROGRESS_FILTERS.IN_PROGRESS,
+  );
+  const zoneProgressRowsByFilter = useMemo(() => {
+    const progressRows = Array.isArray(summary.progressRows)
+      ? summary.progressRows
+      : [];
+    return {
+      [ZONE_PROGRESS_FILTERS.IN_PROGRESS]: progressRows.filter(
+        (row) => !row.cleared && Number(row.progress) < 100,
+      ),
+      [ZONE_PROGRESS_FILTERS.COMPLETED]: progressRows.filter(
+        (row) => row.cleared || Number(row.progress) >= 100,
+      ),
+    };
+  }, [summary.progressRows]);
+  const filteredProgressRows =
+    zoneProgressRowsByFilter[zoneProgressFilter] || [];
+  const totalProgressRows = Array.isArray(summary.progressRows)
+    ? summary.progressRows.length
+    : 0;
+  const [movingHeroId, setMovingHeroId] = useState(null);
+  const getMoveZoneOptions = (hero) => {
+    const heroLevel = Math.max(1, Number(hero?.level) || 1);
+    const currentZoneId = String(hero?.member?.currentZoneId || hero?.currentZoneId || "");
+    return ZONE_DEFINITIONS.filter((candidateZone) => {
+      if (candidateZone.id === currentZoneId) return false;
+      if (!isZoneAccessibleForFaction(candidateZone, guildFaction)) return false;
+      return (
+        heroLevel >= Math.max(1, Number(candidateZone.minLevel) || 1) &&
+        heroLevel <= Math.max(candidateZone.minLevel, Number(candidateZone.maxLevel) || 1)
+      );
+    }).sort((left, right) => {
+      if (left.minLevel !== right.minLevel) return left.minLevel - right.minLevel;
+      return left.name.localeCompare(right.name);
+    });
+  };
 
   return (
     <div className="min-h-0 flex-1 overflow-y-auto pr-1">
@@ -618,25 +757,86 @@ function ZoneDetail({
         <Stat label="Average" value={`${summary.activeAverageProgress}%`} />
       </div>
 
-      <SectionTitle title="Heroes In Zone" />
+      <SectionTitle
+        title="Heroes In Zone"
+        hint='Click ">" to move heroes'
+      />
       <div className="mb-3 rounded border border-slate-700/70 bg-slate-900/55 p-2">
         {summary.heroesInZone.length === 0 ? (
           <EmptyText>No heroes are currently questing here.</EmptyText>
         ) : (
           summary.heroesInZone.map((row) => (
-            <ProgressRow key={row.memberId} row={row} />
+            <ProgressRow
+              key={row.memberId}
+              row={row}
+              moveZoneOptions={getMoveZoneOptions(row)}
+              isMoveOpen={movingHeroId === row.memberId}
+              onToggleMove={() =>
+                setMovingHeroId((currentHeroId) =>
+                  currentHeroId === row.memberId ? null : row.memberId,
+                )
+              }
+              onMoveToZone={(zoneId) => {
+                const moved = onMoveHeroToZone?.(row.memberId, zoneId);
+                if (moved !== false) setMovingHeroId(null);
+              }}
+            />
           ))
         )}
       </div>
 
-      <SectionTitle title="Zone Progress" />
-      <div className="mb-3 rounded border border-slate-700/70 bg-slate-900/55 p-2">
-        {summary.progressRows.length === 0 ? (
-          <EmptyText>No recorded progress in this zone yet.</EmptyText>
-        ) : (
-          summary.progressRows.map((row) => (
-            <ProgressRow key={row.memberId} row={row} />
-          ))
+      <div className="mb-3 rounded border border-slate-700/70 bg-slate-900/55">
+        <button
+          type="button"
+          onClick={() => setIsZoneProgressOpen((current) => !current)}
+          className="flex w-full items-center justify-between gap-3 px-2 py-2 text-left"
+        >
+          <span>
+            <span className="block text-xs font-bold uppercase tracking-wide text-slate-300">
+              Zone Progress
+            </span>
+            <span className="text-xs text-slate-500">
+              {totalProgressRows} recorded,{" "}
+              {zoneProgressRowsByFilter[ZONE_PROGRESS_FILTERS.IN_PROGRESS].length} in progress,{" "}
+              {zoneProgressRowsByFilter[ZONE_PROGRESS_FILTERS.COMPLETED].length} completed
+            </span>
+          </span>
+          <span className="text-lg font-bold text-slate-400">
+            {isZoneProgressOpen ? "−" : "+"}
+          </span>
+        </button>
+        {isZoneProgressOpen && (
+          <div className="border-t border-slate-800 p-2">
+            <div className="mb-2 grid grid-cols-2 gap-1.5">
+              {ZONE_PROGRESS_FILTER_ORDER.map((filter) => {
+                const selected = zoneProgressFilter === filter;
+                const count = zoneProgressRowsByFilter[filter]?.length || 0;
+                return (
+                  <button
+                    key={filter}
+                    type="button"
+                    onClick={() => setZoneProgressFilter(filter)}
+                    className={`rounded border px-2 py-1.5 text-xs font-semibold transition-colors ${
+                      selected
+                        ? "border-cyan-500/70 bg-cyan-950/45 text-cyan-100"
+                        : "border-slate-700 bg-slate-950/55 text-slate-300 hover:border-cyan-700"
+                    }`}
+                  >
+                    {filter} {count}
+                  </button>
+                );
+              })}
+            </div>
+            {totalProgressRows === 0 ? (
+              <EmptyText>No recorded progress in this zone yet.</EmptyText>
+            ) : filteredProgressRows.length === 0 ? (
+              <EmptyText>No heroes match this progress filter.</EmptyText>
+            ) : (
+              filteredProgressRows.map((row) => (
+                <ProgressRow key={row.memberId} row={row} />
+              ))
+            )}
+          </div>
         )}
       </div>
 
@@ -671,12 +871,18 @@ function ZoneDetail({
               onChange={(event) => onSelectEliteQuest(event.target.value)}
               className="mb-2 w-full rounded border border-slate-700 bg-slate-950 px-3 py-2 text-sm text-slate-100 focus:border-cyan-500 focus:outline-none"
             >
-              {summary.eliteQuests.map((quest) => (
-                <option key={quest.id} value={quest.id}>
-                  {quest.name}
-                  {quest.isActive ? " (active)" : ""}
-                </option>
-              ))}
+              {summary.eliteQuests.map((quest) => {
+                const doneCount = availableHeroes.filter((member) =>
+                  hasCompletedZoneEliteQuest(member, quest),
+                ).length;
+                return (
+                  <option key={quest.id} value={quest.id}>
+                    {quest.name}
+                    {quest.isActive ? " (active)" : ""}
+                    {doneCount > 0 ? ` [DONE ${doneCount}]` : ""}
+                  </option>
+                );
+              })}
             </select>
 
             {selectedEliteQuest && (
@@ -693,6 +899,8 @@ function ZoneDetail({
               onToggle={onToggleEliteMember}
               maxSize={eliteMaxSize}
               minLevel={eliteMinLevel}
+              eliteQuest={selectedEliteQuest}
+              selectedHasOpenQuestStarter={selectedEliteHasQuestStarter}
               emptyText="No idle heroes available for an elite party."
             />
             <button
@@ -701,7 +909,8 @@ function ZoneDetail({
               disabled={
                 isZoneLocked ||
                 !selectedEliteQuest ||
-                selectedEliteMembers.length < eliteMinSize
+                selectedEliteMembers.length < eliteMinSize ||
+                !selectedEliteHasQuestStarter
               }
               className="btn-quest mt-2 w-full rounded px-4 py-2 text-sm font-bold text-blue-100 disabled:cursor-not-allowed disabled:opacity-50"
             >
@@ -714,10 +923,15 @@ function ZoneDetail({
   );
 }
 
-function SectionTitle({ title }) {
+function SectionTitle({ title, hint = "" }) {
   return (
-    <h4 className="mb-1.5 mt-3 text-xs font-bold uppercase tracking-wide text-slate-300">
-      {title}
+    <h4 className="mb-1.5 mt-3 flex flex-wrap items-center gap-x-2 gap-y-1 text-xs font-bold uppercase tracking-wide text-slate-300">
+      <span>{title}</span>
+      {hint && (
+        <span className="normal-case tracking-normal text-slate-500">
+          {hint}
+        </span>
+      )}
     </h4>
   );
 }
@@ -726,20 +940,164 @@ function EmptyText({ children }) {
   return <div className="text-sm text-slate-400">{children}</div>;
 }
 
-function ProgressRow({ row }) {
+function HeroIdentity({ hero, compact = false }) {
+  const charClass = hero?.charClass ?? hero?.className ?? hero?.class;
+  const classInfo = DB_CLASSES?.[charClass];
+  const raceIconUrl = hero?.race
+    ? getRacePortraitUrl(hero.race, hero.gender)
+    : getWowIconUrl("inv_misc_questionmark");
+  const classIconUrl = classInfo?.icon || getWowIconUrl("inv_misc_questionmark");
+  const iconSizeClass = compact ? "h-5 w-5" : "h-6 w-6";
+
   return (
-    <div className="grid grid-cols-[1fr_auto] items-center gap-2 border-b border-slate-800/80 py-2 last:border-b-0">
-      <div className="min-w-0">
-        <strong className="block truncate text-sm text-slate-100">{row.name}</strong>
-        <span className="block truncate text-xs text-slate-500">
-          Level {row.level}
-          {row.className ? ` ${row.className}` : ""}
-          {row.role ? `, ${row.role}` : ""}
-          {row.inZone ? ", active" : ""}
-          {row.cleared ? ", cleared" : ""}
+    <div className="flex min-w-0 items-center gap-2">
+      <span className="flex flex-none items-center gap-1">
+        <img
+          src={raceIconUrl}
+          alt={hero?.race || "Race"}
+          title={hero?.race || "Race"}
+          className={`${iconSizeClass} rounded border border-slate-700 bg-slate-950 object-cover`}
+          onError={(event) => {
+            event.currentTarget.src = getWowIconUrl("inv_misc_questionmark");
+          }}
+        />
+        <img
+          src={classIconUrl}
+          alt={charClass || "Class"}
+          title={charClass || "Class"}
+          className={`${iconSizeClass} rounded border border-slate-700 bg-slate-950 object-cover`}
+          onError={(event) => {
+            event.currentTarget.src = getWowIconUrl("inv_misc_questionmark");
+          }}
+        />
+      </span>
+      <strong
+        className="block min-w-0 truncate text-sm font-bold text-slate-100"
+        style={classInfo?.color ? { color: classInfo.color } : undefined}
+      >
+        {hero?.name || "Unknown Hero"}
+      </strong>
+    </div>
+  );
+}
+
+function ActivityBadge({ row }) {
+  if (row?.isGroupQuesting) {
+    return (
+      <span
+        title={row.activeZoneEliteName || "Zone Elite"}
+        className="inline-flex items-center gap-1 rounded-full border border-violet-400/40 bg-violet-950/45 px-1.5 py-0.5 text-[10px] font-bold uppercase tracking-wide text-violet-100"
+      >
+        <span className="zone-elite-party-pulse" aria-hidden="true">
+          <span>*</span>
+          <span>*</span>
+          <span>*</span>
         </span>
+        Group Quest
+      </span>
+    );
+  }
+
+  if (row?.inZone) {
+    return (
+      <span className="inline-flex items-center gap-1 rounded-full border border-emerald-400/35 bg-emerald-950/45 px-1.5 py-0.5 text-[10px] font-bold uppercase tracking-wide text-emerald-100">
+        <span className="relative h-3 w-3 flex-none animate-pulse" aria-hidden="true">
+          <span className="absolute left-1/2 top-0 h-3 w-0.5 -translate-x-1/2 rotate-45 rounded bg-emerald-200 shadow-[0_0_6px_rgba(110,231,183,0.9)]" />
+          <span className="absolute left-1/2 top-0 h-3 w-0.5 -translate-x-1/2 -rotate-45 rounded bg-cyan-100 shadow-[0_0_6px_rgba(165,243,252,0.9)]" />
+        </span>
+        Questing
+      </span>
+    );
+  }
+
+  if (row?.cleared) {
+    return (
+      <span className="inline-flex items-center gap-1 rounded-full border border-amber-400/30 bg-amber-950/30 px-1.5 py-0.5 text-[10px] font-bold uppercase tracking-wide text-amber-100">
+        <span className="h-2 w-2 rounded-full bg-amber-300 shadow-[0_0_6px_rgba(252,211,77,0.75)]" />
+        Cleared
+      </span>
+    );
+  }
+
+  return (
+    <span className="inline-flex items-center gap-1 rounded-full border border-slate-600 bg-slate-950/70 px-1.5 py-0.5 text-[10px] font-bold uppercase tracking-wide text-slate-300">
+      <span className="h-2 w-2 rounded-full bg-slate-500" />
+      Idle
+    </span>
+  );
+}
+
+function ProgressRow({
+  row,
+  moveZoneOptions = [],
+  isMoveOpen = false,
+  onToggleMove,
+  onMoveToZone,
+}) {
+  const canMove =
+    moveZoneOptions.length > 0 &&
+    typeof onToggleMove === "function" &&
+    typeof onMoveToZone === "function";
+
+  return (
+    <div className="border-b border-slate-800/80 py-2 last:border-b-0">
+      <div className="grid grid-cols-[minmax(0,1fr)_auto] items-center gap-2">
+        <div className="min-w-0">
+          <HeroIdentity hero={row} compact />
+          <div className="mt-1 flex flex-wrap items-center gap-x-2 gap-y-1 text-xs text-slate-500">
+            <span>
+              Level {row.level}
+              {row.role ? `, ${getRoleIcon(row.role)} ${row.role}` : ""}
+              {row.className ? `, ${row.className}` : ""}
+            </span>
+            <span className="inline-flex items-center gap-1">
+              <ActivityBadge row={row} />
+              {canMove && (
+                <button
+                  type="button"
+                  onClick={onToggleMove}
+                  className={`inline-flex h-5 w-5 items-center justify-center rounded-full border border-cyan-500/40 bg-cyan-950/35 text-[11px] font-bold text-cyan-100 shadow-[0_0_10px_rgba(34,211,238,0.12)] transition-all hover:border-cyan-300 hover:bg-cyan-900/50 ${
+                    isMoveOpen ? "rotate-90 text-amber-100" : ""
+                  }`}
+                  aria-expanded={isMoveOpen}
+                  aria-label={`Move ${row.name || "hero"} to another zone`}
+                  title="Move to another available zone"
+                >
+                  &gt;
+                </button>
+              )}
+            </span>
+          </div>
+        </div>
+        <span className="text-sm font-bold text-amber-100">{row.progress}%</span>
       </div>
-      <span className="text-sm font-bold text-amber-100">{row.progress}%</span>
+      {canMove && isMoveOpen && (
+        <div className="zone-move-panel mt-2 rounded border border-cyan-800/55 bg-slate-950/80 p-2">
+          <label
+            htmlFor={`zone-move-${row.memberId}`}
+            className="mb-1 block text-[10px] font-bold uppercase tracking-wide text-cyan-100/80"
+          >
+            Move to zone
+          </label>
+          <select
+            id={`zone-move-${row.memberId}`}
+            defaultValue=""
+            onChange={(event) => {
+              if (event.target.value) onMoveToZone(event.target.value);
+            }}
+            className="w-full rounded border border-slate-700 bg-slate-950 px-2 py-1.5 text-xs text-slate-100 focus:border-cyan-500 focus:outline-none"
+          >
+            <option value="" disabled>
+              Choose destination
+            </option>
+            {moveZoneOptions.map((zone) => (
+              <option key={zone.id} value={zone.id}>
+                {zone.name} (Level {zone.minLevel}-{zone.maxLevel})
+              </option>
+            ))}
+          </select>
+        </div>
+      )}
     </div>
   );
 }
@@ -750,6 +1108,8 @@ function HeroPicker({
   onToggle,
   maxSize,
   minLevel = 1,
+  eliteQuest = null,
+  selectedHasOpenQuestStarter = true,
   emptyText,
 }) {
   if (heroes.length === 0) {
@@ -763,7 +1123,11 @@ function HeroPicker({
         const selected = selectedIds.includes(memberId);
         const levelLocked = getHeroLevel(hero) < minLevel;
         const sizeLocked = !selected && maxSize && selectedIds.length >= maxSize;
-        const disabled = levelLocked || sizeLocked;
+        const eliteDone =
+          eliteQuest && hasCompletedZoneEliteQuest(hero, eliteQuest);
+        const doneLocked =
+          eliteDone && !selected && !selectedHasOpenQuestStarter;
+        const disabled = levelLocked || sizeLocked || doneLocked;
 
         return (
           <button
@@ -779,12 +1143,24 @@ function HeroPicker({
                   : "border-slate-700 bg-slate-950/50 text-slate-200 hover:border-cyan-600"
             }`}
           >
-            <strong className="block truncate text-sm">{hero.name}</strong>
-            <span className="block truncate text-xs text-slate-500">
+            <HeroIdentity hero={hero} compact />
+            <span className="mt-1 block truncate text-xs text-slate-500">
               Level {hero.level ?? 1}
-              {hero.role ? `, ${hero.role}` : ""}
+              {hero.role ? `, ${getRoleIcon(hero.role)} ${hero.role}` : ""}
+              {hero.charClass ? `, ${hero.charClass}` : ""}
               {levelLocked ? `, needs ${minLevel}` : ""}
             </span>
+            {eliteDone && (
+              <span
+                className={`mt-1 inline-flex rounded border px-1.5 py-0.5 text-[10px] font-bold uppercase tracking-wide ${
+                  doneLocked
+                    ? "border-slate-700 bg-slate-900 text-slate-500"
+                    : "border-emerald-700 bg-emerald-950/40 text-emerald-200"
+                }`}
+              >
+                [DONE]
+              </span>
+            )}
           </button>
         );
       })}

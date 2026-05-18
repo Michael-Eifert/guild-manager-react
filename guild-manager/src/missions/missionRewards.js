@@ -1,5 +1,7 @@
 import {
   MORALE_DUNGEON_CLEAR_DELTA,
+  MORALE_ELITE_FAILURE_DELTA,
+  MORALE_ELITE_SUCCESS_DELTA,
   applyMoraleDelta,
   isCharacterInMissionLevelRange,
 } from "../game/characterMorale";
@@ -509,6 +511,7 @@ export const createMissionRewardProcessor = ({
     const memberIds = Array.isArray(mission?.memberIds) ? mission.memberIds : [];
     const partyMembers = currentRoster.filter((c) => memberIds.includes(c.id));
     const isDungeon = mission.type === "dungeon";
+    const isZoneElite = mission?.isZoneElite === true;
     const dungeonBossCount = isDungeon ? getDungeonBossCount(mission) : 0;
     const dungeonClearedSteps = isDungeon
       ? Math.max(
@@ -637,9 +640,10 @@ export const createMissionRewardProcessor = ({
         : [];
       const normalizedClearKey =
         missionClearKey == null ? null : String(missionClearKey);
+      const shouldRecordClearedMission =
+        missionSucceeded && (isDungeon || mission?.isZoneElite === true);
       const updatedClearedMissionIds =
-        missionSucceeded &&
-        isDungeon &&
+        shouldRecordClearedMission &&
         normalizedClearKey &&
         !existingClearedMissionIds.some(
           (missionId) => String(missionId) === normalizedClearKey,
@@ -717,7 +721,14 @@ export const createMissionRewardProcessor = ({
         isDungeon &&
         isCharacterInMissionLevelRange(char, mission)
           ? applyMoraleDelta(char, MORALE_DUNGEON_CLEAR_DELTA)
-          : char;
+          : isZoneElite && isCharacterInMissionLevelRange(char, mission)
+            ? applyMoraleDelta(
+                char,
+                missionSucceeded
+                  ? MORALE_ELITE_SUCCESS_DELTA
+                  : MORALE_ELITE_FAILURE_DELTA,
+              )
+            : char;
 
       return {
         ...moraleAdjustedChar,

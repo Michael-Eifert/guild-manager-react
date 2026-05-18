@@ -142,12 +142,15 @@ import {
   resolveRecruitmentResult,
 } from "./recruitment/recruitmentLogic";
 import {
+  hasCompletedZoneEliteQuest,
+  resolveAutoZoneEliteGroups,
+} from "./automation/zoneEliteAutomation";
+import {
   advanceDungeonMission,
   getDefaultDungeonProgress,
 } from "./game/dungeonEngine";
 import {
   applyProfessionSkillAttempts,
-  getSkillCap,
   resolveCharacterActivityPlan,
 } from "./game/characterActivity";
 import { getLevelingTickExpGain } from "./game/levelingProgression";
@@ -183,6 +186,7 @@ import {
   updateRaidLockoutProgress,
 } from "./raids/raidLockouts";
 import { resolveAutoDungeonAttempt } from "./automation/dungeonAutomation";
+import { createDebugActions } from "./debug/debugActions";
 
 const RecruitModal = lazy(() => import("./components/modals/RecruitModal"));
 const DetailModal = lazy(() => import("./components/modals/DetailModal"));
@@ -661,32 +665,6 @@ const App = () => {
       });
     }
   }, [appendAchievementLog, pushNotification, roster]);
-
-  const applyLevelAndProfessionDelta = (char, levelDelta) => {
-    const newLevel = Math.min(
-      CONFIG.LEVEL_CAP,
-      Math.max(1, char.level + levelDelta),
-    );
-    const appliedLevelDelta = newLevel - char.level;
-    const profDelta = appliedLevelDelta * 5;
-    const newSkillCap = Math.min(300, getSkillCap(newLevel));
-
-    const updatedProfessions = char.professions.map((prof) => {
-      const shifted = prof.skill + profDelta;
-      return {
-        ...prof,
-        skill: Math.max(0, Math.min(newSkillCap, shifted)),
-      };
-    });
-
-    return {
-      ...char,
-      level: newLevel,
-      exp: 0,
-      maxExp: getReqExp(newLevel),
-      professions: updatedProfessions,
-    };
-  };
 
   const tryApplyWorldTickLoot = useCallback(
     (char, logCollector) => {
@@ -1635,6 +1613,48 @@ const App = () => {
         });
       });
 
+      const autoZoneEliteGroups = resolveAutoZoneEliteGroups({
+        roster: newRoster,
+        activeMissions: newMissions,
+      });
+      autoZoneEliteGroups.forEach((candidate) => {
+        const { mission, memberIds, starterMemberIds, supporterMemberIds } =
+          candidate;
+        const missionRun = buildMissionRun(
+          mission,
+          memberIds,
+          now,
+          newRoster,
+        );
+        newRoster = newRoster.map((char) =>
+          memberIds.includes(char.id)
+            ? {
+                ...char,
+                status: "Questing",
+                statusText: `Group Quest: ${mission.name}`,
+                autoZoneEliteLastStartedAt: now,
+                autoZoneEliteLastMissionId: String(mission.id ?? ""),
+              }
+            : char,
+        );
+        newMissions.push(missionRun);
+        newLogs.push({
+          type: "zone-elite",
+          missionName: mission.name,
+          message: `${memberIds.length} heroes formed a zone elite group for ${mission.name}.`,
+        });
+        pushNotification({
+          type: "info",
+          title: "Zone Elite Group Formed",
+          message: `${mission.name}: ${starterMemberIds.length} need it${
+            supporterMemberIds.length > 0
+              ? `, ${supporterMemberIds.length} helping`
+              : ""
+          }.`,
+          durationMs: 4200,
+        });
+      });
+
       // 3. Process Character Status (Idle/Professions)
       newRoster = newRoster.map((char) => {
         const normalizedChar = normalizeCharacterZoneState(
@@ -2329,6 +2349,88 @@ const App = () => {
     [pushNotification],
   );
 
+  const preemptInterruptibleMissionsForDeployment = useCallback(
+    ({ memberIds, missionName, reason = "dungeon" }) => {
+      const selectedMemberIds = new Set(
+        (Array.isArray(memberIds) ? memberIds : []).map((memberId) =>
+          String(memberId || ""),
+        ),
+      );
+      if (selectedMemberIds.size === 0) return null;
+
+      const interruptibleMissions = missionsRef.current.filter((mission) => {
+        if (mission?.type === "dungeon") return false;
+        const missionMemberIds = Array.isArray(mission?.memberIds)
+          ? mission.memberIds.map((memberId) => String(memberId || ""))
+          : [];
+        return missionMemberIds.some((memberId) =>
+          selectedMemberIds.has(memberId),
+        );
+      });
+      if (interruptibleMissions.length === 0) return null;
+
+      const affectedMemberIds = new Set(
+        interruptibleMissions.flatMap((mission) =>
+          Array.isArray(mission?.memberIds)
+            ? mission.memberIds.map((memberId) => String(memberId || ""))
+            : [],
+        ),
+      );
+      const nextRoster = rosterRef.current.map((char) => {
+        if (!affectedMemberIds.has(String(char?.id || ""))) return char;
+        const normalizedChar = normalizeCharacterZoneState(
+          char,
+          guildSetupRef.current?.faction || GUILD_FACTION.ALLIANCE,
+        );
+        return {
+          ...normalizedChar,
+          status: "Idle",
+          statusText: "Resting...",
+        };
+      });
+      const canceledMissionKeys = new Set(
+        interruptibleMissions.map((mission) => getMissionInstanceKey(mission)),
+      );
+      const nextMissions = missionsRef.current.filter(
+        (mission) => !canceledMissionKeys.has(getMissionInstanceKey(mission)),
+      );
+      const canceledMissionNames = [
+        ...new Set(
+          interruptibleMissions.map((mission) => mission?.name || "Quest"),
+        ),
+      ];
+
+      rosterRef.current = nextRoster;
+      missionsRef.current = nextMissions;
+      setRoster(nextRoster);
+      setActiveMissions(nextMissions);
+
+      const time = new Date().toLocaleTimeString();
+      const reasonText =
+        reason === "zone"
+          ? "so the zone transfer can happen"
+          : "so the dungeon group can form";
+      const message = `${missionName} paused ${canceledMissionNames.join(", ")} ${reasonText}.`;
+      setGuildLog((prev) =>
+        [
+          {
+            time,
+            type: "mission",
+            message,
+          },
+          ...prev,
+        ].slice(0, 50),
+      );
+
+      return {
+        canceledMissions: interruptibleMissions,
+        nextRoster,
+        nextMissions,
+      };
+    },
+    [],
+  );
+
   const handleDeploy = useCallback(
     (quest, ids, options = {}) => {
       const memberIds = Array.isArray(ids) ? ids.filter(Boolean) : [];
@@ -2347,16 +2449,19 @@ const App = () => {
           });
           return false;
         }
-        setRoster((prev) => {
-          const withZoneState = normalizeRosterZones(prev);
-          const assigned = assignZoneToRoster(
-            withZoneState,
-            memberIds,
-            zone.id,
-          );
-          rosterRef.current = assigned;
-          return assigned;
+        const questPreemption = preemptInterruptibleMissionsForDeployment({
+          memberIds,
+          missionName: zone.name,
+          reason: "zone",
         });
+        rosterSnapshot = questPreemption?.nextRoster || rosterSnapshot;
+        const assigned = assignZoneToRoster(
+          normalizeRosterZones(rosterSnapshot),
+          memberIds,
+          zone.id,
+        );
+        rosterRef.current = assigned;
+        setRoster(assigned);
         pushNotification({
           type: "info",
           title: "Zone Assigned",
@@ -2415,6 +2520,21 @@ const App = () => {
       const selectedMembers = rosterSnapshot.filter((char) =>
         memberIds.includes(char.id),
       );
+      if (
+        quest?.isZoneElite === true &&
+        selectedMembers.length > 0 &&
+        selectedMembers.every((member) =>
+          hasCompletedZoneEliteQuest(member, quest),
+        )
+      ) {
+        pushNotification({
+          type: "error",
+          title: "Elite Already Cleared",
+          message:
+            "At least one selected hero must still need this zone elite. Cleared heroes can still help someone else.",
+        });
+        return false;
+      }
       const missionKeyAccess = evaluateMissionKeyAccess({
         missions: missionSequenceForAccess,
         partyMembers: selectedMembers,
@@ -2484,32 +2604,19 @@ const App = () => {
         }
       }
 
-      const selectedMemberIdSet = new Set(memberIds.map((id) => String(id)));
-      const activeMissionMemberIds = new Set();
-      const activeNonDungeonMemberIds = new Set();
-      (Array.isArray(missionsRef.current) ? missionsRef.current : []).forEach(
-        (missionRun) => {
-          const missionMemberIds = Array.isArray(missionRun?.memberIds)
-            ? missionRun.memberIds.map((id) => String(id || "")).filter(Boolean)
-            : [];
-          const overlapsRaidTeam = missionMemberIds.some((id) =>
-            selectedMemberIdSet.has(id),
-          );
-          if (!overlapsRaidTeam) return;
-          missionMemberIds.forEach((id) => activeMissionMemberIds.add(id));
-          if (missionRun?.type !== "dungeon") {
-            missionMemberIds.forEach((id) => activeNonDungeonMemberIds.add(id));
-          }
-        },
-      );
-      if (activeNonDungeonMemberIds.size > 0) {
-        pushNotification({
-          type: "error",
-          title: "Raid Setup Incomplete",
-          message:
-            "Some selected heroes are already busy outside a dungeon and cannot be moved to the raid.",
+      const openingMission = hasDungeonChain ? chainMissions[0] : quest;
+
+      if (openingMission?.type === "dungeon") {
+        const questPreemption = preemptInterruptibleMissionsForDeployment({
+          memberIds,
+          missionName:
+            openingMission.dungeonWing ||
+            openingMission.dungeonSetName ||
+            openingMission.name,
         });
-        return false;
+        if (questPreemption) {
+          rosterSnapshot = questPreemption.nextRoster;
+        }
       }
 
       if (quest?.isRaid === true) {
@@ -2538,14 +2645,15 @@ const App = () => {
       ) {
         pushNotification({
           type: "error",
-          title: "Raid Setup Incomplete",
+          title: quest?.isRaid ? "Raid Setup Incomplete" : "Group Busy",
           message:
-            "Some selected heroes are still busy and cannot join the raid yet.",
+            quest?.isRaid
+              ? "Some selected heroes are still busy and cannot join the raid yet."
+              : "Some selected heroes are already in a dungeon group and cannot join another mission yet.",
         });
         return false;
       }
 
-      const openingMission = hasDungeonChain ? chainMissions[0] : quest;
       const chainContext = hasDungeonChain
         ? {
             chainId: createId(),
@@ -2588,9 +2696,12 @@ const App = () => {
           ? {
               ...c,
               status: "Questing",
-              statusText: hasDungeonChain
-                ? `Chain: ${openingMission.name}`
-                : "On Mission",
+              statusText:
+                openingMission?.isZoneElite === true
+                  ? `Group Quest: ${openingMission.name}`
+                  : hasDungeonChain
+                    ? `Chain: ${openingMission.name}`
+                    : "On Mission",
             }
           : c,
       );
@@ -2614,6 +2725,7 @@ const App = () => {
       getCurrentCalendarDayIndex,
       normalizeRosterZones,
       preemptDungeonMissionsForRaid,
+      preemptInterruptibleMissionsForDeployment,
       pushNotification,
       roster,
     ],
@@ -3036,159 +3148,42 @@ const App = () => {
     }
   };
 
-  const handleLevelChange = (id, amt) => {
-    setRoster((p) =>
-      p.map((c) => (c.id !== id ? c : applyLevelAndProfessionDelta(c, amt))),
-    );
-  };
-
-  const handleBulkLevel = (amt) => {
-    setRoster((p) => p.map((c) => applyLevelAndProfessionDelta(c, amt)));
-    setShowDebug(false);
-  };
-
-  const handleDebugAddGold = (amount) => {
-    const safeAmount = Math.max(0, Number(amount) || 0);
-    if (safeAmount <= 0) return;
-
-    const cappedGold = Math.min(
-      guildDerivedStats.goldCap,
-      goldRef.current + safeAmount,
-    );
-    goldRef.current = cappedGold;
-    setGuildGold(cappedGold);
-  };
-
-  const handleDebugAddRenown = (amount) => {
-    const safeAmount = Math.max(0, Math.floor(Number(amount) || 0));
-    if (safeAmount <= 0) return;
-
-    setGuildProgress((prev) => {
-      const normalized = normalizeGuildProgress(prev);
-      return {
-        ...normalized,
-        renownPoints: normalized.renownPoints + safeAmount,
-        totalRenown: normalized.totalRenown + safeAmount,
-      };
-    });
-    appendGuildRenownLog(`Debug grant: +${safeAmount} ${GUILD_POINT_LABEL}.`);
-    pushNotification({
-      type: "info",
-      title: "Guild Renown Added",
-      message: `+${safeAmount} ${GUILD_POINT_LABEL}`,
-    });
-  };
-
-  const handleDebugAddPresetParty = async (presetValue) => {
-    const { buildDebugRosterPreset, resolveDebugPreset } =
-      await import("./debug/rosterPresets");
-    const preset = resolveDebugPreset(presetValue);
-    const openSlots = Math.max(
-      0,
-      guildDerivedStats.maxRoster - rosterRef.current.length,
-    );
-    if (openSlots < preset.count) {
-      pushNotification({
-        type: "error",
-        title: "Debug Party Blocked",
-        message: preset.blockedMessage,
-      });
-      return;
-    }
-
-    const faction = guildSetupRef.current?.faction || GUILD_FACTION.ALLIANCE;
-    const debugParty = buildDebugRosterPreset({
-      faction,
-      level: preset.level,
-      count: preset.count,
-      roleOrder: preset.roleOrder,
-      guaranteedKeys: preset.guaranteedKeys,
-      usedNames: rosterRef.current
-        .map((member) => member?.name)
-        .filter(Boolean),
-    });
-    const updatedRoster = normalizeRosterZones(
-      [...rosterRef.current, ...debugParty],
-      faction,
-    );
-    rosterRef.current = updatedRoster;
-    setRoster(updatedRoster);
-    pushNotification({
-      type: "info",
-      title: preset.successTitle,
-      message: preset.successMessage(faction),
-    });
-    setShowDebug(false);
-  };
-
-  const handleDebugPrepareMoltenCoreTestGuild = async () => {
-    const {
-      buildDebugRosterPreset,
-      resolveDebugPreset,
-      DEBUG_MOLTEN_CORE_TEST_GUILD_ID,
-    } = await import("./debug/rosterPresets");
-    const preset = resolveDebugPreset(DEBUG_MOLTEN_CORE_TEST_GUILD_ID);
-    const faction = guildSetupRef.current?.faction || GUILD_FACTION.ALLIANCE;
-    const debugRaidRoster = buildDebugRosterPreset({
-      faction,
-      level: preset.level,
-      count: preset.count,
-      roleOrder: preset.roleOrder,
-      guaranteedKeys: preset.guaranteedKeys,
-      usedNames: [],
-    });
-    const normalizedRoster = normalizeRosterZones(debugRaidRoster, faction);
-    const unlockedProgress = normalizeGuildProgress(guildProgressRef.current);
-    const nextGuildProgress = {
-      ...unlockedProgress,
-      totalRenown: Math.max(unlockedProgress.totalRenown, 12),
-      talents: {
-        ...unlockedProgress.talents,
-        rosterCap: 3,
-        raidAttunement: 1,
-      },
-    };
-
-    rosterRef.current = normalizedRoster;
-    setRoster(normalizedRoster);
-    guildRelationshipsRef.current = {};
-    setGuildRelationships({});
-    guildProgressRef.current = nextGuildProgress;
-    setGuildProgress(nextGuildProgress);
-    missionsRef.current = [];
-    raidLockoutsRef.current = {};
-    rewardedMissionIdsRef.current = new Set();
-    setActiveMissions([]);
-    setRaidLockouts({});
-    setGuildLog((prev) =>
-      [
-        {
-          time: new Date().toLocaleTimeString(),
-          type: "guild-renown",
-          message: "Debug setup: Molten Core test guild is raid-ready.",
+  const debugActions = useMemo(
+    () =>
+      createDebugActions({
+        maxRoster: guildDerivedStats.maxRoster,
+        goldCap: guildDerivedStats.goldCap,
+        refs: {
+          roster: rosterRef,
+          gold: goldRef,
+          guildProgress: guildProgressRef,
+          guildSetup: guildSetupRef,
+          guildRelationships: guildRelationshipsRef,
+          missions: missionsRef,
+          raidLockouts: raidLockoutsRef,
+          rewardedMissionIds: rewardedMissionIdsRef,
         },
-        ...prev,
-      ].slice(0, 50),
-    );
-    pushNotification({
-      type: "info",
-      title: preset.successTitle,
-      message: preset.successMessage(faction),
-    });
-    setShowDebug(false);
-  };
-
-  const handleDebugReloadDatabase = () => {
-    setMissionList(
-      getMissionListWithZones(INITIAL_MISSIONS.map(cloneMissionTemplate)),
-    );
-    pushNotification({
-      type: "info",
-      title: "Database Reloaded",
-      message: "Mission templates were reloaded from constants.",
-    });
-    setShowDebug(false);
-  };
+        setters: {
+          setRoster,
+          setGuildGold,
+          setGuildProgress,
+          setGuildRelationships,
+          setActiveMissions,
+          setRaidLockouts,
+          setGuildLog,
+          setMissionList,
+        },
+        closeDebug: () => setShowDebug(false),
+        pushNotification,
+        appendGuildRenownLog,
+      }),
+    [
+      appendGuildRenownLog,
+      guildDerivedStats.goldCap,
+      guildDerivedStats.maxRoster,
+      pushNotification,
+    ],
+  );
 
   const handleSaveSession = () => {
     try {
@@ -4006,6 +4001,7 @@ const App = () => {
             roster={roster}
             onDeploy={handleDeploy}
             missionList={missionList}
+            activeMissions={activeMissions}
             showLegacyQuests={SHOW_LEGACY_QUESTS}
             guildFaction={guildSetup.faction}
             dungeonSuccessBonus={guildFocusBonuses.dungeonSuccessBonus}
@@ -4059,12 +4055,16 @@ const App = () => {
           <DebugModal
             isOpen={showDebug}
             onClose={() => setShowDebug(false)}
-            onBulkLevel={handleBulkLevel}
-            onAddGold={handleDebugAddGold}
-            onAddRenown={handleDebugAddRenown}
-            onAddPresetParty={handleDebugAddPresetParty}
-            onPrepareMoltenCoreTestGuild={handleDebugPrepareMoltenCoreTestGuild}
-            onReloadDatabase={handleDebugReloadDatabase}
+            onBulkLevel={debugActions.bulkLevel}
+            onAddGold={debugActions.addGold}
+            onAddRenown={debugActions.addRenown}
+            onAddPresetParty={debugActions.addPresetParty}
+            onPrepareMoltenCoreTestGuild={debugActions.prepareMoltenCoreTestGuild}
+            onPrepareBlackwingLairTestGuild={
+              debugActions.prepareBlackwingLairTestGuild
+            }
+            onPrepareNaxxramasTestGuild={debugActions.prepareNaxxramasTestGuild}
+            onReloadDatabase={debugActions.reloadDatabase}
           />
         )}
         {showMap && (
@@ -4095,7 +4095,7 @@ const App = () => {
             onProfChange={handleProfChange}
             onGenerateBackstory={handleGenerateBackstory}
             onUpdateBackstory={handleUpdateBackstory}
-            onLevelChange={handleLevelChange}
+            onLevelChange={debugActions.changeLevel}
             onRoleChange={(id, role) =>
               setRoster((p) => p.map((c) => (c.id !== id ? c : { ...c, role })))
             }

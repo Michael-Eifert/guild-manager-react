@@ -46,6 +46,28 @@ const getActiveQuestId = (mission) =>
 const buildActiveMissionSet = (activeMissions) =>
   new Set((activeMissions ?? []).map(getActiveQuestId).filter(Boolean));
 
+const buildActiveZoneEliteMemberMap = (activeMissions) => {
+  const memberMap = new Map();
+  (Array.isArray(activeMissions) ? activeMissions : []).forEach((mission) => {
+    if (mission?.isZoneElite !== true) return;
+    const zoneId = String(mission?.zoneId || "").trim();
+    if (!zoneId) return;
+    const questId = getActiveQuestId(mission);
+    (Array.isArray(mission?.memberIds) ? mission.memberIds : []).forEach(
+      (memberId) => {
+        const normalizedMemberId = String(memberId || "").trim();
+        if (!normalizedMemberId) return;
+        memberMap.set(normalizedMemberId, {
+          zoneId,
+          questId,
+          missionName: mission?.name || "Zone Elite",
+        });
+      },
+    );
+  });
+  return memberMap;
+};
+
 const buildZoneMissionMap = (missionList) => {
   const missionMap = new Map();
   (missionList ?? []).forEach((mission) => {
@@ -56,21 +78,32 @@ const buildZoneMissionMap = (missionList) => {
   return missionMap;
 };
 
-const buildProgressRows = (roster, zoneId) =>
+const buildProgressRows = (roster, zoneId, activeZoneEliteByMemberId) =>
   (roster ?? [])
     .map((member) => {
+      const memberId = getMemberId(member);
       const progress = getCharacterZoneProgressForZone(member, zoneId);
       const inZone = member?.currentZoneId === zoneId;
       const cleared = hasClearedZone(member, zoneId);
+      const activeZoneElite = activeZoneEliteByMemberId.get(String(memberId || ""));
+      const isGroupQuesting =
+        inZone && activeZoneElite?.zoneId === zoneId;
       return {
         member,
-        memberId: getMemberId(member),
+        memberId,
         name: getMemberName(member),
+        race: member?.race,
+        gender: member?.gender,
         role: member?.role,
-        className: member?.className ?? member?.class,
+        charClass: member?.charClass ?? member?.className ?? member?.class,
+        className: member?.charClass ?? member?.className ?? member?.class,
         level: Number(member?.level) || 1,
         progress: cleared ? Math.max(progress, 100) : progress,
         inZone,
+        isGroupQuesting,
+        activeZoneEliteName: isGroupQuesting
+          ? activeZoneElite.missionName
+          : null,
         cleared,
       };
     })
@@ -89,10 +122,15 @@ export const buildWorldMapZoneSummaries = ({
   guildFaction = GUILD_FACTION.ALLIANCE,
 } = {}) => {
   const activeMissionIds = buildActiveMissionSet(activeMissions);
+  const activeZoneEliteByMemberId = buildActiveZoneEliteMemberMap(activeMissions);
   const zoneMissionById = buildZoneMissionMap(missionList);
 
   return ZONE_DEFINITIONS.map((zone) => {
-    const progressRows = buildProgressRows(roster, zone.id);
+    const progressRows = buildProgressRows(
+      roster,
+      zone.id,
+      activeZoneEliteByMemberId,
+    );
     const heroesInZone = progressRows.filter((row) => row.inZone);
     const guildBestProgress = progressRows.reduce(
       (best, row) => Math.max(best, row.progress),

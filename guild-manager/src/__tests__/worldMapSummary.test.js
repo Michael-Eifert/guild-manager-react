@@ -4,6 +4,10 @@ import { GUILD_FACTION } from "../constants";
 import { ZONE_DEFINITIONS, getZoneEliteQuestTemplates } from "../zones/zoneDefinitions";
 import { getZoneMapLayout, getZoneRegionalMap } from "../zones/zoneMapLayout";
 import {
+  hasCompletedZoneEliteQuest,
+  resolveAutoZoneEliteGroups,
+} from "../automation/zoneEliteAutomation";
+import {
   WORLD_MAP_FILTERS,
   buildWorldMapZoneSummaries,
   filterWorldMapZoneSummaries,
@@ -118,9 +122,22 @@ describe("world map zone summaries", () => {
   it("marks active zone elite objectives", () => {
     const [eliteQuest] = getZoneEliteQuestTemplates("westfall");
     const summaries = buildWorldMapZoneSummaries({
-      roster: [],
+      roster: [
+        {
+          id: "a",
+          name: "Aela",
+          currentZoneId: "westfall",
+          currentZoneProgress: 42,
+        },
+      ],
       missionList: [zoneMission("westfall")],
-      activeMissions: [{ questId: eliteQuest.id, memberIds: ["a", "b"] }],
+      activeMissions: [
+        {
+          ...eliteQuest,
+          questId: eliteQuest.id,
+          memberIds: ["a", "b"],
+        },
+      ],
       guildFaction: GUILD_FACTION.ALLIANCE,
     });
 
@@ -128,6 +145,8 @@ describe("world map zone summaries", () => {
 
     expect(westfall.activeEliteCount).toBe(1);
     expect(westfall.eliteQuests[0].isActive).toBe(true);
+    expect(westfall.heroesInZone[0].isGroupQuesting).toBe(true);
+    expect(westfall.heroesInZone[0].activeZoneEliteName).toBe(eliteQuest.name);
   });
 
   it("has map coordinates for every defined zone", () => {
@@ -164,5 +183,114 @@ describe("world map zone summaries", () => {
     expect(regionalMap.sourceUrl).toBe(
       "https://www.wowhead.com/classic/zone=440/tanaris",
     );
+  });
+});
+
+describe("zone elite automation", () => {
+  it("forms an elite group from idle heroes in the same zone who still need it", () => {
+    const [eliteQuest] = getZoneEliteQuestTemplates("westfall");
+    const groups = resolveAutoZoneEliteGroups({
+      roster: [
+        {
+          id: "tank",
+          name: "Tank",
+          role: "Tank",
+          level: eliteQuest.minLevel,
+          currentZoneId: "westfall",
+          clearedMissionIds: [],
+        },
+        {
+          id: "healer",
+          name: "Healer",
+          role: "Healer",
+          level: eliteQuest.minLevel,
+          currentZoneId: "westfall",
+          clearedMissionIds: [],
+        },
+      ],
+      activeMissions: [],
+    });
+
+    expect(groups).toHaveLength(1);
+    expect(groups[0].mission.id).toBe(eliteQuest.id);
+    expect(groups[0].memberIds).toEqual(expect.arrayContaining(["tank", "healer"]));
+    expect(groups[0].starterMemberIds.length).toBeGreaterThan(0);
+  });
+
+  it("lets a cleared hero support when another hero still needs the elite", () => {
+    const [eliteQuest] = getZoneEliteQuestTemplates("westfall");
+    const supportHero = {
+      id: "support",
+      name: "Support",
+      role: "Tank",
+      level: eliteQuest.minLevel,
+      currentZoneId: "westfall",
+      clearedMissionIds: [eliteQuest.id],
+    };
+    const groups = resolveAutoZoneEliteGroups({
+      roster: [
+        {
+          id: "starter",
+          name: "Starter",
+          role: "DPS",
+          level: eliteQuest.minLevel,
+          currentZoneId: "westfall",
+          clearedMissionIds: [],
+        },
+        supportHero,
+      ],
+      activeMissions: [],
+    });
+
+    expect(groups).toHaveLength(1);
+    expect(hasCompletedZoneEliteQuest(supportHero, eliteQuest)).toBe(true);
+    expect(groups[0].starterMemberIds).toEqual(["starter"]);
+    expect(groups[0].supporterMemberIds).toEqual(["support"]);
+  });
+
+  it("does not start an elite when all available heroes already cleared it", () => {
+    const [eliteQuest] = getZoneEliteQuestTemplates("westfall");
+    const groups = resolveAutoZoneEliteGroups({
+      roster: [
+        {
+          id: "a",
+          level: eliteQuest.minLevel,
+          currentZoneId: "westfall",
+          clearedMissionIds: [eliteQuest.id],
+        },
+        {
+          id: "b",
+          level: eliteQuest.minLevel,
+          currentZoneId: "westfall",
+          clearedMissionIds: [eliteQuest.id],
+        },
+      ],
+      activeMissions: [],
+    });
+
+    expect(groups).toEqual([]);
+  });
+
+  it("does not duplicate a zone elite that is already active", () => {
+    const [eliteQuest] = getZoneEliteQuestTemplates("westfall");
+    const groups = resolveAutoZoneEliteGroups({
+      roster: [
+        {
+          id: "a",
+          level: eliteQuest.minLevel,
+          currentZoneId: "westfall",
+          clearedMissionIds: [],
+        },
+        {
+          id: "b",
+          level: eliteQuest.minLevel,
+          currentZoneId: "westfall",
+          clearedMissionIds: [],
+        },
+      ],
+      activeMissions: [{ isZoneElite: true, questId: eliteQuest.id, memberIds: [] }],
+    });
+
+    expect(groups).toEqual([]);
   });
 });

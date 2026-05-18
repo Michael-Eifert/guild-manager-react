@@ -5,6 +5,27 @@ import {
   DEBUG_RAID_PRESET_ID,
 } from "../../debug/rosterPresets";
 
+const DEBUG_SCENARIO_OPTIONS = [
+  {
+    value: "molten-core",
+    label: "Molten Core Test Guild",
+    description:
+      "80 roster slots, raid missions, Molten Core attunement, and a fresh 40-player raid team.",
+  },
+  {
+    value: "blackwing-lair",
+    label: "Blackwing Lair Test Guild",
+    description:
+      "Fresh 40-player BWL team with MC/BWL attunements and T1/ZG/AQ20-level gear.",
+  },
+  {
+    value: "naxxramas",
+    label: "Naxxramas Test Guild",
+    description:
+      "Fresh 40-player Naxx team with MC/BWL attunements and T2/ZG/AQ-level gear.",
+  },
+];
+
 const DebugModal = ({
   isOpen,
   onClose,
@@ -13,16 +34,39 @@ const DebugModal = ({
   onAddRenown,
   onAddPresetParty,
   onPrepareMoltenCoreTestGuild,
+  onPrepareBlackwingLairTestGuild,
+  onPrepareNaxxramasTestGuild,
   onReloadDatabase,
 }) => {
   const [selectedPreset, setSelectedPreset] = useState(
     DEBUG_PRESET_OPTIONS[0].value,
   );
+  const [selectedScenario, setSelectedScenario] = useState(
+    DEBUG_SCENARIO_OPTIONS[0].value,
+  );
 
   useEffect(() => {
     if (!isOpen) return;
     setSelectedPreset(DEBUG_PRESET_OPTIONS[0].value);
+    setSelectedScenario(DEBUG_SCENARIO_OPTIONS[0].value);
   }, [isOpen]);
+
+  const selectedScenarioOption =
+    DEBUG_SCENARIO_OPTIONS.find(
+      (option) => option.value === selectedScenario,
+    ) || DEBUG_SCENARIO_OPTIONS[0];
+
+  const handleApplyScenario = () => {
+    if (selectedScenario === "blackwing-lair") {
+      onPrepareBlackwingLairTestGuild?.();
+      return;
+    }
+    if (selectedScenario === "naxxramas") {
+      onPrepareNaxxramasTestGuild?.();
+      return;
+    }
+    onPrepareMoltenCoreTestGuild?.();
+  };
 
   return (
     <BaseModal
@@ -144,15 +188,25 @@ const DebugModal = ({
               Scenario Setup
             </h3>
             <div className="space-y-3">
+              <select
+                value={selectedScenario}
+                onChange={(event) => setSelectedScenario(event.target.value)}
+                className="w-full bg-gray-800 border border-gray-600 rounded py-2 px-3 text-gray-100 text-sm focus:outline-none focus:border-orange-500"
+              >
+                {DEBUG_SCENARIO_OPTIONS.map((option) => (
+                  <option key={option.value} value={option.value}>
+                    {option.label}
+                  </option>
+                ))}
+              </select>
               <div className="text-[11px] text-orange-200/90 border border-orange-900/70 bg-orange-950/20 rounded px-2 py-1">
-                Unlocks 80 roster slots, raid missions, Molten Core attunement,
-                and a fresh 40-player raid team.
+                {selectedScenarioOption.description}
               </div>
               <button
-                onClick={onPrepareMoltenCoreTestGuild}
+                onClick={handleApplyScenario}
                 className="w-full bg-gray-800 hover:bg-gray-700 border border-orange-700 rounded py-2 px-4 text-orange-200 font-bold text-sm"
               >
-                Setup MC Test Guild
+                Apply Scenario Setup
               </button>
             </div>
           </div>

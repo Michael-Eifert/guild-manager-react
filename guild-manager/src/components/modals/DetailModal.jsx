@@ -85,6 +85,20 @@ const PreferencePills = ({ values, tone = "emerald" }) => {
   );
 };
 
+const formatRelationshipActivity = (activityType) => {
+  const type = String(activityType || "").trim();
+  if (type === "dungeon") return "Dungeon";
+  if (type === "raid") return "Raid";
+  if (type === "elite") return "Elite Quest";
+  return "Shared Activity";
+};
+
+const formatRelationshipEventDate = (occurredAt) => {
+  const timestamp = Number(occurredAt);
+  if (!Number.isFinite(timestamp) || timestamp <= 0) return "";
+  return new Date(timestamp).toLocaleString();
+};
+
 const ItemSlot = ({ slotName, item }) => {
   const borderColor = item ? getQualityColor(item.quality) : "#444";
   const itemStats = formatItemStats(item?.stats);
@@ -145,6 +159,8 @@ const DetailModal = ({
   const [tab, setTab] = useState("stats");
   const [historyPage, setHistoryPage] = useState(0);
   const [relationshipsOpen, setRelationshipsOpen] = useState(false);
+  const [relationshipHistoryOpenByKey, setRelationshipHistoryOpenByKey] =
+    useState({});
   const HISTORY_PAGE_SIZE = 8;
   const characterId = char?.id;
   const classData = DB_CLASSES[char?.charClass];
@@ -159,10 +175,10 @@ const DetailModal = ({
   const moraleSuccessModifier = getMoraleSuccessModifier(char);
   const moraleEffectText =
     moraleSuccessModifier > 0
-      ? `+${moraleSuccessModifier}% dungeon/raid success`
+      ? `+${moraleSuccessModifier}% mission success`
       : moraleSuccessModifier < 0
-        ? `${moraleSuccessModifier}% dungeon/raid success`
-        : "No dungeon/raid success modifier";
+        ? `${moraleSuccessModifier}% mission success`
+        : "No mission success modifier";
 
   const hardCap = getSkillCap(char?.level || 1);
   const averageItemLevel = getCharacterAverageItemLevel(char);
@@ -310,6 +326,7 @@ const DetailModal = ({
     if (isOpen && characterId) {
       setHistoryPage(0);
       setRelationshipsOpen(false);
+      setRelationshipHistoryOpenByKey({});
     }
   }, [isOpen, characterId]);
 
@@ -799,6 +816,14 @@ const DetailModal = ({
                             row.flairs.length > 0
                               ? row.flairs
                               : ["No flair yet"];
+                          const relationshipKey = row.relationship.memberIds.join("::");
+                          const relationshipEvents = Array.isArray(
+                            row.relationship.events,
+                          )
+                            ? row.relationship.events
+                            : [];
+                          const historyOpen =
+                            relationshipHistoryOpenByKey[relationshipKey] === true;
                           return (
                             <div
                               key={`${char.id}-relationship-${row.otherMember.id}`}
@@ -847,6 +872,83 @@ const DetailModal = ({
                                   Last shared: {row.relationship.lastMissionName}
                                 </div>
                               )}
+                              <div className="mt-2 rounded border border-gray-800 bg-gray-950/45">
+                                <button
+                                  type="button"
+                                  onClick={() =>
+                                    setRelationshipHistoryOpenByKey((prev) => ({
+                                      ...prev,
+                                      [relationshipKey]: !prev[relationshipKey],
+                                    }))
+                                  }
+                                  className="flex w-full items-center justify-between gap-2 px-2 py-1.5 text-left text-[11px] font-bold uppercase tracking-wide text-gray-300"
+                                  aria-expanded={historyOpen}
+                                >
+                                  <span>Shared History</span>
+                                  <span className="flex items-center gap-2 text-gray-500">
+                                    {relationshipEvents.length} events
+                                    <span className="text-sm text-pink-100">
+                                      {historyOpen ? "-" : "+"}
+                                    </span>
+                                  </span>
+                                </button>
+                                {historyOpen && (
+                                  <div className="space-y-1 border-t border-gray-800 px-2 py-2">
+                                    {relationshipEvents.length === 0 ? (
+                                      <div className="text-[11px] italic text-gray-500">
+                                        No shared history recorded yet.
+                                      </div>
+                                    ) : (
+                                      relationshipEvents.map((event, index) => {
+                                        const pointsDelta =
+                                          Number(event.pointsDelta) || 0;
+                                        const pointsText =
+                                          pointsDelta > 0
+                                            ? `+${pointsDelta}`
+                                            : String(pointsDelta);
+                                        const outcome = event.missionSucceeded
+                                          ? "success"
+                                          : "failed";
+                                        const eventDate =
+                                          formatRelationshipEventDate(
+                                            event.occurredAt,
+                                          );
+                                        return (
+                                          <div
+                                            key={`${relationshipKey}-event-${event.occurredAt}-${index}`}
+                                            className="rounded bg-gray-900/70 px-2 py-1.5 text-[11px] text-gray-300"
+                                          >
+                                            <div className="flex flex-wrap items-center justify-between gap-2">
+                                              <span className="font-semibold text-gray-100">
+                                                {event.missionName ||
+                                                  formatRelationshipActivity(
+                                                    event.activityType,
+                                                  )}
+                                              </span>
+                                              <span
+                                                className={
+                                                  pointsDelta >= 0
+                                                    ? "font-bold text-emerald-300"
+                                                    : "font-bold text-red-300"
+                                                }
+                                              >
+                                                {pointsText} Relationship
+                                              </span>
+                                            </div>
+                                            <div className="mt-0.5 text-gray-500">
+                                              {formatRelationshipActivity(
+                                                event.activityType,
+                                              )}{" "}
+                                              [{outcome}]
+                                              {eventDate ? ` - ${eventDate}` : ""}
+                                            </div>
+                                          </div>
+                                        );
+                                      })
+                                    )}
+                                  </div>
+                                )}
+                              </div>
                             </div>
                           );
                         })}
