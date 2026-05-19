@@ -1433,7 +1433,7 @@ function MiniStat({ label, value }) {
 
 function ZoneList({ summaries, selectedZoneId, realmType, guildFaction, onSelect }) {
   return (
-    <div className="max-h-64 overflow-y-auto p-2">
+    <div className="max-h-none overflow-visible p-2 md:max-h-64 md:overflow-y-auto">
       {summaries.length === 0 ? (
         <div className="text-sm text-slate-400">No zones match this filter yet.</div>
       ) : (
