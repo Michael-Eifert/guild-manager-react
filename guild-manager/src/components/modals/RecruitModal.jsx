@@ -1,24 +1,25 @@
 import React, { useEffect, useMemo, useState } from "react";
-import { CONFIG, DB_CLASSES, GUILD_FACTION } from "../../constants";
-import { DB_ITEMS } from "../../data/items";
+import { DB_CLASSES } from "../../constants";
 import {
-  generateCharacters,
   getCharacterAverageItemLevel,
   getRacePortraitUrl,
   getRoleIcon,
   getWowIconUrl,
 } from "../../utils";
 import {
-  buildRecruitmentEquipment,
   getRecruitmentCapacity,
   getRecruitmentTierOptions,
 } from "../../recruitment/recruitmentLogic";
 import BaseModal from "./BaseModal";
 
-const getCandidateLevel = (tier) => {
-  const minLevel = Math.max(1, Number(tier?.minLevel) || 1);
-  const maxLevel = Math.max(minLevel, Number(tier?.maxLevel) || minLevel);
-  return minLevel + Math.floor(Math.random() * (maxLevel - minLevel + 1));
+const SCOUT_COUNT_MIN = 5;
+const SCOUT_COUNT_MAX = 15;
+
+const getScoutCostGold = (tier, count) => {
+  const baseCost = Math.max(0, Number(tier?.scoutCostGold) || 0);
+  const extraProspects = Math.max(0, Math.floor(Number(count) || 0) - SCOUT_COUNT_MIN);
+  const extraCost = Math.ceil(baseCost / SCOUT_COUNT_MIN) * extraProspects;
+  return baseCost + extraCost;
 };
 
 const RecruitModal = ({
@@ -34,8 +35,8 @@ const RecruitModal = ({
   onScoutTier,
   applications = [],
   onRecruitApplications,
-  guildFaction = GUILD_FACTION.ALLIANCE,
-  existingNames = [],
+  onDeclineApplications,
+  marketStats,
 }) => {
   const [candidates, setCandidates] = useState([]);
   const [isLoading, setIsLoading] = useState(false);
@@ -44,6 +45,8 @@ const RecruitModal = ({
   const [limitWarning, setLimitWarning] = useState(false);
   const [selectedTierId, setSelectedTierId] = useState("level_1_10");
   const [activeTier, setActiveTier] = useState(null);
+  const [scoutCount, setScoutCount] = useState(SCOUT_COUNT_MIN);
+  const [scoutMessage, setScoutMessage] = useState("");
 
   const recruitmentTierOptions = useMemo(
     () => getRecruitmentTierOptions({ guildProgress, raidUnlocked }),
@@ -52,6 +55,7 @@ const RecruitModal = ({
   const selectedTier =
     recruitmentTierOptions.find((tier) => tier.id === selectedTierId) ||
     recruitmentTierOptions[0];
+  const selectedScoutCostGold = getScoutCostGold(selectedTier, scoutCount);
   const activeRecruitCostGold = Math.max(
     1,
     Number(activeTier?.recruitCostGold) || 1,
@@ -65,26 +69,11 @@ const RecruitModal = ({
     recruitCostGold: activeRecruitCostGold,
   });
   const applicationList = Array.isArray(applications) ? applications : [];
-
-  const existingNamesSignature = useMemo(() => {
-    const source = Array.isArray(existingNames) ? existingNames : [];
-    const normalized = [
-      ...new Set(
-        source
-          .map((name) => String(name || "").trim())
-          .filter(Boolean),
-      ),
-    ].sort((left, right) => left.localeCompare(right));
-    return JSON.stringify(normalized);
-  }, [existingNames]);
-  const stableExistingNames = useMemo(() => {
-    try {
-      const parsed = JSON.parse(existingNamesSignature);
-      return Array.isArray(parsed) ? parsed : [];
-    } catch {
-      return [];
-    }
-  }, [existingNamesSignature]);
+  const safeMarketStats = marketStats && typeof marketStats === "object"
+    ? marketStats
+    : {};
+  const selectedBandAvailable =
+    safeMarketStats.levelBands?.[selectedTier?.id] ?? null;
 
   useEffect(() => {
     if (!isOpen) return;
@@ -94,25 +83,10 @@ const RecruitModal = ({
     setSelectedApplicationIds([]);
     setLimitWarning(false);
     setActiveTier(null);
+    setScoutCount(SCOUT_COUNT_MIN);
+    setScoutMessage("");
     setSelectedTierId("level_1_10");
   }, [isOpen]);
-
-  const buildCandidates = (tier) =>
-    generateCharacters(5, guildFaction, {
-      usedNames: stableExistingNames,
-    }).map((candidate) => {
-      const level = getCandidateLevel(tier);
-      return {
-        ...candidate,
-        level,
-        exp: 0,
-        maxExp: CONFIG.XP_TABLE[level] || CONFIG.XP_TABLE[1],
-        equipment: buildRecruitmentEquipment({
-          character: { ...candidate, level },
-          itemDatabase: DB_ITEMS,
-        }),
-      };
-    });
 
   const handleSelectTier = (tier) => {
     setSelectedTierId(tier.id);
@@ -121,12 +95,13 @@ const RecruitModal = ({
     setSelectedApplicationIds([]);
     setActiveTier(null);
     setLimitWarning(false);
+    setScoutMessage("");
   };
 
   const handleScoutTier = () => {
     if (!selectedTier?.unlocked || isLoading || openSlots <= 0) return;
-    if (guildGold < selectedTier.scoutCostGold) return;
-    if (typeof onScoutTier === "function" && !onScoutTier(selectedTier)) return;
+    if (guildGold < selectedScoutCostGold) return;
+    if (typeof onScoutTier !== "function") return;
 
     setIsLoading(true);
     setCandidates([]);
@@ -134,8 +109,17 @@ const RecruitModal = ({
     setLimitWarning(false);
     const tier = selectedTier;
     window.setTimeout(() => {
+      const scoutedCandidates = onScoutTier(tier, {
+        count: scoutCount,
+        scoutCostGold: selectedScoutCostGold,
+      });
       setActiveTier(tier);
-      setCandidates(buildCandidates(tier));
+      setCandidates(Array.isArray(scoutedCandidates) ? scoutedCandidates : []);
+      setScoutMessage(
+        Array.isArray(scoutedCandidates) && scoutedCandidates.length > 0
+          ? ""
+          : "No available realm prospects matched that range right now.",
+      );
       setIsLoading(false);
     }, 500);
   };
@@ -196,6 +180,23 @@ const RecruitModal = ({
     }
   };
 
+  const handleDeclineSelectedApplications = () => {
+    const selectedApplications = applicationList.filter((char) =>
+      selectedApplicationIds.includes(char.id),
+    );
+    if (selectedApplications.length === 0) return;
+    if (typeof onDeclineApplications === "function") {
+      onDeclineApplications(selectedApplications);
+      setSelectedApplicationIds([]);
+    }
+  };
+
+  const handleDeclineApplication = (char) => {
+    if (!char || typeof onDeclineApplications !== "function") return;
+    onDeclineApplications([char]);
+    setSelectedApplicationIds((prev) => prev.filter((id) => id !== char.id));
+  };
+
   return (
     <BaseModal
       isOpen={isOpen}
@@ -217,7 +218,9 @@ const RecruitModal = ({
         <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-4 gap-3 mb-6">
           {recruitmentTierOptions.map((tier) => {
             const isSelected = selectedTierId === tier.id;
-            const canAffordScout = guildGold >= tier.scoutCostGold;
+            const tierScoutCost = getScoutCostGold(tier, scoutCount);
+            const canAffordScout = guildGold >= tierScoutCost;
+            const bandAvailable = safeMarketStats.levelBands?.[tier.id];
             return (
               <button
                 key={tier.id}
@@ -235,12 +238,17 @@ const RecruitModal = ({
                   <span
                     className={canAffordScout ? "text-green-300" : "text-red-300"}
                   >
-                    {tier.scoutCostGold}g
+                    {tierScoutCost}g
                   </span>
                 </div>
                 <div className="text-[11px] text-gray-400 mt-1">
-                  5 scouted prospects - first free - +{tier.recruitCostGold}g each
+                  {scoutCount} realm prospects - first recruit free - +{tier.recruitCostGold}g each
                 </div>
+                {Number.isFinite(Number(bandAvailable)) && (
+                  <div className="text-[11px] text-cyan-200/80 mt-1">
+                    {bandAvailable} available in this band
+                  </div>
+                )}
                 {!tier.unlocked && (
                   <div className="text-[11px] text-red-300 mt-1">
                     {tier.blockers.join(" ")}
@@ -251,10 +259,48 @@ const RecruitModal = ({
           })}
         </div>
 
-        <div className="flex flex-col md:flex-row md:items-center justify-between gap-3 mb-6 rounded border border-gray-700 bg-gray-800/50 p-3">
+        <div className="grid grid-cols-1 gap-3 mb-6 rounded border border-gray-700 bg-gray-800/50 p-3 md:grid-cols-[1fr_auto] md:items-center">
           <div className="text-xs text-gray-300">
-            Guild gold: <span className="text-yellow-300">{guildGold}g</span> -
-            Open slots: <span className="text-cyan-200">{openSlots}</span>
+            <div>
+              Guild gold: <span className="text-yellow-300">{guildGold}g</span> -
+              Open slots: <span className="text-cyan-200">{openSlots}</span>
+            </div>
+            <div className="mt-1 text-gray-400">
+              Market:{" "}
+              <span className="text-cyan-100">
+                {safeMarketStats.availableCount || 0} available
+              </span>
+              {safeMarketStats.minLevel != null && safeMarketStats.maxLevel != null && (
+                <>
+                  {" "}
+                  - Lv {safeMarketStats.minLevel} to {safeMarketStats.maxLevel}
+                  {safeMarketStats.averageLevel != null
+                    ? `, avg ${safeMarketStats.averageLevel}`
+                    : ""}
+                </>
+              )}
+              {selectedBandAvailable != null && (
+                <>
+                  {" "}
+                  - Selected band: {selectedBandAvailable}
+                </>
+              )}
+            </div>
+            <label className="mt-3 block max-w-sm">
+              <div className="flex items-center justify-between gap-3 text-[11px] uppercase tracking-wide text-gray-500">
+                <span>Scout size</span>
+                <span className="font-bold text-cyan-200">{scoutCount}</span>
+              </div>
+              <input
+                type="range"
+                min={SCOUT_COUNT_MIN}
+                max={SCOUT_COUNT_MAX}
+                step="1"
+                value={scoutCount}
+                onChange={(event) => setScoutCount(Number(event.target.value))}
+                className="mt-1 w-full accent-yellow-500"
+              />
+            </label>
           </div>
           <button
             type="button"
@@ -263,11 +309,11 @@ const RecruitModal = ({
               !selectedTier?.unlocked ||
               isLoading ||
               openSlots <= 0 ||
-              guildGold < selectedTier.scoutCostGold
+              guildGold < selectedScoutCostGold
             }
             className="px-4 py-2 border border-yellow-700 rounded text-xs uppercase tracking-wider text-yellow-200 hover:bg-yellow-900/40 disabled:opacity-50 disabled:cursor-not-allowed"
           >
-            Scout {selectedTier?.label} ({selectedTier?.scoutCostGold || 0}g)
+            Scout {selectedTier?.label} ({selectedScoutCostGold}g)
           </button>
         </div>
 
@@ -280,7 +326,7 @@ const RecruitModal = ({
           </div>
         ) : candidates.length === 0 ? (
           <div className="text-center py-12 text-gray-400 border border-gray-800 rounded bg-gray-950/30">
-            Select an unlocked tier and scout applicants.
+            {scoutMessage || "Select an unlocked tier and scout realm prospects."}
           </div>
         ) : (
           <div>
@@ -499,6 +545,16 @@ const RecruitModal = ({
                         ? "Selected"
                         : "Select"}
                     </button>
+                    <button
+                      onClick={(event) => {
+                        event.stopPropagation();
+                        handleDeclineApplication(char);
+                      }}
+                      disabled={typeof onDeclineApplications !== "function"}
+                      className="mt-2 w-full rounded border border-red-900/70 px-3 py-2 text-xs uppercase tracking-wider text-red-300 hover:bg-red-950/50 disabled:cursor-not-allowed disabled:opacity-50"
+                    >
+                      Decline
+                    </button>
                   </div>
                 ))}
               </div>
@@ -507,17 +563,29 @@ const RecruitModal = ({
                 <div className="text-xs text-gray-500">
                   Open slots: {openSlots} - Applications cost 0g.
                 </div>
-                <button
-                  onClick={handleAcceptApplications}
-                  disabled={
-                    selectedApplicationIds.length === 0 ||
-                    openSlots <= 0 ||
-                    typeof onRecruitApplications !== "function"
-                  }
-                  className="px-4 py-2 border border-cyan-700 rounded text-xs uppercase tracking-wider text-cyan-200 hover:bg-cyan-900/40 disabled:opacity-50 disabled:cursor-not-allowed"
-                >
-                  Accept Applications ({selectedApplicationIds.length}) - Free
-                </button>
+                <div className="flex flex-col gap-2 sm:flex-row">
+                  <button
+                    onClick={handleAcceptApplications}
+                    disabled={
+                      selectedApplicationIds.length === 0 ||
+                      openSlots <= 0 ||
+                      typeof onRecruitApplications !== "function"
+                    }
+                    className="px-4 py-2 border border-cyan-700 rounded text-xs uppercase tracking-wider text-cyan-200 hover:bg-cyan-900/40 disabled:opacity-50 disabled:cursor-not-allowed"
+                  >
+                    Accept Applications ({selectedApplicationIds.length}) - Free
+                  </button>
+                  <button
+                    onClick={handleDeclineSelectedApplications}
+                    disabled={
+                      selectedApplicationIds.length === 0 ||
+                      typeof onDeclineApplications !== "function"
+                    }
+                    className="px-4 py-2 border border-red-900 rounded text-xs uppercase tracking-wider text-red-300 hover:bg-red-950/50 disabled:opacity-50 disabled:cursor-not-allowed"
+                  >
+                    Decline Selected ({selectedApplicationIds.length})
+                  </button>
+                </div>
               </div>
             </>
           )}

@@ -7,6 +7,7 @@ const LOG_FILTERS = Object.freeze([
   { id: "world", label: "World" },
   { id: "dungeon", label: "Dungeon" },
   { id: "raid", label: "Raid" },
+  { id: "pvp", label: "PvP" },
 ]);
 
 const normalizeLogSourceName = (value) =>
@@ -43,6 +44,7 @@ const buildMissionScenarioLookup = (missionList) =>
 
 const getLogScenario = (log, missionScenarioLookup) => {
   if (log?.type === "calendar") return "raid";
+  if (log?.type === "pvp") return "pvp";
   if (log?.type === "zone-clear" || log?.type === "zone-gold") return "world";
   if (log?.missionName === "World Drop") return "world";
 
@@ -72,7 +74,7 @@ const GuildLogModal = ({ isOpen, onClose, logs, missionList = [] }) => {
           if (entry.scenario) counts[entry.scenario] += 1;
           return counts;
         },
-        { all: 0, world: 0, dungeon: 0, raid: 0 },
+        { all: 0, world: 0, dungeon: 0, raid: 0, pvp: 0 },
       ),
     [logsWithScenario],
   );
@@ -185,6 +187,15 @@ const GuildLogModal = ({ isOpen, onClose, logs, missionList = [] }) => {
                   <span className="text-amber-300">{log.message}</span>
                 ) : log.type === "calendar" ? (
                   <span className="text-indigo-200">{log.message}</span>
+                ) : log.type === "pvp" ? (
+                  <span className="text-orange-200">
+                    {log.summary}
+                    {log.honor > 0 ? ` +${log.honor} Honor` : ""}
+                    {log.pvpReputation > 0
+                      ? `, +${log.pvpReputation} PvP Reputation`
+                      : ""}
+                    .
+                  </span>
                 ) : log.type === "achievement" ? (
                   <span className="text-emerald-300">
                     Achievement unlocked: {log.label} (+{log.reward} Guild Renown)

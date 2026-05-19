@@ -3,9 +3,11 @@ import {
   NPC_GUILD_ARCHETYPE_ORDER,
   NPC_GUILD_ARCHETYPE_PROFILE,
   NPC_GUILD_NAME_POOL,
+  REALM_NPC_GUILD_INITIAL_RANGE,
   REALM_FACTION_ORDER,
   REALM_NEWS_LIMIT,
   REALM_TYPES,
+  getRealmPopulationProfile,
 } from "./realmDefinitions";
 import {
   createNpcRaidProgressFromScore,
@@ -18,7 +20,12 @@ import {
   getRealmRosterCap,
   normalizeRealmGuildRoster,
 } from "./realmRosters";
-import { DEFAULT_GUILD_SETUP, GUILD_SERVER_STYLE } from "../constants";
+import {
+  DEFAULT_GUILD_SETUP,
+  GUILD_SERVER_POPULATION,
+  GUILD_SERVER_OPTIONS,
+  GUILD_SERVER_STYLE,
+} from "../constants";
 
 export const hashRealmSeed = (value) => {
   const input = String(value || "realm");
@@ -47,6 +54,9 @@ const pickNumber = (random, [min, max]) =>
 const clampNumber = (value, min, max) =>
   Math.max(min, Math.min(max, Number(value) || 0));
 
+const pickRangeCount = (random, [min, max]) =>
+  Math.max(min, Math.round(min + random() * (max - min)));
+
 const normalizeRealmType = (type) =>
   type === REALM_TYPES.PVP || type === GUILD_SERVER_STYLE.PVP
     ? REALM_TYPES.PVP
@@ -58,15 +68,29 @@ const getRealmNameFromSetup = (guildSetup) =>
 const getRealmTypeFromSetup = (guildSetup) =>
   normalizeRealmType(guildSetup?.serverStyle || DEFAULT_GUILD_SETUP.serverStyle);
 
+const getRealmPopulationFromSetup = (guildSetup) =>
+  guildSetup?.serverPopulation === GUILD_SERVER_POPULATION.HIGH ||
+  GUILD_SERVER_OPTIONS.find((option) => option.value === guildSetup?.server)
+    ?.population === GUILD_SERVER_POPULATION.HIGH
+    ? GUILD_SERVER_POPULATION.HIGH
+    : GUILD_SERVER_POPULATION.MEDIUM;
+
 export const generateNpcGuilds = ({
   realmName = DEFAULT_GUILD_SETUP.server,
   realmType = REALM_TYPES.PVE,
-  count = DEFAULT_NPC_GUILD_COUNT,
+  count,
 } = {}) => {
   const random = createRandom(hashRealmSeed(`${realmName}:${realmType}:guilds`));
   const names = [...NPC_GUILD_NAME_POOL];
   const usedNameKeys = new Set();
-  const guildCount = Math.max(1, Math.floor(Number(count) || DEFAULT_NPC_GUILD_COUNT));
+  const guildCount = Math.max(
+    1,
+    Math.floor(
+      Number.isFinite(Number(count))
+        ? Number(count)
+        : pickRangeCount(random, REALM_NPC_GUILD_INITIAL_RANGE),
+    ),
+  );
 
   return Array.from({ length: guildCount }, (_, index) => {
     const nameIndex = Math.floor(random() * names.length) % names.length;
@@ -171,6 +195,8 @@ export const ensureRealmState = (
 ) => {
   const realmName = getRealmNameFromSetup(guildSetup);
   const realmType = getRealmTypeFromSetup(guildSetup);
+  const realmPopulation = getRealmPopulationFromSetup(guildSetup);
+  const populationProfile = getRealmPopulationProfile(realmPopulation);
   const safeCurrentDay = Math.max(0, Math.floor(Number(currentDayIndex) || 0));
   const generatedGuilds = generateNpcGuilds({
     realmName,
@@ -184,8 +210,8 @@ export const ensureRealmState = (
     Array.isArray(safe.npcGuilds) && safe.npcGuilds.length > 0;
   const npcGuilds = hasExistingState
     ? safe.npcGuilds
-        .slice(0, DEFAULT_NPC_GUILD_COUNT)
         .map((guild, index) => normalizeNpcGuild(guild, generatedGuilds[index]))
+        .slice(0, populationProfile.guildTargetRange[1])
     : generatedGuilds;
   const realmId =
     String(safe.id || "").trim() ||
@@ -196,12 +222,14 @@ export const ensureRealmState = (
     npcGuilds,
     currentDayIndex: safeCurrentDay,
     playerRosterSize,
+    serverPopulation: realmPopulation,
   });
 
   return {
     id: realmId,
     name: realmName,
     type: realmType,
+    populationLabel: realmPopulation,
     ageDays: Math.max(
       0,
       Math.floor(
@@ -216,6 +244,9 @@ export const ensureRealmState = (
     lastSimulatedDayIndex: Number.isFinite(Number(safe.lastSimulatedDayIndex))
       ? Math.max(0, Math.floor(Number(safe.lastSimulatedDayIndex)))
       : safeCurrentDay,
+    lastSimulatedStepIndex: Number.isFinite(Number(safe.lastSimulatedStepIndex))
+      ? Math.max(0, Math.floor(Number(safe.lastSimulatedStepIndex)))
+      : safeCurrentDay * 4,
   };
 };
 

@@ -9,6 +9,7 @@ import { normalizeRaidLockouts } from "../raids/raidLockouts";
 import { normalizeGuildRelationships } from "../social/relationshipSystem";
 import { ensureRealmState } from "../server/realmGeneration";
 import { normalizeCharacterPersonalityTraits } from "../game/characterPersonality";
+import { ensureWorldPvpState } from "../pvp/worldPvpUtils";
 
 export const SESSION_FORMAT = "guild-manager-session";
 export const SESSION_VERSION = 5;
@@ -149,6 +150,7 @@ export const buildSessionPayload = ({
   guildSetup,
   guildRelationships,
   realmState,
+  worldPvpState,
   calendarState,
   raidLockouts,
   gameSpeed,
@@ -181,6 +183,7 @@ export const buildSessionPayload = ({
       guildSetup: toObject(guildSetup),
       guildRelationships: normalizeGuildRelationships(guildRelationships),
       realmState: realmState ? toObject(realmState) : null,
+      worldPvpState: ensureWorldPvpState(worldPvpState),
       calendarState: normalizeCalendarState(
         calendarState || createInitialCalendarState(now),
         now,
@@ -298,6 +301,10 @@ export const hydrateSessionData = ({
     loadedCalendarDayIndex,
     loadedRoster.length,
   );
+  const loadedWorldPvpState = ensureWorldPvpState(
+    safePayload.worldPvpState,
+    loadedCalendarDayIndex,
+  );
 
   const loadedActiveMissions = Array.isArray(safePayload.activeMissions)
     ? safePayload.activeMissions.map((mission) => {
@@ -396,6 +403,7 @@ export const hydrateSessionData = ({
     loadedGuildSetup,
     loadedGuildRelationships,
     loadedRealmState,
+    loadedWorldPvpState,
     loadedProgression,
     loadedCalendarState,
     loadedRaidLockouts,

@@ -19,6 +19,7 @@ export const applyLoadedSessionToApp = ({
     loadedGuildSetup,
     loadedGuildRelationships,
     loadedRealmState,
+    loadedWorldPvpState,
     loadedProgression,
     loadedCalendarState,
     loadedRaidLockouts,
@@ -36,6 +37,7 @@ export const applyLoadedSessionToApp = ({
   refs.guildSetup.current = loadedGuildSetup;
   if (refs.guildRelationships) refs.guildRelationships.current = loadedGuildRelationships || {};
   if (refs.realmState) refs.realmState.current = loadedRealmState || null;
+  if (refs.worldPvpState) refs.worldPvpState.current = loadedWorldPvpState || {};
   refs.calendarState.current = loadedCalendarState;
   if (refs.raidLockouts) refs.raidLockouts.current = loadedRaidLockouts || {};
   refs.gameTime.current = loadedProgression.gameTimeMs;
@@ -52,6 +54,7 @@ export const applyLoadedSessionToApp = ({
     setters.setGuildRelationships(loadedGuildRelationships || {});
   }
   if (setters.setRealmState) setters.setRealmState(loadedRealmState || null);
+  if (setters.setWorldPvpState) setters.setWorldPvpState(loadedWorldPvpState || {});
   setters.setCalendarState(loadedCalendarState);
   if (setters.setRaidLockouts) setters.setRaidLockouts(loadedRaidLockouts || {});
   setters.setIsPaused(loadedProgression.isPaused);

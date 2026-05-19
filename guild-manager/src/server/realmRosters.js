@@ -1,14 +1,19 @@
 import {
   CONFIG,
-  FACTION_RACES,
+  DB_CLASSES,
+  DB_RACES,
   GUILD_FACTION,
 } from "../constants";
 import {
   buildCharacterNamePool,
   getCharacterAverageItemLevel,
+  pickValidRaceClassCombination,
   pickUniqueCharacterName,
 } from "../utils";
-import { rollCharacterPersonalityTraits } from "../game/characterPersonality";
+import {
+  getCharacterLevelingExpMultiplier,
+  rollCharacterPersonalityTraits,
+} from "../game/characterPersonality";
 import { REALM_GUILD_ROSTER_CAP } from "./realmDefinitions";
 
 const NPC_NAME_PARTS = Object.freeze({
@@ -53,29 +58,6 @@ const NPC_NAME_PARTS = Object.freeze({
   ]),
 });
 
-const CLASS_POOL_BY_FACTION = Object.freeze({
-  [GUILD_FACTION.ALLIANCE]: Object.freeze([
-    "Warrior",
-    "Paladin",
-    "Hunter",
-    "Rogue",
-    "Priest",
-    "Mage",
-    "Warlock",
-    "Druid",
-  ]),
-  [GUILD_FACTION.HORDE]: Object.freeze([
-    "Warrior",
-    "Shaman",
-    "Hunter",
-    "Rogue",
-    "Priest",
-    "Mage",
-    "Warlock",
-    "Druid",
-  ]),
-});
-
 const ROLE_BY_CLASS = Object.freeze({
   Warrior: "Tank",
   Paladin: "Healer",
@@ -89,6 +71,30 @@ const clampNumber = (value, min, max) =>
 
 const pickFrom = (items, random) =>
   items[Math.floor(random() * items.length) % items.length];
+
+const isValidRaceClassCombo = (race, charClass) =>
+  Array.isArray(DB_RACES[race]) && DB_RACES[race].includes(charClass);
+
+const normalizeRaceClassCombo = ({ race, charClass, fallback = {} }) => {
+  if (isValidRaceClassCombo(race, charClass)) return { race, charClass };
+  if (isValidRaceClassCombo(fallback.race, fallback.charClass)) {
+    return { race: fallback.race, charClass: fallback.charClass };
+  }
+  const fallbackRace = Array.isArray(DB_RACES[race]) ? race : "Human";
+  return {
+    race: fallbackRace,
+    charClass: DB_RACES[fallbackRace]?.[0] || "Warrior",
+  };
+};
+
+const normalizeRoleForClass = (role, charClass) => {
+  const allowedRoles = Array.isArray(DB_CLASSES?.[charClass]?.allowedRoles)
+    ? DB_CLASSES[charClass].allowedRoles
+    : ["DPS"];
+  return allowedRoles.includes(role)
+    ? role
+    : ROLE_BY_CLASS[charClass] || allowedRoles[0] || "DPS";
+};
 
 const makeNpcName = ({ guildName, random }) => {
   const prefix = pickFrom(NPC_NAME_PARTS.prefixes, random);
@@ -122,25 +128,28 @@ export const generateNpcGuildRoster = ({
     1,
     Math.min(REALM_GUILD_ROSTER_CAP, Math.round(Number(rosterSize) || 1)),
   );
-  const races = FACTION_RACES[faction] || FACTION_RACES[GUILD_FACTION.ALLIANCE];
-  const classPool =
-    CLASS_POOL_BY_FACTION[faction] || CLASS_POOL_BY_FACTION[GUILD_FACTION.ALLIANCE];
   const levelSpread = archetype === "Hardcore Raiders" ? 6 : 12;
 
   return Array.from({ length: safeRosterSize }, (_, index) => {
-    const charClass = pickFrom(classPool, safeRandom);
-    const race = pickFrom(races, safeRandom);
+    const { race, charClass } = pickValidRaceClassCombination({
+      faction,
+      random: safeRandom,
+    });
     const gender = safeRandom() > 0.5 ? "Male" : "Female";
     const levelRoll =
-      Number(averageLevel) +
-      Math.round((safeRandom() - 0.5) * levelSpread) +
-      (safeRandom() < 0.12 ? 2 : 0);
+      Number(averageLevel) <= 1
+        ? 1
+        : Number(averageLevel) +
+          Math.round((safeRandom() - 0.5) * levelSpread) +
+          (safeRandom() < 0.12 ? 2 : 0);
     const level = Math.round(clampNumber(levelRoll, 1, CONFIG.LEVEL_CAP));
     const itemLevel = Math.round(
       clampNumber(
-        Number(averageGearScore) +
-          (level - Number(averageLevel || level)) * 0.45 +
-          (safeRandom() - 0.5) * 8,
+        Number(averageLevel) <= 1
+          ? Number(averageGearScore) || 1
+          : Number(averageGearScore) +
+            (level - Number(averageLevel || level)) * 0.45 +
+            (safeRandom() - 0.5) * 8,
         0,
         100,
       ),
@@ -177,7 +186,12 @@ export const normalizeRealmGuildRoster = (roster = [], fallbackRoster = []) => {
     .slice(0, REALM_GUILD_ROSTER_CAP)
     .map((member, index) => {
       const fallback = fallbackRoster[index] || {};
-      const charClass = String(member?.charClass || member?.class || fallback.charClass || "Warrior");
+      const combo = normalizeRaceClassCombo({
+        race: String(member?.race || fallback.race || "Human"),
+        charClass: String(member?.charClass || member?.class || fallback.charClass || "Warrior"),
+        fallback,
+      });
+      const charClass = combo.charClass;
       return {
         id: String(member?.id || fallback.id || `realm-member:${index + 1}`),
         name: String(member?.name || fallback.name || `Member ${index + 1}`),
@@ -187,9 +201,18 @@ export const normalizeRealmGuildRoster = (roster = [], fallbackRoster = []) => {
         itemLevel: Math.round(
           clampNumber(member?.itemLevel ?? fallback.itemLevel, 0, 100),
         ),
-        race: String(member?.race || fallback.race || "Human"),
+        race: combo.race,
+        gender: String(member?.gender || fallback.gender || "Male"),
         charClass,
-        role: String(member?.role || fallback.role || ROLE_BY_CLASS[charClass] || "DPS"),
+        role: normalizeRoleForClass(
+          String(member?.role || fallback.role || ""),
+          charClass,
+        ),
+        personalityTraits: Array.isArray(member?.personalityTraits)
+          ? member.personalityTraits
+          : Array.isArray(fallback.personalityTraits)
+            ? fallback.personalityTraits
+            : [],
       };
     });
 };
@@ -216,9 +239,10 @@ export const advanceNpcGuildRosterForDay = ({
   const targetAverage = Number(averageLevel) || 1;
   return normalizeRealmGuildRoster(roster).map((member) => {
     const currentLevel = Math.max(1, Number(member.level) || 1);
+    const levelingMultiplier = getCharacterLevelingExpMultiplier(member);
     const shouldCatchUp =
       currentLevel < CONFIG.LEVEL_CAP &&
-      (currentLevel < targetAverage - 2 || safeRandom() < 0.025);
+      (currentLevel < targetAverage - 2 || safeRandom() < 0.025 * levelingMultiplier);
     return {
       ...member,
       level: shouldCatchUp

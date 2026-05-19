@@ -97,9 +97,9 @@ export const GUILD_TALENT_DEFS = {
     description: "Increase maximum guild roster size.",
     suffix: "slots",
     ranks: [
-      { value: 10, displayValue: 10, cost: 1 },
-      { value: 30, displayValue: 20, cost: 2 },
-      { value: 70, displayValue: 40, cost: 4 },
+      { value: 15, displayValue: 15, cost: 1 },
+      { value: 35, displayValue: 20, cost: 2 },
+      { value: 65, displayValue: 30, cost: 4 },
     ],
   },
   expBoost: {

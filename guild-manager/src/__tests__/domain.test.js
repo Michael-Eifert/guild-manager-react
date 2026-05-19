@@ -48,9 +48,12 @@ import {
   getRealmRosterCap,
 } from "../server/realmRosters";
 import {
+  createRealmPlayer,
+  declineRealmGuildApplications,
   getRealmGuildApplications,
   getRealmPlayersInZone,
   getRealmPopulationStats,
+  getRealmRecruitmentMarketStats,
   markRealmPlayersRecruited,
   resolvePlayerGuildDeparturesForDay,
   selectRealmRecruitmentCandidates,
@@ -67,9 +70,11 @@ import {
   GUILD_DUNGEON_ACTIVITY,
   GUILD_FOCUS,
   GUILD_FACTION,
+  GUILD_SERVER_POPULATION,
   GUILD_SERVER_STYLE,
   INITIAL_MISSIONS,
   DB_FUNNY_NAMES,
+  DB_RACES,
 } from "../constants";
 import {
   applyProfessionSkillAttempts,
@@ -106,6 +111,7 @@ import {
 import {
   buildCharacterNamePool,
   generateCharacters,
+  getEquipmentSetBonuses,
   getItemEffectiveLevel,
   getMissionSuccessPreview,
   isItemUsableByClass,
@@ -156,12 +162,23 @@ import {
 } from "../raids/raidLockouts";
 import {
   ZONE_COMPLETION_ARCHETYPE,
+  ZONE_DEFINITIONS,
   getZonePvpTerritory,
   getCharacterZonePreference,
   getZonesForFaction,
   pickNextZoneForCharacter,
 } from "../zones/zoneDefinitions";
 import { resolveZoneAutoTransition } from "../zones/zoneLogic";
+import { WORLD_PVP_PROFILE_TYPE } from "../pvp/worldPvpDefinitions";
+import { resolveWorldPvpForDay } from "../pvp/worldPvpEngine";
+import {
+  getWorldPvpRoamingZoneCandidates,
+  resolveWorldPvpRoamingAssignment,
+} from "../pvp/worldPvpRoaming";
+import {
+  ensureWorldPvpState,
+  getWorldPvpProfile,
+} from "../pvp/worldPvpUtils";
 import { DB_ITEMS } from "../data/items";
 import {
   MOLTEN_CORE_ACTIVE_LOOT_MANIFEST,
@@ -239,6 +256,10 @@ const getRosterEquipmentSources = (roster) =>
       .map((item) => item.dungeonSetId || item.dungeon)
       .filter(Boolean),
   );
+
+const isValidRaceClassCombo = (member) =>
+  Array.isArray(DB_RACES[member?.race]) &&
+  DB_RACES[member.race].includes(member?.charClass);
 
 describe("character name generation", () => {
   it("adds class and race/class names without putting class labels in the general funny pool", () => {
@@ -359,6 +380,8 @@ describe("character personality traits", () => {
 
     expect(getCharacterDungeonSuccessBonus(dungeonExpert)).toBe(5);
     expect(getCharacterRaidSuccessBonus(raider)).toBe(1);
+    expect(getCharacterZoneProgressMultiplier(dungeonExpert)).toBe(1.2);
+    expect(getCharacterLevelingExpMultiplier(raider)).toBe(1.25);
     expect(
       getMissionSuccessPreview(dungeon, [dungeonExpert]).personalitySuccessBonus,
     ).toBe(5);
@@ -665,6 +688,27 @@ describe("guild progression", () => {
       "Raid Roster",
     ]);
     expect(third.guildProgress.renownPoints).toBe(4);
+  });
+
+  it("distributes War Council roster slots from 15 starting members to 80 max", () => {
+    const baseProgress = createInitialGuildProgress();
+    const rankOne = {
+      ...baseProgress,
+      talents: { ...baseProgress.talents, rosterCap: 1 },
+    };
+    const rankTwo = {
+      ...baseProgress,
+      talents: { ...baseProgress.talents, rosterCap: 2 },
+    };
+    const rankThree = {
+      ...baseProgress,
+      talents: { ...baseProgress.talents, rosterCap: 3 },
+    };
+
+    expect(getGuildDerivedStats(baseProgress).maxRoster).toBe(15);
+    expect(getGuildDerivedStats(rankOne).maxRoster).toBe(30);
+    expect(getGuildDerivedStats(rankTwo).maxRoster).toBe(50);
+    expect(getGuildDerivedStats(rankThree).maxRoster).toBe(80);
   });
 
   it("tracks dungeon clear and wipe milestones without double-awarding the first wipe", () => {
@@ -1278,6 +1322,68 @@ describe("session persistence", () => {
     expect(payload.format).toBe(SESSION_FORMAT);
     expect(payload.data.activeMissions[0].remainingMs).toBe(1500);
     expect(payload.data.realmState.name).toBe("Everlook");
+  });
+
+  it("serializes and hydrates world PvP state with old-save defaults", () => {
+    const payload = buildSessionPayload({
+      roster: [],
+      activeMissions: [],
+      missionList: [],
+      guildLog: [],
+      guildGold: 7,
+      guildProgress: createInitialGuildProgress(),
+      guildSetup: { hasStarted: true },
+      worldPvpState: {
+        totalHonor: 42,
+        weeklyHonor: 12,
+        pvpReputation: 5,
+        zoneStats: {
+          ashenvale: {
+            eventsTriggered: 2,
+            victories: 1,
+            defeats: 1,
+            honorEarned: 42,
+            lastEventDay: 3,
+          },
+        },
+        lastProcessedDayIndex: 3,
+      },
+      gameSpeed: DEFAULT_GAME_SPEED,
+      isPaused: false,
+      gameTimeMs: 1000,
+    });
+    const hydrated = hydrateSessionData({
+      payloadData: payload.data,
+      initialMissions: [],
+      normalizeGuildProgress,
+      normalizeGuildSetup: (value) => value,
+      getGuildDerivedStats,
+      normalizeProgressionState,
+      defaultGameSpeed: DEFAULT_GAME_SPEED,
+      defaultGuildSetup: {},
+      createId: () => "instance-id",
+      resolveDungeonBossCount: getDungeonBossCount,
+    });
+    const oldSaveHydrated = hydrateSessionData({
+      payloadData: {
+        roster: [],
+        guildSetup: { hasStarted: true },
+        progression: { gameSpeed: DEFAULT_GAME_SPEED, gameTimeMs: 1000 },
+      },
+      initialMissions: [],
+      normalizeGuildProgress,
+      normalizeGuildSetup: (value) => value,
+      getGuildDerivedStats,
+      normalizeProgressionState,
+      defaultGameSpeed: DEFAULT_GAME_SPEED,
+      defaultGuildSetup: {},
+      createId: () => "instance-id",
+      resolveDungeonBossCount: getDungeonBossCount,
+    });
+
+    expect(payload.data.worldPvpState.totalHonor).toBe(42);
+    expect(hydrated.loadedWorldPvpState.zoneStats.ashenvale.honorEarned).toBe(42);
+    expect(oldSaveHydrated.loadedWorldPvpState.totalHonor).toBe(0);
   });
 
   it("hydrates active missions and normalizes questing roster status", () => {
@@ -2881,6 +2987,86 @@ describe("item level tuning", () => {
     expect(getItemEffectiveLevel({ minLevel: 60, quality: 4, itemLevel: 63 })).toBe(63);
   });
 
+  it("adds Classic PvP honor set gear as database-only reward preparation", () => {
+    const pvpItems = DB_ITEMS.filter((item) => item.pvpGear);
+    const rareItems = pvpItems.filter((item) => Number(item.quality) === 3);
+    const epicItems = pvpItems.filter((item) => Number(item.quality) === 4);
+    const paladinItems = pvpItems.filter((item) =>
+      item.allowedClasses?.includes("Paladin"),
+    );
+    const shamanItems = pvpItems.filter((item) =>
+      item.allowedClasses?.includes("Shaman"),
+    );
+    const druidItems = pvpItems.filter((item) =>
+      item.allowedClasses?.includes("Druid"),
+    );
+    const fieldMarshalDruidHelm = pvpItems.find(
+      (item) => item.name === "Field Marshal's Dragonhide Helmet",
+    );
+    const fieldMarshalWarlockHelm = pvpItems.find(
+      (item) => item.name === "Field Marshal's Coronal",
+    );
+    const generalHunterBoots = pvpItems.find(
+      (item) => item.name === "General's Chain Sabatons",
+    );
+
+    expect(pvpItems).toHaveLength(192);
+    expect(new Set(pvpItems.map((item) => item.wowheadId)).size).toBe(192);
+    expect(rareItems).toHaveLength(96);
+    expect(epicItems).toHaveLength(96);
+    expect(new Set(rareItems.map(getItemEffectiveLevel))).toEqual(new Set([68]));
+    expect(new Set(epicItems.map(getItemEffectiveLevel))).toEqual(new Set([74]));
+    expect(druidItems).toHaveLength(24);
+    expect(new Set(paladinItems.map((item) => item.faction))).toEqual(
+      new Set([GUILD_FACTION.ALLIANCE]),
+    );
+    expect(new Set(shamanItems.map((item) => item.faction))).toEqual(
+      new Set([GUILD_FACTION.HORDE]),
+    );
+    pvpItems.forEach((item) => {
+      expect(item.dungeonSetId).toBe("pvp_honor_sets");
+      expect(item.dungeonSetName).toBe("PvP Honor Sets");
+      expect(item.minLevel).toBe(60);
+      expect(item.allowedClasses).toHaveLength(1);
+      expect(item.setId).toBeTruthy();
+      expect(item.setName).toBeTruthy();
+      expect(item.pvpHonorRank).toBeGreaterThanOrEqual(7);
+      expect(item.icon).toContain("wow/icons/large/");
+      expect(item.wowheadId).toBeTypeOf("number");
+    });
+    expect(fieldMarshalDruidHelm).toMatchObject({
+      wowheadId: 16451,
+      icon: "https://wow.zamimg.com/images/wow/icons/large/inv_helmet_41.jpg",
+    });
+    expect(fieldMarshalWarlockHelm).toMatchObject({
+      wowheadId: 17578,
+      icon: "https://wow.zamimg.com/images/wow/icons/large/inv_helmet_24.jpg",
+    });
+    expect(generalHunterBoots).toMatchObject({
+      wowheadId: 16569,
+      icon: "https://wow.zamimg.com/images/wow/icons/large/inv_boots_plate_06.jpg",
+    });
+  });
+
+  it("lets PvP honor set pieces use normal equipment set bonuses", () => {
+    const setPieces = DB_ITEMS.filter(
+      (item) => item.setId === "pvp_epic_field_marshals_sanctuary",
+    );
+    const equipment = Object.fromEntries(
+      setPieces
+        .filter((item) => ["head", "shoulder", "chest", "legs"].includes(item.slot))
+        .map((item) => [item.slot, item]),
+    );
+
+    expect(setPieces).toHaveLength(6);
+    expect(getEquipmentSetBonuses(equipment)[0]).toMatchObject({
+      setId: "pvp_epic_field_marshals_sanctuary",
+      setName: "Field Marshal's Sanctuary",
+      pieces: 4,
+      bonus: 10,
+    });
+  });
+
   it("uses the normalized quality fallback when no explicit item level exists", () => {
     expect(getItemEffectiveLevel({ minLevel: 10, quality: 1 })).toBe(10);
     expect(getItemEffectiveLevel({ minLevel: 10, quality: 2 })).toBe(15);
@@ -3052,6 +3238,9 @@ describe("character activity priority", () => {
     const elwynn = getZonesForFaction(GUILD_FACTION.ALLIANCE, true).find(
       (zone) => zone.id === "elwynn_forest",
     );
+    const westfall = getZonesForFaction(GUILD_FACTION.ALLIANCE, true).find(
+      (zone) => zone.id === "westfall",
+    );
     const ashenvale = getZonesForFaction(GUILD_FACTION.ALLIANCE, true).find(
       (zone) => zone.id === "ashenvale",
     );
@@ -3059,10 +3248,242 @@ describe("character activity priority", () => {
     expect(getZonePvpTerritory(elwynn, GUILD_SERVER_STYLE.PVP)?.label).toBe(
       "Safe Territory",
     );
+    expect(getZonePvpTerritory(westfall, GUILD_SERVER_STYLE.PVP)?.label).toBe(
+      "Contested Territory",
+    );
     expect(getZonePvpTerritory(ashenvale, GUILD_SERVER_STYLE.PVP)?.label).toBe(
       "Contested Territory",
     );
     expect(getZonePvpTerritory(ashenvale, GUILD_SERVER_STYLE.PVE)).toBeNull();
+  });
+
+  it("builds world PvP profiles with only starter zones marked safe", () => {
+    const elwynn = ZONE_DEFINITIONS.find((zone) => zone.id === "elwynn_forest");
+    const westfall = ZONE_DEFINITIONS.find((zone) => zone.id === "westfall");
+    const duskwood = ZONE_DEFINITIONS.find((zone) => zone.id === "duskwood");
+    const ashenvale = ZONE_DEFINITIONS.find((zone) => zone.id === "ashenvale");
+    const silverpine = ZONE_DEFINITIONS.find(
+      (zone) => zone.id === "silverpine_forest",
+    );
+
+    expect(
+      getWorldPvpProfile({
+        zone: ashenvale,
+        characterFaction: GUILD_FACTION.ALLIANCE,
+        realmType: GUILD_SERVER_STYLE.PVE,
+      }),
+    ).toMatchObject({
+      pvpType: WORLD_PVP_PROFILE_TYPE.CONTESTED,
+      active: false,
+    });
+    expect(
+      getWorldPvpProfile({
+        zone: elwynn,
+        characterFaction: GUILD_FACTION.ALLIANCE,
+        realmType: GUILD_SERVER_STYLE.PVP,
+      }),
+    ).toMatchObject({
+      pvpType: WORLD_PVP_PROFILE_TYPE.SAFE,
+      active: false,
+    });
+    expect(
+      getWorldPvpProfile({
+        zone: westfall,
+        characterFaction: GUILD_FACTION.ALLIANCE,
+        realmType: GUILD_SERVER_STYLE.PVP,
+      }),
+    ).toMatchObject({
+      pvpType: WORLD_PVP_PROFILE_TYPE.CONTESTED,
+      active: true,
+    });
+    expect(
+      getWorldPvpProfile({
+        zone: duskwood,
+        characterFaction: GUILD_FACTION.ALLIANCE,
+        realmType: GUILD_SERVER_STYLE.PVP,
+      }),
+    ).toMatchObject({
+      pvpType: WORLD_PVP_PROFILE_TYPE.CONTESTED,
+      active: true,
+    });
+    expect(
+      getWorldPvpProfile({
+        zone: ashenvale,
+        characterFaction: GUILD_FACTION.ALLIANCE,
+        realmType: GUILD_SERVER_STYLE.PVP,
+      }),
+    ).toMatchObject({
+      pvpType: WORLD_PVP_PROFILE_TYPE.CONTESTED,
+      active: true,
+    });
+    expect(
+      getWorldPvpProfile({
+        zone: silverpine,
+        characterFaction: GUILD_FACTION.ALLIANCE,
+        realmType: GUILD_SERVER_STYLE.PVP,
+      }),
+    ).toMatchObject({
+      pvpType: WORLD_PVP_PROFILE_TYPE.CONTESTED,
+      active: true,
+    });
+  });
+
+  it("resolves daily world PvP only for eligible contested-zone characters", () => {
+    const roster = [
+      {
+        id: "hero-1",
+        name: "Kaya",
+        level: 30,
+        role: "Tank",
+        charClass: "Warrior",
+        status: "Idle",
+        currentZoneId: "ashenvale",
+        currentZoneProgress: 30,
+        zoneProgressById: { ashenvale: 30 },
+      },
+      {
+        id: "hero-2",
+        name: "ManaBiscuit",
+        level: 30,
+        role: "DPS",
+        charClass: "Hunter",
+        status: "Idle",
+        currentZoneId: "ashenvale",
+        currentZoneProgress: 40,
+        zoneProgressById: { ashenvale: 40 },
+      },
+      {
+        id: "hero-3",
+        name: "Busy",
+        level: 30,
+        role: "DPS",
+        charClass: "Rogue",
+        status: "Questing",
+        currentZoneId: "ashenvale",
+      },
+    ];
+    const result = resolveWorldPvpForDay({
+      roster,
+      activeMissions: [{ memberIds: ["hero-3"] }],
+      guildFaction: GUILD_FACTION.ALLIANCE,
+      realmType: GUILD_SERVER_STYLE.PVP,
+      worldPvpState: ensureWorldPvpState(null, 0),
+      currentDayIndex: 1,
+      random: () => 0,
+    });
+
+    expect(result.events).toHaveLength(1);
+    expect(result.events[0].participantIds).toEqual(["hero-1", "hero-2"]);
+    expect(result.logs[0]).toMatchObject({
+      type: "pvp",
+      zoneId: "ashenvale",
+    });
+    expect(result.worldPvpState.totalHonor).toBeGreaterThan(0);
+    expect(result.worldPvpState.zoneStats.ashenvale.eventsTriggered).toBe(1);
+    expect(
+      result.roster.find((member) => member.id === "hero-3")?.status,
+    ).toBe("Questing");
+  });
+
+  it("does not trigger world PvP on PvE realms or repeat the same processed day", () => {
+    const roster = [
+      {
+        id: "hero-1",
+        name: "Kaya",
+        level: 30,
+        status: "Idle",
+        currentZoneId: "ashenvale",
+      },
+    ];
+    const pveResult = resolveWorldPvpForDay({
+      roster,
+      guildFaction: GUILD_FACTION.ALLIANCE,
+      realmType: GUILD_SERVER_STYLE.PVE,
+      worldPvpState: ensureWorldPvpState(null, 0),
+      currentDayIndex: 1,
+      random: () => 0,
+    });
+    const repeatedResult = resolveWorldPvpForDay({
+      roster,
+      guildFaction: GUILD_FACTION.ALLIANCE,
+      realmType: GUILD_SERVER_STYLE.PVP,
+      worldPvpState: { ...ensureWorldPvpState(null, 0), lastProcessedDayIndex: 1 },
+      currentDayIndex: 1,
+      random: () => 0,
+    });
+
+    expect(pveResult.events).toHaveLength(0);
+    expect(pveResult.worldPvpState.lastProcessedDayIndex).toBe(1);
+    expect(repeatedResult.events).toHaveLength(0);
+  });
+
+  it("moves idle level 50+ characters to high-level contested World PvP zones", () => {
+    const candidates = getWorldPvpRoamingZoneCandidates({
+      level: 60,
+      faction: GUILD_FACTION.ALLIANCE,
+      realmType: GUILD_SERVER_STYLE.PVP,
+    });
+    const roamer = resolveWorldPvpRoamingAssignment({
+      character: {
+        id: "pvp-roamer",
+        name: "Kaya",
+        level: 60,
+        status: "Idle",
+        statusText: "Awaiting Orders",
+        currentZoneId: "elwynn_forest",
+        zoneProgressById: {},
+      },
+      faction: GUILD_FACTION.ALLIANCE,
+      realmType: GUILD_SERVER_STYLE.PVP,
+    });
+    const pveRoamer = resolveWorldPvpRoamingAssignment({
+      character: {
+        id: "pve-roamer",
+        name: "Kaya",
+        level: 60,
+        status: "Idle",
+        currentZoneId: "elwynn_forest",
+      },
+      faction: GUILD_FACTION.ALLIANCE,
+      realmType: GUILD_SERVER_STYLE.PVE,
+    });
+
+    expect(candidates.length).toBeGreaterThan(0);
+    expect(candidates.every((zone) => zone.minLevel >= 45)).toBe(true);
+    expect(candidates.every((zone) => zone.maxLevel >= 55)).toBe(true);
+    expect(candidates.some((zone) => zone.id === roamer.currentZoneId)).toBe(true);
+    expect(roamer.status).toBe("Idle");
+    expect(roamer.statusText).toContain("World PvP:");
+    expect(pveRoamer.currentZoneId).toBe("elwynn_forest");
+  });
+
+  it("keeps manual or busy characters out of automatic World PvP roaming", () => {
+    const manualRoamer = resolveWorldPvpRoamingAssignment({
+      character: {
+        id: "manual-roamer",
+        name: "Manual",
+        level: 60,
+        status: "Idle",
+        currentZoneId: "elwynn_forest",
+        zoneManualOverride: true,
+      },
+      faction: GUILD_FACTION.ALLIANCE,
+      realmType: GUILD_SERVER_STYLE.PVP,
+    });
+    const busyRoamer = resolveWorldPvpRoamingAssignment({
+      character: {
+        id: "busy-roamer",
+        name: "Busy",
+        level: 60,
+        status: "Questing",
+        currentZoneId: "elwynn_forest",
+      },
+      faction: GUILD_FACTION.ALLIANCE,
+      realmType: GUILD_SERVER_STYLE.PVP,
+    });
+
+    expect(manualRoamer.currentZoneId).toBe("elwynn_forest");
+    expect(busyRoamer.currentZoneId).toBe("elwynn_forest");
   });
 
   it("moves max-level characters off a current zone already marked cleared", () => {
@@ -3329,6 +3750,31 @@ describe("character morale", () => {
 });
 
 describe("realm overview domain", () => {
+  const advanceRealmUntilApplications = ({
+    realm,
+    faction = GUILD_FACTION.ALLIANCE,
+    maxDayIndex = 45,
+  }) => {
+    for (let dayIndex = 1; dayIndex <= maxDayIndex; dayIndex += 1) {
+      const advanced = advanceRealmSimulation({
+        realmState: realm,
+        currentDayIndex: dayIndex,
+        playerGuildSnapshot: null,
+        guildSetup: {
+          faction,
+          server: "Everlook",
+          serverStyle: GUILD_SERVER_STYLE.PVE,
+        },
+      });
+      const applications = getRealmGuildApplications({
+        realmState: advanced,
+        faction,
+      });
+      if (applications.length > 0) return { advanced, applications };
+    }
+    return { advanced: realm, applications: [] };
+  };
+
   it("generates deterministic NPC guilds for the same realm", () => {
     const first = generateNpcGuilds({
       realmName: "Everlook",
@@ -3340,7 +3786,34 @@ describe("realm overview domain", () => {
     });
 
     expect(first).toEqual(second);
-    expect(first).toHaveLength(12);
+    expect(first.length).toBeGreaterThanOrEqual(4);
+    expect(first.length).toBeLessThanOrEqual(6);
+  });
+
+  it("keeps realm NPC guild rosters on valid Classic race/class combinations", () => {
+    const guilds = generateNpcGuilds({
+      realmName: "Everlook",
+      realmType: GUILD_SERVER_STYLE.PVE,
+    });
+    const members = guilds.flatMap((guild) => guild.roster);
+
+    expect(members.length).toBeGreaterThan(0);
+    expect(members.every(isValidRaceClassCombo)).toBe(true);
+  });
+
+  it("normalizes invalid realm players back to valid race/class combinations", () => {
+    const taurenPriest = createRealmPlayer({
+      id: "bad-combo",
+      name: "Wronghorn",
+      faction: GUILD_FACTION.HORDE,
+      race: "Tauren",
+      charClass: "Priest",
+      role: "Healer",
+    });
+
+    expect(taurenPriest.race).toBe("Tauren");
+    expect(isValidRaceClassCombo(taurenPriest)).toBe(true);
+    expect(taurenPriest.charClass).not.toBe("Priest");
   });
 
   it("ensures missing realm state from guild setup without simulating old days", () => {
@@ -3356,10 +3829,27 @@ describe("realm overview domain", () => {
       ageDays: 12,
       lastSimulatedDayIndex: 12,
     });
-    expect(realm.npcGuilds).toHaveLength(12);
+    expect(realm.npcGuilds.length).toBeGreaterThanOrEqual(4);
+    expect(realm.npcGuilds.length).toBeLessThanOrEqual(6);
   });
 
-  it("initializes realm population to 600 including player roster size", () => {
+  it("initializes a fresh medium-pop realm around 200 population with a 1k soft cap", () => {
+    const realm = ensureRealmState(
+      null,
+      { server: "Lordaeron", serverStyle: GUILD_SERVER_STYLE.PVE },
+      0,
+      10,
+    );
+    const stats = getRealmPopulationStats(realm, Array.from({ length: 10 }));
+
+    expect(stats.totalPopulation).toBe(200);
+    expect(realm.population.players).toHaveLength(190);
+    expect(realm.population.players.every(isValidRaceClassCombo)).toBe(true);
+    expect(stats.softCap).toBeGreaterThanOrEqual(900);
+    expect(stats.softCap).toBeLessThanOrEqual(1100);
+  });
+
+  it("initializes a fresh high-pop realm with a 1.5k soft cap", () => {
     const realm = ensureRealmState(
       null,
       { server: "Everlook", serverStyle: GUILD_SERVER_STYLE.PVE },
@@ -3368,9 +3858,37 @@ describe("realm overview domain", () => {
     );
     const stats = getRealmPopulationStats(realm, Array.from({ length: 10 }));
 
-    expect(stats.totalPopulation).toBe(600);
-    expect(realm.population.players).toHaveLength(590);
-    expect(stats.softCap).toBe(1000);
+    expect(realm.populationLabel).toBe(GUILD_SERVER_POPULATION.HIGH);
+    expect(stats.totalPopulation).toBe(200);
+    expect(stats.softCap).toBeGreaterThanOrEqual(1400);
+    expect(stats.softCap).toBeLessThanOrEqual(1600);
+  });
+
+  it("starts fresh NPC guild and realm players at level 1 with no raid progress", () => {
+    const realm = ensureRealmState(
+      null,
+      { server: "Everlook", serverStyle: GUILD_SERVER_STYLE.PVE },
+      0,
+    );
+    const npcMembers = realm.npcGuilds.flatMap((guild) => guild.roster);
+    const raidBossesCleared = realm.npcGuilds.reduce(
+      (sum, guild) =>
+        sum +
+        getRealmRaidProgressList(guild).reduce(
+          (raidSum, raid) => raidSum + raid.clearedBosses,
+          0,
+        ),
+      0,
+    );
+
+    expect(realm.npcGuilds.length).toBeGreaterThanOrEqual(4);
+    expect(realm.npcGuilds.length).toBeLessThanOrEqual(6);
+    expect(realm.npcGuilds.every((guild) => guild.roster.length >= 6)).toBe(true);
+    expect(realm.npcGuilds.every((guild) => guild.roster.length <= 15)).toBe(true);
+    expect(npcMembers.length).toBeGreaterThan(0);
+    expect(npcMembers.every((member) => member.level === 1)).toBe(true);
+    expect(realm.population.players.every((player) => player.level === 1)).toBe(true);
+    expect(raidBossesCleared).toBe(0);
   });
 
   it("generates deterministic NPC rosters with max-level counts", () => {
@@ -3560,9 +4078,201 @@ describe("realm overview domain", () => {
 
     expect(advanced.ageDays).toBeGreaterThanOrEqual(30);
     expect(advanced.lastSimulatedDayIndex).toBe(30);
-    expect(getRealmPopulationStats(advanced, []).totalPopulation).toBeLessThanOrEqual(1000);
+    const stats = getRealmPopulationStats(advanced, []);
+    expect(stats.totalPopulation).toBeLessThanOrEqual(stats.softCap);
+    expect(stats.softCap).toBeLessThanOrEqual(1600);
     expect(advanced.news.length).toBeLessThanOrEqual(25);
     expect(repeated).toEqual(advanced);
+  });
+
+  it("adds 50-100 realm players per fresh day until the soft cap", () => {
+    const realm = ensureRealmState(
+      null,
+      { server: "Everlook", serverStyle: GUILD_SERVER_STYLE.PVE },
+      0,
+    );
+    const advanced = advanceRealmSimulation({
+      realmState: realm,
+      currentDayIndex: 1,
+      playerGuildSnapshot: null,
+      guildSetup: {
+        faction: GUILD_FACTION.ALLIANCE,
+        server: "Everlook",
+        serverStyle: GUILD_SERVER_STYLE.PVE,
+      },
+    });
+    const growth =
+      getRealmPopulationStats(advanced, []).totalPopulation -
+      getRealmPopulationStats(realm, []).totalPopulation;
+
+    expect(growth).toBeGreaterThanOrEqual(50);
+    expect(growth).toBeLessThanOrEqual(100);
+  });
+
+  it("grows fresh medium-pop NPC guild count into the mature guild band", () => {
+    const realm = ensureRealmState(
+      null,
+      { server: "Lordaeron", serverStyle: GUILD_SERVER_STYLE.PVE },
+      0,
+    );
+    const advanced = advanceRealmSimulation({
+      realmState: realm,
+      currentDayIndex: 45,
+      playerGuildSnapshot: null,
+      guildSetup: {
+        faction: GUILD_FACTION.ALLIANCE,
+        server: "Lordaeron",
+        serverStyle: GUILD_SERVER_STYLE.PVE,
+      },
+    });
+
+    expect(advanced.npcGuilds.length).toBeGreaterThan(realm.npcGuilds.length);
+    expect(advanced.npcGuilds.length).toBeGreaterThanOrEqual(10);
+    expect(advanced.npcGuilds.length).toBeLessThanOrEqual(15);
+  });
+
+  it("seeds newly founded NPC guilds with existing realm players", () => {
+    let realm = ensureRealmState(
+      null,
+      { server: "Lordaeron", serverStyle: GUILD_SERVER_STYLE.PVE },
+      0,
+    );
+    const initialGuildCount = realm.npcGuilds.length;
+    const playerGuildSnapshot = {
+      id: "player:guild",
+      name: "Player Guild",
+      faction: GUILD_FACTION.ALLIANCE,
+      isPlayerGuild: true,
+      rosterSize: 18,
+      averageLevel: 24,
+      averageGearScore: 10,
+      pveScore: 320,
+      raidProgress: 0,
+      dungeonScore: 35,
+      archetype: "Player Guild",
+    };
+
+    for (let day = 1; day <= 45 && realm.npcGuilds.length === initialGuildCount; day += 1) {
+      realm = advanceRealmSimulation({
+        realmState: realm,
+        currentDayIndex: day,
+        playerGuildSnapshot,
+        guildSetup: {
+          faction: GUILD_FACTION.ALLIANCE,
+          server: "Lordaeron",
+          serverStyle: GUILD_SERVER_STYLE.PVE,
+        },
+      });
+    }
+
+    const foundedGuild = realm.npcGuilds[initialGuildCount];
+    expect(foundedGuild).toBeTruthy();
+    expect(foundedGuild.roster.length).toBeGreaterThanOrEqual(6);
+    expect(foundedGuild.roster.length).toBeLessThanOrEqual(10);
+    expect(foundedGuild.roster.some((member) => member.level > 1)).toBe(true);
+  });
+
+  it("grows fresh high-pop NPC guild count into the crowded guild band", () => {
+    const realm = ensureRealmState(
+      null,
+      { server: "Everlook", serverStyle: GUILD_SERVER_STYLE.PVE },
+      0,
+    );
+    const advanced = advanceRealmSimulation({
+      realmState: realm,
+      currentDayIndex: 60,
+      playerGuildSnapshot: null,
+      guildSetup: {
+        faction: GUILD_FACTION.ALLIANCE,
+        server: "Everlook",
+        serverStyle: GUILD_SERVER_STYLE.PVE,
+      },
+    });
+
+    expect(advanced.npcGuilds.length).toBeGreaterThan(realm.npcGuilds.length);
+    expect(advanced.npcGuilds.length).toBeGreaterThanOrEqual(15);
+    expect(advanced.npcGuilds.length).toBeLessThanOrEqual(20);
+  });
+
+  it("keeps realm guild leveling near the player guild pace", () => {
+    const realm = ensureRealmState(
+      null,
+      { server: "Everlook", serverStyle: GUILD_SERVER_STYLE.PVE },
+      0,
+    );
+    const playerGuildSnapshot = {
+      id: "player:guild",
+      name: "Player Guild",
+      faction: GUILD_FACTION.ALLIANCE,
+      isPlayerGuild: true,
+      rosterSize: 20,
+      averageLevel: 30,
+      averageGearScore: 12,
+      pveScore: 400,
+      raidProgress: 0,
+      dungeonScore: 40,
+      archetype: "Player Guild",
+    };
+    const advanced = advanceRealmSimulation({
+      realmState: realm,
+      currentDayIndex: 3,
+      playerGuildSnapshot,
+      guildSetup: {
+        faction: GUILD_FACTION.ALLIANCE,
+        server: "Everlook",
+        serverStyle: GUILD_SERVER_STYLE.PVE,
+      },
+    });
+    const guildedPlayers = advanced.population.players.filter((player) => player.guildId);
+    const averageGuildedLevel =
+      guildedPlayers.reduce((sum, player) => sum + player.level, 0) /
+      Math.max(1, guildedPlayers.length);
+
+    expect(averageGuildedLevel).toBeGreaterThanOrEqual(20);
+    expect(averageGuildedLevel).toBeLessThanOrEqual(34);
+    expect(
+      advanced.npcGuilds.some((guild) => Number(guild.averageLevel) >= 20),
+    ).toBe(true);
+  });
+
+  it("updates realm guild leveling during quarter-day progress", () => {
+    const realm = ensureRealmState(
+      null,
+      { server: "Everlook", serverStyle: GUILD_SERVER_STYLE.PVE },
+      0,
+    );
+    const playerGuildSnapshot = {
+      id: "player:guild",
+      name: "Player Guild",
+      faction: GUILD_FACTION.ALLIANCE,
+      isPlayerGuild: true,
+      rosterSize: 10,
+      averageLevel: 6.4,
+      averageGearScore: 2,
+      pveScore: 83,
+      raidProgress: 0,
+      dungeonScore: 0,
+      archetype: "Player Guild",
+    };
+    const advanced = advanceRealmSimulation({
+      realmState: realm,
+      currentDayIndex: 0,
+      currentDayProgress: 0.25,
+      playerGuildSnapshot,
+      guildSetup: {
+        faction: GUILD_FACTION.ALLIANCE,
+        server: "Everlook",
+        serverStyle: GUILD_SERVER_STYLE.PVE,
+      },
+    });
+
+    expect(advanced.lastSimulatedStepIndex).toBe(1);
+    expect(advanced.npcGuilds.some((guild) => Number(guild.averageLevel) > 1)).toBe(
+      true,
+    );
+    expect(advanced.population.players.some((player) => player.level > 1)).toBe(
+      true,
+    );
   });
 
   it("scouts and removes realm recruitment candidates from the market", () => {
@@ -3588,7 +4298,7 @@ describe("realm overview domain", () => {
     ).toBe(false);
   });
 
-  it("generates persistent same-faction guild applications during realm simulation", () => {
+  it("reports realm recruitment market level stats", () => {
     const realm = ensureRealmState(
       null,
       { server: "Everlook", serverStyle: GUILD_SERVER_STYLE.PVE },
@@ -3596,22 +4306,72 @@ describe("realm overview domain", () => {
     );
     const advanced = advanceRealmSimulation({
       realmState: realm,
-      currentDayIndex: 12,
-      playerGuildSnapshot: null,
+      currentDayIndex: 3,
+      playerGuildSnapshot: {
+        rosterSize: 10,
+        averageLevel: 18,
+        faction: GUILD_FACTION.ALLIANCE,
+      },
       guildSetup: {
         faction: GUILD_FACTION.ALLIANCE,
         server: "Everlook",
         serverStyle: GUILD_SERVER_STYLE.PVE,
       },
     });
-    const applications = getRealmGuildApplications({
+    const stats = getRealmRecruitmentMarketStats({
       realmState: advanced,
+      faction: GUILD_FACTION.ALLIANCE,
+    });
+
+    expect(stats.availableCount).toBeGreaterThan(0);
+    expect(stats.minLevel).toBeGreaterThanOrEqual(1);
+    expect(stats.maxLevel).toBeGreaterThanOrEqual(stats.minLevel);
+    expect(stats.levelBands.level_1_10 + stats.levelBands.level_11_20).toBeGreaterThan(
+      0,
+    );
+  });
+
+  it("generates persistent same-faction guild applications during realm simulation", () => {
+    const realm = ensureRealmState(
+      null,
+      { server: "Everlook", serverStyle: GUILD_SERVER_STYLE.PVE },
+      0,
+    );
+    const { applications } = advanceRealmUntilApplications({
+      realm,
       faction: GUILD_FACTION.ALLIANCE,
     });
 
     expect(applications.length).toBeGreaterThan(0);
     expect(applications.length).toBeLessThanOrEqual(8);
     expect(applications.every(({ player }) => player.faction === GUILD_FACTION.ALLIANCE)).toBe(true);
+  });
+
+  it("declines realm applications without removing players from the market", () => {
+    const realm = ensureRealmState(
+      null,
+      { server: "Everlook", serverStyle: GUILD_SERVER_STYLE.PVE },
+      0,
+    );
+    const { advanced, applications } = advanceRealmUntilApplications({
+      realm,
+      faction: GUILD_FACTION.ALLIANCE,
+    });
+    const [application] = applications;
+    const declined = declineRealmGuildApplications({
+      realmState: advanced,
+      applicationIds: [application.application.id],
+    });
+
+    expect(
+      getRealmGuildApplications({
+        realmState: declined,
+        faction: GUILD_FACTION.ALLIANCE,
+      }).some(({ application: entry }) => entry.id === application.application.id),
+    ).toBe(false);
+    expect(
+      declined.population.players.some((player) => player.id === application.player.id),
+    ).toBe(true);
   });
 
   it("assigns realm players to zones and advances their zone leveling", () => {
@@ -3662,20 +4422,11 @@ describe("realm overview domain", () => {
       { server: "Everlook", serverStyle: GUILD_SERVER_STYLE.PVE },
       0,
     );
-    const advanced = advanceRealmSimulation({
-      realmState: realm,
-      currentDayIndex: 12,
-      playerGuildSnapshot: null,
-      guildSetup: {
-        faction: GUILD_FACTION.ALLIANCE,
-        server: "Everlook",
-        serverStyle: GUILD_SERVER_STYLE.PVE,
-      },
-    });
-    const [application] = getRealmGuildApplications({
-      realmState: advanced,
+    const { advanced, applications } = advanceRealmUntilApplications({
+      realm,
       faction: GUILD_FACTION.ALLIANCE,
     });
+    const [application] = applications;
     const nextRealm = markRealmPlayersRecruited({
       realmState: advanced,
       playerIds: [application.player.id],

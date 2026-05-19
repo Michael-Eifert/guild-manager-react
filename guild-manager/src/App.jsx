@@ -209,10 +209,16 @@ import { ensureRealmState } from "./server/realmGeneration";
 import { advanceRealmSimulation } from "./server/realmSimulation";
 import { buildPlayerGuildSnapshot } from "./server/realmRankings";
 import {
+  declineRealmGuildApplications,
   getRealmGuildApplications,
+  getRealmRecruitmentMarketStats,
   markRealmPlayersRecruited,
   resolvePlayerGuildDeparturesForDay,
+  selectRealmRecruitmentCandidates,
 } from "./server/realmPopulation";
+import { resolveWorldPvpForDay } from "./pvp/worldPvpEngine";
+import { resolveWorldPvpRoamingAssignment } from "./pvp/worldPvpRoaming";
+import { ensureWorldPvpState } from "./pvp/worldPvpUtils";
 import { createDebugActions } from "./debug/debugActions";
 
 const RecruitModal = lazy(() => import("./components/modals/RecruitModal"));
@@ -329,6 +335,9 @@ const App = () => {
   const [realmState, setRealmState] = useState(() =>
     ensureRealmState(null, DEFAULT_GUILD_SETUP, 0),
   );
+  const [worldPvpState, setWorldPvpState] = useState(() =>
+    ensureWorldPvpState(null, 0),
+  );
   const [showRecruit, setShowRecruit] = useState(false);
   const [showMissions, setShowMissions] = useState(false);
   const [showCalendar, setShowCalendar] = useState(false);
@@ -375,6 +384,7 @@ const App = () => {
   const guildSetupRef = useRef(guildSetup);
   const guildRelationshipsRef = useRef(guildRelationships);
   const realmStateRef = useRef(realmState);
+  const worldPvpStateRef = useRef(worldPvpState);
   const gameTimeRef = useRef(gameTimeMs);
   const calendarStateRef = useRef(calendarState);
   const raidLockoutsRef = useRef(raidLockouts);
@@ -468,6 +478,9 @@ const App = () => {
   useEffect(() => {
     realmStateRef.current = realmState;
   }, [realmState]);
+  useEffect(() => {
+    worldPvpStateRef.current = worldPvpState;
+  }, [worldPvpState]);
   useEffect(() => {
     gameTimeRef.current = gameTimeMs;
   }, [gameTimeMs]);
@@ -1414,6 +1427,10 @@ const App = () => {
         now,
         calendarStateRef.current.calendarEpochGameTimeMs,
       );
+      const calendarDayProgress = getCalendarDayProgress(
+        now,
+        calendarStateRef.current.calendarEpochGameTimeMs,
+      );
       const playerGuildSnapshot = buildPlayerGuildSnapshot({
         guildSetup: guildSetupRef.current,
         roster: currentRoster,
@@ -1424,6 +1441,7 @@ const App = () => {
       const nextRealmState = advanceRealmSimulation({
         realmState: realmStateRef.current,
         currentDayIndex: calendarDayIndex,
+        currentDayProgress: calendarDayProgress,
         playerGuildSnapshot,
         guildSetup: guildSetupRef.current,
       });
@@ -1444,11 +1462,6 @@ const App = () => {
         raidLockoutsRef.current = normalizedRaidLockouts;
         setRaidLockouts(normalizedRaidLockouts);
       }
-      const calendarDayProgress = getCalendarDayProgress(
-        now,
-        calendarStateRef.current.calendarEpochGameTimeMs,
-      );
-
       let newRoster = [...currentRoster];
       let currentMissions = [...missionsRef.current];
       let newMissions = [];
@@ -2233,7 +2246,7 @@ const App = () => {
           }
         }
 
-        return {
+        const idleCharacter = {
           ...normalizedChar,
           statusText,
           currentZoneId: transitionedZoneState.currentZoneId,
@@ -2247,12 +2260,37 @@ const App = () => {
           zoneOverlevelMoveThreshold:
             transitionedZoneState.zoneOverlevelMoveThreshold,
         };
+        if (!gainXP && !gainSkill && !gainZoneProgress) {
+          return resolveWorldPvpRoamingAssignment({
+            character: idleCharacter,
+            faction: currentFaction,
+            realmType: guildSetupRef.current?.serverStyle,
+          });
+        }
+        return idleCharacter;
       });
+
+      rosterRef.current = newRoster;
+      missionsRef.current = newMissions;
+
+      const worldPvpResult = resolveWorldPvpForDay({
+        roster: newRoster,
+        activeMissions: newMissions,
+        realmState: realmStateRef.current,
+        guildFaction: currentFaction,
+        realmType: guildSetupRef.current?.serverStyle,
+        worldPvpState: worldPvpStateRef.current,
+        currentDayIndex: calendarDayIndex,
+      });
+      newRoster = worldPvpResult.roster;
+      newLogs = [...newLogs, ...worldPvpResult.logs];
+      worldPvpStateRef.current = worldPvpResult.worldPvpState;
 
       rosterRef.current = newRoster;
       missionsRef.current = newMissions;
       setRoster(newRoster);
       setActiveMissions(newMissions);
+      setWorldPvpState(worldPvpResult.worldPvpState);
       if (newGold !== currentGold) {
         goldRef.current = newGold;
         setGuildGold(newGold);
@@ -2305,8 +2343,11 @@ const App = () => {
     setShowRecruit(true);
   };
 
-  const handleScoutRecruitmentTier = (tier) => {
-    const scoutCost = Math.max(0, Number(tier?.scoutCostGold) || 0);
+  const handleScoutRecruitmentTier = (tier, options = {}) => {
+    const scoutCost = Math.max(
+      0,
+      Number(options?.scoutCostGold ?? tier?.scoutCostGold) || 0,
+    );
     const currentGold = Math.max(0, Number(goldRef.current) || 0);
     if (currentGold < scoutCost) {
       pushNotification({
@@ -2314,17 +2355,47 @@ const App = () => {
         title: "Recruitment Blocked",
         message: `Need ${scoutCost}g to scout ${tier?.label || "applicants"}.`,
       });
-      return false;
+      return [];
     }
+
+    const scoutCount = Math.max(1, Math.floor(Number(options?.count) || 5));
+    const applicationPlayerIds = new Set(
+      getRealmGuildApplications({
+        realmState: realmStateRef.current,
+        faction: guildSetupRef.current?.faction || GUILD_FACTION.ALLIANCE,
+      }).map(({ player }) => String(player?.id || "")),
+    );
+    const usedNameSet = new Set(
+      rosterRef.current
+        .map((member) => String(member?.name || "").trim().toLowerCase())
+        .filter(Boolean),
+    );
+    const candidates = selectRealmRecruitmentCandidates({
+      realmState: realmStateRef.current,
+      faction: guildSetupRef.current?.faction || GUILD_FACTION.ALLIANCE,
+      tier,
+      count: scoutCount + applicationPlayerIds.size,
+    })
+      .filter((player) => !applicationPlayerIds.has(String(player?.id || "")))
+      .filter(
+        (player) =>
+          !usedNameSet.has(String(player?.name || "").trim().toLowerCase()),
+      )
+      .slice(0, scoutCount)
+      .map((player) => buildRealmRecruitmentCandidate({ player }));
+
     const updatedGold = Math.max(0, currentGold - scoutCost);
     goldRef.current = updatedGold;
     setGuildGold(updatedGold);
     pushNotification({
       type: "info",
       title: "Recruitment Scouted",
-      message: `${tier?.label || "Applicants"} scouted for ${scoutCost}g.`,
+      message:
+        candidates.length > 0
+          ? `${candidates.length} realm prospect${candidates.length === 1 ? "" : "s"} scouted for ${scoutCost}g.`
+          : `No available realm prospects found in ${tier?.label || "that range"}. Scouting cost: ${scoutCost}g.`,
     });
-    return true;
+    return candidates;
   };
 
   const buildRealmRecruitmentCandidate = useCallback(
@@ -2384,6 +2455,15 @@ const App = () => {
     realmState,
     roster,
   ]);
+
+  const realmRecruitmentMarketStats = useMemo(
+    () =>
+      getRealmRecruitmentMarketStats({
+        realmState,
+        faction: guildSetup.faction || GUILD_FACTION.ALLIANCE,
+      }),
+    [guildSetup.faction, realmState],
+  );
 
   const handleRecruit = (chars, tier = {}) => {
     const recruitCostGold = Math.max(1, Number(tier?.recruitCostGold) || 1);
@@ -2477,6 +2557,27 @@ const App = () => {
     });
     setShowRecruit(false);
   };
+
+  const handleDeclineApplications = (chars = []) => {
+    const declined = Array.isArray(chars) ? chars : [];
+    if (declined.length === 0) return;
+
+    const nextRealmState = declineRealmGuildApplications({
+      realmState: realmStateRef.current,
+      applicationIds: declined
+        .map((candidate) => candidate.realmApplicationId)
+        .filter(Boolean),
+      playerIds: declined.map((candidate) => candidate.realmPlayerId).filter(Boolean),
+    });
+    realmStateRef.current = nextRealmState;
+    setRealmState(nextRealmState);
+    pushNotification({
+      type: "info",
+      title: "Applications Declined",
+      message: `${declined.length} application${declined.length === 1 ? "" : "s"} declined.`,
+    });
+  };
+
   const handleDismiss = (id) => {
     setRoster((p) => p.filter((c) => c.id !== id));
     const nextRelationships = removeMemberRelationships(
@@ -3719,6 +3820,7 @@ const App = () => {
         guildSetup,
         guildRelationships,
         realmState,
+        worldPvpState,
         calendarState,
         raidLockouts,
         gameSpeed,
@@ -3765,6 +3867,7 @@ const App = () => {
             guildSetup: guildSetupRef,
             guildRelationships: guildRelationshipsRef,
             realmState: realmStateRef,
+            worldPvpState: worldPvpStateRef,
             calendarState: calendarStateRef,
             raidLockouts: raidLockoutsRef,
             gameTime: gameTimeRef,
@@ -3780,6 +3883,7 @@ const App = () => {
             setGuildSetup,
             setGuildRelationships,
             setRealmState,
+            setWorldPvpState,
             setCalendarState,
             setRaidLockouts,
             setIsPaused,
@@ -3965,10 +4069,6 @@ const App = () => {
   );
   const openRecruitSlots = Math.max(0, guildDerivedStats.maxRoster - roster.length);
   const openRealmApplicationCount = realmApplicationCandidates.length;
-  const activeCharacterNames = useMemo(
-    () => roster.map((member) => member?.name).filter(Boolean),
-    [roster],
-  );
 
   if (!guildSetup.hasStarted) {
     return (
@@ -4558,7 +4658,9 @@ const App = () => {
             onClose={() => setShowRecruit(false)}
             onRecruit={handleRecruit}
             onRecruitApplications={handleRecruitApplications}
+            onDeclineApplications={handleDeclineApplications}
             applications={realmApplicationCandidates}
+            marketStats={realmRecruitmentMarketStats}
             openSlots={openRecruitSlots}
             guildGold={guildGold}
             maxRoster={guildDerivedStats.maxRoster}
@@ -4566,8 +4668,6 @@ const App = () => {
             guildProgress={guildProgress}
             raidUnlocked={guildDerivedStats.raidUnlocked}
             onScoutTier={handleScoutRecruitmentTier}
-            guildFaction={guildSetup.faction}
-            existingNames={activeCharacterNames}
           />
         )}
         {showGuildTalents && (
@@ -4678,6 +4778,8 @@ const App = () => {
             missionList={missionList}
             activeMissions={activeMissions}
             realmState={realmState}
+            worldPvpState={worldPvpState}
+            guildLog={guildLog}
             guildName={guildSetup.name}
             gameTimeMs={gameTimeMs}
             guildFaction={guildSetup.faction}

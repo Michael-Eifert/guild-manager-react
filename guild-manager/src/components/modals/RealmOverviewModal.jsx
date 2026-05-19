@@ -353,7 +353,10 @@ export default function RealmOverviewModal({
             <div className="grid grid-cols-2 md:grid-cols-4 gap-2">
               <RealmStat label="Realm" value={realmState?.name || "Unknown"} />
               <RealmStat label="Type" value={realmState?.type || "PvE"} />
-              <RealmStat label="Age" value={`${realmState?.ageDays || 0} days`} />
+              <RealmStat
+                label="Age"
+                value={`${Math.max(1, (Number(realmState?.ageDays) || 0) + 1)} days`}
+              />
               <RealmStat label="Guilds" value={rankings.length} />
             </div>
             <div className="mt-2 grid grid-cols-2 md:grid-cols-4 gap-2">
@@ -566,7 +569,7 @@ export default function RealmOverviewModal({
                 dungeon clears, raid prestige, and a place in realm history.
               </p>
               <p className="mt-2 text-xs text-slate-500">
-                Today is realm day {Math.max(0, Number(currentDayIndex) || 0)}.
+                Today is realm day {Math.max(1, (Number(currentDayIndex) || 0) + 1)}.
               </p>
             </div>
 
@@ -601,7 +604,7 @@ export default function RealmOverviewModal({
                       className="rounded border border-slate-800 bg-slate-950/60 p-2"
                     >
                       <div className="text-[10px] uppercase tracking-wide text-amber-200/70">
-                        Day {entry.dayIndex}
+                        Day {Math.max(1, (Number(entry.dayIndex) || 0) + 1)}
                       </div>
                       <div className="mt-1 text-sm text-slate-200">
                         {entry.message}

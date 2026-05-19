@@ -7,6 +7,7 @@ import { UPPER_BLACKROCK_SPIRE_ITEMS } from "./imports/upperBlackrockSpireLootMa
 import { ONYXIAS_LAIR_ITEMS } from "./imports/onyxiasLairLootManifest";
 import { BLACKWING_LAIR_ITEMS } from "./imports/blackwingLairLootManifest";
 import { NAXXRAMAS_ITEMS } from "./imports/naxxramasLootManifest";
+import { PVP_HONOR_SET_ITEMS } from "./imports/pvpHonorSetItems";
 
 const wowItemIcon = (iconCode) =>
   `https://wow.zamimg.com/images/wow/icons/large/${iconCode.toLowerCase()}.jpg`;
@@ -6145,6 +6146,8 @@ const RAW_DB_ITEMS = [
   ...AHN_QIRAJ_TEMPLE_ITEMS,
   // Naxxramas raid loot is generated from the raid loot manifest.
   ...NAXXRAMAS_ITEMS,
+  // PvP honor sets are database-only until PvP gear rewards are enabled.
+  ...PVP_HONOR_SET_ITEMS,
 ];
 
 export const DB_ITEMS = Object.freeze(RAW_DB_ITEMS.map(applyItemLevelTuning));

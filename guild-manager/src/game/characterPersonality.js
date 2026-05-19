@@ -27,8 +27,10 @@ export const PERSONALITY_TRAIT_DEFINITIONS = Object.freeze({
     id: PERSONALITY_TRAIT_ID.DUNGEON_EXPERT,
     name: "Dungeon Expert",
     rarity: "Uncommon",
-    description: "Adds +5% success chance when this character joins a dungeon.",
+    description:
+      "Finds dungeon paths earlier, clears zones 20% faster, and adds +5% dungeon success chance.",
     effects: Object.freeze({
+      zoneProgressMultiplier: 1.2,
       dungeonSuccessBonus: 5,
     }),
   }),
@@ -36,8 +38,10 @@ export const PERSONALITY_TRAIT_DEFINITIONS = Object.freeze({
     id: PERSONALITY_TRAIT_ID.RAIDER,
     name: "Raider",
     rarity: "Uncommon",
-    description: "Adds +1% success chance when this character joins a raid.",
+    description:
+      "Levels 25% faster while preparing for raids and adds +1% raid success chance.",
     effects: Object.freeze({
+      levelingExpMultiplier: 1.25,
       raidSuccessBonus: 1,
     }),
   }),

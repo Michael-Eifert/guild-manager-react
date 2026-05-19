@@ -1,4 +1,8 @@
-import { GUILD_FACTION, GUILD_SERVER_STYLE } from "../constants";
+import {
+  GUILD_FACTION,
+  GUILD_SERVER_POPULATION,
+  GUILD_SERVER_STYLE,
+} from "../constants";
 
 export const REALM_TYPES = Object.freeze({
   PVE: GUILD_SERVER_STYLE.PVE,
@@ -22,12 +26,33 @@ export const NPC_GUILD_ARCHETYPE_ORDER = Object.freeze([
 ]);
 
 export const REALM_NEWS_LIMIT = 25;
-export const DEFAULT_NPC_GUILD_COUNT = 12;
+export const REALM_NPC_GUILD_INITIAL_RANGE = Object.freeze([4, 6]);
+export const REALM_NPC_GUILD_TARGET_RANGE = Object.freeze([10, 15]);
+export const REALM_NPC_GUILD_HIGH_POP_TARGET_RANGE = Object.freeze([15, 20]);
+export const REALM_NPC_GUILD_FOUNDED_ROSTER_RANGE = Object.freeze([6, 10]);
+export const DEFAULT_NPC_GUILD_COUNT = REALM_NPC_GUILD_INITIAL_RANGE[1];
 export const REALM_GUILD_ROSTER_CAP = 80;
 export const REALM_GUILD_APPLICATION_CAP = 8;
-export const REALM_POPULATION_START = 600;
+export const REALM_POPULATION_START = 200;
 export const REALM_POPULATION_SOFT_CAP = 1000;
-export const REALM_DAILY_ARRIVAL_RANGE = Object.freeze([12, 33]);
+export const REALM_HIGH_POPULATION_SOFT_CAP = 1500;
+export const REALM_POPULATION_SOFT_CAP_VARIANCE = 100;
+export const REALM_DAILY_ARRIVAL_RANGE = Object.freeze([50, 100]);
+
+export const getRealmPopulationProfile = (serverPopulation) => {
+  const isHighPopulation = serverPopulation === GUILD_SERVER_POPULATION.HIGH;
+  return {
+    populationLabel: isHighPopulation
+      ? GUILD_SERVER_POPULATION.HIGH
+      : GUILD_SERVER_POPULATION.MEDIUM,
+    softCap: isHighPopulation
+      ? REALM_HIGH_POPULATION_SOFT_CAP
+      : REALM_POPULATION_SOFT_CAP,
+    guildTargetRange: isHighPopulation
+      ? REALM_NPC_GUILD_HIGH_POP_TARGET_RANGE
+      : REALM_NPC_GUILD_TARGET_RANGE,
+  };
+};
 
 export const REALM_MARKET_STATUS = Object.freeze({
   FREE_AGENT: "free_agent",
@@ -125,53 +150,53 @@ export const NPC_GUILD_NAME_POOL = Object.freeze([
 
 export const NPC_GUILD_ARCHETYPE_PROFILE = Object.freeze({
   [NPC_GUILD_ARCHETYPES.HARDCORE_RAIDERS]: Object.freeze({
-    rosterSize: [32, 48],
-    averageLevel: [36, 54],
-    averageGearScore: [34, 55],
+    rosterSize: [8, 14],
+    averageLevel: [1, 1],
+    averageGearScore: [1, 3],
     activityLevel: [74, 98],
-    pveScore: [520, 820],
-    raidProgress: [8, 30],
-    dungeonScore: [320, 520],
+    pveScore: [20, 45],
+    raidProgress: [0, 0],
+    dungeonScore: [0, 12],
     reputation: [48, 76],
   }),
   [NPC_GUILD_ARCHETYPES.CASUAL_ADVENTURERS]: Object.freeze({
-    rosterSize: [42, 64],
-    averageLevel: [18, 42],
-    averageGearScore: [16, 36],
+    rosterSize: [8, 15],
+    averageLevel: [1, 1],
+    averageGearScore: [1, 2],
     activityLevel: [30, 62],
-    pveScore: [170, 380],
-    raidProgress: [0, 8],
-    dungeonScore: [90, 260],
+    pveScore: [8, 28],
+    raidProgress: [0, 0],
+    dungeonScore: [0, 8],
     reputation: [50, 82],
   }),
   [NPC_GUILD_ARCHETYPES.DUNGEON_RUNNERS]: Object.freeze({
-    rosterSize: [24, 42],
-    averageLevel: [28, 50],
-    averageGearScore: [28, 50],
+    rosterSize: [7, 13],
+    averageLevel: [1, 1],
+    averageGearScore: [1, 3],
     activityLevel: [58, 88],
-    pveScore: [360, 660],
-    raidProgress: [2, 18],
-    dungeonScore: [360, 660],
+    pveScore: [16, 38],
+    raidProgress: [0, 0],
+    dungeonScore: [4, 16],
     reputation: [42, 70],
   }),
   [NPC_GUILD_ARCHETYPES.LEVELING_GUILD]: Object.freeze({
-    rosterSize: [34, 56],
-    averageLevel: [12, 34],
-    averageGearScore: [12, 30],
+    rosterSize: [9, 15],
+    averageLevel: [1, 1],
+    averageGearScore: [1, 2],
     activityLevel: [50, 82],
-    pveScore: [120, 320],
-    raidProgress: [0, 3],
-    dungeonScore: [80, 220],
+    pveScore: [14, 34],
+    raidProgress: [0, 0],
+    dungeonScore: [0, 10],
     reputation: [46, 76],
   }),
   [NPC_GUILD_ARCHETYPES.SOCIAL_GUILD]: Object.freeze({
-    rosterSize: [48, 72],
-    averageLevel: [16, 40],
-    averageGearScore: [14, 34],
+    rosterSize: [10, 15],
+    averageLevel: [1, 1],
+    averageGearScore: [1, 2],
     activityLevel: [36, 66],
-    pveScore: [110, 300],
-    raidProgress: [0, 5],
-    dungeonScore: [70, 210],
+    pveScore: [8, 26],
+    raidProgress: [0, 0],
+    dungeonScore: [0, 8],
     reputation: [74, 98],
   }),
 });

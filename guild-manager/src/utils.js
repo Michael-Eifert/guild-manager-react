@@ -22,6 +22,7 @@ const ARMOR_HIERARCHY = ["Plate", "Mail", "Leather", "Cloth"];
 const WOW_ICON_BASE_URL = "https://wow.zamimg.com/images/wow/icons/large";
 const SLOT_FALLBACK_ICONS = {
   head: "inv_helmet_03",
+  shoulder: "inv_shoulder_14",
   chest: "inv_chest_chain_05",
   legs: "inv_pants_03",
   feet: "inv_boots_09",
@@ -35,6 +36,13 @@ const SLOT_TYPE_FALLBACK_ICONS = {
     Leather: "inv_helmet_08",
     Mail: "inv_helmet_03",
     Generic: "inv_helmet_03",
+  },
+  shoulder: {
+    Plate: "inv_shoulder_14",
+    Cloth: "inv_shoulder_02",
+    Leather: "inv_shoulder_07",
+    Mail: "inv_shoulder_14",
+    Generic: "inv_shoulder_14",
   },
   chest: {
     Plate: "inv_chest_chain_05",
@@ -111,6 +119,7 @@ const SET_CLASS_RESTRICTIONS = Object.freeze({
 });
 const ITEM_SET_ARMOR_SLOTS = Object.freeze([
   "head",
+  "shoulder",
   "chest",
   "legs",
   "feet",
@@ -663,6 +672,44 @@ export const getFactionRaces = (faction = GUILD_FACTION.ALLIANCE) => {
   return Object.keys(DB_RACES);
 };
 
+export const getValidRaceClassCombinations = ({
+  faction = GUILD_FACTION.ALLIANCE,
+  preferredRole = null,
+} = {}) => {
+  const normalizedPreferredRole = normalizePreferredRole(preferredRole);
+  const races = getFactionRaces(faction).filter((race) =>
+    Object.prototype.hasOwnProperty.call(DB_RACES, race),
+  );
+  const candidateRaces = races.length > 0 ? races : Object.keys(DB_RACES);
+  return candidateRaces.flatMap((race) =>
+    (Array.isArray(DB_RACES[race]) ? DB_RACES[race] : [])
+      .filter((charClass) => {
+        if (!normalizedPreferredRole) return true;
+        const classRoles = Array.isArray(DB_CLASSES?.[charClass]?.allowedRoles)
+          ? DB_CLASSES[charClass].allowedRoles
+          : [];
+        return classRoles.includes(normalizedPreferredRole);
+      })
+      .map((charClass) => ({ race, charClass })),
+  );
+};
+
+export const pickValidRaceClassCombination = ({
+  faction = GUILD_FACTION.ALLIANCE,
+  preferredRole = null,
+  random = Math.random,
+} = {}) => {
+  const safeRandom = typeof random === "function" ? random : Math.random;
+  const combinations = getValidRaceClassCombinations({ faction, preferredRole });
+  const fallbackCombinations =
+    combinations.length > 0
+      ? combinations
+      : getValidRaceClassCombinations({ faction: GUILD_FACTION.ALLIANCE });
+  return fallbackCombinations[
+    Math.floor(safeRandom() * fallbackCombinations.length)
+  ] || { race: "Human", charClass: "Warrior" };
+};
+
 export const getStarterGear = (charClass) => {
   const armorTypes = getClassArmorTypes(charClass);
   const armor = armorTypes[0] || "Cloth";
@@ -1012,39 +1059,13 @@ export const generateCharacter = (
     options?.usedNameKeys instanceof Set
       ? options.usedNameKeys
       : buildUsedNameKeySet(options?.usedNames);
-  const races = getFactionRaces(faction).filter((race) =>
-    Object.prototype.hasOwnProperty.call(DB_RACES, race),
-  );
-  const candidateRaces = races.length > 0 ? races : Object.keys(DB_RACES);
   const normalizedPreferredRole = normalizePreferredRole(preferredRole);
-  const roleEligibleCombinations =
-    normalizedPreferredRole === null
-      ? []
-      : candidateRaces.flatMap((race) =>
-          (Array.isArray(DB_RACES[race]) ? DB_RACES[race] : []).flatMap((charClass) => {
-            const classRoles = Array.isArray(DB_CLASSES?.[charClass]?.allowedRoles)
-              ? DB_CLASSES[charClass].allowedRoles
-              : [];
-            return classRoles.includes(normalizedPreferredRole)
-              ? [{ race, charClass }]
-              : [];
-          }),
-        );
-  const selectedCombination =
-    roleEligibleCombinations.length > 0
-      ? roleEligibleCombinations[
-          Math.floor(Math.random() * roleEligibleCombinations.length)
-        ]
-      : null;
-  const selectedRace =
-    selectedCombination?.race ||
-    candidateRaces[Math.floor(Math.random() * candidateRaces.length)];
-  const allowedClasses = Array.isArray(DB_RACES[selectedRace])
-    ? DB_RACES[selectedRace]
-    : [];
-  const charClass =
-    selectedCombination?.charClass ||
-    allowedClasses[Math.floor(Math.random() * allowedClasses.length)];
+  const selectedCombination = pickValidRaceClassCombination({
+    faction,
+    preferredRole: normalizedPreferredRole,
+  });
+  const selectedRace = selectedCombination.race;
+  const charClass = selectedCombination.charClass;
   const gender = Math.random() > 0.5 ? "Male" : "Female";
   const fallbackPool =
     DB_NAMES?.Human?.Male && DB_NAMES.Human.Male.length > 0

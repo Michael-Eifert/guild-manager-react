@@ -15,7 +15,6 @@ import { getZoneRegionalMap } from "../../zones/zoneMapLayout";
 import {
   ZONE_DEFINITIONS,
   ZONE_PVP_TERRITORY,
-  getZonePvpTerritory,
   isZoneAccessibleForFaction,
 } from "../../zones/zoneDefinitions";
 import {
@@ -30,6 +29,11 @@ import {
   hasCharacterKey,
 } from "../../automation/adventureGoals";
 import { getRealmPlayersInZone } from "../../server/realmPopulation";
+import { WORLD_PVP_PROFILE_TYPE } from "../../pvp/worldPvpDefinitions";
+import {
+  ensureWorldPvpState,
+  getWorldPvpProfile,
+} from "../../pvp/worldPvpUtils";
 
 const MAP_SOURCE = {
   name: "Classic Azeroth",
@@ -86,6 +90,58 @@ const DUNGEON_BOARD_FILTER_ORDER = [
   DUNGEON_BOARD_FILTERS.READY,
   DUNGEON_BOARD_FILTERS.BLOCKED,
 ];
+
+const getPvpTerritoryTextClass = (pvpTerritory) => {
+  if (pvpTerritory?.pvpType === WORLD_PVP_PROFILE_TYPE.HOSTILE) {
+    return "text-orange-300";
+  }
+  if (
+    pvpTerritory?.pvpType === WORLD_PVP_PROFILE_TYPE.CONTESTED ||
+    pvpTerritory?.label === ZONE_PVP_TERRITORY.CONTESTED
+  ) {
+    return "text-yellow-300";
+  }
+  if (
+    pvpTerritory?.pvpType === WORLD_PVP_PROFILE_TYPE.SAFE ||
+    pvpTerritory?.label === ZONE_PVP_TERRITORY.SAFE
+  ) {
+    return "text-emerald-300";
+  }
+  return "text-slate-500";
+};
+
+function PvpTerritoryLabel({ pvpTerritory, separator = " - " }) {
+  if (!pvpTerritory) return null;
+  return (
+    <>
+      <span>{separator}</span>
+      <span
+        title={pvpTerritory.description}
+        className={`font-semibold ${getPvpTerritoryTextClass(pvpTerritory)}`}
+      >
+        {pvpTerritory.label}
+      </span>
+    </>
+  );
+}
+
+const getPvpTagClass = (tag, pvpTerritory) => {
+  if (tag !== pvpTerritory?.label) {
+    return "border-slate-700 bg-slate-900 text-slate-300";
+  }
+  if (pvpTerritory?.pvpType === WORLD_PVP_PROFILE_TYPE.HOSTILE) {
+    return "border-orange-500/70 bg-orange-950/35 text-orange-200";
+  }
+  if (pvpTerritory?.pvpType === WORLD_PVP_PROFILE_TYPE.CONTESTED) {
+    return "border-yellow-500/70 bg-yellow-950/35 text-yellow-200";
+  }
+  return "border-emerald-500/60 bg-emerald-950/35 text-emerald-100";
+};
+
+const getWorldPvpLogForZone = (logs, zoneId) =>
+  (Array.isArray(logs) ? logs : []).find(
+    (log) => log?.type === "pvp" && String(log.zoneId || "") === String(zoneId || ""),
+  ) || null;
 
 const getMemberId = (member) => member?.id ?? member?.name;
 
@@ -177,6 +233,8 @@ export default function WorldMapModal({
   missionList = [],
   activeMissions = [],
   realmState = null,
+  worldPvpState = null,
+  guildLog = [],
   guildName = "Player Guild",
   gameTimeMs,
   guildFaction = GUILD_FACTION.ALLIANCE,
@@ -210,6 +268,10 @@ export default function WorldMapModal({
         guildFaction,
       }),
     [activeMissions, guildFaction, missionList, roster],
+  );
+  const normalizedWorldPvpState = useMemo(
+    () => ensureWorldPvpState(worldPvpState),
+    [worldPvpState],
   );
 
   const visibleSummaries = useMemo(
@@ -616,6 +678,7 @@ export default function WorldMapModal({
               summaries={visibleSummaries}
               selectedZoneId={selectedSummary?.zone.id}
               realmType={realmType}
+              guildFaction={guildFaction}
               onSelect={setSelectedZoneId}
             />
 
@@ -623,6 +686,7 @@ export default function WorldMapModal({
               selectedSummary={selectedSummary}
               zoneMap={selectedZoneMap}
               realmType={realmType}
+              guildFaction={guildFaction}
               realmState={realmState}
               guildName={guildName}
               imageFailed={zoneMapImageFailed}
@@ -636,12 +700,22 @@ export default function WorldMapModal({
               <Stat label="Active" value={filterCounts[WORLD_MAP_FILTERS.ACTIVE]} />
               <Stat label="Cleared" value={filterCounts[WORLD_MAP_FILTERS.CLEARED]} />
             </div>
+            <div className="grid grid-cols-3 gap-2">
+              <Stat label="Honor" value={normalizedWorldPvpState.totalHonor} />
+              <Stat label="Weekly" value={normalizedWorldPvpState.weeklyHonor} />
+              <Stat label="PvP Rep" value={normalizedWorldPvpState.pvpReputation} />
+            </div>
 
             {selectedSummary && (
               <ZoneDetail
                 summary={selectedSummary}
                 guildFaction={guildFaction}
                 realmType={realmType}
+                worldPvpState={normalizedWorldPvpState}
+                latestPvpLog={getWorldPvpLogForZone(
+                  guildLog,
+                  selectedSummary.zone.id,
+                )}
                 availableHeroes={availableHeroes}
                 selectedMemberIds={selectedMemberIds}
                 onToggleAssignment={(memberId) =>
@@ -712,7 +786,13 @@ export default function WorldMapModal({
   );
 }
 
-function ZoneSelectionPanel({ summaries, selectedZoneId, realmType, onSelect }) {
+function ZoneSelectionPanel({
+  summaries,
+  selectedZoneId,
+  realmType,
+  guildFaction,
+  onSelect,
+}) {
   return (
     <div className="rounded-lg border border-cyan-900/45 bg-slate-950/85 overflow-hidden">
       <div className="flex items-center justify-between gap-3 border-b border-slate-800 px-3 py-2">
@@ -732,6 +812,7 @@ function ZoneSelectionPanel({ summaries, selectedZoneId, realmType, onSelect }) 
         summaries={summaries}
         selectedZoneId={selectedZoneId}
         realmType={realmType}
+        guildFaction={guildFaction}
         onSelect={onSelect}
       />
     </div>
@@ -1190,6 +1271,7 @@ function SelectedZoneMap({
   selectedSummary,
   zoneMap,
   realmType,
+  guildFaction,
   realmState,
   guildName,
   imageFailed,
@@ -1204,7 +1286,11 @@ function SelectedZoneMap({
   }
 
   const { zone } = selectedSummary;
-  const pvpTerritory = getZonePvpTerritory(zone, realmType);
+  const pvpTerritory = getWorldPvpProfile({
+    zone,
+    characterFaction: guildFaction,
+    realmType,
+  });
   const realmRows = getRealmPlayersInZone({
     realmState,
     zoneId: zone.id,
@@ -1240,7 +1326,7 @@ function SelectedZoneMap({
           </h4>
           <p className="truncate text-xs text-slate-500">
             {zone.name} - Level {zone.minLevel}-{zone.maxLevel}
-            {pvpTerritory ? ` - ${pvpTerritory.label}` : ""}
+            <PvpTerritoryLabel pvpTerritory={pvpTerritory} />
           </p>
         </div>
         <div className="grid grid-cols-3 gap-2 text-right text-xs">
@@ -1345,7 +1431,7 @@ function MiniStat({ label, value }) {
   );
 }
 
-function ZoneList({ summaries, selectedZoneId, realmType, onSelect }) {
+function ZoneList({ summaries, selectedZoneId, realmType, guildFaction, onSelect }) {
   return (
     <div className="max-h-64 overflow-y-auto p-2">
       {summaries.length === 0 ? (
@@ -1354,7 +1440,11 @@ function ZoneList({ summaries, selectedZoneId, realmType, onSelect }) {
         <div className="grid grid-cols-1 md:grid-cols-2 2xl:grid-cols-3 gap-2">
           {summaries.map((summary) => {
             const selected = selectedZoneId === summary.zone.id;
-            const pvpTerritory = getZonePvpTerritory(summary.zone, realmType);
+            const pvpTerritory = getWorldPvpProfile({
+              zone: summary.zone,
+              characterFaction: guildFaction,
+              realmType,
+            });
             return (
               <button
                 key={summary.zone.id}
@@ -1372,7 +1462,10 @@ function ZoneList({ summaries, selectedZoneId, realmType, onSelect }) {
                   </strong>
                   <span className="block truncate text-xs text-slate-500">
                     Level {summary.zone.minLevel}-{summary.zone.maxLevel}
-                    {pvpTerritory ? `, ${pvpTerritory.label}` : ""}
+                    <PvpTerritoryLabel
+                      pvpTerritory={pvpTerritory}
+                      separator=", "
+                    />
                     {summary.activeEliteCount > 0
                       ? `, ${summary.activeEliteCount} elite active`
                       : ""}
@@ -1400,6 +1493,8 @@ function ZoneDetail({
   summary,
   guildFaction,
   realmType,
+  worldPvpState,
+  latestPvpLog,
   availableHeroes,
   selectedMemberIds,
   onToggleAssignment,
@@ -1422,7 +1517,15 @@ function ZoneDetail({
   successChance,
 }) {
   const { zone } = summary;
-  const pvpTerritory = getZonePvpTerritory(zone, realmType);
+  const pvpTerritory = getWorldPvpProfile({
+    zone,
+    characterFaction: guildFaction,
+    realmType,
+  });
+  const zonePvpStats = worldPvpState?.zoneStats?.[zone.id] || {};
+  const exposedHeroes = summary.heroesInZone.filter(
+    (row) => row?.member?.status !== "Questing" && pvpTerritory.active,
+  );
   const tags = [
     pvpTerritory?.label,
     zone.faction,
@@ -1508,7 +1611,7 @@ function ZoneDetail({
             </h3>
             <p className="text-sm text-slate-400">
               Level {zone.minLevel}-{zone.maxLevel}
-              {pvpTerritory ? ` - ${pvpTerritory.label}` : ""}
+              <PvpTerritoryLabel pvpTerritory={pvpTerritory} />
               {isZoneLocked ? " - faction locked" : ""}
             </p>
           </div>
@@ -1527,13 +1630,7 @@ function ZoneDetail({
             <span
               key={tag}
               title={tag === pvpTerritory?.label ? pvpTerritory.description : undefined}
-              className={`rounded-full border px-2 py-1 text-xs ${
-                tag === ZONE_PVP_TERRITORY.CONTESTED
-                  ? "border-rose-500/60 bg-rose-950/35 text-rose-100"
-                  : tag === ZONE_PVP_TERRITORY.SAFE
-                    ? "border-emerald-500/60 bg-emerald-950/35 text-emerald-100"
-                    : "border-slate-700 bg-slate-900 text-slate-300"
-              }`}
+              className={`rounded-full border px-2 py-1 text-xs ${getPvpTagClass(tag, pvpTerritory)}`}
             >
               {tag}
             </span>
@@ -1545,6 +1642,35 @@ function ZoneDetail({
         <Stat label="Heroes" value={summary.heroCount} />
         <Stat label="Best" value={`${summary.guildBestProgress}%`} />
         <Stat label="Average" value={`${summary.activeAverageProgress}%`} />
+      </div>
+
+      <div className="mb-3 rounded border border-orange-900/50 bg-slate-900/55 p-2">
+        <div className="flex items-start justify-between gap-3">
+          <div>
+            <div className="text-xs font-bold uppercase tracking-wide text-orange-100">
+              World PvP
+            </div>
+            <p className="mt-1 text-xs text-slate-400">
+              {pvpTerritory.description}{" "}
+              <span className={pvpTerritory.active ? "text-orange-200" : "text-slate-500"}>
+                {pvpTerritory.active ? "Active on this realm." : "Inactive on this realm."}
+              </span>
+            </p>
+          </div>
+          <span className={`rounded border px-2 py-1 text-xs font-semibold ${getPvpTagClass(pvpTerritory.label, pvpTerritory)}`}>
+            {pvpTerritory.label}
+          </span>
+        </div>
+        <div className="mt-2 grid grid-cols-3 gap-2">
+          <MiniStat label="Exposed" value={exposedHeroes.length} />
+          <MiniStat label="Honor" value={zonePvpStats.honorEarned || 0} />
+          <MiniStat label="Events" value={zonePvpStats.eventsTriggered || 0} />
+        </div>
+        {latestPvpLog ? (
+          <div className="mt-2 rounded border border-slate-800 bg-slate-950/45 px-2 py-1.5 text-xs text-orange-100">
+            {latestPvpLog.summary}
+          </div>
+        ) : null}
       </div>
 
       <SectionTitle

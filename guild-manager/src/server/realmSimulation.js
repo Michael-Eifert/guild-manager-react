@@ -1,5 +1,16 @@
-import { NPC_GUILD_ARCHETYPES } from "./realmDefinitions";
-import { createRandom, ensureRealmState, hashRealmSeed } from "./realmGeneration";
+import {
+  NPC_GUILD_ARCHETYPES,
+  REALM_NPC_GUILD_FOUNDED_ROSTER_RANGE,
+  REALM_NPC_GUILD_INITIAL_RANGE,
+  REALM_POPULATION_START,
+  getRealmPopulationProfile,
+} from "./realmDefinitions";
+import {
+  createRandom,
+  ensureRealmState,
+  generateNpcGuilds,
+  hashRealmSeed,
+} from "./realmGeneration";
 import { buildRealmNewsForDay, capRealmNews } from "./realmNews";
 import { advanceRealmPopulationForDay } from "./realmPopulation";
 import {
@@ -15,43 +26,163 @@ import {
 const clampNumber = (value, min, max) =>
   Math.max(min, Math.min(max, Number(value) || 0));
 
+const pickRealmGuildTarget = (realmId, serverPopulation) => {
+  const { guildTargetRange } = getRealmPopulationProfile(serverPopulation);
+  const span = guildTargetRange[1] - guildTargetRange[0];
+  return (
+    guildTargetRange[0] +
+    (hashRealmSeed(`${realmId}:${serverPopulation}:guild-target`) % (span + 1))
+  );
+};
+
+const getRealmPopulationTotal = (realmState, playerGuildSnapshot) =>
+  Math.max(0, Number(realmState?.population?.players?.length) || 0) +
+  Math.max(0, Number(playerGuildSnapshot?.rosterSize) || 0);
+
+const pickFoundedGuildRosterSize = ({ realmId, guildId, random }) => {
+  const [min, max] = REALM_NPC_GUILD_FOUNDED_ROSTER_RANGE;
+  const span = Math.max(0, max - min);
+  const seededOffset =
+    span > 0
+      ? hashRealmSeed(`${realmId}:${guildId}:founded-size`) % (span + 1)
+      : 0;
+  const variance =
+    span > 0 && random() < 0.35
+      ? Math.floor(random() * (span + 1))
+      : seededOffset;
+  return Math.max(min, Math.min(max, min + variance));
+};
+
+const REALM_SIMULATION_STEPS_PER_DAY = 4;
+const REALM_SIMULATION_STEP_FRACTION = 1 / REALM_SIMULATION_STEPS_PER_DAY;
+
+const getRealmSimulationStepIndex = (dayIndex, dayProgress = 0) => {
+  const safeDay = Math.max(0, Math.floor(Number(dayIndex) || 0));
+  const safeProgress = clampNumber(dayProgress, 0, 0.9999);
+  return Math.max(
+    0,
+    Math.floor(safeDay * REALM_SIMULATION_STEPS_PER_DAY + safeProgress * REALM_SIMULATION_STEPS_PER_DAY),
+  );
+};
+
+const maybeFormNpcGuildForDay = ({
+  realmState,
+  npcGuilds,
+  playerGuildSnapshot,
+  guildSetup,
+  dayIndex,
+  random,
+}) => {
+  const currentGuilds = Array.isArray(npcGuilds) ? npcGuilds : [];
+  const populationProfile = getRealmPopulationProfile(realmState?.populationLabel);
+  const targetGuildCount = pickRealmGuildTarget(
+    realmState?.id,
+    populationProfile.populationLabel,
+  );
+  if (currentGuilds.length >= targetGuildCount) return currentGuilds;
+
+  const totalPopulation = getRealmPopulationTotal(realmState, playerGuildSnapshot);
+  const growthSpan = Math.max(1, populationProfile.softCap - REALM_POPULATION_START);
+  const populationProgress = clampNumber(
+    (totalPopulation - REALM_POPULATION_START) / growthSpan,
+    0,
+    1,
+  );
+  const initialGuildCount = Math.max(
+    REALM_NPC_GUILD_INITIAL_RANGE[0],
+    Math.min(currentGuilds.length, REALM_NPC_GUILD_INITIAL_RANGE[1]),
+  );
+  const desiredGuildCount = Math.min(
+    targetGuildCount,
+    initialGuildCount +
+      Math.floor((targetGuildCount - initialGuildCount) * populationProgress),
+  );
+
+  if (currentGuilds.length >= desiredGuildCount || random() > 0.65) {
+    return currentGuilds;
+  }
+
+  const realmName = realmState?.name || guildSetup?.server;
+  const realmType = realmState?.type || guildSetup?.serverStyle;
+  const generated = generateNpcGuilds({
+    realmName,
+    realmType,
+    count: currentGuilds.length + 1,
+  });
+  const candidate = generated[currentGuilds.length];
+  if (!candidate) return currentGuilds;
+  const foundedRosterSize = pickFoundedGuildRosterSize({
+    realmId: realmState?.id,
+    guildId: candidate.id,
+    random,
+  });
+
+  return [
+    ...currentGuilds,
+    {
+      ...candidate,
+      roster: [],
+      rosterSize: 0,
+      foundedRosterSize,
+      foundedAtDayIndex: dayIndex,
+      maxLevelCount: 0,
+      averageLevel: 1,
+      averageGearScore: 1,
+      pveScore: Math.max(0, Math.round((Number(candidate.pveScore) || 0) * 0.5)),
+      raidProgress: 0,
+      dungeonScore: Math.max(0, Math.round(Number(candidate.dungeonScore) || 0)),
+    },
+  ];
+};
+
 const getArchetypeGrowth = (archetype) => {
   switch (archetype) {
     case NPC_GUILD_ARCHETYPES.HARDCORE_RAIDERS:
-      return { level: 0.12, gear: 0.5, dungeon: 8, raid: 2.4, pve: 16 };
+      return { level: 0.38, gear: 0.5, dungeon: 8, raid: 2.4, pve: 16 };
     case NPC_GUILD_ARCHETYPES.DUNGEON_RUNNERS:
-      return { level: 0.14, gear: 0.42, dungeon: 12, raid: 1, pve: 14 };
+      return { level: 0.34, gear: 0.42, dungeon: 12, raid: 1, pve: 14 };
     case NPC_GUILD_ARCHETYPES.LEVELING_GUILD:
       return { level: 0.32, gear: 0.22, dungeon: 5, raid: 0.4, pve: 9 };
     case NPC_GUILD_ARCHETYPES.SOCIAL_GUILD:
-      return { level: 0.1, gear: 0.18, dungeon: 3, raid: 0.2, pve: 5 };
+      return { level: 0.18, gear: 0.18, dungeon: 3, raid: 0.2, pve: 5 };
     default:
-      return { level: 0.16, gear: 0.25, dungeon: 4, raid: 0.5, pve: 7 };
+      return { level: 0.24, gear: 0.25, dungeon: 4, raid: 0.5, pve: 7 };
   }
 };
 
-const advanceNpcGuildForDay = ({ guild, random, dayIndex }) => {
+const advanceNpcGuildForDay = ({
+  guild,
+  random,
+  dayIndex,
+  dayFraction = 1,
+}) => {
+  const safeDayFraction = clampNumber(dayFraction, 0.05, 1);
   const growth = getArchetypeGrowth(guild.archetype);
   const activityMultiplier = clampNumber(guild.activityLevel, 1, 100) / 70;
   const variance = 0.75 + random() * 0.5;
   const averageLevel = clampNumber(
-    guild.averageLevel + growth.level * activityMultiplier * variance,
+    guild.averageLevel + growth.level * activityMultiplier * variance * safeDayFraction,
     1,
     60,
   );
   const averageGearScore = Math.round(
     Math.max(
       0,
-      guild.averageGearScore + growth.gear * activityMultiplier * variance,
+      guild.averageGearScore +
+        growth.gear * activityMultiplier * variance * safeDayFraction,
     ),
   );
   const dungeonScore = Math.round(
-    Math.max(0, guild.dungeonScore + growth.dungeon * activityMultiplier * variance),
+    Math.max(
+      0,
+      guild.dungeonScore +
+        growth.dungeon * activityMultiplier * variance * safeDayFraction,
+    ),
   );
   const canRaid = averageLevel >= 50;
   const raidGrowth = canRaid
-    ? growth.raid * activityMultiplier * variance
-    : growth.raid * 0.12;
+    ? growth.raid * activityMultiplier * variance * safeDayFraction
+    : growth.raid * 0.12 * safeDayFraction;
   const raidUpdate = advanceNpcRaidProgressForDay({
     guild: { ...guild, averageLevel },
     dayIndex,
@@ -71,7 +202,7 @@ const advanceNpcGuildForDay = ({ guild, random, dayIndex }) => {
     Math.max(
       0,
       guild.pveScore +
-        growth.pve * activityMultiplier * variance +
+        growth.pve * activityMultiplier * variance * safeDayFraction +
         dungeonScore * 0.01 +
         raidProgress * 0.08,
     ),
@@ -95,24 +226,61 @@ const advanceNpcGuildForDay = ({ guild, random, dayIndex }) => {
 export const advanceRealmSimulation = ({
   realmState,
   currentDayIndex,
+  currentDayProgress = 0,
   playerGuildSnapshot,
   guildSetup,
 } = {}) => {
   const safeCurrentDay = Math.max(0, Math.floor(Number(currentDayIndex) || 0));
+  const safeCurrentStep = getRealmSimulationStepIndex(
+    safeCurrentDay,
+    currentDayProgress,
+  );
   let nextRealm = ensureRealmState(realmState, guildSetup, safeCurrentDay);
-  const lastSimulatedDay = Math.max(
+  const fallbackLastStep = Math.max(
     0,
-    Math.floor(Number(nextRealm.lastSimulatedDayIndex) || 0),
+    Math.floor(Number(nextRealm.lastSimulatedDayIndex) || 0) *
+      REALM_SIMULATION_STEPS_PER_DAY,
+  );
+  const lastSimulatedStep = Math.max(
+    0,
+    Number.isFinite(Number(nextRealm.lastSimulatedStepIndex))
+      ? Math.floor(Number(nextRealm.lastSimulatedStepIndex))
+      : fallbackLastStep,
   );
 
-  if (safeCurrentDay <= lastSimulatedDay) {
+  if (safeCurrentStep <= lastSimulatedStep) {
     return nextRealm;
   }
 
-  for (let day = lastSimulatedDay + 1; day <= safeCurrentDay; day += 1) {
-    const random = createRandom(hashRealmSeed(`${nextRealm.id}:${day}`));
-    const npcGuilds = nextRealm.npcGuilds.map((guild) =>
-      advanceNpcGuildForDay({ guild, random, dayIndex: day }),
+  for (let step = lastSimulatedStep + 1; step <= safeCurrentStep; step += 1) {
+    const canBatchFullDay =
+      step % REALM_SIMULATION_STEPS_PER_DAY === 1 &&
+      step + REALM_SIMULATION_STEPS_PER_DAY - 1 <= safeCurrentStep;
+    const simulatedStep = canBatchFullDay
+      ? step + REALM_SIMULATION_STEPS_PER_DAY - 1
+      : step;
+    const day = Math.floor(simulatedStep / REALM_SIMULATION_STEPS_PER_DAY);
+    const dayFraction = canBatchFullDay ? 1 : REALM_SIMULATION_STEP_FRACTION;
+    const isFullDayStep =
+      simulatedStep % REALM_SIMULATION_STEPS_PER_DAY === 0;
+    const random = createRandom(
+      hashRealmSeed(`${nextRealm.id}:step:${simulatedStep}`),
+    );
+    const activeNpcGuilds = maybeFormNpcGuildForDay({
+      realmState: nextRealm,
+      npcGuilds: nextRealm.npcGuilds,
+      playerGuildSnapshot,
+      guildSetup,
+      dayIndex: day,
+      random,
+    });
+    const npcGuilds = activeNpcGuilds.map((guild) =>
+      advanceNpcGuildForDay({
+        guild,
+        random,
+        dayIndex: day,
+        dayFraction,
+      }),
     );
     const realmEvents = npcGuilds.flatMap((guild) =>
       Array.isArray(guild.realmEvents) ? guild.realmEvents : [],
@@ -126,7 +294,10 @@ export const advanceRealmSimulation = ({
       realmState: nextRealm,
       npcGuilds: npcGuildsWithoutEvents,
       dayIndex: day,
+      dayFraction,
       playerRosterSize: Math.max(0, Number(playerGuildSnapshot?.rosterSize) || 0),
+      playerAverageLevel: playerGuildSnapshot?.averageLevel,
+      serverPopulation: nextRealm.populationLabel,
       guildFaction: guildSetup?.faction,
       random,
     });
@@ -146,12 +317,19 @@ export const advanceRealmSimulation = ({
     });
     nextRealm = {
       ...nextRealm,
-      ageDays: Math.max(nextRealm.ageDays + 1, day),
+      ageDays: isFullDayStep ? Math.max(nextRealm.ageDays + 1, day) : nextRealm.ageDays,
       npcGuilds: nextNpcGuilds,
       population: populationResult.population,
       news: capRealmNews([...dayNews, ...nextRealm.news]),
-      lastSimulatedDayIndex: day,
+      lastSimulatedDayIndex: isFullDayStep
+        ? Math.max(day, Number(nextRealm.lastSimulatedDayIndex) || 0)
+        : Number(nextRealm.lastSimulatedDayIndex) || 0,
+      lastSimulatedStepIndex: simulatedStep,
     };
+
+    if (canBatchFullDay) {
+      step = simulatedStep;
+    }
   }
 
   return nextRealm;

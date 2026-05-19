@@ -127,7 +127,7 @@ const getDungeonDurationFromReference = (durationText, fallbackSeconds = 120) =>
 };
 
 export const CONFIG = {
-  MAX_ROSTER: 10,
+  MAX_ROSTER: 15,
   GOLD_CAP: 1000,
   LEVEL_CAP: 60,
   MAX_SUPPORTED_LEVEL: GAME_MAX_SUPPORTED_LEVEL,
