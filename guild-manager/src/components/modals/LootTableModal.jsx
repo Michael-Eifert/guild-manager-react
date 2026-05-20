@@ -1,6 +1,9 @@
 import { useEffect, useMemo, useState } from "react";
 import { DB_CLASSES, INITIAL_MISSIONS } from "../../constants";
-import { PVP_HONOR_SET_NAME } from "../../data/imports/pvpHonorSetItems";
+import {
+  PVP_GEAR_SET_NAME,
+  PVP_HONOR_SET_NAME,
+} from "../../data/imports/pvpHonorSetItems";
 import { DB_ITEMS } from "../../data/items";
 import {
   formatItemStats,
@@ -21,21 +24,35 @@ import {
 import BaseModal from "./BaseModal";
 
 const SOURCE_ALL = "All";
+const SOURCE_PVP = "__pvp__";
+const SOURCE_SET_PIECES = "__set_pieces__";
+const PVP_VIEW_HONOR_SETS = "honor_sets";
+const PVP_VIEW_GEAR = "gear";
 const DUNGEON_FILTER_NONE = "";
 const RAID_FILTER_NONE = "";
+const SET_PIECE_CLASS_FILTER_NONE = "";
+const SET_PIECE_SET_FILTER_NONE = "";
 const PRIMARY_SOURCE_FILTERS = Object.freeze([
   { value: SOURCE_ALL, label: "All" },
   { value: SOURCE_WORLD, label: "World" },
-  { value: PVP_HONOR_SET_NAME, label: "PvP Sets" },
+  { value: SOURCE_PVP, label: "PvP Gear" },
+  { value: SOURCE_SET_PIECES, label: "Set Pieces" },
 ]);
 const CLASS_SORT_ORDER = Object.freeze(Object.keys(DB_CLASSES));
 const SLOT_SORT_ORDER = Object.freeze([
   "head",
+  "neck",
   "shoulder",
+  "back",
   "chest",
+  "wrist",
+  "hands",
+  "belt",
   "legs",
   "feet",
-  "hands",
+  "ring",
+  "trinket",
+  "mainHand",
 ]);
 
 const getClassSortIndex = (className) => {
@@ -49,6 +66,34 @@ const getSlotSortIndex = (slot) => {
 };
 
 const getPvpItemClassName = (item) => getItemAllowedClasses(item)[0] || "General";
+const isPvpSource = (source) =>
+  source === PVP_HONOR_SET_NAME || source === PVP_GEAR_SET_NAME;
+const isSetPieceItem = (item) => Boolean(item?.setId || item?.pvpGear);
+const getSetPieceClasses = (item) => {
+  const classes = getItemAllowedClasses(item);
+  return classes.length > 0 ? classes : ["General"];
+};
+const getSetPieceGroupLabel = (item) =>
+  item?.setName || item?.dungeonSetName || item?.setId || "PvP Gear";
+const getSetPieceFamily = (item) => {
+  const setId = String(item?.setId || "");
+  if (item?.dungeonSetName === PVP_GEAR_SET_NAME && !item?.setId) return "PvP Gear";
+  if (setId.startsWith("pvp_")) return "PvP Honor Sets";
+  if (setId.startsWith("t0_")) return "Tier 0";
+  if (setId.startsWith("t1_")) return "Tier 1";
+  if (setId.startsWith("t2_")) return "Tier 2";
+  if (setId.startsWith("t3_")) return "Tier 3";
+  return item?.dungeonSetName || "Set";
+};
+const getSetPieceExpectedCount = (items) => {
+  const setId = String(items[0]?.setId || "");
+  if (setId.startsWith("pvp_")) return 6;
+  if (setId.startsWith("t3_")) return 9;
+  if (setId.startsWith("t0_") || setId.startsWith("t1_") || setId.startsWith("t2_")) {
+    return 8;
+  }
+  return null;
+};
 
 const buildPvpClassGroups = (items) => {
   const classMap = items.reduce((acc, item) => {
@@ -100,16 +145,77 @@ const buildPvpClassGroups = (items) => {
     }));
 };
 
+const buildSetPieceGroups = (items) => {
+  const groups = items.reduce((acc, item) => {
+    const groupName = getSetPieceGroupLabel(item);
+    const classNames = getSetPieceClasses(item);
+    const faction = item.faction || null;
+    const groupKey = [
+      groupName,
+      getSetPieceFamily(item),
+      classNames.join("/"),
+      faction || "",
+    ].join(":");
+
+    if (!acc[groupKey]) {
+      acc[groupKey] = {
+        key: groupKey,
+        groupName,
+        family: getSetPieceFamily(item),
+        classNames,
+        faction,
+        quality: item.quality,
+        itemLevel: getItemEffectiveLevel(item),
+        items: [],
+      };
+    }
+
+    acc[groupKey].items.push(item);
+    acc[groupKey].quality = Math.max(acc[groupKey].quality || 0, item.quality || 0);
+    acc[groupKey].itemLevel = Math.max(
+      acc[groupKey].itemLevel || 0,
+      getItemEffectiveLevel(item),
+    );
+    return acc;
+  }, {});
+
+  return Object.values(groups)
+    .map((group) => ({
+      ...group,
+      expectedCount: getSetPieceExpectedCount(group.items),
+      items: [...group.items].sort((left, right) => {
+        const slotOrder = getSlotSortIndex(left.slot) - getSlotSortIndex(right.slot);
+        return slotOrder || left.name.localeCompare(right.name);
+      }),
+    }))
+    .sort((left, right) => {
+      const familyOrder = left.family.localeCompare(right.family);
+      const classOrder =
+        getClassSortIndex(left.classNames[0]) - getClassSortIndex(right.classNames[0]);
+      return familyOrder || classOrder || left.groupName.localeCompare(right.groupName);
+    });
+};
+
 const LootTableModal = ({ isOpen, onClose }) => {
   const [sourceFilter, setSourceFilter] = useState(SOURCE_ALL);
   const [dungeonFilter, setDungeonFilter] = useState(DUNGEON_FILTER_NONE);
   const [raidFilter, setRaidFilter] = useState(RAID_FILTER_NONE);
+  const [pvpView, setPvpView] = useState(PVP_VIEW_HONOR_SETS);
+  const [setPieceClassFilter, setSetPieceClassFilter] = useState(
+    SET_PIECE_CLASS_FILTER_NONE,
+  );
+  const [setPieceSetFilter, setSetPieceSetFilter] = useState(
+    SET_PIECE_SET_FILTER_NONE,
+  );
 
   useEffect(() => {
     if (isOpen) {
       setSourceFilter(SOURCE_ALL);
       setDungeonFilter(DUNGEON_FILTER_NONE);
       setRaidFilter(RAID_FILTER_NONE);
+      setPvpView(PVP_VIEW_HONOR_SETS);
+      setSetPieceClassFilter(SET_PIECE_CLASS_FILTER_NONE);
+      setSetPieceSetFilter(SET_PIECE_SET_FILTER_NONE);
     }
   }, [isOpen]);
 
@@ -171,15 +277,63 @@ const LootTableModal = ({ isOpen, onClose }) => {
     return buildMissionSourceOptions(raidMissions);
   }, []);
 
+  const setPieceClassOptions = useMemo(() => {
+    const classes = new Set();
+    DB_ITEMS.filter(isSetPieceItem).forEach((item) => {
+      getSetPieceClasses(item).forEach((className) => classes.add(className));
+    });
+    return [...classes].sort((left, right) => {
+      const classOrder = getClassSortIndex(left) - getClassSortIndex(right);
+      return classOrder || left.localeCompare(right);
+    });
+  }, []);
+
+  const setPieceSetOptions = useMemo(() => {
+    const filteredItems = DB_ITEMS.filter(isSetPieceItem).filter((item) => {
+      if (!setPieceClassFilter) return true;
+      return getSetPieceClasses(item).includes(setPieceClassFilter);
+    });
+    return [...new Set(filteredItems.map(getSetPieceGroupLabel))].sort((left, right) =>
+      left.localeCompare(right),
+    );
+  }, [setPieceClassFilter]);
+
   const sourceSections = useMemo(() => {
     const sortedItems = sortLootItems(DB_ITEMS);
+    const setPieceItems = sortedItems
+      .filter(isSetPieceItem)
+      .filter((item) => {
+        const matchesClass =
+          !setPieceClassFilter ||
+          getSetPieceClasses(item).includes(setPieceClassFilter);
+        const matchesSet =
+          !setPieceSetFilter || getSetPieceGroupLabel(item) === setPieceSetFilter;
+        return matchesClass && matchesSet;
+      });
+
+    if (sourceFilter === SOURCE_SET_PIECES) {
+      return [
+        {
+          source: SOURCE_SET_PIECES,
+          items: setPieceItems,
+          qualityGroups: groupByQuality(setPieceItems),
+          pvpHonorSetItems: [],
+          pvpGearItems: [],
+          setPieceGroups: buildSetPieceGroups(setPieceItems),
+        },
+      ];
+    }
+
     const filteredItems =
       sourceFilter === SOURCE_ALL
         ? sortedItems
+        : sourceFilter === SOURCE_PVP
+          ? sortedItems.filter((item) => isPvpSource(getItemSource(item)))
         : sortedItems.filter((item) => getItemSource(item) === sourceFilter);
 
     const groupedBySource = filteredItems.reduce((acc, item) => {
-      const source = getItemSource(item);
+      const itemSource = getItemSource(item);
+      const source = isPvpSource(itemSource) ? SOURCE_PVP : itemSource;
       if (!acc[source]) acc[source] = [];
       acc[source].push(item);
       return acc;
@@ -188,7 +342,8 @@ const LootTableModal = ({ isOpen, onClose }) => {
     const extraItemSources = Object.keys(groupedBySource).filter(
       (source) =>
         source !== SOURCE_WORLD &&
-        source !== PVP_HONOR_SET_NAME &&
+        source !== SOURCE_PVP &&
+        !isPvpSource(source) &&
         !dungeonOptions.some((option) => option.value === source) &&
         !raidOptions.some((option) => option.value === source),
     );
@@ -198,7 +353,7 @@ const LootTableModal = ({ isOpen, onClose }) => {
         ? [
             ...new Set([
               SOURCE_WORLD,
-              PVP_HONOR_SET_NAME,
+              SOURCE_PVP,
               ...dungeonOptions.map((option) => option.value),
               ...raidOptions.map((option) => option.value),
               ...extraItemSources,
@@ -212,12 +367,28 @@ const LootTableModal = ({ isOpen, onClose }) => {
         source,
         items: groupedBySource[source],
         qualityGroups: groupByQuality(groupedBySource[source]),
-        pvpClassGroups:
-          source === PVP_HONOR_SET_NAME
-            ? buildPvpClassGroups(groupedBySource[source])
+        pvpHonorSetItems:
+          source === SOURCE_PVP
+            ? groupedBySource[source].filter(
+                (item) => getItemSource(item) === PVP_HONOR_SET_NAME,
+              )
             : [],
+        pvpGearItems:
+          source === SOURCE_PVP
+            ? groupedBySource[source].filter(
+                (item) => getItemSource(item) === PVP_GEAR_SET_NAME,
+              )
+            : [],
+        pvpClassGroups: [],
+        setPieceGroups: [],
       }));
-  }, [dungeonOptions, raidOptions, sourceFilter]);
+  }, [
+    dungeonOptions,
+    raidOptions,
+    setPieceClassFilter,
+    setPieceSetFilter,
+    sourceFilter,
+  ]);
 
   const qualityOrder = [5, 4, 3, 2, 1, 0];
   const renderLootItemRow = (item) => {
@@ -240,10 +411,14 @@ const LootTableModal = ({ isOpen, onClose }) => {
             <div className={`font-bold truncate ${getQualityClass(item.quality)}`}>
               [{item.name}]
             </div>
-            {item.setId && (
+            {(item.setId || item.pvpGear) && (
               <div className="mt-0.5 flex flex-wrap items-center gap-1 text-[11px]">
                 <span className="px-1.5 py-0.5 rounded border border-emerald-700 bg-emerald-950/30 text-emerald-200 font-bold uppercase tracking-wide">
-                  {item.pvpGear ? "PvP Set" : "Set Piece"}
+                  {item.pvpGear
+                    ? item.setId
+                      ? "PvP Set"
+                      : "PvP Gear"
+                    : "Set Piece"}
                 </span>
                 {item.pvpGear && item.faction && (
                   <span className="px-1.5 py-0.5 rounded border border-amber-700 bg-amber-950/30 text-amber-200 font-semibold">
@@ -256,11 +431,12 @@ const LootTableModal = ({ isOpen, onClose }) => {
                   </span>
                 )}
                 <span className="text-emerald-300/90">
-                  {item.setName || item.setId}
+                  {item.setName || item.dungeonSetName || item.setId}
                 </span>
                 {allowedClasses.length > 0 && (
                   <span className="px-1.5 py-0.5 rounded border border-cyan-700 bg-cyan-950/30 text-cyan-200 font-semibold">
-                    Class: {allowedClasses.join(" / ")} (Exclusive)
+                    Class: {allowedClasses.join(" / ")}
+                    {item.setId ? " (Exclusive)" : ""}
                   </span>
                 )}
               </div>
@@ -299,6 +475,196 @@ const LootTableModal = ({ isOpen, onClose }) => {
     );
   };
 
+  const renderPvpHonorSets = (items) => {
+    const pvpClassGroups = buildPvpClassGroups(items);
+    return pvpClassGroups.map((classGroup) => (
+      <div
+        key={classGroup.className}
+        className="border border-gray-800 rounded bg-black/10"
+      >
+        <div className="px-3 py-2 border-b border-gray-800 bg-black/25 flex items-center justify-between gap-3">
+          <div className="flex items-center gap-2 min-w-0">
+            {classGroup.icon && (
+              <img
+                src={classGroup.icon}
+                alt=""
+                className="w-6 h-6 rounded border border-gray-700"
+              />
+            )}
+            <h4 className="text-sm font-bold text-amber-100 truncate">
+              {classGroup.className}
+            </h4>
+          </div>
+          <span className="text-[11px] text-gray-500">
+            {classGroup.sets.length} sets
+          </span>
+        </div>
+        <div className="p-3 space-y-3">
+          {classGroup.sets.map((set) => (
+            <div
+              key={set.setId}
+              className="border border-gray-800 rounded overflow-hidden"
+            >
+              <div className="px-3 py-1.5 border-b border-gray-800 bg-gray-950/50 flex items-center justify-between gap-3">
+                <div className="min-w-0">
+                  <div className={`text-xs font-bold ${getQualityClass(set.quality)}`}>
+                    {set.setName}
+                  </div>
+                  <div className="mt-0.5 flex flex-wrap gap-1 text-[11px]">
+                    {set.faction && (
+                      <span className="px-1.5 py-0.5 rounded border border-amber-700 bg-amber-950/30 text-amber-200">
+                        {set.faction}
+                      </span>
+                    )}
+                    <span className="px-1.5 py-0.5 rounded border border-gray-700 bg-gray-900 text-gray-300">
+                      {getQualityLabel(set.quality)}
+                    </span>
+                    <span className="px-1.5 py-0.5 rounded border border-yellow-700 bg-yellow-950/20 text-yellow-200">
+                      iLvl {set.itemLevel}
+                    </span>
+                  </div>
+                </div>
+                <span className="text-[11px] text-gray-500 whitespace-nowrap">
+                  {set.items.length}/6
+                </span>
+              </div>
+              <div className="divide-y divide-gray-800">
+                {set.items.map(renderLootItemRow)}
+              </div>
+            </div>
+          ))}
+        </div>
+      </div>
+    ));
+  };
+
+  const renderQualityGroups = (section, items = section.items) =>
+    qualityOrder.map((quality) => {
+      const groupedItems = groupByQuality(items)[quality] || [];
+      if (groupedItems.length === 0) return null;
+
+      return (
+        <div
+          key={`${section.source}-${quality}`}
+          className="border border-gray-800 rounded"
+        >
+          <div className="px-3 py-1.5 border-b border-gray-800 bg-black/20 flex items-center justify-between">
+            <h4 className={`text-xs font-bold uppercase tracking-wider ${getQualityClass(quality)}`}>
+              {getQualityLabel(quality)}
+            </h4>
+            <span className="text-[11px] text-gray-500">
+              {groupedItems.length}
+            </span>
+          </div>
+
+          <div className="divide-y divide-gray-800">
+            {groupedItems.map(renderLootItemRow)}
+          </div>
+        </div>
+      );
+    });
+
+  const renderSetPiecesSection = (section) => {
+    if (section.items.length === 0) {
+      return (
+        <div className="text-center text-gray-500 italic py-8">
+          No set pieces found for these filters.
+        </div>
+      );
+    }
+
+    return section.setPieceGroups.map((group) => (
+      <div
+        key={group.key}
+        className="border border-gray-800 rounded bg-black/10 overflow-hidden"
+      >
+        <div className="px-3 py-2 border-b border-gray-800 bg-black/25 flex items-center justify-between gap-3">
+          <div className="min-w-0">
+            <h4 className={`text-sm font-bold truncate ${getQualityClass(group.quality)}`}>
+              {group.groupName}
+            </h4>
+            <div className="mt-1 flex flex-wrap gap-1 text-[11px]">
+              <span className="px-1.5 py-0.5 rounded border border-gray-700 bg-gray-900 text-gray-300">
+                {group.family}
+              </span>
+              {group.classNames.map((className) => (
+                <span
+                  key={className}
+                  className="px-1.5 py-0.5 rounded border border-cyan-700 bg-cyan-950/30 text-cyan-200"
+                >
+                  {className}
+                </span>
+              ))}
+              {group.faction && (
+                <span className="px-1.5 py-0.5 rounded border border-amber-700 bg-amber-950/30 text-amber-200">
+                  {group.faction}
+                </span>
+              )}
+              <span className="px-1.5 py-0.5 rounded border border-yellow-700 bg-yellow-950/20 text-yellow-200">
+                up to iLvl {group.itemLevel}
+              </span>
+            </div>
+          </div>
+          <span className="text-[11px] text-gray-500 whitespace-nowrap">
+            {group.items.length}
+            {group.expectedCount ? `/${group.expectedCount}` : ""} pieces
+          </span>
+        </div>
+        <div className="divide-y divide-gray-800">
+          {group.items.map(renderLootItemRow)}
+        </div>
+      </div>
+    ));
+  };
+
+  const renderPvpSection = (section) => {
+    const activeItems =
+      pvpView === PVP_VIEW_HONOR_SETS
+        ? section.pvpHonorSetItems
+        : section.pvpGearItems;
+
+    return (
+      <>
+        <div className="flex flex-wrap gap-2">
+          {[
+            {
+              value: PVP_VIEW_HONOR_SETS,
+              label: "PvP Honor Sets",
+              count: section.pvpHonorSetItems.length,
+            },
+            {
+              value: PVP_VIEW_GEAR,
+              label: "PvP Gear",
+              count: section.pvpGearItems.length,
+            },
+          ].map((view) => (
+            <button
+              key={view.value}
+              type="button"
+              onClick={() => setPvpView(view.value)}
+              className={`px-3 py-1 text-xs rounded border transition-colors ${
+                pvpView === view.value
+                  ? "border-yellow-500 bg-yellow-900/40 text-yellow-200"
+                  : "border-gray-700 bg-gray-900 text-gray-300 hover:bg-gray-800"
+              }`}
+            >
+              {view.label} ({view.count})
+            </button>
+          ))}
+        </div>
+        {activeItems.length === 0 ? (
+          <div className="text-center text-gray-500 italic py-8">
+            No PvP items found for this view.
+          </div>
+        ) : pvpView === PVP_VIEW_HONOR_SETS ? (
+          renderPvpHonorSets(activeItems)
+        ) : (
+          renderQualityGroups(section, activeItems)
+        )}
+      </>
+    );
+  };
+
   return (
     <BaseModal
       isOpen={isOpen}
@@ -327,6 +693,10 @@ const LootTableModal = ({ isOpen, onClose }) => {
                   setSourceFilter(source.value);
                   setDungeonFilter(DUNGEON_FILTER_NONE);
                   setRaidFilter(RAID_FILTER_NONE);
+                  if (source.value !== SOURCE_SET_PIECES) {
+                    setSetPieceClassFilter(SET_PIECE_CLASS_FILTER_NONE);
+                    setSetPieceSetFilter(SET_PIECE_SET_FILTER_NONE);
+                  }
                 }}
                 className={`px-3 py-1 text-xs rounded border transition-colors ${
                   sourceFilter === source.value
@@ -349,6 +719,8 @@ const LootTableModal = ({ isOpen, onClose }) => {
                   setDungeonFilter(value);
                   setRaidFilter(RAID_FILTER_NONE);
                   setSourceFilter(value || SOURCE_ALL);
+                  setSetPieceClassFilter(SET_PIECE_CLASS_FILTER_NONE);
+                  setSetPieceSetFilter(SET_PIECE_SET_FILTER_NONE);
                 }}
                 className="bg-gray-800 border border-gray-600 rounded px-2 py-1 text-xs text-gray-100 focus:outline-none focus:border-yellow-500"
               >
@@ -373,6 +745,8 @@ const LootTableModal = ({ isOpen, onClose }) => {
                   setRaidFilter(value);
                   setDungeonFilter(DUNGEON_FILTER_NONE);
                   setSourceFilter(value || SOURCE_ALL);
+                  setSetPieceClassFilter(SET_PIECE_CLASS_FILTER_NONE);
+                  setSetPieceSetFilter(SET_PIECE_SET_FILTER_NONE);
                 }}
                 className="bg-gray-800 border border-gray-600 rounded px-2 py-1 text-xs text-gray-100 focus:outline-none focus:border-yellow-500"
               >
@@ -385,6 +759,51 @@ const LootTableModal = ({ isOpen, onClose }) => {
               </select>
             </div>
           </div>
+          {sourceFilter === SOURCE_SET_PIECES && (
+            <div className="mt-3 flex flex-wrap items-center gap-2">
+              <label
+                htmlFor="loot-set-class-filter"
+                className="text-xs text-gray-400 uppercase tracking-wider"
+              >
+                Class
+              </label>
+              <select
+                id="loot-set-class-filter"
+                value={setPieceClassFilter}
+                onChange={(event) => {
+                  setSetPieceClassFilter(event.target.value);
+                  setSetPieceSetFilter(SET_PIECE_SET_FILTER_NONE);
+                }}
+                className="bg-gray-800 border border-gray-600 rounded px-2 py-1 text-xs text-gray-100 focus:outline-none focus:border-yellow-500"
+              >
+                <option value={SET_PIECE_CLASS_FILTER_NONE}>Any class</option>
+                {setPieceClassOptions.map((className) => (
+                  <option key={className} value={className}>
+                    {className}
+                  </option>
+                ))}
+              </select>
+              <label
+                htmlFor="loot-set-name-filter"
+                className="text-xs text-gray-400 uppercase tracking-wider"
+              >
+                Set
+              </label>
+              <select
+                id="loot-set-name-filter"
+                value={setPieceSetFilter}
+                onChange={(event) => setSetPieceSetFilter(event.target.value)}
+                className="bg-gray-800 border border-gray-600 rounded px-2 py-1 text-xs text-gray-100 focus:outline-none focus:border-yellow-500 min-w-[180px]"
+              >
+                <option value={SET_PIECE_SET_FILTER_NONE}>Any set</option>
+                {setPieceSetOptions.map((setName) => (
+                  <option key={setName} value={setName}>
+                    {setName}
+                  </option>
+                ))}
+              </select>
+            </div>
+          )}
         </div>
 
         <div className="flex-1 overflow-y-auto p-4 md:p-6 space-y-6 custom-scrollbar">
@@ -397,96 +816,21 @@ const LootTableModal = ({ isOpen, onClose }) => {
               <section key={section.source} className="bg-gray-900/40 border border-gray-700 rounded">
                 <div className="px-4 py-2 border-b border-gray-700 bg-black/30 flex items-center justify-between">
                   <h3 className="text-sm md:text-base font-bold text-amber-100 fantasy-font">
-                    {section.source}
+                    {section.source === SOURCE_PVP
+                      ? "PvP Gear"
+                      : section.source === SOURCE_SET_PIECES
+                        ? "Set Pieces"
+                        : section.source}
                   </h3>
                   <span className="text-xs text-gray-500">{section.items.length} items</span>
                 </div>
 
                 <div className="p-3 md:p-4 space-y-4">
-                  {section.source === PVP_HONOR_SET_NAME
-                    ? section.pvpClassGroups.map((classGroup) => (
-                        <div
-                          key={classGroup.className}
-                          className="border border-gray-800 rounded bg-black/10"
-                        >
-                          <div className="px-3 py-2 border-b border-gray-800 bg-black/25 flex items-center justify-between gap-3">
-                            <div className="flex items-center gap-2 min-w-0">
-                              {classGroup.icon && (
-                                <img
-                                  src={classGroup.icon}
-                                  alt=""
-                                  className="w-6 h-6 rounded border border-gray-700"
-                                />
-                              )}
-                              <h4 className="text-sm font-bold text-amber-100 truncate">
-                                {classGroup.className}
-                              </h4>
-                            </div>
-                            <span className="text-[11px] text-gray-500">
-                              {classGroup.sets.length} sets
-                            </span>
-                          </div>
-                          <div className="p-3 space-y-3">
-                            {classGroup.sets.map((set) => (
-                              <div
-                                key={set.setId}
-                                className="border border-gray-800 rounded overflow-hidden"
-                              >
-                                <div className="px-3 py-1.5 border-b border-gray-800 bg-gray-950/50 flex items-center justify-between gap-3">
-                                  <div className="min-w-0">
-                                    <div className={`text-xs font-bold ${getQualityClass(set.quality)}`}>
-                                      {set.setName}
-                                    </div>
-                                    <div className="mt-0.5 flex flex-wrap gap-1 text-[11px]">
-                                      {set.faction && (
-                                        <span className="px-1.5 py-0.5 rounded border border-amber-700 bg-amber-950/30 text-amber-200">
-                                          {set.faction}
-                                        </span>
-                                      )}
-                                      <span className="px-1.5 py-0.5 rounded border border-gray-700 bg-gray-900 text-gray-300">
-                                        {getQualityLabel(set.quality)}
-                                      </span>
-                                      <span className="px-1.5 py-0.5 rounded border border-yellow-700 bg-yellow-950/20 text-yellow-200">
-                                        iLvl {set.itemLevel}
-                                      </span>
-                                    </div>
-                                  </div>
-                                  <span className="text-[11px] text-gray-500 whitespace-nowrap">
-                                    {set.items.length}/6
-                                  </span>
-                                </div>
-                                <div className="divide-y divide-gray-800">
-                                  {set.items.map(renderLootItemRow)}
-                                </div>
-                              </div>
-                            ))}
-                          </div>
-                        </div>
-                      ))
-                    : qualityOrder.map((quality) => {
-                        const items = section.qualityGroups[quality] || [];
-                        if (items.length === 0) return null;
-
-                        return (
-                          <div
-                            key={`${section.source}-${quality}`}
-                            className="border border-gray-800 rounded"
-                          >
-                            <div className="px-3 py-1.5 border-b border-gray-800 bg-black/20 flex items-center justify-between">
-                              <h4 className={`text-xs font-bold uppercase tracking-wider ${getQualityClass(quality)}`}>
-                                {getQualityLabel(quality)}
-                              </h4>
-                              <span className="text-[11px] text-gray-500">
-                                {items.length}
-                              </span>
-                            </div>
-
-                            <div className="divide-y divide-gray-800">
-                              {items.map(renderLootItemRow)}
-                            </div>
-                          </div>
-                        );
-                      })}
+                  {section.source === SOURCE_PVP
+                    ? renderPvpSection(section)
+                    : section.source === SOURCE_SET_PIECES
+                      ? renderSetPiecesSection(section)
+                    : renderQualityGroups(section)}
                 </div>
               </section>
             ))

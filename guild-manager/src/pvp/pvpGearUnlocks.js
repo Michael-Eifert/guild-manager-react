@@ -8,15 +8,15 @@ export const PVP_RANK_REWARD_TIERS = Object.freeze([
   Object.freeze({ rank: 3, label: "Cloak", itemSlots: ["back"] }),
   Object.freeze({ rank: 4, label: "PvP Accessory", itemSlots: ["neck"] }),
   Object.freeze({ rank: 5, label: "Bracers", itemSlots: ["wrist"] }),
-  Object.freeze({ rank: 6, label: "Officer Access", itemSlots: [] }),
+  Object.freeze({ rank: 6, label: "Officer Belt", itemSlots: ["belt"] }),
   Object.freeze({ rank: 7, label: "Rare Gloves and Boots", itemSlots: ["hands", "feet"] }),
   Object.freeze({ rank: 8, label: "Rare Chest and Legs", itemSlots: ["chest", "legs"] }),
-  Object.freeze({ rank: 9, label: "Battle Standard", itemSlots: [] }),
+  Object.freeze({ rank: 9, label: "Battle Signet", itemSlots: ["ring"] }),
   Object.freeze({ rank: 10, label: "Rare Helm and Shoulders", itemSlots: ["head", "shoulder"] }),
-  Object.freeze({ rank: 11, label: "Epic Mount and Officer Privileges", itemSlots: [] }),
+  Object.freeze({ rank: 11, label: "Epic Battle Standard", itemSlots: ["trinket"] }),
   Object.freeze({ rank: 12, label: "Epic Boots, Gloves, and Legs", itemSlots: ["feet", "hands", "legs"] }),
   Object.freeze({ rank: 13, label: "Epic Helm, Chest, and Shoulders", itemSlots: ["head", "chest", "shoulder"] }),
-  Object.freeze({ rank: 14, label: "Epic Weapon", itemSlots: ["mainHand", "offHand", "twoHand"] }),
+  Object.freeze({ rank: 14, label: "Epic Weapon", itemSlots: ["mainHand"] }),
 ]);
 
 const normalizeFaction = (faction) =>

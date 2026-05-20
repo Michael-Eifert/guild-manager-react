@@ -1,7 +1,9 @@
 import { GUILD_FACTION } from "../constants";
+import { getItemEffectiveLevel, normalizeEquipmentSlots } from "../utils";
 import { ensureCharacterPvpData } from "./pvpCharacterUtils";
 import {
   getNewPvpRewardTiers,
+  getUnlockedPvpGearForCharacter,
   getUnlockedPvpGearIdsForCharacter,
 } from "./pvpGearUnlocks";
 import {
@@ -46,19 +48,35 @@ export const shouldApplyWeeklyPvpRollover = ({
   return safeDay > 0 && safeDay % PVP_WEEK_LENGTH_DAYS === 0 && lastDay < safeDay;
 };
 
-const buildUnlockLog = ({ character, oldRank, nextCharacter, newRewardTiers }) => {
+const buildUnlockLog = ({
+  character,
+  oldRank,
+  nextCharacter,
+  newRewardTiers,
+  equippedItems,
+}) => {
   const rankChanged = nextCharacter.pvp.rank > oldRank;
   const unlockedCount = Math.max(
     0,
     nextCharacter.pvp.unlockedPvpGearIds.length -
       (character?.pvp?.unlockedPvpGearIds?.length || 0),
   );
-  if (!rankChanged && unlockedCount <= 0 && newRewardTiers.length === 0) return null;
+  if (
+    !rankChanged &&
+    unlockedCount <= 0 &&
+    newRewardTiers.length === 0 &&
+    equippedItems.length === 0
+  ) {
+    return null;
+  }
   const rewardText = newRewardTiers.length > 0
     ? ` Rewards: ${newRewardTiers.map((tier) => tier.label).join(", ")}.`
     : "";
   const gearText = unlockedCount > 0
     ? ` ${unlockedCount} PvP gear piece${unlockedCount === 1 ? "" : "s"} became available.`
+    : "";
+  const equipText = equippedItems.length > 0
+    ? ` Equipped: ${equippedItems.map((item) => item.name).join(", ")}.`
     : "";
   return {
     type: "pvp",
@@ -66,7 +84,30 @@ const buildUnlockLog = ({ character, oldRank, nextCharacter, newRewardTiers }) =
     characterName: nextCharacter.name,
     rank: nextCharacter.pvp.rank,
     title: nextCharacter.pvp.title,
-    message: `${nextCharacter.name} reached ${nextCharacter.pvp.title} (Rank ${nextCharacter.pvp.rank}).${rewardText}${gearText}`,
+    message: `${nextCharacter.name} reached ${nextCharacter.pvp.title} (Rank ${nextCharacter.pvp.rank}).${rewardText}${gearText}${equipText}`,
+  };
+};
+
+const applyPvpAutoEquip = ({ character, unlockedItems }) => {
+  const equipment = normalizeEquipmentSlots(character?.equipment);
+  const equippedItems = [];
+  const nextEquipment = { ...equipment };
+
+  (Array.isArray(unlockedItems) ? unlockedItems : []).forEach((item) => {
+    const slot = String(item?.slot || "").trim();
+    if (!slot) return;
+    const currentItem = nextEquipment[slot];
+    if (getItemEffectiveLevel(item) <= getItemEffectiveLevel(currentItem)) return;
+    nextEquipment[slot] = item;
+    equippedItems.push(item);
+  });
+
+  return {
+    character: {
+      ...character,
+      equipment: nextEquipment,
+    },
+    equippedItems,
   };
 };
 
@@ -119,24 +160,34 @@ export const applyWeeklyPvpRollover = ({
         highestTitle: getPvpTitleForRank(highestRank, safeFaction),
       },
     };
+    const unlockedPvpGear = getUnlockedPvpGearForCharacter(
+      nextCharacterWithRank,
+      allItems,
+      safeFaction,
+    );
     const unlockedPvpGearIds = getUnlockedPvpGearIdsForCharacter(
       nextCharacterWithRank,
       allItems,
       safeFaction,
     );
-    const nextCharacter = {
+    const nextCharacterWithUnlocks = {
       ...nextCharacterWithRank,
       pvp: {
         ...nextCharacterWithRank.pvp,
         unlockedPvpGearIds,
       },
     };
+    const { character: nextCharacter, equippedItems } = applyPvpAutoEquip({
+      character: nextCharacterWithUnlocks,
+      unlockedItems: unlockedPvpGear,
+    });
     const newRewardTiers = getNewPvpRewardTiers(oldHighestRank, highestRank);
     const log = buildUnlockLog({
       character: normalized,
       oldRank,
       nextCharacter,
       newRewardTiers,
+      equippedItems,
     });
     if (log) logs.push(log);
     return nextCharacter;

@@ -26,7 +26,7 @@ import { hasCompletedZoneEliteQuest } from "../../automation/zoneEliteAutomation
 import {
   buildDungeonAttunementTargets,
   getAdventureGoalQueue,
-  hasCharacterKey,
+  getAttunementEligibleMembers,
 } from "../../automation/adventureGoals";
 import { getRealmPlayersInZone } from "../../server/realmPopulation";
 import { WORLD_PVP_PROFILE_TYPE } from "../../pvp/worldPvpDefinitions";
@@ -1125,25 +1125,27 @@ function AttunementHeroPicker({
   busyMemberIds,
   onToggle,
 }) {
-  const sortedHeroes = [...(Array.isArray(heroes) ? heroes : [])].sort(
-    (left, right) => {
-      const leftHasKey = hasCharacterKey(left, target?.keyId);
-      const rightHasKey = hasCharacterKey(right, target?.keyId);
-      if (leftHasKey !== rightHasKey) return leftHasKey ? 1 : -1;
-      const leftBusy = isHeroOnMission(left, busyMemberIds);
-      const rightBusy = isHeroOnMission(right, busyMemberIds);
-      if (leftBusy !== rightBusy) return leftBusy ? 1 : -1;
-      const leftQueued = hasQueuedTargetGoal(left, target);
-      const rightQueued = hasQueuedTargetGoal(right, target);
-      if (leftQueued !== rightQueued) return leftQueued ? -1 : 1;
-      const levelDelta = getHeroLevel(right) - getHeroLevel(left);
-      if (levelDelta !== 0) return levelDelta;
-      return String(left?.name || "").localeCompare(String(right?.name || ""));
-    },
-  );
+  const sortedHeroes = getAttunementEligibleMembers({
+    members: heroes,
+    target,
+  }).sort((left, right) => {
+    const leftBusy = isHeroOnMission(left, busyMemberIds);
+    const rightBusy = isHeroOnMission(right, busyMemberIds);
+    if (leftBusy !== rightBusy) return leftBusy ? 1 : -1;
+    const leftQueued = hasQueuedTargetGoal(left, target);
+    const rightQueued = hasQueuedTargetGoal(right, target);
+    if (leftQueued !== rightQueued) return leftQueued ? -1 : 1;
+    const levelDelta = getHeroLevel(right) - getHeroLevel(left);
+    if (levelDelta !== 0) return levelDelta;
+    return String(left?.name || "").localeCompare(String(right?.name || ""));
+  });
 
   if (sortedHeroes.length === 0) {
-    return <EmptyText>No heroes are available in the roster.</EmptyText>;
+    return (
+      <EmptyText>
+        No heroes can currently start this attunement source.
+      </EmptyText>
+    );
   }
 
   return (
@@ -1151,21 +1153,16 @@ function AttunementHeroPicker({
       {sortedHeroes.map((hero) => {
         const memberId = getMemberId(hero);
         const selected = selectedIds.includes(memberId);
-        const hasKey = hasCharacterKey(hero, target?.keyId);
         const queued = hasQueuedTargetGoal(hero, target);
         const onMission = isHeroOnMission(hero, busyMemberIds);
-        const disabled = hasKey || !target?.sourceMission;
 
         return (
           <button
             key={memberId}
             type="button"
             onClick={() => onToggle(memberId)}
-            disabled={disabled}
             className={`rounded border px-2 py-2 text-left transition-colors ${
-              disabled
-                ? "cursor-not-allowed border-slate-800 bg-slate-950/50 text-slate-600"
-                : selected
+              selected
                   ? "border-emerald-500/70 bg-emerald-950/35 text-emerald-100"
                   : queued
                     ? "border-amber-500/60 bg-amber-950/25 text-amber-100"
@@ -1178,10 +1175,8 @@ function AttunementHeroPicker({
               {hero.role ? `, ${getRoleIcon(hero.role)} ${hero.role}` : ""}
             </span>
             <div className="mt-1 flex flex-wrap gap-1">
-              {hasKey && <StatusPill tone="emerald">Completed</StatusPill>}
               {queued && <StatusPill tone="amber">Queued</StatusPill>}
               {onMission && <StatusPill tone="slate">On Mission</StatusPill>}
-              {!target?.sourceMission && <StatusPill tone="rose">Blocked</StatusPill>}
             </div>
           </button>
         );
@@ -1249,9 +1244,7 @@ function getAttunementTargetLabel(target) {
 }
 
 function getSelectableAttunementMemberIds({ heroes, target }) {
-  if (!target?.sourceMission) return [];
-  return (Array.isArray(heroes) ? heroes : [])
-    .filter((hero) => !hasCharacterKey(hero, target.keyId))
+  return getAttunementEligibleMembers({ members: heroes, target })
     .map((hero) => getMemberId(hero))
     .filter(Boolean);
 }
@@ -1886,6 +1879,10 @@ function HeroIdentity({ hero, compact = false, showGuildTag = false }) {
     : getWowIconUrl("inv_misc_questionmark");
   const classIconUrl = classInfo?.icon || getWowIconUrl("inv_misc_questionmark");
   const iconSizeClass = compact ? "h-5 w-5" : "h-6 w-6";
+  const guildName = String(hero?.guildName || "").trim();
+  const showRealGuildTag =
+    showGuildTag && guildName && guildName.toLowerCase() !== "unguilded";
+  const level = Math.max(0, Math.floor(Number(hero?.level) || 0));
 
   return (
     <div className="flex min-w-0 items-center gap-2">
@@ -1916,9 +1913,14 @@ function HeroIdentity({ hero, compact = false, showGuildTag = false }) {
         >
           {hero?.name || "Unknown Hero"}
         </strong>
-        {showGuildTag && hero?.guildName && (
+        {level > 0 && (
+          <span className="ml-1 rounded border border-slate-700 bg-slate-900/80 px-1 py-0.5 text-[10px] font-bold leading-none text-slate-300">
+            Lvl {level}
+          </span>
+        )}
+        {showRealGuildTag && (
           <span className="ml-1 text-[11px] font-semibold text-cyan-200/80">
-            &lt;{hero.guildName}&gt;
+            &lt;{guildName}&gt;
           </span>
         )}
       </span>

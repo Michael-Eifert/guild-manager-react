@@ -1,13 +1,62 @@
 import { CONFIG, DB_CLASSES } from "../constants";
 import {
   getCharacterAverageItemLevel,
+  getItemEffectiveLevel,
   getItemIconUrl,
   getQualityColor,
   getRacePortraitUrl,
   getWowIconUrl,
+  normalizeEquipmentSlots,
 } from "../utils";
 
-const EQUIP_SLOT_ORDER = ["head", "chest", "legs", "feet", "hands", "mainHand"];
+const ARMORY_LEFT_SLOTS = Object.freeze([
+  "head",
+  "neck",
+  "shoulder",
+  "back",
+  "chest",
+  "wrist",
+]);
+const ARMORY_RIGHT_SLOTS = Object.freeze([
+  "hands",
+  "belt",
+  "legs",
+  "feet",
+  "ring",
+  "trinket",
+]);
+
+const formatSlotLabel = (slot) =>
+  String(slot || "")
+    .replace(/([A-Z])/g, " $1")
+    .trim()
+    .replace(/\b\w/g, (char) => char.toUpperCase());
+
+function EquipSlotIcon({ charId, slot, item }) {
+  const borderColor = item ? getQualityColor(item.quality) : "var(--q-poor)";
+  const itemLevel = item ? getItemEffectiveLevel(item) : 0;
+
+  return (
+    <div
+      key={`${charId}-${slot}`}
+      className="relative h-10 w-10 rounded-md border bg-black/60 p-0.5 shadow-inner transition-transform hover:-translate-y-0.5 sm:h-11 sm:w-11"
+      style={{ borderColor }}
+      title={`${formatSlotLabel(slot)}: ${item?.name || "Empty"}${item ? ` - iLvl ${itemLevel}` : ""}`}
+    >
+      <img
+        src={getItemIconUrl(item, slot)}
+        alt={item?.name || slot}
+        className={`h-full w-full rounded object-cover ${item ? "" : "opacity-45"}`}
+        onError={(event) => {
+          event.currentTarget.src = getWowIconUrl("inv_misc_questionmark");
+        }}
+      />
+      {!item && (
+        <span className="pointer-events-none absolute inset-0 rounded bg-black/25" />
+      )}
+    </div>
+  );
+}
 
 const CharacterEquipCheckCard = ({ char, onClick }) => {
   const classData = DB_CLASSES[char.charClass];
@@ -15,19 +64,16 @@ const CharacterEquipCheckCard = ({ char, onClick }) => {
 
   const avgItemLevel = getCharacterAverageItemLevel(char);
   const isMax = char.level >= CONFIG.LEVEL_CAP;
+  const equipment = normalizeEquipmentSlots(char.equipment);
+  const centerIcon = classData.icon || getRacePortraitUrl(char.race, char.gender);
 
   return (
     <div
       onClick={() => onClick(char)}
-      className={`wow-card relative bg-gray-800 border p-3 rounded-lg cursor-pointer transition-all active:scale-95 hover:-translate-y-0.5 hover:shadow-lg hover:border-yellow-500 ${char.status === "Questing" ? "border-blue-500 opacity-80" : "border-gray-600"}`}
+      className={`wow-card relative overflow-hidden bg-gray-800 border p-3.5 rounded-lg cursor-pointer transition-all active:scale-95 hover:-translate-y-0.5 hover:shadow-lg hover:border-yellow-500 ${char.status === "Questing" ? "border-blue-500/80 opacity-85" : "border-gray-600"}`}
     >
-      {char.status === "Questing" && (
-        <div className="absolute inset-0 flex items-center justify-center bg-black/55 z-10 font-bold text-blue-300 tracking-wide rounded-lg pointer-events-none text-xs">
-          MISSION
-        </div>
-      )}
-
-      <div className="flex items-start justify-between gap-2 mb-2">
+      <div className="pointer-events-none absolute inset-x-0 top-0 h-20 bg-gradient-to-b from-amber-500/10 to-transparent" />
+      <div className="flex items-start justify-between gap-3 mb-3">
         <div className="min-w-0">
           <div className="flex items-center gap-1 min-w-0">
             <div className="font-bold text-base truncate" style={{ color: classData.color }}>
@@ -69,36 +115,70 @@ const CharacterEquipCheckCard = ({ char, onClick }) => {
               {char.level}
             </span>
           </div>
-          <div className="mt-1">
-            <span className="inline-flex text-xs px-2 py-1 rounded whitespace-nowrap border border-amber-700 bg-amber-950/35 text-amber-200 font-bold">
-              iLvl {avgItemLevel.toFixed(1)}
-            </span>
-          </div>
+          {char.status === "Questing" && (
+            <div className="mt-1">
+              <span className="inline-flex rounded border border-blue-500/60 bg-blue-950/40 px-2 py-0.5 text-[10px] font-bold uppercase tracking-wider text-blue-200">
+                Mission
+              </span>
+            </div>
+          )}
         </div>
       </div>
 
-      <div className="grid grid-cols-6 gap-1.5">
-        {EQUIP_SLOT_ORDER.map((slot) => {
-          const item = char.equipment?.[slot] || null;
-          const borderColor = item ? getQualityColor(item.quality) : "var(--q-poor)";
-          return (
+      <div className="rounded-lg border border-amber-900/45 bg-black/25 p-3 shadow-inner">
+        <div className="grid grid-cols-[auto_minmax(64px,1fr)_auto] items-center gap-3">
+          <div className="grid grid-cols-2 gap-2">
+            {ARMORY_LEFT_SLOTS.map((slot) => (
+              <EquipSlotIcon
+                key={`${char.id}-left-${slot}`}
+                charId={char.id}
+                slot={slot}
+                item={equipment[slot]}
+              />
+            ))}
+          </div>
+
+          <div className="flex min-w-0 flex-col items-center justify-center gap-2 self-stretch rounded-md border border-slate-800/80 bg-slate-950/45 px-2 py-3">
+            <div className="inline-flex items-center rounded-md border border-amber-500/80 bg-amber-950/45 px-3 py-1 text-sm font-extrabold leading-none text-amber-100 shadow-[0_0_16px_rgba(245,158,11,0.18)]">
+              iLvl {avgItemLevel.toFixed(1)}
+            </div>
             <div
-              key={`${char.id}-${slot}`}
-              className="w-10 h-10 rounded border bg-black/55 flex items-center justify-center"
-              style={{ borderColor }}
-              title={`${slot}: ${item?.name || "Empty"}`}
+              className="flex h-14 w-14 items-center justify-center rounded-full border bg-black/55 p-1 shadow-[0_0_18px_rgba(245,158,11,0.14)]"
+              style={{ borderColor: classData.color }}
             >
               <img
-                src={getItemIconUrl(item, slot)}
-                alt={item?.name || slot}
-                className="w-full h-full object-cover rounded"
+                src={centerIcon}
+                alt={char.charClass}
+                className="h-full w-full rounded-full object-cover"
                 onError={(event) => {
                   event.currentTarget.src = getWowIconUrl("inv_misc_questionmark");
                 }}
               />
             </div>
-          );
-        })}
+            <div className="max-w-full truncate text-center text-[10px] font-bold uppercase tracking-wide text-slate-400">
+              {char.role || "DPS"}
+            </div>
+          </div>
+
+          <div className="grid grid-cols-2 gap-2">
+            {ARMORY_RIGHT_SLOTS.map((slot) => (
+              <EquipSlotIcon
+                key={`${char.id}-right-${slot}`}
+                charId={char.id}
+                slot={slot}
+                item={equipment[slot]}
+              />
+            ))}
+          </div>
+        </div>
+
+        <div className="mt-3 flex justify-center">
+          <EquipSlotIcon
+            charId={char.id}
+            slot="mainHand"
+            item={equipment.mainHand}
+          />
+        </div>
       </div>
     </div>
   );

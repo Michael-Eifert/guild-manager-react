@@ -2,10 +2,16 @@ const ZUL_GURUB_SET_ID = "zul_gurub";
 const ZUL_GURUB_SET_NAME = "Zul'Gurub";
 const ACTIVE_EQUIPMENT_SLOTS = Object.freeze([
   "head",
+  "neck",
+  "back",
   "chest",
+  "wrist",
+  "belt",
   "legs",
   "feet",
   "hands",
+  "trinket",
+  "ring",
   "mainHand",
 ]);
 
@@ -60,7 +66,13 @@ export const ZUL_GURUB_ACTIVE_LOOT_MANIFEST = Object.freeze([
   {
     wowheadId: 19907,
     name: "Zulian Tigerhide Cloak",
-    unsupportedSlot: "back",
+    slot: "back",
+    quality: 4,
+    type: "Generic",
+    minLevel: 58,
+    iconCode: "inv_misc_cape_18",
+    allowedClasses: ["Rogue", "Druid", "Hunter", "Warrior"],
+    stats: { agility: 18, stamina: 12 },
     sourceBosses: [BOSS.VENOXIS],
   },
   {
@@ -96,7 +108,13 @@ export const ZUL_GURUB_ACTIVE_LOOT_MANIFEST = Object.freeze([
   {
     wowheadId: 19930,
     name: "Mar'li's Eye",
-    unsupportedSlot: "finger",
+    slot: "ring",
+    quality: 4,
+    type: "Generic",
+    minLevel: 58,
+    iconCode: "inv_jewelry_ring_46",
+    allowedClasses: ["Mage", "Warlock", "Priest", "Druid", "Shaman", "Paladin"],
+    stats: { intellect: 18, spirit: 10, stamina: 8 },
     sourceBosses: [BOSS.MARLI],
   },
   {
@@ -300,7 +318,13 @@ export const ZUL_GURUB_ACTIVE_LOOT_MANIFEST = Object.freeze([
   {
     wowheadId: 19898,
     name: "Seal of Jin",
-    unsupportedSlot: "finger",
+    slot: "ring",
+    quality: 4,
+    type: "Generic",
+    minLevel: 58,
+    iconCode: "inv_jewelry_ring_44",
+    allowedClasses: ["Warrior", "Rogue", "Hunter", "Paladin", "Druid"],
+    stats: { agility: 18, strength: 8, stamina: 8 },
     sourceBosses: PRIEST_BOSSES,
   },
   {
@@ -318,7 +342,13 @@ export const ZUL_GURUB_ACTIVE_LOOT_MANIFEST = Object.freeze([
   {
     wowheadId: 19857,
     name: "Cloak of Consumption",
-    unsupportedSlot: "back",
+    slot: "back",
+    quality: 4,
+    type: "Generic",
+    minLevel: 58,
+    iconCode: "inv_misc_cape_16",
+    allowedClasses: ["Mage", "Warlock", "Priest", "Druid", "Shaman"],
+    stats: { intellect: 20, spirit: 10, stamina: 10 },
     sourceBosses: [BOSS.HAKKAR],
   },
   {
@@ -360,7 +390,13 @@ export const ZUL_GURUB_ACTIVE_LOOT_MANIFEST = Object.freeze([
   {
     wowheadId: 19876,
     name: "Soul Corrupter's Necklace",
-    unsupportedSlot: "neck",
+    slot: "neck",
+    quality: 4,
+    type: "Generic",
+    minLevel: 58,
+    iconCode: "inv_jewelry_necklace_19",
+    allowedClasses: ["Mage", "Warlock", "Priest", "Druid", "Shaman"],
+    stats: { intellect: 21, spirit: 12, stamina: 10 },
     sourceBosses: [BOSS.HAKKAR],
   },
   {

@@ -7,10 +7,17 @@ import { getCharacterMorale } from "../game/characterMorale";
 
 const RECRUITMENT_GEAR_SLOTS = Object.freeze([
   "head",
+  "neck",
+  "shoulder",
+  "back",
   "chest",
+  "wrist",
+  "belt",
   "legs",
   "feet",
   "hands",
+  "trinket",
+  "ring",
   "mainHand",
 ]);
 
@@ -26,10 +33,17 @@ const RECRUITMENT_GEAR_BANDS = Object.freeze([
 
 const SLOT_LABELS = Object.freeze({
   head: "Headpiece",
+  neck: "Pendant",
+  shoulder: "Shoulders",
+  back: "Cloak",
   chest: "Armor",
+  wrist: "Bracers",
+  belt: "Belt",
   legs: "Leggings",
   feet: "Boots",
   hands: "Gloves",
+  trinket: "Charm",
+  ring: "Ring",
   mainHand: "Weapon",
 });
 
@@ -180,7 +194,11 @@ const chooseRecruitmentItemForSlot = ({
 
   const fallbackQuality = safeLevel >= 11 ? 2 : 1;
   const fallbackType =
-    slot === "mainHand"
+    slot === "mainHand" ||
+    slot === "neck" ||
+    slot === "back" ||
+    slot === "trinket" ||
+    slot === "ring"
       ? "Generic"
       : getClassArmorTypes(character?.charClass, safeLevel)[0] || "Cloth";
   const fallbackItemLevel =

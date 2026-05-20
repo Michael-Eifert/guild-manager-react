@@ -23,11 +23,17 @@ const ARMOR_HIERARCHY = ["Plate", "Mail", "Leather", "Cloth"];
 const WOW_ICON_BASE_URL = "https://wow.zamimg.com/images/wow/icons/large";
 const SLOT_FALLBACK_ICONS = {
   head: "inv_helmet_03",
+  neck: "inv_jewelry_necklace_01",
   shoulder: "inv_shoulder_14",
+  back: "inv_misc_cape_11",
   chest: "inv_chest_chain_05",
+  wrist: "inv_bracer_07",
+  belt: "inv_belt_09",
   legs: "inv_pants_03",
   feet: "inv_boots_09",
   hands: "inv_gauntlets_04",
+  trinket: "inv_jewelry_talisman_01",
+  ring: "inv_jewelry_ring_03",
   mainHand: "inv_sword_04",
 };
 const SLOT_TYPE_FALLBACK_ICONS = {
@@ -44,6 +50,12 @@ const SLOT_TYPE_FALLBACK_ICONS = {
     Leather: "inv_shoulder_07",
     Mail: "inv_shoulder_14",
     Generic: "inv_shoulder_14",
+  },
+  neck: {
+    Generic: "inv_jewelry_necklace_01",
+  },
+  back: {
+    Generic: "inv_misc_cape_11",
   },
   chest: {
     Plate: "inv_chest_chain_05",
@@ -73,10 +85,45 @@ const SLOT_TYPE_FALLBACK_ICONS = {
     Mail: "inv_gauntlets_10",
     Generic: "inv_gauntlets_04",
   },
+  wrist: {
+    Plate: "inv_bracer_18",
+    Cloth: "inv_bracer_09",
+    Leather: "inv_bracer_07",
+    Mail: "inv_bracer_18",
+    Generic: "inv_bracer_07",
+  },
+  belt: {
+    Plate: "inv_belt_13",
+    Cloth: "inv_belt_22",
+    Leather: "inv_belt_23",
+    Mail: "inv_belt_09",
+    Generic: "inv_belt_09",
+  },
+  trinket: {
+    Generic: "inv_jewelry_talisman_01",
+  },
+  ring: {
+    Generic: "inv_jewelry_ring_03",
+  },
   mainHand: {
     Generic: "inv_sword_04",
   },
 };
+export const EQUIPMENT_SLOT_ORDER = Object.freeze([
+  "head",
+  "neck",
+  "shoulder",
+  "back",
+  "chest",
+  "wrist",
+  "belt",
+  "hands",
+  "legs",
+  "feet",
+  "trinket",
+  "ring",
+  "mainHand",
+]);
 const ITEM_QUALITY_LEVEL_BONUS = {
   0: 0, // Poor (gray)
   1: 0, // Common (white)
@@ -122,9 +169,12 @@ const ITEM_SET_ARMOR_SLOTS = Object.freeze([
   "head",
   "shoulder",
   "chest",
+  "wrist",
+  "belt",
   "legs",
   "feet",
   "hands",
+  "ring",
 ]);
 const RACE_GENDER_ICON_CODES = {
   Human: {
@@ -335,7 +385,7 @@ export const isItemUsableByClass = (item, charClass) => {
 
 const getEquipmentBaseAverageItemLevel = (equipment) => {
   if (!equipment || typeof equipment !== "object") return 0;
-  const slots = Object.values(equipment);
+  const slots = Object.values(equipment).filter(Boolean);
   if (slots.length === 0) return 0;
   const totalItemLevel = slots.reduce(
     (sum, item) => sum + getItemEffectiveLevel(item),
@@ -673,6 +723,19 @@ export const getFactionRaces = (faction = GUILD_FACTION.ALLIANCE) => {
   return Object.keys(DB_RACES);
 };
 
+export const normalizeEquipmentSlots = (equipment = {}) => {
+  const safeEquipment =
+    equipment && typeof equipment === "object" ? equipment : {};
+  const normalized = EQUIPMENT_SLOT_ORDER.reduce((slots, slot) => {
+    slots[slot] = null;
+    return slots;
+  }, {});
+  return {
+    ...normalized,
+    ...safeEquipment,
+  };
+};
+
 export const getValidRaceClassCombinations = ({
   faction = GUILD_FACTION.ALLIANCE,
   preferredRole = null,
@@ -714,14 +777,7 @@ export const pickValidRaceClassCombination = ({
 export const getStarterGear = (charClass) => {
   const armorTypes = getClassArmorTypes(charClass);
   const armor = armorTypes[0] || "Cloth";
-  const gear = {
-    head: null,
-    chest: null,
-    legs: null,
-    feet: null,
-    hands: null,
-    mainHand: null,
-  };
+  const gear = normalizeEquipmentSlots();
   gear.feet = { name: "Worn Boots", quality: 0, type: armor, minLevel: 1 };
   gear.mainHand = { name: "Dull Blade", quality: 0, type: "Generic", minLevel: 1 };
   if (armor === "Cloth") {

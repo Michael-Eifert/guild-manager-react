@@ -1,6 +1,8 @@
 import {
+  evaluateMissionKeyAccess,
   getCharacterOwnedKeys,
   getMissionRequiredKeys,
+  getMissionRecommendedRange,
   getMissionRewardKeys,
 } from "../missions/missionHelpers";
 import {
@@ -47,6 +49,49 @@ export const getAdventureGoalQueue = (character) =>
 export const hasCharacterKey = (character, keyId) =>
   getCharacterOwnedKeys(character).some(
     (ownedKeyId) => String(ownedKeyId) === String(keyId),
+  );
+
+const getCharacterLevel = (character) =>
+  Math.max(1, Math.floor(Number(character?.level) || 1));
+
+export const getAttunementSourceMinimumLevel = (sourceMission) => {
+  const recommended = getMissionRecommendedRange(sourceMission);
+  return Math.max(
+    1,
+    Math.floor(
+      Number(
+        sourceMission?.entryLevel ??
+          sourceMission?.minLevel ??
+          recommended?.minLevel ??
+          1,
+      ) || 1,
+    ),
+  );
+};
+
+export const canCharacterStartAttunementSource = ({ character, target }) => {
+  if (
+    !character ||
+    !target?.sourceMission ||
+    hasCharacterKey(character, target.keyId)
+  ) {
+    return false;
+  }
+  if (
+    getCharacterLevel(character) <
+    getAttunementSourceMinimumLevel(target.sourceMission)
+  ) {
+    return false;
+  }
+  return evaluateMissionKeyAccess({
+    missions: [target.sourceMission],
+    partyMembers: [character],
+  }).canEnter;
+};
+
+export const getAttunementEligibleMembers = ({ members, target }) =>
+  (Array.isArray(members) ? members : []).filter((member) =>
+    canCharacterStartAttunementSource({ character: member, target }),
   );
 
 export const hasMatchingAdventureGoal = (character, goal) => {

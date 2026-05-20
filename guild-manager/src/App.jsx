@@ -3841,6 +3841,7 @@ const App = () => {
         worldPvpState,
         calendarState,
         raidLockouts,
+        missionBoardState,
         gameSpeed,
         isPaused,
         gameTimeMs: gameTimeRef.current,
@@ -3902,6 +3903,7 @@ const App = () => {
             setGuildRelationships,
             setRealmState,
             setWorldPvpState,
+            setMissionBoardState,
             setCalendarState,
             setRaidLockouts,
             setIsPaused,
@@ -3916,6 +3918,7 @@ const App = () => {
             setShowRealm(false);
             setShowLootTable(false);
             setShowGuildLog(false);
+            setShowGuildTalents(false);
             setShowDebug(false);
             setShowMap(false);
             setShowOptions(false);

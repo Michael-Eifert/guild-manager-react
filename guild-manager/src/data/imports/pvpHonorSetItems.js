@@ -2,6 +2,8 @@ import { GUILD_FACTION } from "../../constants";
 
 export const PVP_HONOR_SET_ID = "pvp_honor_sets";
 export const PVP_HONOR_SET_NAME = "PvP Honor Sets";
+export const PVP_GEAR_SET_ID = "pvp_gear";
+export const PVP_GEAR_SET_NAME = "PvP Gear";
 
 const wowItemIcon = (iconCode) =>
   `https://wow.zamimg.com/images/wow/icons/large/${String(iconCode || "inv_misc_questionmark").toLowerCase()}.jpg`;
@@ -1421,7 +1423,7 @@ const buildVariantItems = ({ className, type, variant, variantIndex, classIndex 
     };
   });
 
-export const PVP_HONOR_SET_ITEMS = Object.freeze(
+export const PVP_HONOR_ARMOR_SET_ITEMS = Object.freeze(
   SETS.flatMap((classSet, classIndex) =>
     classSet.variants.flatMap((variant, variantIndex) =>
       buildVariantItems({
@@ -1433,3 +1435,150 @@ export const PVP_HONOR_SET_ITEMS = Object.freeze(
     ),
   ),
 );
+
+const PVP_EXTRA_REWARD_BLUEPRINTS = Object.freeze([
+  Object.freeze({
+    rank: 2,
+    idBase: 405000,
+    slot: "trinket",
+    quality: 2,
+    itemLevel: 14,
+    names: {
+      [GUILD_FACTION.ALLIANCE]: "Insignia of the Alliance",
+      [GUILD_FACTION.HORDE]: "Insignia of the Horde",
+    },
+    wowheadIds: {
+      [GUILD_FACTION.ALLIANCE]: 18854,
+      [GUILD_FACTION.HORDE]: 18834,
+    },
+    icons: {
+      [GUILD_FACTION.ALLIANCE]: "inv_jewelry_trinketpvp_01",
+      [GUILD_FACTION.HORDE]: "inv_jewelry_trinketpvp_02",
+    },
+    stats: { stamina: 2 },
+  }),
+  Object.freeze({
+    rank: 3,
+    idBase: 405010,
+    slot: "back",
+    quality: 2,
+    itemLevel: 18,
+    names: {
+      [GUILD_FACTION.ALLIANCE]: "Scout's Cloak of Stormwind",
+      [GUILD_FACTION.HORDE]: "Scout's Cloak of Orgrimmar",
+    },
+    icon: "inv_misc_cape_18",
+    stats: { stamina: 2, agility: 1 },
+  }),
+  Object.freeze({
+    rank: 4,
+    idBase: 405020,
+    slot: "neck",
+    quality: 2,
+    itemLevel: 24,
+    names: {
+      [GUILD_FACTION.ALLIANCE]: "Medallion of the Alliance",
+      [GUILD_FACTION.HORDE]: "Medallion of the Horde",
+    },
+    icon: "inv_jewelry_necklace_07",
+    stats: { stamina: 3 },
+  }),
+  Object.freeze({
+    rank: 5,
+    idBase: 405030,
+    slot: "wrist",
+    quality: 3,
+    itemLevel: 32,
+    names: {
+      [GUILD_FACTION.ALLIANCE]: "Knight's Bracers",
+      [GUILD_FACTION.HORDE]: "Stone Guard's Bracers",
+    },
+    icon: "inv_bracer_16",
+    stats: { stamina: 4, strength: 2, agility: 2 },
+  }),
+  Object.freeze({
+    rank: 6,
+    idBase: 405050,
+    slot: "belt",
+    quality: 3,
+    itemLevel: 38,
+    names: {
+      [GUILD_FACTION.ALLIANCE]: "Knight's Warbelt",
+      [GUILD_FACTION.HORDE]: "Stone Guard's Warbelt",
+    },
+    icon: "inv_belt_13",
+    stats: { stamina: 6, strength: 3, agility: 3 },
+  }),
+  Object.freeze({
+    rank: 9,
+    idBase: 405060,
+    slot: "ring",
+    quality: 3,
+    itemLevel: 56,
+    names: {
+      [GUILD_FACTION.ALLIANCE]: "Knight-Champion's Signet",
+      [GUILD_FACTION.HORDE]: "Centurion's Signet",
+    },
+    icon: "inv_jewelry_ring_15",
+    stats: { stamina: 10, strength: 5, intellect: 5 },
+  }),
+  Object.freeze({
+    rank: 11,
+    idBase: 405070,
+    slot: "trinket",
+    quality: 4,
+    itemLevel: 68,
+    names: {
+      [GUILD_FACTION.ALLIANCE]: "Commander's Battle Standard",
+      [GUILD_FACTION.HORDE]: "Lieutenant General's Battle Standard",
+    },
+    icon: "inv_banner_03",
+    stats: { stamina: 16, strength: 8, intellect: 8 },
+  }),
+  Object.freeze({
+    rank: 14,
+    idBase: 405040,
+    slot: "mainHand",
+    quality: 4,
+    itemLevel: 78,
+    names: {
+      [GUILD_FACTION.ALLIANCE]: "Grand Marshal's Battle Blade",
+      [GUILD_FACTION.HORDE]: "High Warlord's Battle Blade",
+    },
+    icon: "inv_sword_39",
+    stats: { stamina: 18, strength: 14, agility: 8 },
+  }),
+]);
+
+export const PVP_EXTRA_REWARD_ITEMS = Object.freeze(
+  PVP_EXTRA_REWARD_BLUEPRINTS.flatMap((blueprint) =>
+    [GUILD_FACTION.ALLIANCE, GUILD_FACTION.HORDE].map((faction, factionIndex) => ({
+      id: blueprint.idBase + factionIndex,
+      wowheadId: blueprint.wowheadIds?.[faction] ?? null,
+      name: blueprint.names[faction],
+      slot: blueprint.slot,
+      quality: blueprint.quality,
+      type: "Generic",
+      minLevel: 1,
+      itemLevel: blueprint.itemLevel,
+      dungeonSetId: PVP_GEAR_SET_ID,
+      dungeonSetName: PVP_GEAR_SET_NAME,
+      icon: wowItemIcon(blueprint.icons?.[faction] ?? blueprint.icon),
+      faction,
+      pvpGear: true,
+      pvpRewardCategory: "gear",
+      pvpHonorRank: blueprint.rank,
+      requiredPvpRank: blueprint.rank,
+      pvpTier: blueprint.rank >= 14 ? "epic" : blueprint.quality >= 3 ? "rare" : "honor",
+      source: "pvp",
+      stats: blueprint.stats,
+    })),
+  ),
+);
+
+export const PVP_HONOR_SET_ITEMS = Object.freeze([
+  ...PVP_HONOR_ARMOR_SET_ITEMS,
+  ...PVP_EXTRA_REWARD_ITEMS,
+]);
+
+export const PVP_ALL_ITEMS = PVP_HONOR_SET_ITEMS;

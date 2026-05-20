@@ -11,12 +11,20 @@ import { ensureRealmState } from "../server/realmGeneration";
 import { normalizeCharacterPersonalityTraits } from "../game/characterPersonality";
 import { ensureCharacterPvpData } from "../pvp/pvpCharacterUtils";
 import { ensureWorldPvpState } from "../pvp/worldPvpUtils";
+import { normalizeEquipmentSlots } from "../utils";
 
 export const SESSION_FORMAT = "guild-manager-session";
-export const SESSION_VERSION = 5;
+export const SESSION_VERSION = 6;
 const MAX_GUILD_LOG_ENTRIES = 50;
 const MIN_MISSION_DURATION_MS = 1000;
 const DEFAULT_DUNGEON_STEP_COUNT = 4;
+const DEFAULT_MISSION_BOARD_STATE = Object.freeze({
+  selectedCategory: "all",
+  levelFilterMin: "",
+  levelFilterMax: "",
+  showAvailableDungeonsOnly: false,
+  hideLowLevelDungeons: false,
+});
 
 const toObject = (value) =>
   value && typeof value === "object" ? value : {};
@@ -25,6 +33,26 @@ const clampNonNegativeNumber = (value, fallback = 0) => {
   const numeric = Number(value);
   if (!Number.isFinite(numeric)) return fallback;
   return Math.max(0, numeric);
+};
+
+export const normalizeMissionBoardState = (state) => {
+  const safe = toObject(state);
+  return {
+    selectedCategory:
+      typeof safe.selectedCategory === "string" && safe.selectedCategory.trim()
+        ? safe.selectedCategory
+        : DEFAULT_MISSION_BOARD_STATE.selectedCategory,
+    levelFilterMin:
+      safe.levelFilterMin === null || safe.levelFilterMin === undefined
+        ? DEFAULT_MISSION_BOARD_STATE.levelFilterMin
+        : String(safe.levelFilterMin),
+    levelFilterMax:
+      safe.levelFilterMax === null || safe.levelFilterMax === undefined
+        ? DEFAULT_MISSION_BOARD_STATE.levelFilterMax
+        : String(safe.levelFilterMax),
+    showAvailableDungeonsOnly: Boolean(safe.showAvailableDungeonsOnly),
+    hideLowLevelDungeons: Boolean(safe.hideLowLevelDungeons),
+  };
 };
 
 const buildMergedGuildProgress = (payloadData) => {
@@ -154,6 +182,7 @@ export const buildSessionPayload = ({
   worldPvpState,
   calendarState,
   raidLockouts,
+  missionBoardState,
   gameSpeed,
   isPaused,
   gameTimeMs,
@@ -189,6 +218,7 @@ export const buildSessionPayload = ({
         calendarState || createInitialCalendarState(now),
         now,
       ),
+      missionBoardState: normalizeMissionBoardState(missionBoardState),
       raidLockouts: normalizeRaidLockouts(
         raidLockouts,
         Math.max(
@@ -306,6 +336,9 @@ export const hydrateSessionData = ({
     safePayload.worldPvpState,
     loadedCalendarDayIndex,
   );
+  const loadedMissionBoardState = normalizeMissionBoardState(
+    safePayload.missionBoardState,
+  );
 
   const loadedActiveMissions = Array.isArray(safePayload.activeMissions)
     ? safePayload.activeMissions.map((mission) => {
@@ -349,6 +382,15 @@ export const hydrateSessionData = ({
       char,
       loadedGuildSetup?.faction,
     );
+    const normalizedHistory = Array.isArray(characterWithPvp?.history)
+      ? characterWithPvp.history
+      : [];
+    const baseCharacter = {
+      ...characterWithPvp,
+      status: characterWithPvp?.status || "Idle",
+      statusText: characterWithPvp?.statusText || "Awaiting Orders",
+      history: normalizedHistory,
+    };
     const normalizedKeys = Array.isArray(char?.keys)
       ? [...new Set(char.keys.map((keyId) => String(keyId || "").trim()).filter(Boolean))]
       : [];
@@ -362,14 +404,16 @@ export const hydrateSessionData = ({
         ]
       : [];
     const normalizedAdventureGoalQueue = normalizeAdventureGoalQueue(
-      characterWithPvp?.adventureGoalQueue,
+      baseCharacter?.adventureGoalQueue,
     );
     const normalizedPersonalityTraits = normalizeCharacterPersonalityTraits(
-      characterWithPvp?.personalityTraits || characterWithPvp?.personalityTrait,
+      baseCharacter?.personalityTraits || baseCharacter?.personalityTrait,
     );
-    if (activeMemberIds.has(characterWithPvp.id)) {
+    const normalizedEquipment = normalizeEquipmentSlots(baseCharacter?.equipment);
+    if (activeMemberIds.has(baseCharacter.id)) {
       return {
-        ...characterWithPvp,
+        ...baseCharacter,
+        equipment: normalizedEquipment,
         keys: normalizedKeys,
         adventureGoalQueue: normalizedAdventureGoalQueue,
         clearedMissionIds: normalizedClearedMissionIds,
@@ -378,9 +422,10 @@ export const hydrateSessionData = ({
         statusText: "On Mission",
       };
     }
-    if (characterWithPvp.status === "Questing") {
+    if (baseCharacter.status === "Questing") {
       return {
-        ...characterWithPvp,
+        ...baseCharacter,
+        equipment: normalizedEquipment,
         keys: normalizedKeys,
         adventureGoalQueue: normalizedAdventureGoalQueue,
         clearedMissionIds: normalizedClearedMissionIds,
@@ -390,7 +435,8 @@ export const hydrateSessionData = ({
       };
     }
     return {
-      ...characterWithPvp,
+      ...baseCharacter,
+      equipment: normalizedEquipment,
       keys: normalizedKeys,
       adventureGoalQueue: normalizedAdventureGoalQueue,
       clearedMissionIds: normalizedClearedMissionIds,
@@ -409,6 +455,7 @@ export const hydrateSessionData = ({
     loadedGuildRelationships,
     loadedRealmState,
     loadedWorldPvpState,
+    loadedMissionBoardState,
     loadedProgression,
     loadedCalendarState,
     loadedRaidLockouts,

@@ -20,6 +20,7 @@ export const applyLoadedSessionToApp = ({
     loadedGuildRelationships,
     loadedRealmState,
     loadedWorldPvpState,
+    loadedMissionBoardState,
     loadedProgression,
     loadedCalendarState,
     loadedRaidLockouts,
@@ -55,6 +56,9 @@ export const applyLoadedSessionToApp = ({
   }
   if (setters.setRealmState) setters.setRealmState(loadedRealmState || null);
   if (setters.setWorldPvpState) setters.setWorldPvpState(loadedWorldPvpState || {});
+  if (setters.setMissionBoardState) {
+    setters.setMissionBoardState(loadedMissionBoardState);
+  }
   setters.setCalendarState(loadedCalendarState);
   if (setters.setRaidLockouts) setters.setRaidLockouts(loadedRaidLockouts || {});
   setters.setIsPaused(loadedProgression.isPaused);

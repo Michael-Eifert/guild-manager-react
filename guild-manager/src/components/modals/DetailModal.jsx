@@ -16,6 +16,7 @@ import {
   getReqExp,
   getRoleIcon,
   getWowIconUrl,
+  normalizeEquipmentSlots,
 } from "../../utils";
 import {
   getCharacterActivityModeDescription,
@@ -29,7 +30,10 @@ import {
 } from "../../game/characterMorale";
 import { getCharacterPersonalityTraits } from "../../game/characterPersonality";
 import { ensureCharacterPvpData } from "../../pvp/pvpCharacterUtils";
-import { getUnlockedPvpGearForCharacter } from "../../pvp/pvpGearUnlocks";
+import {
+  getPvpRewardTiersForRank,
+  getUnlockedPvpGearForCharacter,
+} from "../../pvp/pvpGearUnlocks";
 import { getPvpRankProgressInfo } from "../../pvp/pvpRanks";
 import {
   ZONE_COMPLETION_ARCHETYPE,
@@ -103,31 +107,61 @@ const formatRelationshipEventDate = (occurredAt) => {
   return new Date(timestamp).toLocaleString();
 };
 
-const ItemSlot = ({ slotName, item }) => {
+const ARMORY_LEFT_SLOTS = Object.freeze([
+  "head",
+  "neck",
+  "shoulder",
+  "back",
+  "chest",
+  "wrist",
+]);
+const ARMORY_RIGHT_SLOTS = Object.freeze([
+  "hands",
+  "belt",
+  "legs",
+  "feet",
+  "ring",
+  "trinket",
+]);
+const ARMORY_BOTTOM_SLOTS = Object.freeze(["mainHand"]);
+
+const formatEquipmentSlotLabel = (slotName) =>
+  String(slotName || "")
+    .replace(/([A-Z])/g, " $1")
+    .trim()
+    .replace(/\b\w/g, (char) => char.toUpperCase());
+
+const ArmoryItemSlot = ({ slotName, item, align = "left" }) => {
   const borderColor = item ? getQualityColor(item.quality) : "#444";
   const itemStats = formatItemStats(item?.stats);
   const itemLevel = getItemEffectiveLevel(item);
   const setName = String(item?.setName || "").trim();
+  const icon = (
+    <div
+      className="h-12 w-12 flex-none rounded-md border bg-black/50 p-0.5 shadow-inner"
+      style={{ borderColor }}
+    >
+      <img
+        src={getItemIconUrl(item, slotName)}
+        alt={item ? item.name : slotName}
+        className="h-full w-full rounded object-cover"
+        onError={(event) => {
+          event.currentTarget.src = getWowIconUrl("inv_misc_questionmark");
+        }}
+      />
+    </div>
+  );
+  const textAlignClass = align === "right" ? "items-end text-right" : "items-start";
 
   return (
-    <div className="flex items-center gap-3 bg-gray-800/50 p-2 rounded border border-gray-700 hover:bg-gray-700/50 transition-colors wow-card">
-      <div
-        className="w-10 h-10 flex-none rounded border flex items-center justify-center text-lg bg-black/40"
-        style={{ borderColor }}
-      >
-        <img
-          src={getItemIconUrl(item, slotName)}
-          alt={item ? item.name : slotName}
-          className="w-9 h-9 rounded-sm object-cover"
-          onError={(event) => {
-            event.currentTarget.src = getWowIconUrl("inv_misc_questionmark");
-          }}
-        />
-      </div>
-      <div className="flex-1 min-w-0">
-        <div className="text-[10px] text-gray-500 uppercase tracking-wide">{slotName}</div>
+    <div className="flex min-h-[72px] items-center gap-3 rounded-md border border-gray-800 bg-gray-950/35 px-3 py-2 shadow-sm transition-colors hover:border-amber-900/70 hover:bg-gray-900/70">
+      {align !== "right" && icon}
+      <div className={`flex min-w-0 flex-1 flex-col ${textAlignClass}`}>
+        <div className="text-[10px] text-gray-500 uppercase tracking-wide">
+          {formatEquipmentSlotLabel(slotName)}
+        </div>
         <div
-          className={`text-sm font-bold truncate ${!item ? "text-gray-600 italic" : ""}`}
+          className={`max-w-full truncate text-sm font-bold ${!item ? "text-gray-600 italic" : ""}`}
           style={{ color: item ? borderColor : undefined }}
         >
           {item ? item.name : "Empty"}
@@ -138,8 +172,13 @@ const ItemSlot = ({ slotName, item }) => {
             <span className="truncate">Set: {setName}</span>
           </div>
         )}
-        {itemStats && <div className="text-[10px] text-gray-400 truncate">{itemStats}</div>}
+        {itemStats && (
+          <div className="max-w-full truncate text-[10px] text-emerald-300">
+            {itemStats}
+          </div>
+        )}
       </div>
+      {align === "right" && icon}
     </div>
   );
 };
@@ -192,6 +231,16 @@ const DetailModal = ({
     pvpCharacter,
     itemDatabase,
     guildFaction,
+  );
+  const unlockedPvpRewardTiers = getPvpRewardTiersForRank(
+    pvpCharacter.pvp.highestRank,
+  );
+  const displayEquipment = normalizeEquipmentSlots(char?.equipment);
+  const unlockedEquippedPvpGear = unlockedPvpGear.filter(
+    (item) => displayEquipment[item.slot]?.id === item.id,
+  );
+  const unlockedStoredPvpGear = unlockedPvpGear.filter(
+    (item) => displayEquipment[item.slot]?.id !== item.id,
   );
   const nextPvpRankLabel = pvpInfo.nextRank
     ? `${pvpInfo.nextRank.title} (Rank ${pvpInfo.nextRank.rank})`
@@ -427,6 +476,12 @@ const DetailModal = ({
             Professions
           </button>
           <button
+            onClick={() => setTab("pvp")}
+            className={`min-w-[132px] flex-1 py-3 text-sm font-bold uppercase tracking-wider hover:bg-gray-700 ${tab === "pvp" ? "text-white border-b-2 border-orange-500 bg-gray-700" : "text-gray-500"}`}
+          >
+            PvP
+          </button>
+          <button
             onClick={() => setTab("personality")}
             className={`min-w-[132px] flex-1 py-3 text-sm font-bold uppercase tracking-wider hover:bg-gray-700 ${tab === "personality" ? "text-white border-b-2 border-purple-500 bg-gray-700" : "text-gray-500"}`}
           >
@@ -471,35 +526,6 @@ const DetailModal = ({
                   <div className="mt-2 text-xs text-cyan-200/85 font-semibold">
                     Power Score: {characterPower.toFixed(1)}
                   </div>
-                  <div className="mt-2 rounded border border-orange-900/60 bg-orange-950/20 p-2 text-xs">
-                    <div className="flex flex-wrap items-center justify-between gap-2">
-                      <span className="font-bold text-orange-200">
-                        PvP: {pvpCharacter.pvp.title}, Rank {pvpCharacter.pvp.rank}
-                      </span>
-                      <span className="text-orange-100/75">
-                        Highest: {pvpCharacter.pvp.highestTitle}
-                      </span>
-                    </div>
-                    <div className="mt-2 grid grid-cols-1 gap-1 text-[11px] text-orange-100/80 sm:grid-cols-3">
-                      <span>Weekly Honor: {pvpCharacter.pvp.weeklyHonor}</span>
-                      <span>Lifetime Honor: {pvpCharacter.pvp.lifetimeHonor}</span>
-                      <span>HKs: {pvpCharacter.pvp.honorableKills}</span>
-                    </div>
-                    <div className="mt-2 h-2 overflow-hidden rounded bg-gray-800 border border-orange-950">
-                      <div
-                        className="h-full bg-orange-500"
-                        style={{ width: `${pvpInfo.percentToNext}%` }}
-                      ></div>
-                    </div>
-                    <div className="mt-1 text-[11px] text-orange-100/70">
-                      {pvpInfo.nextRank
-                        ? `${pvpCharacter.pvp.rankProgress} / ${pvpInfo.nextRequired} progress to ${nextPvpRankLabel}`
-                        : `${pvpCharacter.pvp.rankProgress} rank progress`}
-                    </div>
-                    <div className="mt-1 text-[11px] text-orange-100/70">
-                      Unlocked PvP Gear: {unlockedPvpGear.length}
-                    </div>
-                  </div>
                   {setBonus > 0 && (
                     <div className="mt-1 text-xs text-emerald-300/90 font-semibold">
                       Set Bonus: +{setBonus} iLvl / Power
@@ -517,10 +543,39 @@ const DetailModal = ({
                 </div>
               </div>
 
-              <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-2">
-                {Object.keys(char.equipment).map((slot) => (
-                  <ItemSlot key={slot} slotName={slot} item={char.equipment[slot]} />
-                ))}
+              <div className="rounded-lg border border-amber-900/45 bg-black/20 p-3 md:p-4">
+                <div className="grid grid-cols-1 gap-3 lg:grid-cols-2 lg:gap-5">
+                  <div className="space-y-2.5">
+                    {ARMORY_LEFT_SLOTS.map((slot) => (
+                      <ArmoryItemSlot
+                        key={`${char.id}-armory-left-${slot}`}
+                        slotName={slot}
+                        item={displayEquipment[slot]}
+                      />
+                    ))}
+                  </div>
+                  <div className="space-y-2.5">
+                    {ARMORY_RIGHT_SLOTS.map((slot) => (
+                      <ArmoryItemSlot
+                        key={`${char.id}-armory-right-${slot}`}
+                        slotName={slot}
+                        item={displayEquipment[slot]}
+                        align="right"
+                      />
+                    ))}
+                  </div>
+                </div>
+                <div className="mt-3 grid grid-cols-1 gap-3 lg:grid-cols-[1fr_1.4fr_1fr]">
+                  <div className="hidden lg:block"></div>
+                  {ARMORY_BOTTOM_SLOTS.map((slot) => (
+                    <ArmoryItemSlot
+                      key={`${char.id}-armory-bottom-${slot}`}
+                      slotName={slot}
+                      item={displayEquipment[slot]}
+                    />
+                  ))}
+                  <div className="hidden lg:block"></div>
+                </div>
               </div>
 
               <div className="mt-4 bg-gray-800/50 p-3 rounded border border-amber-900/50">
@@ -690,6 +745,147 @@ const DetailModal = ({
                     )}
                   </>
                 )}
+              </div>
+            </div>
+          )}
+
+          {tab === "pvp" && (
+            <div className="space-y-5">
+              <div className="rounded border border-orange-900/60 bg-orange-950/20 p-4">
+                <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
+                  <div>
+                    <div className="text-xs uppercase tracking-widest text-orange-300/75">
+                      Current Rank
+                    </div>
+                    <div className="mt-1 text-xl font-bold text-orange-100">
+                      {pvpCharacter.pvp.title}{" "}
+                      <span className="text-sm text-orange-200/70">
+                        Rank {pvpCharacter.pvp.rank}
+                      </span>
+                    </div>
+                    <div className="mt-1 text-xs text-orange-100/70">
+                      Highest: {pvpCharacter.pvp.highestTitle} (Rank {pvpCharacter.pvp.highestRank})
+                    </div>
+                  </div>
+                  <div className="grid grid-cols-3 gap-2 text-center text-xs">
+                    <div className="rounded border border-orange-900/50 bg-gray-950/35 px-3 py-2">
+                      <div className="text-orange-200 font-bold">{pvpCharacter.pvp.weeklyHonor}</div>
+                      <div className="text-orange-100/60">Weekly</div>
+                    </div>
+                    <div className="rounded border border-orange-900/50 bg-gray-950/35 px-3 py-2">
+                      <div className="text-orange-200 font-bold">{pvpCharacter.pvp.lifetimeHonor}</div>
+                      <div className="text-orange-100/60">Lifetime</div>
+                    </div>
+                    <div className="rounded border border-orange-900/50 bg-gray-950/35 px-3 py-2">
+                      <div className="text-orange-200 font-bold">{pvpCharacter.pvp.honorableKills}</div>
+                      <div className="text-orange-100/60">HKs</div>
+                    </div>
+                  </div>
+                </div>
+
+                <div className="mt-4">
+                  <div className="mb-1 flex items-center justify-between gap-2 text-xs text-orange-100/75">
+                    <span>Rank Progress</span>
+                    <span>
+                      {pvpInfo.nextRank
+                        ? `${pvpCharacter.pvp.rankProgress} / ${pvpInfo.nextRequired}`
+                        : `${pvpCharacter.pvp.rankProgress}`}
+                    </span>
+                  </div>
+                  <div className="h-3 overflow-hidden rounded bg-gray-950 border border-orange-950">
+                    <div
+                      className="h-full bg-orange-500"
+                      style={{ width: `${pvpInfo.percentToNext}%` }}
+                    ></div>
+                  </div>
+                  <div className="mt-1 text-xs text-orange-100/65">
+                    {pvpInfo.nextRank
+                      ? `Next: ${nextPvpRankLabel}`
+                      : "Maximum PvP rank reached"}
+                  </div>
+                </div>
+              </div>
+
+              <div className="grid grid-cols-1 gap-4 lg:grid-cols-2">
+                <div className="rounded border border-gray-700 bg-gray-800/45 p-4">
+                  <h3 className="text-xs font-bold uppercase tracking-widest text-gray-300">
+                    Reward Tiers
+                  </h3>
+                  {unlockedPvpRewardTiers.length === 0 ? (
+                    <div className="mt-3 text-sm text-gray-500 italic">
+                      No PvP rewards unlocked yet.
+                    </div>
+                  ) : (
+                    <div className="mt-3 space-y-2">
+                      {unlockedPvpRewardTiers.map((tier) => (
+                        <div
+                          key={`pvp-tier-${tier.rank}`}
+                          className="flex items-center justify-between gap-3 rounded border border-orange-900/45 bg-gray-950/25 px-3 py-2 text-sm"
+                        >
+                          <span className="font-semibold text-orange-100">
+                            Rank {tier.rank}
+                          </span>
+                          <span className="text-right text-orange-100/75">{tier.label}</span>
+                        </div>
+                      ))}
+                    </div>
+                  )}
+                </div>
+
+                <div className="rounded border border-gray-700 bg-gray-800/45 p-4">
+                  <h3 className="text-xs font-bold uppercase tracking-widest text-gray-300">
+                    PvP Gear
+                  </h3>
+                  <div className="mt-2 text-xs text-gray-400">
+                    {unlockedPvpGear.length} unlocked, {unlockedEquippedPvpGear.length} equipped
+                  </div>
+                  {unlockedPvpGear.length === 0 ? (
+                    <div className="mt-3 text-sm text-gray-500 italic">
+                      Earn honor and finish a PvP week to unlock gear.
+                    </div>
+                  ) : (
+                    <div className="mt-3 space-y-2">
+                      {[...unlockedEquippedPvpGear, ...unlockedStoredPvpGear].map((item) => {
+                        const equipped = displayEquipment[item.slot]?.id === item.id;
+                        return (
+                          <div
+                            key={`pvp-gear-${item.id}`}
+                            className="flex items-center gap-3 rounded border border-gray-700 bg-gray-950/25 p-2"
+                          >
+                            <img
+                              src={getItemIconUrl(item, item.slot)}
+                              alt={item.name}
+                              className="h-9 w-9 rounded border border-gray-700 object-cover"
+                              onError={(event) => {
+                                event.currentTarget.src = getWowIconUrl("inv_misc_questionmark");
+                              }}
+                            />
+                            <div className="min-w-0 flex-1">
+                              <div
+                                className="truncate text-sm font-bold"
+                                style={{ color: getQualityColor(item.quality) }}
+                              >
+                                {item.name}
+                              </div>
+                              <div className="text-[11px] uppercase tracking-wide text-gray-500">
+                                {item.slot} · iLvl {getItemEffectiveLevel(item)}
+                              </div>
+                            </div>
+                            <span
+                              className={`rounded border px-2 py-1 text-[10px] font-bold uppercase ${
+                                equipped
+                                  ? "border-emerald-700 bg-emerald-950/30 text-emerald-200"
+                                  : "border-gray-700 bg-gray-900 text-gray-400"
+                              }`}
+                            >
+                              {equipped ? "Equipped" : "Unlocked"}
+                            </span>
+                          </div>
+                        );
+                      })}
+                    </div>
+                  )}
+                </div>
               </div>
             </div>
           )}

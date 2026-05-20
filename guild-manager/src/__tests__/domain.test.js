@@ -115,6 +115,7 @@ import {
   generateCharacters,
   getEquipmentSetBonuses,
   getItemEffectiveLevel,
+  getStarterGear,
   getMissionSuccessPreview,
   isItemUsableByClass,
   pickUniqueCharacterName,
@@ -125,7 +126,10 @@ import {
   getAutoDungeonIntervalMs,
   resolveAutoDungeonAttempt,
 } from "../automation/dungeonAutomation";
-import { buildDungeonAttunementTargets } from "../automation/adventureGoals";
+import {
+  buildDungeonAttunementTargets,
+  getAttunementEligibleMembers,
+} from "../automation/adventureGoals";
 import {
   getGuildClassSummary,
   getGuildRoleSummary,
@@ -181,7 +185,20 @@ import {
   ensureWorldPvpState,
   getWorldPvpProfile,
 } from "../pvp/worldPvpUtils";
+import { ensureCharacterPvpData } from "../pvp/pvpCharacterUtils";
+import {
+  applyWeeklyPvpRollover,
+  awardCharacterHonor,
+  PVP_WEEKLY_PROGRESS_CAP,
+} from "../pvp/pvpProgression";
+import { getUnlockedPvpGearForCharacter } from "../pvp/pvpGearUnlocks";
 import { DB_ITEMS } from "../data/items";
+import {
+  PVP_GEAR_SET_ID,
+  PVP_GEAR_SET_NAME,
+  PVP_HONOR_SET_ID,
+  PVP_HONOR_SET_NAME,
+} from "../data/imports/pvpHonorSetItems";
 import {
   MOLTEN_CORE_ACTIVE_LOOT_MANIFEST,
   MOLTEN_CORE_ITEMS,
@@ -1397,6 +1414,116 @@ describe("session persistence", () => {
     expect(payload.data.worldPvpState.totalHonor).toBe(42);
     expect(hydrated.loadedWorldPvpState.zoneStats.ashenvale.honorEarned).toBe(42);
     expect(oldSaveHydrated.loadedWorldPvpState.totalHonor).toBe(0);
+  });
+
+  it("round-trips newer save state for PvP, expanded equipment, raid lockouts, and mission board filters", () => {
+    const payload = buildSessionPayload({
+      roster: [
+        {
+          id: "pvp-main",
+          name: "Ranksword",
+          charClass: "Warrior",
+          level: 60,
+          equipment: {
+            neck: { id: "neck-1", name: "Veteran's Pendant", slot: "neck" },
+            belt: { id: "belt-1", name: "Veteran's Sash", slot: "belt" },
+            trinket: { id: "pvp-trinket", name: "Insignia", slot: "trinket", pvpGear: true },
+            ring: { id: "ring-1", name: "Band of Victory", slot: "ring" },
+          },
+          pvp: {
+            lifetimeHonor: 500,
+            weeklyHonor: 120,
+            rankProgress: 300,
+            rank: 2,
+            highestRank: 2,
+            honorableKills: 4,
+            unlockedPvpGearIds: ["pvp-trinket"],
+          },
+        },
+      ],
+      activeMissions: [],
+      missionList: [],
+      guildLog: [],
+      guildGold: 7,
+      guildProgress: createInitialGuildProgress(),
+      guildSetup: { hasStarted: true, faction: GUILD_FACTION.ALLIANCE },
+      worldPvpState: {
+        totalHonor: 500,
+        weeklyHonor: 120,
+        pvpReputation: 9,
+        zoneStats: {},
+        lastProcessedDayIndex: 4,
+        lastWeeklyRolloverDayIndex: 0,
+      },
+      raidLockouts: {
+        molten_core: {
+          raidKey: "molten_core",
+          missionId: 62,
+          raidName: "Molten Core",
+          lockouts: [
+            {
+              lockoutId: "1",
+              displayId: 1,
+              resetStartDayIndex: 0,
+              nextResetDayIndex: 7,
+              clearedSteps: 3,
+              totalBosses: 10,
+              participantIds: ["pvp-main"],
+              clearedWingIds: ["core"],
+            },
+          ],
+        },
+      },
+      missionBoardState: {
+        selectedCategory: "dungeon",
+        levelFilterMin: 50,
+        levelFilterMax: 60,
+        showAvailableDungeonsOnly: true,
+        hideLowLevelDungeons: true,
+      },
+      gameSpeed: DEFAULT_GAME_SPEED,
+      isPaused: false,
+      gameTimeMs: 1000,
+    });
+    const result = hydrateSessionData({
+      payloadData: payload.data,
+      initialMissions: [],
+      normalizeGuildProgress,
+      normalizeGuildSetup: (value) => value,
+      getGuildDerivedStats,
+      normalizeProgressionState,
+      defaultGameSpeed: DEFAULT_GAME_SPEED,
+      defaultGuildSetup: {},
+      createId: () => "instance-id",
+      resolveDungeonBossCount: getDungeonBossCount,
+    });
+
+    expect(payload.data.missionBoardState).toMatchObject({
+      selectedCategory: "dungeon",
+      levelFilterMin: "50",
+      levelFilterMax: "60",
+      showAvailableDungeonsOnly: true,
+      hideLowLevelDungeons: true,
+    });
+    expect(result.normalizedRoster[0].equipment.neck.name).toBe("Veteran's Pendant");
+    expect(result.normalizedRoster[0].equipment.belt.name).toBe("Veteran's Sash");
+    expect(result.normalizedRoster[0].equipment.trinket.pvpGear).toBe(true);
+    expect(result.normalizedRoster[0].equipment.ring.name).toBe("Band of Victory");
+    expect(result.normalizedRoster[0].pvp.weeklyHonor).toBe(120);
+    expect(result.normalizedRoster[0].pvp.unlockedPvpGearIds).toEqual(["pvp-trinket"]);
+    expect(result.normalizedRoster[0].history).toEqual([]);
+    expect(result.normalizedRoster[0].status).toBe("Idle");
+    expect(result.loadedWorldPvpState.pvpReputation).toBe(9);
+    expect(result.loadedMissionBoardState).toMatchObject({
+      selectedCategory: "dungeon",
+      levelFilterMin: "50",
+      levelFilterMax: "60",
+    });
+    expect(result.loadedRaidLockouts.molten_core.lockouts[0]).toMatchObject({
+      clearedSteps: 3,
+      totalBosses: 10,
+      participantIds: ["pvp-main"],
+    });
   });
 
   it("hydrates active missions and normalizes questing roster status", () => {
@@ -2820,7 +2947,7 @@ describe("Tier 2 raid integration", () => {
     expect(ONYXIAS_LAIR_ITEMS.filter((item) => item.setId?.startsWith("t2_"))).toHaveLength(9);
     expect(BLACKWING_LAIR_ITEMS.filter((item) => item.setId?.startsWith("t2_")).length)
       .toBeGreaterThanOrEqual(27);
-    expect(unsupportedBlackwingLairDrops.length).toBeGreaterThan(20);
+    expect(unsupportedBlackwingLairDrops.length).toBeGreaterThan(5);
     expect(tierTwoItems.length).toBeGreaterThanOrEqual(36);
   });
 
@@ -2952,8 +3079,8 @@ describe("Naxxramas raid integration", () => {
   it("converts Naxxramas loot and supported Tier 3 pieces into database items", () => {
     expect(NAXXRAMAS_ACTIVE_LOOT_MANIFEST.length).toBeGreaterThan(60);
     expect(NAXXRAMAS_ITEMS.length).toBe(NAXXRAMAS_ACTIVE_LOOT_MANIFEST.length);
-    expect(tierThreeItems).toHaveLength(45);
-    expect(unsupportedNaxxramasDrops.length).toBeGreaterThan(30);
+    expect(tierThreeItems).toHaveLength(72);
+    expect(unsupportedNaxxramasDrops.length).toBeGreaterThan(5);
     naxxItems.forEach((item) => {
       expect(item.id).toBeTypeOf("number");
       expect(item.icon).toContain("wow/icons/large/");
@@ -2970,6 +3097,59 @@ describe("Naxxramas raid integration", () => {
     const activeIds = new Set(naxxItems.map((item) => item.id));
     unsupportedNaxxramasDrops.forEach((item) => {
       expect(activeIds.has(item.internalId)).toBe(false);
+    });
+  });
+});
+
+describe("raid accessory slot coverage", () => {
+  it("adds raid drops for the expanded neck, back, wrist, belt, ring, and trinket slots", () => {
+    const expectedDrops = [
+      ["molten_core", "wrist", "Bracers of Might"],
+      ["molten_core", "belt", "Belt of Might"],
+      ["molten_core", "neck", "Choker of the Fire Lord"],
+      ["molten_core", "back", "Cloak of the Shrouded Mists"],
+      ["molten_core", "ring", "Band of Accuria"],
+      ["molten_core", "trinket", "Talisman of Ephemeral Power"],
+      ["blackwing_lair", "wrist", "Dragonstalker's Bracers"],
+      ["blackwing_lair", "belt", "Dragonstalker's Belt"],
+      ["blackwing_lair", "trinket", "Drake Fang Talisman"],
+      ["blackwing_lair", "neck", "Prestor's Talisman of Connivery"],
+      ["blackwing_lair", "back", "Cloak of Firemaw"],
+      ["blackwing_lair", "ring", "Band of Forced Concentration"],
+      ["zul_gurub", "neck", "Soul Corrupter's Necklace"],
+      ["zul_gurub", "back", "Cloak of Consumption"],
+      ["zul_gurub", "ring", "Seal of Jin"],
+      ["ahn_qiraj_ruins", "wrist", "Shackles of the Unscarred"],
+      ["ahn_qiraj_ruins", "belt", "Belt of the Sand Reaver"],
+      ["ahn_qiraj_ruins", "trinket", "Eye of Moam"],
+      ["ahn_qiraj_ruins", "neck", "Fury of the Forgotten Swarm"],
+      ["ahn_qiraj_ruins", "back", "Sandstorm Cloak"],
+      ["ahn_qiraj_ruins", "ring", "Ring of Fury"],
+      ["ahn_qiraj_temple", "wrist", "Qiraji Execution Bracers"],
+      ["ahn_qiraj_temple", "belt", "Belt of Never-ending Agony"],
+      ["ahn_qiraj_temple", "trinket", "Jom Gabbar"],
+      ["ahn_qiraj_temple", "neck", "Mark of C'Thun"],
+      ["ahn_qiraj_temple", "back", "Cloak of the Devoured"],
+      ["ahn_qiraj_temple", "ring", "Ring of the Fallen God"],
+      ["onyxias_lair", "trinket", "Shard of the Scale"],
+      ["onyxias_lair", "neck", "Eskhandar's Collar"],
+      ["onyxias_lair", "back", "Sapphiron Drape"],
+      ["naxxramas", "wrist", "Bonescythe Bracers"],
+      ["naxxramas", "belt", "Bonescythe Waistguard"],
+      ["naxxramas", "trinket", "Eye of the Dead"],
+      ["naxxramas", "neck", "Gem of Trapped Innocents"],
+      ["naxxramas", "back", "Cloak of the Necropolis"],
+      ["naxxramas", "ring", "Frostfire Ring"],
+    ];
+
+    expectedDrops.forEach(([sourceId, slot, name]) => {
+      const foundDrop = DB_ITEMS.find(
+        (item) =>
+          item.dungeonSetId === sourceId &&
+          item.slot === slot &&
+          item.name === name,
+      );
+      expect(foundDrop, `${sourceId} ${slot} ${name}`).toBeTruthy();
     });
   });
 });
@@ -3017,6 +3197,39 @@ describe("item level tuning", () => {
     );
   });
 
+  it("has complete Tier 0 dungeon sets across all supported armor slots", () => {
+    const expectedSlots = ["belt", "feet", "wrist", "head", "chest", "shoulder", "legs", "hands"];
+    const expectedSets = {
+      t0_wildheart_raiment: "Druid",
+      t0_beaststalker_armor: "Hunter",
+      t0_magisters_regalia: "Mage",
+      t0_lightforge_armor: "Paladin",
+      t0_vestments_of_the_devout: "Priest",
+      t0_shadowcraft_armor: "Rogue",
+      t0_the_elements: "Shaman",
+      t0_dreadmist_raiment: "Warlock",
+      t0_battlegear_of_valor: "Warrior",
+    };
+    const tierZeroItems = DB_ITEMS.filter((item) =>
+      String(item.setId || "").startsWith("t0_"),
+    );
+
+    expect(tierZeroItems).toHaveLength(72);
+    expect(new Set(tierZeroItems.map((item) => item.wowheadId)).size).toBe(72);
+    Object.entries(expectedSets).forEach(([setId, className]) => {
+      const setItems = tierZeroItems.filter((item) => item.setId === setId);
+      expect(setItems.map((item) => item.slot).sort()).toEqual(
+        [...expectedSlots].sort(),
+      );
+      expect(setItems).toHaveLength(8);
+      setItems.forEach((item) => {
+        expect(item.setName).toBeTruthy();
+        expect(item.icon).toContain("wow/icons/large/");
+        expect(item.allowedClasses).toEqual([className]);
+      });
+    });
+  });
+
   it("keeps raid loot in Classic item-level bands", () => {
     expectItemLevelsWithin(getItemsBySource("zul_gurub"), 66, 70);
     expectItemLevelsWithin(getItemsBySource("ahn_qiraj_ruins"), 66, 70);
@@ -3043,29 +3256,37 @@ describe("item level tuning", () => {
 
   it("adds Classic PvP honor set gear as database-only reward preparation", () => {
     const pvpItems = DB_ITEMS.filter((item) => item.pvpGear);
-    const rareItems = pvpItems.filter((item) => Number(item.quality) === 3);
-    const epicItems = pvpItems.filter((item) => Number(item.quality) === 4);
-    const paladinItems = pvpItems.filter((item) =>
+    const pvpSetItems = pvpItems.filter(
+      (item) => item.dungeonSetId === PVP_HONOR_SET_ID,
+    );
+    const pvpGearItems = pvpItems.filter(
+      (item) => item.dungeonSetId === PVP_GEAR_SET_ID,
+    );
+    const rareItems = pvpSetItems.filter((item) => Number(item.quality) === 3);
+    const epicItems = pvpSetItems.filter((item) => Number(item.quality) === 4);
+    const paladinItems = pvpSetItems.filter((item) =>
       item.allowedClasses?.includes("Paladin"),
     );
-    const shamanItems = pvpItems.filter((item) =>
+    const shamanItems = pvpSetItems.filter((item) =>
       item.allowedClasses?.includes("Shaman"),
     );
-    const druidItems = pvpItems.filter((item) =>
+    const druidItems = pvpSetItems.filter((item) =>
       item.allowedClasses?.includes("Druid"),
     );
-    const fieldMarshalDruidHelm = pvpItems.find(
+    const fieldMarshalDruidHelm = pvpSetItems.find(
       (item) => item.name === "Field Marshal's Dragonhide Helmet",
     );
-    const fieldMarshalWarlockHelm = pvpItems.find(
+    const fieldMarshalWarlockHelm = pvpSetItems.find(
       (item) => item.name === "Field Marshal's Coronal",
     );
-    const generalHunterBoots = pvpItems.find(
+    const generalHunterBoots = pvpSetItems.find(
       (item) => item.name === "General's Chain Sabatons",
     );
 
-    expect(pvpItems).toHaveLength(192);
-    expect(new Set(pvpItems.map((item) => item.wowheadId)).size).toBe(192);
+    expect(pvpSetItems).toHaveLength(192);
+    expect(new Set(pvpSetItems.map((item) => item.wowheadId)).size).toBe(192);
+    expect(pvpGearItems).toHaveLength(16);
+    expect(pvpItems).toHaveLength(208);
     expect(rareItems).toHaveLength(96);
     expect(epicItems).toHaveLength(96);
     expect(new Set(rareItems.map(getItemEffectiveLevel))).toEqual(new Set([68]));
@@ -3077,9 +3298,9 @@ describe("item level tuning", () => {
     expect(new Set(shamanItems.map((item) => item.faction))).toEqual(
       new Set([GUILD_FACTION.HORDE]),
     );
-    pvpItems.forEach((item) => {
-      expect(item.dungeonSetId).toBe("pvp_honor_sets");
-      expect(item.dungeonSetName).toBe("PvP Honor Sets");
+    pvpSetItems.forEach((item) => {
+      expect(item.dungeonSetId).toBe(PVP_HONOR_SET_ID);
+      expect(item.dungeonSetName).toBe(PVP_HONOR_SET_NAME);
       expect(item.minLevel).toBe(60);
       expect(item.allowedClasses).toHaveLength(1);
       expect(item.setId).toBeTruthy();
@@ -3088,6 +3309,22 @@ describe("item level tuning", () => {
       expect(item.icon).toContain("wow/icons/large/");
       expect(item.wowheadId).toBeTypeOf("number");
     });
+    pvpGearItems.forEach((item) => {
+      expect(item.dungeonSetId).toBe(PVP_GEAR_SET_ID);
+      expect(item.dungeonSetName).toBe(PVP_GEAR_SET_NAME);
+      expect(item.pvpGear).toBe(true);
+      expect(item.source).toBe("pvp");
+      expect(item.requiredPvpRank).toBeGreaterThan(0);
+      expect(item.pvpHonorRank).toBe(item.requiredPvpRank);
+      expect(item.pvpTier).toBeTruthy();
+      expect(item.slot).toBeTruthy();
+      expect(item.quality).toBeGreaterThan(0);
+      expect(getItemEffectiveLevel(item)).toBeGreaterThan(0);
+      expect(item.faction).toBeTruthy();
+    });
+    expect(new Set(pvpGearItems.map((item) => item.requiredPvpRank))).toEqual(
+      new Set([2, 3, 4, 5, 6, 9, 11, 14]),
+    );
     expect(fieldMarshalDruidHelm).toMatchObject({
       wowheadId: 16451,
       icon: "https://wow.zamimg.com/images/wow/icons/large/inv_helmet_41.jpg",
@@ -3100,6 +3337,60 @@ describe("item level tuning", () => {
       wowheadId: 16569,
       icon: "https://wow.zamimg.com/images/wow/icons/large/inv_boots_plate_06.jpg",
     });
+    expect(
+      pvpGearItems.find((item) => item.name === "Insignia of the Alliance"),
+    ).toMatchObject({
+      wowheadId: 18854,
+      faction: GUILD_FACTION.ALLIANCE,
+      icon: "https://wow.zamimg.com/images/wow/icons/large/inv_jewelry_trinketpvp_01.jpg",
+    });
+    expect(
+      pvpGearItems.find((item) => item.name === "Insignia of the Horde"),
+    ).toMatchObject({
+      wowheadId: 18834,
+      faction: GUILD_FACTION.HORDE,
+      icon: "https://wow.zamimg.com/images/wow/icons/large/inv_jewelry_trinketpvp_02.jpg",
+    });
+    expect(pvpItems).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          slot: "trinket",
+          requiredPvpRank: 2,
+          faction: GUILD_FACTION.ALLIANCE,
+        }),
+        expect.objectContaining({
+          slot: "back",
+          requiredPvpRank: 3,
+          faction: GUILD_FACTION.HORDE,
+        }),
+        expect.objectContaining({
+          slot: "neck",
+          requiredPvpRank: 4,
+        }),
+        expect.objectContaining({
+          slot: "wrist",
+          requiredPvpRank: 5,
+        }),
+        expect.objectContaining({
+          slot: "belt",
+          requiredPvpRank: 6,
+        }),
+        expect.objectContaining({
+          slot: "ring",
+          requiredPvpRank: 9,
+        }),
+        expect.objectContaining({
+          slot: "trinket",
+          requiredPvpRank: 11,
+          quality: 4,
+        }),
+        expect.objectContaining({
+          slot: "mainHand",
+          requiredPvpRank: 14,
+          quality: 4,
+        }),
+      ]),
+    );
   });
 
   it("lets PvP honor set pieces use normal equipment set bonuses", () => {
@@ -3118,6 +3409,76 @@ describe("item level tuning", () => {
       setName: "Field Marshal's Sanctuary",
       pieces: 4,
       bonus: 10,
+    });
+  });
+
+  it("adds world and dungeon drops for expanded equipment slots", () => {
+    const expandedSlots = ["neck", "back", "wrist", "belt", "trinket", "ring"];
+    const worldItems = DB_ITEMS.filter(
+      (item) => expandedSlots.includes(item.slot) && !item.pvpGear && !item.dungeonSetId,
+    );
+    const dungeonItems = DB_ITEMS.filter(
+      (item) => expandedSlots.includes(item.slot) && !item.pvpGear && item.dungeonSetId,
+    );
+    const starterGear = getStarterGear("Warrior");
+
+    expandedSlots.forEach((slot) => {
+      expect(worldItems.some((item) => item.slot === slot)).toBe(true);
+      expect(starterGear).toHaveProperty(slot);
+    });
+    expect(new Set(dungeonItems.map((item) => item.slot))).toEqual(
+      new Set(expandedSlots),
+    );
+  });
+
+  it("adds green and blue world-drop progression for every expanded slot", () => {
+    const expandedSlots = ["neck", "back", "wrist", "belt", "trinket", "ring"];
+    const worldItems = DB_ITEMS.filter(
+      (item) =>
+        expandedSlots.includes(item.slot) &&
+        !item.pvpGear &&
+        !item.dungeonSetId &&
+        !item.dungeon,
+    );
+
+    expandedSlots.forEach((slot) => {
+      const slotItems = worldItems.filter((item) => item.slot === slot);
+      expect(slotItems.some((item) => item.quality === 2 && item.minLevel <= 10)).toBe(true);
+      expect(slotItems.some((item) => item.quality === 2 && item.minLevel >= 50)).toBe(true);
+      expect(slotItems.some((item) => item.quality === 3 && item.minLevel >= 45)).toBe(true);
+    });
+  });
+
+  it("adds named Classic dungeon drops for the expanded equipment slots", () => {
+    const expectedDrops = [
+      ["Wailing Caverns", "ring", "Deep Fathom Ring"],
+      ["Wailing Caverns", "belt", "Belt of the Fang"],
+      ["The Deadmines", "ring", "Lavishly Jeweled Ring"],
+      ["The Deadmines", "belt", "Blackened Defias Belt"],
+      ["Shadowfang Keep", "ring", "Silverlaine's Family Seal"],
+      ["Shadowfang Keep", "back", "Fenrus' Hide"],
+      ["Blackfathom Deeps", "belt", "Ghamoo-Ra's Bind"],
+      ["Gnomeregan", "wrist", "Spidertank Oilrag"],
+      ["Razorfen Kraul", "belt", "Agamaggan's Clutch"],
+      ["Razorfen Downs", "ring", "Dragonclaw Ring"],
+      ["Uldaman", "wrist", "Revelosh's Armguards"],
+      ["Uldaman", "belt", "Girdle of Golem Strength"],
+      ["Zul'Farrak", "trinket", "Carrot on a Stick"],
+      ["Maraudon", "trinket", "Heart of Noxxion"],
+      ["Maraudon", "ring", "Blackstone Ring"],
+      ["Temple of Atal'Hakkar", "trinket", "Crest of Supremacy"],
+      ["Scholomance", "trinket", "Barov Peasant Caller"],
+      ["Scholomance", "belt", "Cadaverous Belt"],
+    ];
+
+    expectedDrops.forEach(([dungeon, slot, name]) => {
+      const foundDrop = DB_ITEMS.find(
+        (item) =>
+          item.dungeon === dungeon &&
+          item.slot === slot &&
+          item.name === name,
+      );
+      expect(foundDrop, `${dungeon} ${slot} ${name}`).toBeTruthy();
     });
   });
 
@@ -3434,9 +3795,151 @@ describe("character activity priority", () => {
     });
     expect(result.worldPvpState.totalHonor).toBeGreaterThan(0);
     expect(result.worldPvpState.zoneStats.ashenvale.eventsTriggered).toBe(1);
+    expect(result.roster.find((member) => member.id === "hero-1")?.pvp.weeklyHonor).toBeGreaterThan(0);
+    expect(result.roster.find((member) => member.id === "hero-2")?.pvp.weeklyHonor).toBeGreaterThan(0);
+    expect(result.roster.find((member) => member.id === "hero-1")?.pvp.honorableKills).toBe(1);
     expect(
       result.roster.find((member) => member.id === "hero-3")?.status,
     ).toBe("Questing");
+    expect(result.roster.find((member) => member.id === "hero-3")?.pvp).toBeUndefined();
+  });
+
+  it("hydrates character PvP data and awards personal honor safely", () => {
+    const oldSaveCharacter = { id: "old", name: "Oldsave", charClass: "Mage" };
+    const hydrated = ensureCharacterPvpData(oldSaveCharacter, GUILD_FACTION.HORDE);
+    const awarded = awardCharacterHonor(hydrated, {
+      honor: 275,
+      honorableKills: 2,
+    }, GUILD_FACTION.HORDE);
+
+    expect(hydrated.pvp).toMatchObject({
+      lifetimeHonor: 0,
+      weeklyHonor: 0,
+      rankProgress: 0,
+      rank: 0,
+      title: "Unranked",
+      highestRank: 0,
+      highestTitle: "Unranked",
+      honorableKills: 0,
+      unlockedPvpGearIds: [],
+    });
+    expect(awarded.pvp.weeklyHonor).toBe(275);
+    expect(awarded.pvp.lifetimeHonor).toBe(275);
+    expect(awarded.pvp.honorableKills).toBe(2);
+  });
+
+  it("rolls weekly PvP honor into no-decay rank progress and equips unlocked rewards", () => {
+    const character = ensureCharacterPvpData({
+      id: "pvp-hero",
+      name: "Arathi",
+      charClass: "Warrior",
+      level: 20,
+      equipment: getStarterGear("Warrior"),
+      pvp: {
+        weeklyHonor: 1200,
+        lifetimeHonor: 1200,
+      },
+    }, GUILD_FACTION.ALLIANCE);
+
+    const result = applyWeeklyPvpRollover({
+      characters: [character],
+      currentDay: 7,
+      faction: GUILD_FACTION.ALLIANCE,
+      allItems: DB_ITEMS,
+      lastRolloverDayIndex: 0,
+    });
+    const nextCharacter = result.characters[0];
+
+    expect(result.didRollover).toBe(true);
+    expect(nextCharacter.pvp.weeklyHonor).toBe(0);
+    expect(nextCharacter.pvp.rankProgress).toBe(300);
+    expect(nextCharacter.pvp.rank).toBe(2);
+    expect(nextCharacter.pvp.title).toBe("Corporal");
+    expect(nextCharacter.pvp.highestRank).toBe(2);
+    expect(nextCharacter.pvp.unlockedPvpGearIds.length).toBeGreaterThan(0);
+    expect(nextCharacter.equipment.trinket).toMatchObject({
+      pvpGear: true,
+      requiredPvpRank: 2,
+      faction: GUILD_FACTION.ALLIANCE,
+    });
+    expect(result.logs[0].message).toContain("Trinket");
+
+    const inactiveWeek = applyWeeklyPvpRollover({
+      characters: [nextCharacter],
+      currentDay: 14,
+      faction: GUILD_FACTION.ALLIANCE,
+      allItems: DB_ITEMS,
+      lastRolloverDayIndex: 7,
+    });
+
+    expect(inactiveWeek.characters[0].pvp.rankProgress).toBe(300);
+    expect(inactiveWeek.characters[0].pvp.rank).toBe(2);
+  });
+
+  it("caps weekly PvP progress and respects faction gear unlocks", () => {
+    const character = ensureCharacterPvpData({
+      id: "pvp-cap",
+      name: "Stonewatch",
+      charClass: "Warrior",
+      level: 60,
+      equipment: getStarterGear("Warrior"),
+      pvp: {
+        weeklyHonor: 10000,
+        lifetimeHonor: 10000,
+      },
+    }, GUILD_FACTION.HORDE);
+    const result = applyWeeklyPvpRollover({
+      characters: [character],
+      currentDay: 7,
+      faction: GUILD_FACTION.HORDE,
+      allItems: DB_ITEMS,
+      lastRolloverDayIndex: 0,
+    });
+    const nextCharacter = result.characters[0];
+    const unlocked = getUnlockedPvpGearForCharacter(
+      nextCharacter,
+      DB_ITEMS,
+      GUILD_FACTION.HORDE,
+    );
+
+    expect(nextCharacter.pvp.rankProgress).toBe(PVP_WEEKLY_PROGRESS_CAP);
+    expect(nextCharacter.pvp.rank).toBe(4);
+    expect(unlocked.every((item) => !item.faction || item.faction === GUILD_FACTION.HORDE)).toBe(true);
+    expect(unlocked.some((item) => item.slot === "neck" && item.requiredPvpRank === 4)).toBe(true);
+  });
+
+  it("unlocks non-set PvP gear at every practical milestone rank", () => {
+    const character = ensureCharacterPvpData({
+      id: "pvp-milestones",
+      name: "Marshalgear",
+      charClass: "Warrior",
+      level: 60,
+      equipment: getStarterGear("Warrior"),
+      pvp: {
+        rank: 11,
+        highestRank: 11,
+      },
+    }, GUILD_FACTION.ALLIANCE);
+    const unlocked = getUnlockedPvpGearForCharacter(
+      character,
+      DB_ITEMS,
+      GUILD_FACTION.ALLIANCE,
+    ).filter((item) => item.dungeonSetId === PVP_GEAR_SET_ID);
+    const unlockedRanks = new Set(unlocked.map((item) => item.requiredPvpRank));
+
+    [2, 3, 4, 5, 6, 9, 11].forEach((rank) => {
+      expect(unlockedRanks.has(rank), `rank ${rank}`).toBe(true);
+    });
+    expect(unlockedRanks.has(14)).toBe(false);
+    expect(unlocked.every((item) => item.faction === GUILD_FACTION.ALLIANCE)).toBe(true);
+
+    const hordeUnlocked = getUnlockedPvpGearForCharacter(
+      { ...character, pvp: { rank: 14, highestRank: 14 } },
+      DB_ITEMS,
+      GUILD_FACTION.HORDE,
+    ).filter((item) => item.dungeonSetId === PVP_GEAR_SET_ID);
+    expect(hordeUnlocked.some((item) => item.requiredPvpRank === 14)).toBe(true);
+    expect(hordeUnlocked.every((item) => item.faction === GUILD_FACTION.HORDE)).toBe(true);
   });
 
   it("does not trigger world PvP on PvE realms or repeat the same processed day", () => {
@@ -4749,6 +5252,33 @@ describe("auto dungeon activity", () => {
     });
   });
 
+  it("only exposes heroes who can currently start an attunement source", () => {
+    const target = {
+      keyId: "molten_core_attunement",
+      sourceMission: {
+        id: "blackrock-depths-core-fragment",
+        type: "dungeon",
+        name: "Blackrock Depths - Core Fragment",
+        minLevel: 42,
+        entryLevel: 42,
+        rewardKeys: ["molten_core_attunement"],
+      },
+    };
+
+    const eligibleMembers = getAttunementEligibleMembers({
+      target,
+      members: [
+        makeMember("too-low", 20),
+        makeMember("ready", 42),
+        makeMember("already-attuned", 60, "DPS", {
+          keys: ["molten_core_attunement"],
+        }),
+      ],
+    });
+
+    expect(eligibleMembers.map((member) => member.id)).toEqual(["ready"]);
+  });
+
   it("uses calendar-day intervals for dungeon group search frequency", () => {
     expect(getAutoDungeonIntervalMs(GUILD_DUNGEON_ACTIVITY.MINIMAL)).toBe(
       CALENDAR_DAY_MS * 2,
@@ -5424,6 +5954,28 @@ describe("Lower Blackrock Spire integration", () => {
     expect(isItemUsableByClass(wildheartBoots, "Druid")).toBe(true);
     expect(isItemUsableByClass(beaststalkerGloves, "Hunter")).toBe(true);
   });
+
+  it("activates LBRS expanded slot drops that used to be unsupported", () => {
+    const expectedDrops = [
+      ["belt", "Wildheart Belt"],
+      ["shoulder", "Wildheart Spaulders"],
+      ["belt", "Beaststalker's Belt"],
+      ["shoulder", "Beaststalker's Mantle"],
+      ["wrist", "Magister's Bindings"],
+      ["belt", "Devout Belt"],
+      ["wrist", "Dreadmist Bracers"],
+      ["wrist", "Bracers of Valor"],
+      ["belt", "Belt of Valor"],
+      ["trinket", "Heart of the Scale"],
+    ];
+
+    expectedDrops.forEach(([slot, name]) => {
+      expect(
+        lbrsItems.some((item) => item.slot === slot && item.name === name),
+        `${slot} ${name}`,
+      ).toBe(true);
+    });
+  });
 });
 
 describe("Upper Blackrock Spire integration", () => {
@@ -5546,6 +6098,27 @@ describe("Upper Blackrock Spire integration", () => {
     expect(isItemUsableByClass(magistersRobes, "Mage")).toBe(true);
     expect(isItemUsableByClass(magistersRobes, "Warlock")).toBe(false);
     expect(isItemUsableByClass(breastplateOfValor, "Warrior")).toBe(true);
+  });
+
+  it("activates UBRS neck, ring, belt, and Tier 0 shoulder drops", () => {
+    const expectedDrops = [
+      ["neck", "Emberfury Talisman"],
+      ["ring", "Painweaver Band"],
+      ["neck", "Tooth of Gnarr"],
+      ["belt", "Brigam Girdle"],
+      ["shoulder", "Devout Mantle"],
+      ["shoulder", "Shadowcraft Spaulders"],
+      ["shoulder", "Lightforge Spaulders"],
+      ["shoulder", "Pauldrons of Elements"],
+      ["shoulder", "Spaulders of Valor"],
+    ];
+
+    expectedDrops.forEach(([slot, name]) => {
+      expect(
+        ubrsItems.some((item) => item.slot === slot && item.name === name),
+        `${slot} ${name}`,
+      ).toBe(true);
+    });
   });
 
   it("keeps unsupported UBRS drops out of active reward items", () => {
