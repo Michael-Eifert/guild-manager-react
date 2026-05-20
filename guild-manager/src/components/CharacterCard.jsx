@@ -6,6 +6,7 @@ import {
   getRoleIcon,
   getWowIconUrl,
 } from "../utils";
+import { ensureCharacterPvpData } from "../pvp/pvpCharacterUtils";
 
 const CharacterCard = ({ char, onClick }) => {
   const [now, setNow] = useState(() => Date.now());
@@ -29,6 +30,7 @@ const CharacterCard = ({ char, onClick }) => {
   const pct = Math.min(100, (char.exp / char.maxExp) * 100);
   const isFlashing = now - char.lastLevelUp < 1000;
   const avgItemLevel = getCharacterAverageItemLevel(char);
+  const pvp = ensureCharacterPvpData(char).pvp;
 
   return (
     <div
@@ -100,6 +102,11 @@ const CharacterCard = ({ char, onClick }) => {
       <div className="mb-2">
         <div className="text-xs text-blue-300 italic truncate">{char.statusText}</div>
       </div>
+      {pvp.rank > 0 && (
+        <div className="mb-2 truncate text-[11px] font-semibold text-orange-200">
+          PvP: {pvp.title} R{pvp.rank}
+        </div>
+      )}
 
       {!isMax ? (
         <div className="w-full bg-gray-700 h-1.5 rounded-full mt-2 overflow-hidden">

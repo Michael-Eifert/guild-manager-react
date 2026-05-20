@@ -12,10 +12,53 @@ export const createRealmNewsItem = ({
   message: String(message || "").trim(),
 });
 
-export const capRealmNews = (news) =>
-  (Array.isArray(news) ? news : [])
-    .filter((entry) => entry?.message)
-    .slice(0, REALM_NEWS_LIMIT);
+const getRealmNewsExactKey = (entry) =>
+  [
+    String(entry?.id || "").trim(),
+    Math.max(0, Math.floor(Number(entry?.dayIndex) || 0)),
+    String(entry?.type || "realm"),
+    String(entry?.message || "").trim(),
+  ].join("|");
+
+export const getRealmNewsRenderKey = (entry, index = 0) => {
+  const id = String(entry?.id || "").trim();
+  if (id) return `${id}:${index}`;
+  return `realm-news:${Math.max(0, Math.floor(Number(entry?.dayIndex) || 0))}:${
+    entry?.type || "realm"
+  }:${index}`;
+};
+
+export const capRealmNews = (news) => {
+  const exactEntries = new Set();
+  const usedIds = new Map();
+  const capped = [];
+
+  for (const entry of Array.isArray(news) ? news : []) {
+    const message = String(entry?.message || "").trim();
+    if (!message) continue;
+
+    const exactKey = getRealmNewsExactKey(entry);
+    if (exactEntries.has(exactKey)) continue;
+    exactEntries.add(exactKey);
+
+    const rawId = String(entry?.id || "").trim();
+    if (!rawId) {
+      capped.push({ ...entry, message });
+    } else {
+      const idUseCount = usedIds.get(rawId) || 0;
+      usedIds.set(rawId, idUseCount + 1);
+      capped.push(
+        idUseCount === 0
+          ? { ...entry, message }
+          : { ...entry, id: `${rawId}:${idUseCount}`, message },
+      );
+    }
+
+    if (capped.length >= REALM_NEWS_LIMIT) break;
+  }
+
+  return capped;
+};
 
 export const buildRealmNewsForDay = ({
   random,
@@ -28,7 +71,8 @@ export const buildRealmNewsForDay = ({
   const news = [];
   const safeRandom = typeof random === "function" ? random : Math.random;
   const guilds = Array.isArray(npcGuilds) ? npcGuilds : [];
-  const pickGuild = () => guilds[Math.floor(safeRandom() * guilds.length)] || guilds[0];
+  const pickGuild = () =>
+    guilds[Math.floor(safeRandom() * guilds.length)] || guilds[0];
   const addNews = (type, message) => {
     if (!message) return;
     news.push(

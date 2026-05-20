@@ -21,6 +21,7 @@ import {
 } from "../missions/missionHelpers";
 import {
   isMissionMemberGroupAvailable,
+  isMissionBoardAvailableStatus,
   pruneOverlappingActiveMissions,
 } from "../missions/missionRosterGuards";
 import { createMissionRewardProcessor } from "../missions/missionRewards";
@@ -36,6 +37,7 @@ import {
   SESSION_FORMAT,
 } from "../session/sessionPersistence";
 import { ensureRealmState, generateNpcGuilds } from "../server/realmGeneration";
+import { capRealmNews, getRealmNewsRenderKey } from "../server/realmNews";
 import { advanceRealmSimulation } from "../server/realmSimulation";
 import {
   buildPlayerGuildSnapshot,
@@ -532,6 +534,17 @@ describe("recruitment", () => {
 
     expect(result.recruits.map((recruit) => recruit.id)).toEqual(["a", "b", "c"]);
     expect(result.recruits.map((recruit) => recruit.morale)).toEqual([50, 50, 50]);
+    expect(result.recruits.every((recruit) => Array.isArray(recruit.history))).toBe(
+      true,
+    );
+    expect(result.recruits.every((recruit) => Array.isArray(recruit.keys))).toBe(
+      true,
+    );
+    expect(
+      result.recruits.every((recruit) =>
+        Array.isArray(recruit.clearedMissionIds),
+      ),
+    ).toBe(true);
     expect(result.spentGold).toBe(10);
     expect(result.updatedGold).toBe(0);
     expect(result.updatedRoster).toHaveLength(4);
@@ -2170,6 +2183,47 @@ describe("mission rewards", () => {
     expect(result.updatedRoster[0].equipment.chest.name).toBe("Better Robe");
     expect(result.updatedRoster[0].keys).toEqual(["road_key"]);
     expect(result.missionLogs.some((log) => log.type === "loot")).toBe(true);
+  });
+
+  it("records mission history even when recruited characters have no history array", () => {
+    vi.spyOn(Math, "random").mockReturnValue(0);
+    const processor = buildProcessor();
+    const result = processor({
+      mission: {
+        id: "quest-legacy-history",
+        name: "Secure the Crossroads",
+        type: "quest",
+        memberIds: ["hunter"],
+        level: 10,
+        exp: 100,
+        gold: 2,
+        rewardQualities: [],
+      },
+      currentRoster: [
+        {
+          id: "hunter",
+          name: "Hunter",
+          charClass: "Hunter",
+          level: 10,
+          exp: 0,
+          keys: [],
+          history: null,
+          equipment: {},
+        },
+      ],
+      activeGuildStats: { expMultiplier: 1, goldMultiplier: 1 },
+      activeFocusBonuses: { expMultiplier: 1, fullPartyGoldMultiplier: 1 },
+      levelCap: 60,
+      failedMissionExpFactor: 0.2,
+    });
+
+    expect(result.missionSucceeded).toBe(true);
+    expect(result.updatedRoster[0].history).toEqual([
+      expect.objectContaining({
+        name: "Secure the Crossroads",
+        result: "Success",
+      }),
+    ]);
   });
 
   it("clears matching attunement goals when a rewarded key is earned", () => {
@@ -3888,6 +3942,12 @@ describe("realm overview domain", () => {
     expect(npcMembers.length).toBeGreaterThan(0);
     expect(npcMembers.every((member) => member.level === 1)).toBe(true);
     expect(realm.population.players.every((player) => player.level === 1)).toBe(true);
+    expect(realm.npcGuilds.every((guild) => Number(guild.dungeonScore) === 0)).toBe(true);
+    expect(
+      realm.npcGuilds.every(
+        (guild) => !guild.clearedDungeonMissions || guild.clearedDungeonMissions.length === 0,
+      ),
+    ).toBe(true);
     expect(raidBossesCleared).toBe(0);
   });
 
@@ -4044,6 +4104,52 @@ describe("realm overview domain", () => {
     );
   });
 
+  it("raises NPC dungeon score only from simulated dungeon clears", () => {
+    const realm = ensureRealmState(
+      null,
+      { server: "Everlook", serverStyle: GUILD_SERVER_STYLE.PVE },
+      0,
+    );
+    const playerGuildSnapshot = {
+      id: "player:guild",
+      name: "Player Guild",
+      faction: GUILD_FACTION.ALLIANCE,
+      isPlayerGuild: true,
+      rosterSize: 20,
+      averageLevel: 35,
+      averageGearScore: 20,
+      pveScore: 500,
+      raidProgress: 0,
+      dungeonScore: 100,
+      archetype: "Player Guild",
+    };
+    const advanced = advanceRealmSimulation({
+      realmState: realm,
+      currentDayIndex: 8,
+      playerGuildSnapshot,
+      guildSetup: {
+        faction: GUILD_FACTION.ALLIANCE,
+        server: "Everlook",
+        serverStyle: GUILD_SERVER_STYLE.PVE,
+      },
+    });
+    const guildsWithScore = advanced.npcGuilds.filter(
+      (guild) => Number(guild.dungeonScore) > 0,
+    );
+
+    expect(advanced.population.dailyStats.guildDungeonRuns).toBeGreaterThan(0);
+    expect(advanced.population.dailyStats.guildDungeonClears).toBeGreaterThan(0);
+    expect(guildsWithScore.length).toBeGreaterThan(0);
+    expect(
+      guildsWithScore.every(
+        (guild) =>
+          Number(guild.dungeonClearCount) > 0 &&
+          Array.isArray(guild.clearedDungeonMissions) &&
+          guild.clearedDungeonMissions.length > 0,
+      ),
+    ).toBe(true);
+  });
+
   it("advances realm simulation once per day and caps news", () => {
     const realm = ensureRealmState(
       null,
@@ -4082,7 +4188,49 @@ describe("realm overview domain", () => {
     expect(stats.totalPopulation).toBeLessThanOrEqual(stats.softCap);
     expect(stats.softCap).toBeLessThanOrEqual(1600);
     expect(advanced.news.length).toBeLessThanOrEqual(25);
+    expect(new Set(advanced.news.map((entry) => entry.id)).size).toBe(
+      advanced.news.length,
+    );
     expect(repeated).toEqual(advanced);
+  });
+
+  it("keeps realm news keys unique for repeated same-day events and old saves", () => {
+    const duplicateNews = [
+      {
+        id: "realm-news:1:npc-recruitment:1",
+        dayIndex: 1,
+        type: "npc-recruitment",
+        message: "Realm guilds recruited 5 players.",
+      },
+      {
+        id: "realm-news:1:npc-recruitment:1",
+        dayIndex: 1,
+        type: "npc-recruitment",
+        message: "Realm guilds recruited 5 players.",
+      },
+      {
+        id: "realm-news:1:npc-recruitment:1",
+        dayIndex: 1,
+        type: "npc-recruitment",
+        message: "A rival guild recruited a rare healer.",
+      },
+      {
+        id: "realm-news:1:population-arrivals:0",
+        dayIndex: 1,
+        type: "population-arrivals",
+        message: "72 new adventurers arrived on the realm.",
+      },
+    ];
+
+    const cappedNews = capRealmNews(duplicateNews);
+    const newsIds = cappedNews.map((entry) => entry.id);
+    const renderKeys = duplicateNews.map((entry, index) =>
+      getRealmNewsRenderKey(entry, index),
+    );
+
+    expect(cappedNews).toHaveLength(3);
+    expect(new Set(newsIds).size).toBe(newsIds.length);
+    expect(new Set(renderKeys).size).toBe(renderKeys.length);
   });
 
   it("adds 50-100 realm players per fresh day until the soft cap", () => {
@@ -4890,6 +5038,14 @@ describe("auto dungeon activity", () => {
         activeMissions: [],
       }),
     ).toBe(false);
+  });
+
+  it("treats missing roster status as idle for mission board filtering", () => {
+    expect(isMissionBoardAvailableStatus(undefined)).toBe(true);
+    expect(isMissionBoardAvailableStatus(null)).toBe(true);
+    expect(isMissionBoardAvailableStatus("Idle")).toBe(true);
+    expect(isMissionBoardAvailableStatus("Mining copper")).toBe(true);
+    expect(isMissionBoardAvailableStatus("Questing")).toBe(false);
   });
 
   it("prunes overlapping active missions so each character stays in one mission", () => {

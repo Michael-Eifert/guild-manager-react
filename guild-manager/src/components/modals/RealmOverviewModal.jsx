@@ -10,6 +10,7 @@ import {
   formatRealmRaidProgressSummary,
   getRealmRaidProgressList,
 } from "../../server/realmRaidProgress";
+import { getRealmNewsRenderKey } from "../../server/realmNews";
 import { getRealmPopulationStats } from "../../server/realmPopulation";
 import { getRealmRosterCap } from "../../server/realmRosters";
 import { DB_CLASSES, FACTION_EMBLEM_ICON, GUILD_FACTION } from "../../constants";
@@ -97,25 +98,8 @@ function RaidProgressBar({ progress }) {
   );
 }
 
-const getDungeonMissionLabel = (mission) => {
-  if (!mission) return "Unknown Dungeon";
-  if (mission.dungeonSetName && mission.dungeonWing) {
-    return `${mission.dungeonSetName}: ${mission.dungeonWing}`;
-  }
-  return mission.dungeonWing || mission.name || "Unknown Dungeon";
-};
-
-const buildDungeonProgressRows = ({ guild, missionList }) => {
+const buildDungeonProgressRows = ({ guild }) => {
   if (!guild) return { rows: [], clearCount: 0, score: 0 };
-  const dungeonMissions = (Array.isArray(missionList) ? missionList : [])
-    .filter((mission) => mission?.type === "dungeon" && mission?.isRaid !== true)
-    .sort((left, right) => {
-      const leftLevel = Math.max(1, Number(left.level || left.minLevel) || 1);
-      const rightLevel = Math.max(1, Number(right.level || right.minLevel) || 1);
-      if (leftLevel !== rightLevel) return leftLevel - rightLevel;
-      return getDungeonMissionLabel(left).localeCompare(getDungeonMissionLabel(right));
-    });
-
   if (guild.isPlayerGuild) {
     const cleared = Array.isArray(guild.clearedDungeonMissions)
       ? guild.clearedDungeonMissions
@@ -142,26 +126,38 @@ const buildDungeonProgressRows = ({ guild, missionList }) => {
   }
 
   const score = Math.max(0, Math.round(Number(guild.dungeonScore) || 0));
-  const averageLevel = Math.max(1, Number(guild.averageLevel) || 1);
-  const estimatedCount = Math.min(
-    dungeonMissions.length,
-    Math.max(0, Math.floor(score / 95)),
-  );
-  const eligibleMissions = dungeonMissions.filter((mission) => {
-    const missionLevel = Math.max(1, Number(mission.level || mission.minLevel) || 1);
-    return missionLevel <= averageLevel + 5;
-  });
-  const source = eligibleMissions.length > 0 ? eligibleMissions : dungeonMissions;
+  const cleared = Array.isArray(guild.clearedDungeonMissions)
+    ? guild.clearedDungeonMissions
+    : [];
+  if (cleared.length > 0) {
+    return {
+      clearCount: Math.max(0, Number(guild.dungeonClearCount) || cleared.length),
+      score,
+      rows: cleared
+        .sort((left, right) => {
+          if ((left.level || 0) !== (right.level || 0)) {
+            return (left.level || 0) - (right.level || 0);
+          }
+          return String(left.name || "").localeCompare(String(right.name || ""));
+        })
+        .map((mission) => ({
+          id: mission.id,
+          name: mission.dungeonSetName
+            ? `${mission.dungeonSetName}: ${mission.name}`
+            : mission.name,
+          level: mission.level,
+          status:
+            Number(mission.clearCount) > 1
+              ? `${mission.clearCount} Clears`
+              : "Cleared",
+        })),
+    };
+  }
 
   return {
-    clearCount: estimatedCount,
+    clearCount: 0,
     score,
-    rows: source.slice(0, estimatedCount).map((mission) => ({
-      id: mission.id,
-      name: getDungeonMissionLabel(mission),
-      level: Math.max(1, Number(mission.level || mission.minLevel) || 1),
-      status: "Likely cleared",
-    })),
+    rows: [],
   };
 };
 
@@ -312,8 +308,8 @@ export default function RealmOverviewModal({
     ? getRealmRaidProgressList(selectedGuild)
     : [];
   const selectedDungeonProgress = useMemo(
-    () => buildDungeonProgressRows({ guild: selectedGuild, missionList }),
-    [missionList, selectedGuild],
+    () => buildDungeonProgressRows({ guild: selectedGuild }),
+    [selectedGuild],
   );
   const news = Array.isArray(realmState?.news) ? realmState.news : [];
   const populationStats = getRealmPopulationStats(realmState, roster);
@@ -583,7 +579,10 @@ export default function RealmOverviewModal({
                   <MiniRealmActivity label="Applications" value={dailyStats.applications || 0} />
                   <MiniRealmActivity label="Poached" value={dailyStats.poached || 0} />
                   <MiniRealmActivity label="Guild Runs" value={dailyStats.guildDungeonRuns || 0} />
+                  <MiniRealmActivity label="Guild Clears" value={dailyStats.guildDungeonClears || 0} />
                   <MiniRealmActivity label="Pug Runs" value={dailyStats.pugDungeonRuns || 0} />
+                  <MiniRealmActivity label="Pug Clears" value={dailyStats.pugDungeonClears || 0} />
+                  <MiniRealmActivity label="Wipes" value={dailyStats.dungeonWipes || 0} />
                 </div>
               </div>
               <div className="mb-2 flex items-center justify-between gap-2">
@@ -598,9 +597,9 @@ export default function RealmOverviewModal({
                 <EmptyText>No realm news yet. The realm is still waking up.</EmptyText>
               ) : (
                 <div className="space-y-2">
-                  {news.map((entry) => (
+                  {news.map((entry, index) => (
                     <div
-                      key={entry.id}
+                      key={getRealmNewsRenderKey(entry, index)}
                       className="rounded border border-slate-800 bg-slate-950/60 p-2"
                     >
                       <div className="text-[10px] uppercase tracking-wide text-amber-200/70">

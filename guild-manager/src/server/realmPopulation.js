@@ -35,6 +35,8 @@ import {
   REALM_POPULATION_START,
   getRealmPopulationProfile,
 } from "./realmDefinitions";
+import { simulateRealmDungeonActivity } from "./realmDungeons";
+import { capRealmNews } from "./realmNews";
 import { getRealmMaxLevelCount } from "./realmRosters";
 
 export const hashPopulationSeed = (value) => {
@@ -929,6 +931,14 @@ export const advanceRealmPopulationForDay = ({
   players = recruitedResult.players;
   const poachResult = poachNpcGuildMembers({ npcGuilds, players, random: safeRandom });
   players = poachResult.players;
+  const dungeonResult = simulateRealmDungeonActivity({
+    npcGuilds,
+    players,
+    dayIndex,
+    dayFraction: safeDayFraction,
+    random: safeRandom,
+  });
+  players = dungeonResult.players;
   const applicationResult = generatePlayerGuildApplications({
     applications: population.applications,
     players,
@@ -936,20 +946,10 @@ export const advanceRealmPopulationForDay = ({
     dayIndex,
     random: safeRandom,
   });
-
-  const guildDungeonRuns = Math.floor(
-    players.filter((player) => player.guildId && player.level >= 15).length / 35,
-  );
-  const pugDungeonRuns = Math.floor(
-    players.filter((player) => !player.guildId && player.level >= 15).length / 85,
-  );
-  const syncedGuilds = syncGuildRostersFromPopulation(npcGuilds, players).map(
-    (guild) => ({
-      ...guild,
-      dungeonScore:
-        Math.round(Number(guild.dungeonScore) || 0) +
-        Math.round(guildDungeonRuns * ((Number(guild.activityLevel) || 50) / 100)),
-    }),
+  const dungeonStats = dungeonResult.stats || {};
+  const syncedGuilds = syncGuildRostersFromPopulation(
+    dungeonResult.npcGuilds,
+    players,
   );
 
   return {
@@ -964,8 +964,11 @@ export const advanceRealmPopulationForDay = ({
         npcRecruits: recruitedResult.recruited,
         poached: poachResult.poached,
         applications: applicationResult.added,
-        guildDungeonRuns,
-        pugDungeonRuns,
+        guildDungeonRuns: dungeonStats.guildDungeonRuns || 0,
+        guildDungeonClears: dungeonStats.guildDungeonClears || 0,
+        pugDungeonRuns: dungeonStats.pugDungeonRuns || 0,
+        pugDungeonClears: dungeonStats.pugDungeonClears || 0,
+        dungeonWipes: dungeonStats.dungeonWipes || 0,
       },
     },
     npcGuilds: syncedGuilds,
@@ -998,14 +1001,7 @@ export const advanceRealmPopulationForDay = ({
             message: `${applicationResult.added} player${applicationResult.added === 1 ? "" : "s"} applied to join your guild.`,
           }
         : null,
-      guildDungeonRuns + pugDungeonRuns > 0
-        ? {
-            type: "realm-dungeons",
-            guildDungeonRuns,
-            pugDungeonRuns,
-            message: `${guildDungeonRuns} guild dungeon run${guildDungeonRuns === 1 ? "" : "s"} and ${pugDungeonRuns} pug run${pugDungeonRuns === 1 ? "" : "s"} formed across the realm.`,
-          }
-        : null,
+      ...dungeonResult.events,
     ].filter(Boolean),
   };
 };
@@ -1144,15 +1140,17 @@ export const markRealmPlayersRecruited = ({ realmState, playerIds = [] } = {}) =
           (Number(population.dailyStats?.playerGuildRecruits) || 0) + idSet.size,
       },
     },
-    news: [
+    news: capRealmNews([
       {
         id: `realm-news:recruit:${Date.now()}`,
         dayIndex: Math.max(0, Number(realmState?.lastSimulatedDayIndex) || 0),
         type: "player-recruitment",
-        message: `Your guild recruited ${idSet.size} player${idSet.size === 1 ? "" : "s"} from the realm market.`,
+        message: `Your guild recruited ${idSet.size} player${
+          idSet.size === 1 ? "" : "s"
+        } from the realm market.`,
       },
       ...(Array.isArray(realmState?.news) ? realmState.news : []),
-    ].slice(0, 25),
+    ]),
   };
 };
 
@@ -1321,7 +1319,7 @@ export const resolvePlayerGuildDeparturesForDay = ({
             events.filter((event) => event.type === "player-departure-warning").length,
         },
       },
-      news: [
+      news: capRealmNews([
         ...events.map((event, index) => ({
           id: `realm-news:${safeDay}:${event.type}:${index}`,
           dayIndex: safeDay,
@@ -1329,7 +1327,7 @@ export const resolvePlayerGuildDeparturesForDay = ({
           message: event.message,
         })),
         ...(Array.isArray(realmState?.news) ? realmState.news : []),
-      ].slice(0, 25),
+      ]),
     },
   };
 };

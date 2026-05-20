@@ -61,6 +61,9 @@ export const createMissionRewardProcessor = ({
   const getItemSourceBossKeys = (item) =>
     toNormalizedDungeonKeys(item?.sourceBosses);
 
+  const getCharacterHistoryEntries = (character) =>
+    Array.isArray(character?.history) ? character.history : [];
+
   const preferSourceBossCandidates = (items, sourceBossName) => {
     const sourceBossKey = normalizeBossKey(sourceBossName);
     if (!sourceBossKey || items.length === 0) return items;
@@ -749,7 +752,7 @@ export const createMissionRewardProcessor = ({
         exp: newExp,
         maxExp,
         lastLevelUp: leveledUp ? Date.now() : char.lastLevelUp,
-        history: [historyEntry, ...char.history],
+        history: [historyEntry, ...getCharacterHistoryEntries(char)],
         keys: updatedKeys,
         clearedMissionIds: updatedClearedMissionIds,
         equipment: newEquipment,

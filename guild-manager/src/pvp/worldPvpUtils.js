@@ -62,6 +62,9 @@ export const ensureWorldPvpState = (state, currentDayIndex = null) => {
     lastProcessedDayIndex: Number.isFinite(Number(safe.lastProcessedDayIndex))
       ? normalizeDayIndex(safe.lastProcessedDayIndex)
       : fallbackProcessedDay,
+    lastWeeklyRolloverDayIndex: Number.isFinite(Number(safe.lastWeeklyRolloverDayIndex))
+      ? normalizeDayIndex(safe.lastWeeklyRolloverDayIndex)
+      : WORLD_PVP_STATE_DEFAULTS.lastWeeklyRolloverDayIndex,
   };
 };
 

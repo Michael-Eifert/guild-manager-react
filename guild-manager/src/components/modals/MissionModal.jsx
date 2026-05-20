@@ -30,6 +30,7 @@ import {
   getMissionRewardKeys,
   getMissionRewardQualities,
 } from "../../missions/missionHelpers";
+import { isMissionBoardAvailableStatus } from "../../missions/missionRosterGuards";
 import {
   getItemSource,
   getMissionLootSource,
@@ -795,17 +796,7 @@ const MissionModal = ({
     if (isPreparingDungeon && isInterruptibleActiveMission(activeMission)) {
       return true;
     }
-    return (
-      char.status === "Idle" ||
-      char.status.includes("Mining") ||
-      char.status.includes("Herbs") ||
-      char.status.includes("Skinning") ||
-      char.status.includes("Forging") ||
-      char.status.includes("Stitching") ||
-      char.status.includes("Weaving") ||
-      char.status.includes("Disenchanting") ||
-      char.status.includes("Brewing")
-    );
+    return isMissionBoardAvailableStatus(char?.status);
   });
 
   const eligibleRoster = idleRoster.filter((char) => char.level >= minLevel);

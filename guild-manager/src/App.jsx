@@ -217,6 +217,7 @@ import {
   selectRealmRecruitmentCandidates,
 } from "./server/realmPopulation";
 import { resolveWorldPvpForDay } from "./pvp/worldPvpEngine";
+import { applyWeeklyPvpRollover } from "./pvp/pvpProgression";
 import { resolveWorldPvpRoamingAssignment } from "./pvp/worldPvpRoaming";
 import { ensureWorldPvpState } from "./pvp/worldPvpUtils";
 import { createDebugActions } from "./debug/debugActions";
@@ -2284,13 +2285,30 @@ const App = () => {
       });
       newRoster = worldPvpResult.roster;
       newLogs = [...newLogs, ...worldPvpResult.logs];
-      worldPvpStateRef.current = worldPvpResult.worldPvpState;
+      let nextWorldPvpState = worldPvpResult.worldPvpState;
+      const pvpRollover = applyWeeklyPvpRollover({
+        characters: newRoster,
+        currentDay: calendarDayIndex,
+        faction: currentFaction,
+        allItems: itemDatabase,
+        lastRolloverDayIndex: nextWorldPvpState.lastWeeklyRolloverDayIndex,
+      });
+      newRoster = pvpRollover.characters;
+      if (pvpRollover.didRollover) {
+        nextWorldPvpState = {
+          ...nextWorldPvpState,
+          weeklyHonor: 0,
+          lastWeeklyRolloverDayIndex: pvpRollover.currentDayIndex,
+        };
+        newLogs = [...newLogs, ...pvpRollover.logs];
+      }
+      worldPvpStateRef.current = nextWorldPvpState;
 
       rosterRef.current = newRoster;
       missionsRef.current = newMissions;
       setRoster(newRoster);
       setActiveMissions(newMissions);
-      setWorldPvpState(worldPvpResult.worldPvpState);
+      setWorldPvpState(nextWorldPvpState);
       if (newGold !== currentGold) {
         goldRef.current = newGold;
         setGuildGold(newGold);
@@ -4458,12 +4476,12 @@ const App = () => {
             Active
           </h3>
           <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-            {activeMissions.map((m) => {
+            {activeMissions.map((m, index) => {
               const hasLargeBossCount =
                 m.type === "dungeon" && getDungeonBossCount(m) >= 5;
               return (
                 <div
-                  key={`${m.questId}-${m.startTime}`}
+                  key={`${getMissionInstanceId(m)}-${index}`}
                   className={hasLargeBossCount ? "md:col-span-2" : ""}
                 >
                   <ActiveMissionCard
@@ -4796,7 +4814,9 @@ const App = () => {
             isOpen={!!detailCharId}
             missionAchievementCatalog={missionAchievementCatalog}
             missionList={missionList}
+            itemDatabase={itemDatabase}
             roster={roster}
+            guildFaction={guildSetup.faction}
             guildRelationships={guildRelationships}
             raidLockouts={raidLockouts}
             currentDayIndex={currentCalendarDayIndex}

@@ -138,15 +138,15 @@ const maybeFormNpcGuildForDay = ({
 const getArchetypeGrowth = (archetype) => {
   switch (archetype) {
     case NPC_GUILD_ARCHETYPES.HARDCORE_RAIDERS:
-      return { level: 0.38, gear: 0.5, dungeon: 8, raid: 2.4, pve: 16 };
+      return { level: 0.38, gear: 0.5, raid: 2.4, pve: 16 };
     case NPC_GUILD_ARCHETYPES.DUNGEON_RUNNERS:
-      return { level: 0.34, gear: 0.42, dungeon: 12, raid: 1, pve: 14 };
+      return { level: 0.34, gear: 0.42, raid: 1, pve: 14 };
     case NPC_GUILD_ARCHETYPES.LEVELING_GUILD:
-      return { level: 0.32, gear: 0.22, dungeon: 5, raid: 0.4, pve: 9 };
+      return { level: 0.32, gear: 0.22, raid: 0.4, pve: 9 };
     case NPC_GUILD_ARCHETYPES.SOCIAL_GUILD:
-      return { level: 0.18, gear: 0.18, dungeon: 3, raid: 0.2, pve: 5 };
+      return { level: 0.18, gear: 0.18, raid: 0.2, pve: 5 };
     default:
-      return { level: 0.24, gear: 0.25, dungeon: 4, raid: 0.5, pve: 7 };
+      return { level: 0.24, gear: 0.25, raid: 0.5, pve: 7 };
   }
 };
 
@@ -172,13 +172,7 @@ const advanceNpcGuildForDay = ({
         growth.gear * activityMultiplier * variance * safeDayFraction,
     ),
   );
-  const dungeonScore = Math.round(
-    Math.max(
-      0,
-      guild.dungeonScore +
-        growth.dungeon * activityMultiplier * variance * safeDayFraction,
-    ),
-  );
+  const dungeonScore = Math.max(0, Math.round(Number(guild.dungeonScore) || 0));
   const canRaid = averageLevel >= 50;
   const raidGrowth = canRaid
     ? growth.raid * activityMultiplier * variance * safeDayFraction

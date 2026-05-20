@@ -3,6 +3,7 @@ import { applyMoraleDelta } from "../game/characterMorale";
 import { getActiveMissionMemberIdSet } from "../missions/missionRosterGuards";
 import { getRealmPlayersInZone } from "../server/realmPopulation";
 import { getCharacterAverageItemLevel } from "../utils";
+import { awardCharacterHonor } from "./pvpProgression";
 import { ZONE_DEFINITIONS, getZoneById } from "../zones/zoneDefinitions";
 import {
   WORLD_PVP_EVENT_TYPES,
@@ -220,6 +221,12 @@ const eventToLog = (event) => ({
   pvpReputation: event.rewards.pvpReputation,
 });
 
+const getEventHonorableKills = (event) =>
+  event?.outcome === WORLD_PVP_OUTCOME.VICTORY ||
+  event?.outcome === WORLD_PVP_OUTCOME.CLOSE_VICTORY
+    ? 1
+    : 0;
+
 export const resolveWorldPvpForDay = ({
   roster = [],
   activeMissions = [],
@@ -312,7 +319,17 @@ export const resolveWorldPvpForDay = ({
         event.zoneId,
         event.zoneProgressDelta,
       );
-      return event.moraleDelta ? applyMoraleDelta(progressed, event.moraleDelta) : progressed;
+      const moraleAdjusted = event.moraleDelta
+        ? applyMoraleDelta(progressed, event.moraleDelta)
+        : progressed;
+      return awardCharacterHonor(
+        moraleAdjusted,
+        {
+          honor: event.rewards.honor,
+          honorableKills: getEventHonorableKills(event),
+        },
+        guildFaction,
+      );
     });
   }
 

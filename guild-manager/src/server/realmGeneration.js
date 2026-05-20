@@ -5,10 +5,10 @@ import {
   NPC_GUILD_NAME_POOL,
   REALM_NPC_GUILD_INITIAL_RANGE,
   REALM_FACTION_ORDER,
-  REALM_NEWS_LIMIT,
   REALM_TYPES,
   getRealmPopulationProfile,
 } from "./realmDefinitions";
+import { capRealmNews } from "./realmNews";
 import {
   createNpcRaidProgressFromScore,
   normalizeRealmRaidProgress,
@@ -140,6 +140,10 @@ export const generateNpcGuilds = ({
       raidProgress,
       raidProgressByRaid,
       dungeonScore,
+      dungeonRunCount: 0,
+      dungeonClearCount: 0,
+      dungeonWipeCount: 0,
+      clearedDungeonMissions: [],
       reputation: pickNumber(random, profile.reputation),
     };
   });
@@ -183,6 +187,15 @@ export const normalizeNpcGuild = (guild, fallbackGuild) => {
         }),
     ),
     dungeonScore: Math.max(0, Math.round(Number(guild?.dungeonScore ?? fallbackGuild?.dungeonScore) || 0)),
+    dungeonRunCount: Math.max(0, Math.round(Number(guild?.dungeonRunCount ?? fallbackGuild?.dungeonRunCount) || 0)),
+    dungeonClearCount: Math.max(0, Math.round(Number(guild?.dungeonClearCount ?? fallbackGuild?.dungeonClearCount) || 0)),
+    dungeonWipeCount: Math.max(0, Math.round(Number(guild?.dungeonWipeCount ?? fallbackGuild?.dungeonWipeCount) || 0)),
+    clearedDungeonMissions: (Array.isArray(guild?.clearedDungeonMissions)
+      ? guild.clearedDungeonMissions
+      : Array.isArray(fallbackGuild?.clearedDungeonMissions)
+        ? fallbackGuild.clearedDungeonMissions
+        : []
+    ).slice(-40),
     reputation: clampNumber(guild?.reputation ?? fallbackGuild?.reputation, 1, 100),
   };
 };
@@ -240,7 +253,7 @@ export const ensureRealmState = (
     ),
     npcGuilds,
     population,
-    news: Array.isArray(safe.news) ? safe.news.slice(0, REALM_NEWS_LIMIT) : [],
+    news: capRealmNews(safe.news),
     lastSimulatedDayIndex: Number.isFinite(Number(safe.lastSimulatedDayIndex))
       ? Math.max(0, Math.floor(Number(safe.lastSimulatedDayIndex)))
       : safeCurrentDay,

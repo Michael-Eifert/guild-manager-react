@@ -17,6 +17,7 @@ import {
   getCharacterRaidSuccessBonus,
   rollCharacterPersonalityTraits,
 } from "./game/characterPersonality";
+import { createDefaultPvpData } from "./pvp/pvpCharacterUtils";
 
 const ARMOR_HIERARCHY = ["Plate", "Mail", "Leather", "Cloth"];
 const WOW_ICON_BASE_URL = "https://wow.zamimg.com/images/wow/icons/large";
@@ -1120,6 +1121,7 @@ export const generateCharacter = (
     keys: [],
     adventureGoalQueue: [],
     clearedMissionIds: [],
+    pvp: createDefaultPvpData(faction),
     equipment: getStarterGear(charClass),
     lastLevelUp: 0,
     backstory: null,

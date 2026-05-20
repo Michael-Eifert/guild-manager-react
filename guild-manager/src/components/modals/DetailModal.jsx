@@ -28,6 +28,9 @@ import {
   getMoraleSuccessModifier,
 } from "../../game/characterMorale";
 import { getCharacterPersonalityTraits } from "../../game/characterPersonality";
+import { ensureCharacterPvpData } from "../../pvp/pvpCharacterUtils";
+import { getUnlockedPvpGearForCharacter } from "../../pvp/pvpGearUnlocks";
+import { getPvpRankProgressInfo } from "../../pvp/pvpRanks";
 import {
   ZONE_COMPLETION_ARCHETYPE,
   ZONE_DEFINITIONS,
@@ -146,7 +149,9 @@ const DetailModal = ({
   isOpen,
   missionAchievementCatalog = [],
   missionList = [],
+  itemDatabase = [],
   roster = [],
+  guildFaction,
   guildRelationships = {},
   raidLockouts = {},
   currentDayIndex = 0,
@@ -181,6 +186,16 @@ const DetailModal = ({
         ? `${moraleSuccessModifier}% mission success`
         : "No mission success modifier";
   const personalityTraits = getCharacterPersonalityTraits(char);
+  const pvpCharacter = ensureCharacterPvpData(char, guildFaction);
+  const pvpInfo = getPvpRankProgressInfo(pvpCharacter, guildFaction);
+  const unlockedPvpGear = getUnlockedPvpGearForCharacter(
+    pvpCharacter,
+    itemDatabase,
+    guildFaction,
+  );
+  const nextPvpRankLabel = pvpInfo.nextRank
+    ? `${pvpInfo.nextRank.title} (Rank ${pvpInfo.nextRank.rank})`
+    : "Highest rank reached";
 
   const hardCap = getSkillCap(char?.level || 1);
   const averageItemLevel = getCharacterAverageItemLevel(char);
@@ -455,6 +470,35 @@ const DetailModal = ({
                   </div>
                   <div className="mt-2 text-xs text-cyan-200/85 font-semibold">
                     Power Score: {characterPower.toFixed(1)}
+                  </div>
+                  <div className="mt-2 rounded border border-orange-900/60 bg-orange-950/20 p-2 text-xs">
+                    <div className="flex flex-wrap items-center justify-between gap-2">
+                      <span className="font-bold text-orange-200">
+                        PvP: {pvpCharacter.pvp.title}, Rank {pvpCharacter.pvp.rank}
+                      </span>
+                      <span className="text-orange-100/75">
+                        Highest: {pvpCharacter.pvp.highestTitle}
+                      </span>
+                    </div>
+                    <div className="mt-2 grid grid-cols-1 gap-1 text-[11px] text-orange-100/80 sm:grid-cols-3">
+                      <span>Weekly Honor: {pvpCharacter.pvp.weeklyHonor}</span>
+                      <span>Lifetime Honor: {pvpCharacter.pvp.lifetimeHonor}</span>
+                      <span>HKs: {pvpCharacter.pvp.honorableKills}</span>
+                    </div>
+                    <div className="mt-2 h-2 overflow-hidden rounded bg-gray-800 border border-orange-950">
+                      <div
+                        className="h-full bg-orange-500"
+                        style={{ width: `${pvpInfo.percentToNext}%` }}
+                      ></div>
+                    </div>
+                    <div className="mt-1 text-[11px] text-orange-100/70">
+                      {pvpInfo.nextRank
+                        ? `${pvpCharacter.pvp.rankProgress} / ${pvpInfo.nextRequired} progress to ${nextPvpRankLabel}`
+                        : `${pvpCharacter.pvp.rankProgress} rank progress`}
+                    </div>
+                    <div className="mt-1 text-[11px] text-orange-100/70">
+                      Unlocked PvP Gear: {unlockedPvpGear.length}
+                    </div>
                   </div>
                   {setBonus > 0 && (
                     <div className="mt-1 text-xs text-emerald-300/90 font-semibold">

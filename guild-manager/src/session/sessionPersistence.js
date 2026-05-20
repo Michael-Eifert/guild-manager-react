@@ -9,6 +9,7 @@ import { normalizeRaidLockouts } from "../raids/raidLockouts";
 import { normalizeGuildRelationships } from "../social/relationshipSystem";
 import { ensureRealmState } from "../server/realmGeneration";
 import { normalizeCharacterPersonalityTraits } from "../game/characterPersonality";
+import { ensureCharacterPvpData } from "../pvp/pvpCharacterUtils";
 import { ensureWorldPvpState } from "../pvp/worldPvpUtils";
 
 export const SESSION_FORMAT = "guild-manager-session";
@@ -344,6 +345,10 @@ export const hydrateSessionData = ({
     ),
   );
   const normalizedRoster = loadedRoster.map((char) => {
+    const characterWithPvp = ensureCharacterPvpData(
+      char,
+      loadedGuildSetup?.faction,
+    );
     const normalizedKeys = Array.isArray(char?.keys)
       ? [...new Set(char.keys.map((keyId) => String(keyId || "").trim()).filter(Boolean))]
       : [];
@@ -357,14 +362,14 @@ export const hydrateSessionData = ({
         ]
       : [];
     const normalizedAdventureGoalQueue = normalizeAdventureGoalQueue(
-      char?.adventureGoalQueue,
+      characterWithPvp?.adventureGoalQueue,
     );
     const normalizedPersonalityTraits = normalizeCharacterPersonalityTraits(
-      char?.personalityTraits || char?.personalityTrait,
+      characterWithPvp?.personalityTraits || characterWithPvp?.personalityTrait,
     );
-    if (activeMemberIds.has(char.id)) {
+    if (activeMemberIds.has(characterWithPvp.id)) {
       return {
-        ...char,
+        ...characterWithPvp,
         keys: normalizedKeys,
         adventureGoalQueue: normalizedAdventureGoalQueue,
         clearedMissionIds: normalizedClearedMissionIds,
@@ -373,9 +378,9 @@ export const hydrateSessionData = ({
         statusText: "On Mission",
       };
     }
-    if (char.status === "Questing") {
+    if (characterWithPvp.status === "Questing") {
       return {
-        ...char,
+        ...characterWithPvp,
         keys: normalizedKeys,
         adventureGoalQueue: normalizedAdventureGoalQueue,
         clearedMissionIds: normalizedClearedMissionIds,
@@ -385,7 +390,7 @@ export const hydrateSessionData = ({
       };
     }
     return {
-      ...char,
+      ...characterWithPvp,
       keys: normalizedKeys,
       adventureGoalQueue: normalizedAdventureGoalQueue,
       clearedMissionIds: normalizedClearedMissionIds,

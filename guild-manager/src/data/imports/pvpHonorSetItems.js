@@ -1394,6 +1394,7 @@ const buildVariantItems = ({ className, type, variant, variantIndex, classIndex 
     const itemName = variant.pieces[slot];
     const metadata = getPvpItemMetadata(itemName);
     const iconCode = metadata.icon || ICON_BY_ARMOR_AND_SLOT[type]?.[slot];
+    const requiredPvpRank = getHonorRankForItem(variant.quality, slot);
 
     return {
       id: 404000 + classIndex * 100 + variantIndex * 10 + slotIndex,
@@ -1410,7 +1411,10 @@ const buildVariantItems = ({ className, type, variant, variantIndex, classIndex 
       allowedClasses: [className],
       faction: variant.faction,
       pvpGear: true,
-      pvpHonorRank: getHonorRankForItem(variant.quality, slot),
+      pvpHonorRank: requiredPvpRank,
+      requiredPvpRank,
+      pvpTier: variant.quality === PVP_HONOR_QUALITY.EPIC ? "epic" : "blue",
+      source: "pvp",
       setId: variant.setId,
       setName: variant.setName,
       stats: buildStatsForItem({ className, slot, quality: variant.quality }),

@@ -156,7 +156,7 @@ export const NPC_GUILD_ARCHETYPE_PROFILE = Object.freeze({
     activityLevel: [74, 98],
     pveScore: [20, 45],
     raidProgress: [0, 0],
-    dungeonScore: [0, 12],
+    dungeonScore: [0, 0],
     reputation: [48, 76],
   }),
   [NPC_GUILD_ARCHETYPES.CASUAL_ADVENTURERS]: Object.freeze({
@@ -166,7 +166,7 @@ export const NPC_GUILD_ARCHETYPE_PROFILE = Object.freeze({
     activityLevel: [30, 62],
     pveScore: [8, 28],
     raidProgress: [0, 0],
-    dungeonScore: [0, 8],
+    dungeonScore: [0, 0],
     reputation: [50, 82],
   }),
   [NPC_GUILD_ARCHETYPES.DUNGEON_RUNNERS]: Object.freeze({
@@ -176,7 +176,7 @@ export const NPC_GUILD_ARCHETYPE_PROFILE = Object.freeze({
     activityLevel: [58, 88],
     pveScore: [16, 38],
     raidProgress: [0, 0],
-    dungeonScore: [4, 16],
+    dungeonScore: [0, 0],
     reputation: [42, 70],
   }),
   [NPC_GUILD_ARCHETYPES.LEVELING_GUILD]: Object.freeze({
@@ -186,7 +186,7 @@ export const NPC_GUILD_ARCHETYPE_PROFILE = Object.freeze({
     activityLevel: [50, 82],
     pveScore: [14, 34],
     raidProgress: [0, 0],
-    dungeonScore: [0, 10],
+    dungeonScore: [0, 0],
     reputation: [46, 76],
   }),
   [NPC_GUILD_ARCHETYPES.SOCIAL_GUILD]: Object.freeze({
@@ -196,7 +196,7 @@ export const NPC_GUILD_ARCHETYPE_PROFILE = Object.freeze({
     activityLevel: [36, 66],
     pveScore: [8, 26],
     raidProgress: [0, 0],
-    dungeonScore: [0, 8],
+    dungeonScore: [0, 0],
     reputation: [74, 98],
   }),
 });

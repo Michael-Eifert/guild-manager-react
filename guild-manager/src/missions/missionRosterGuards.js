@@ -16,6 +16,21 @@ export const getActiveMissionMemberIdSet = (activeMissions) =>
     ),
   );
 
+export const isMissionBoardAvailableStatus = (status) => {
+  const normalizedStatus = String(status || "Idle");
+  return (
+    normalizedStatus === "Idle" ||
+    normalizedStatus.includes("Mining") ||
+    normalizedStatus.includes("Herbs") ||
+    normalizedStatus.includes("Skinning") ||
+    normalizedStatus.includes("Forging") ||
+    normalizedStatus.includes("Stitching") ||
+    normalizedStatus.includes("Weaving") ||
+    normalizedStatus.includes("Disenchanting") ||
+    normalizedStatus.includes("Brewing")
+  );
+};
+
 export const isMissionMemberGroupAvailable = ({
   memberIds,
   roster = [],

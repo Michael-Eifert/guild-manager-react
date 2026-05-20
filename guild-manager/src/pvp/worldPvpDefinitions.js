@@ -85,4 +85,5 @@ export const WORLD_PVP_STATE_DEFAULTS = Object.freeze({
   pvpReputation: 0,
   zoneStats: Object.freeze({}),
   lastProcessedDayIndex: 0,
+  lastWeeklyRolloverDayIndex: 0,
 });
