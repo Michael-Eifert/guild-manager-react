@@ -1,9 +1,12 @@
 import React from "react";
 import {
+  DEFAULT_GUILD_SETUP,
   GUILD_FACTION,
+  GUILD_DUNGEON_ACTIVITY_OPTIONS,
   GUILD_SERVER_POPULATION,
   GUILD_SERVER_OPTIONS,
 } from "../constants";
+import { PVP_ACTIVITY_FOCUS_OPTIONS } from "../pvp/battlefields/battlefieldDefinitions";
 
 const GUILD_FOCUS_COPY = {
   Leveling: "Leveling (+5% Guild XP)",
@@ -22,6 +25,10 @@ const GuildSetupScreen = ({ guildSetup, onChange, onStart, onLoadSession }) => {
   const selectedRealm =
     GUILD_SERVER_OPTIONS.find((option) => option.value === guildSetup?.server) ||
     GUILD_SERVER_OPTIONS[0];
+  const selectedDungeonActivity =
+    guildSetup?.dungeonActivity || DEFAULT_GUILD_SETUP.dungeonActivity;
+  const selectedPvpActivityFocus =
+    guildSetup?.pvpActivityFocus || DEFAULT_GUILD_SETUP.pvpActivityFocus;
   const handleSubmit = (event) => {
     event.preventDefault();
     if (canStart) onStart();
@@ -58,6 +65,63 @@ const GuildSetupScreen = ({ guildSetup, onChange, onStart, onLoadSession }) => {
                 maxLength={40}
               />
             </label>
+
+            <div className="space-y-3 rounded border border-gray-700 bg-gray-800/50 p-3">
+              <div>
+                <div className="text-xs uppercase tracking-wider text-gray-300 font-bold">
+                  Starting Activity
+                </div>
+                <div className="mt-1 text-xs text-gray-500">
+                  Choose how active the guild should be after founding.
+                </div>
+              </div>
+
+              <label className="block space-y-2">
+                <span className="text-xs uppercase tracking-wider text-gray-400 font-bold">
+                  Dungeon Groups
+                </span>
+                <select
+                  value={selectedDungeonActivity}
+                  onChange={(event) =>
+                    onChange("dungeonActivity", event.target.value)
+                  }
+                  className="w-full rounded border border-gray-600 bg-gray-900 px-3 py-2 text-gray-100 focus:outline-none focus:border-amber-500"
+                >
+                  {GUILD_DUNGEON_ACTIVITY_OPTIONS.map((option) => (
+                    <option key={option} value={option}>
+                      {option}
+                    </option>
+                  ))}
+                </select>
+              </label>
+
+              <div className="space-y-2">
+                <div className="text-xs uppercase tracking-wider text-gray-400 font-bold">
+                  PvP Activity
+                </div>
+                <div className="grid grid-cols-2 sm:grid-cols-5 gap-2">
+                  {PVP_ACTIVITY_FOCUS_OPTIONS.map((option) => {
+                    const selected = option.value === selectedPvpActivityFocus;
+                    return (
+                      <button
+                        key={option.value}
+                        type="button"
+                        onClick={() => onChange("pvpActivityFocus", option.value)}
+                        aria-pressed={selected}
+                        className={`rounded border px-2 py-2 text-xs font-bold transition-colors ${
+                          selected
+                            ? "border-emerald-500 bg-emerald-950/45 text-emerald-100"
+                            : "border-gray-700 bg-gray-900 text-gray-300 hover:border-emerald-800 hover:bg-gray-800"
+                        }`}
+                        title={option.description}
+                      >
+                        {option.label}
+                      </button>
+                    );
+                  })}
+                </div>
+              </div>
+            </div>
 
             <label className="block space-y-2">
               <span className="text-xs uppercase tracking-wider text-gray-300 font-bold">
@@ -164,6 +228,14 @@ const GuildSetupScreen = ({ guildSetup, onChange, onStart, onLoadSession }) => {
             <div className="rounded border border-gray-700 bg-gray-800/60 p-3 text-xs text-gray-300">
               <div>Default faction: {GUILD_FACTION.ALLIANCE} (can be changed)</div>
               <div>Default focus: Leveling</div>
+              <div>
+                Starting activity: {selectedDungeonActivity}, PvP{" "}
+                {
+                  PVP_ACTIVITY_FOCUS_OPTIONS.find(
+                    (option) => option.value === selectedPvpActivityFocus,
+                  )?.label
+                }
+              </div>
               <div>
                 Selected realm: {selectedRealm.value} ({selectedRealm.style}) -{" "}
                 Population:{" "}

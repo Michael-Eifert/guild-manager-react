@@ -48,7 +48,7 @@ export const isMissionMemberGroupAvailable = ({
 
   return requestedMemberIds.every((memberId) => {
     if (busyMemberIds.has(memberId)) return false;
-    return rosterById.get(memberId)?.status !== "Questing";
+    return isMissionBoardAvailableStatus(rosterById.get(memberId)?.status);
   });
 };
 

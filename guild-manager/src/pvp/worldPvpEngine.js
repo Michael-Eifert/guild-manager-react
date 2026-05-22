@@ -265,6 +265,7 @@ export const resolveWorldPvpForDay = ({
       memberId &&
       character?.currentZoneId &&
       character?.status !== "Questing" &&
+      character?.status !== "Battleground" &&
       !busyMemberIds.has(memberId)
     );
   });

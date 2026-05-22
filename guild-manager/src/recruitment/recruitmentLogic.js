@@ -1,25 +1,12 @@
 import {
   getClassArmorTypes,
+  EQUIPMENT_SLOT_ORDER,
   getItemEffectiveLevel,
   isItemUsableByClass,
 } from "../utils";
 import { getCharacterMorale } from "../game/characterMorale";
 
-const RECRUITMENT_GEAR_SLOTS = Object.freeze([
-  "head",
-  "neck",
-  "shoulder",
-  "back",
-  "chest",
-  "wrist",
-  "belt",
-  "legs",
-  "feet",
-  "hands",
-  "trinket",
-  "ring",
-  "mainHand",
-]);
+const RECRUITMENT_GEAR_SLOTS = EQUIPMENT_SLOT_ORDER;
 
 const RECRUITMENT_GEAR_BANDS = Object.freeze([
   { level: 10, min: 1, max: 12 },

@@ -1,6 +1,7 @@
 import { GUILD_DUNGEON_ACTIVITY, GUILD_FOCUS } from "../constants";
 import { CALENDAR_DAY_MS } from "../calendar/calendarLogic";
 import { evaluateMissionKeyAccess } from "../missions/missionHelpers";
+import { isMissionBoardAvailableStatus } from "../missions/missionRosterGuards";
 import { getCharacterPowerScore } from "../utils";
 import {
   ADVENTURE_GOAL_TYPE,
@@ -281,7 +282,7 @@ const getAvailableDungeonMembers = ({ roster, activeMissions }) => {
   return (Array.isArray(roster) ? roster : []).filter(
     (member) =>
       member &&
-      member.status !== "Questing" &&
+      isMissionBoardAvailableStatus(member.status) &&
       !busyMemberIds.has(String(member.id || "")),
   );
 };

@@ -17,6 +17,9 @@ describe("GuildSetupScreen", () => {
 
     expect(html).toContain("Found Your Guild");
     expect(html).toContain("Test Guild");
+    expect(html).toContain("Starting Activity");
+    expect(html).toContain("Dungeon Groups");
+    expect(html).toContain("PvP Activity");
     expect(html).toContain("Start Game");
   });
 });

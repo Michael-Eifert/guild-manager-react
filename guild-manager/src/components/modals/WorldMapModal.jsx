@@ -1,12 +1,8 @@
 import { useEffect, useMemo, useState } from "react";
 
 import BaseModal from "./BaseModal";
-import ActiveMissionCard from "../ActiveMissionCard";
 import { DB_CLASSES, GUILD_FACTION, GUILD_SERVER_STYLE } from "../../constants";
 import {
-  getKeyIconUrl,
-  getKeyLabel,
-  getKeySourceQuestLabel,
   getRacePortraitUrl,
   getRoleIcon,
   getWowIconUrl,
@@ -23,11 +19,6 @@ import {
   filterWorldMapZoneSummaries,
 } from "../../zones/zoneMapSummary";
 import { hasCompletedZoneEliteQuest } from "../../automation/zoneEliteAutomation";
-import {
-  buildDungeonAttunementTargets,
-  getAdventureGoalQueue,
-  getAttunementEligibleMembers,
-} from "../../automation/adventureGoals";
 import { getRealmPlayersInZone } from "../../server/realmPopulation";
 import { WORLD_PVP_PROFILE_TYPE } from "../../pvp/worldPvpDefinitions";
 import {
@@ -66,29 +57,6 @@ const ZONE_ELITE_FILTERS = Object.freeze({
 const ZONE_ELITE_FILTER_ORDER = [
   ZONE_ELITE_FILTERS.IN_PROGRESS,
   ZONE_ELITE_FILTERS.COMPLETED,
-];
-
-const BOARD_TABS = Object.freeze({
-  WORLD: "World Board",
-  DUNGEON: "Dungeon Board",
-});
-
-const DUNGEON_BOARD_FILTERS = Object.freeze({
-  ALL: "All",
-  DUNGEONS: "Dungeons",
-  RAIDS: "Raids",
-  NEEDS_ATTUNEMENT: "Needs Attunement",
-  READY: "Ready",
-  BLOCKED: "Blocked",
-});
-
-const DUNGEON_BOARD_FILTER_ORDER = [
-  DUNGEON_BOARD_FILTERS.ALL,
-  DUNGEON_BOARD_FILTERS.DUNGEONS,
-  DUNGEON_BOARD_FILTERS.RAIDS,
-  DUNGEON_BOARD_FILTERS.NEEDS_ATTUNEMENT,
-  DUNGEON_BOARD_FILTERS.READY,
-  DUNGEON_BOARD_FILTERS.BLOCKED,
 ];
 
 const getPvpTerritoryTextClass = (pvpTerritory) => {
@@ -168,7 +136,9 @@ const getMissionMemberIds = (mission) => {
 const isHeroAvailable = (member, busyMemberIds) => {
   const memberId = getMemberId(member);
   if (!memberId || busyMemberIds.has(memberId)) return false;
-  return !["Questing", "Dungeon", "Raid", "Mission"].includes(member?.status);
+  return !["Questing", "Dungeon", "Raid", "Mission", "Battleground"].includes(
+    member?.status,
+  );
 };
 
 const isHeroOnMission = (member, busyMemberIds) =>
@@ -237,30 +207,19 @@ export default function WorldMapModal({
   worldPvpState = null,
   guildLog = [],
   guildName = "Player Guild",
-  gameTimeMs,
   guildFaction = GUILD_FACTION.ALLIANCE,
   realmType = GUILD_SERVER_STYLE.PVE,
   onDeploy,
-  onQueueAdventureGoal,
-  onClearAdventureGoal,
   getMissionPreview,
 }) {
   const isPage = variant === "page";
   const isActive = isPage || isOpen;
-  const [activeBoard, setActiveBoard] = useState(BOARD_TABS.WORLD);
   const [activeFilter, setActiveFilter] = useState(WORLD_MAP_FILTERS.AVAILABLE);
   const [selectedZoneId, setSelectedZoneId] = useState(null);
   const [selectedMemberIds, setSelectedMemberIds] = useState([]);
   const [selectedEliteMemberIds, setSelectedEliteMemberIds] = useState([]);
   const [selectedEliteQuestId, setSelectedEliteQuestId] = useState(null);
   const [zoneMapImageFailed, setZoneMapImageFailed] = useState(false);
-  const [dungeonBoardFilter, setDungeonBoardFilter] = useState(
-    DUNGEON_BOARD_FILTERS.ALL,
-  );
-  const [selectedAttunementTargetId, setSelectedAttunementTargetId] =
-    useState(null);
-  const [selectedAttunementMemberIds, setSelectedAttunementMemberIds] =
-    useState([]);
 
   const summaries = useMemo(
     () =>
@@ -340,88 +299,6 @@ export default function WorldMapModal({
     });
     return ids;
   }, [activeMissions]);
-
-  const activeDungeonMissions = useMemo(
-    () =>
-      (Array.isArray(activeMissions) ? activeMissions : []).filter(
-        (mission) => mission?.type === "dungeon",
-      ),
-    [activeMissions],
-  );
-
-  const attunementTargets = useMemo(
-    () => buildDungeonAttunementTargets({ missionList, roster }),
-    [missionList, roster],
-  );
-
-  const dungeonBoardFilterCounts = useMemo(
-    () => ({
-      [DUNGEON_BOARD_FILTERS.ALL]: attunementTargets.length,
-      [DUNGEON_BOARD_FILTERS.DUNGEONS]: attunementTargets.filter(
-        (target) => !target.isRaidTarget,
-      ).length,
-      [DUNGEON_BOARD_FILTERS.RAIDS]: attunementTargets.filter(
-        (target) => target.isRaidTarget,
-      ).length,
-      [DUNGEON_BOARD_FILTERS.NEEDS_ATTUNEMENT]: attunementTargets.filter(
-        (target) => target.missing.length > 0,
-      ).length,
-      [DUNGEON_BOARD_FILTERS.READY]: attunementTargets.filter(
-        (target) => target.isReady,
-      ).length,
-      [DUNGEON_BOARD_FILTERS.BLOCKED]: attunementTargets.filter(
-        (target) => !target.isReady,
-      ).length,
-    }),
-    [attunementTargets],
-  );
-
-  const filteredAttunementTargets = useMemo(() => {
-    switch (dungeonBoardFilter) {
-      case DUNGEON_BOARD_FILTERS.DUNGEONS:
-        return attunementTargets.filter((target) => !target.isRaidTarget);
-      case DUNGEON_BOARD_FILTERS.RAIDS:
-        return attunementTargets.filter((target) => target.isRaidTarget);
-      case DUNGEON_BOARD_FILTERS.NEEDS_ATTUNEMENT:
-        return attunementTargets.filter((target) => target.missing.length > 0);
-      case DUNGEON_BOARD_FILTERS.READY:
-        return attunementTargets.filter((target) => target.isReady);
-      case DUNGEON_BOARD_FILTERS.BLOCKED:
-        return attunementTargets.filter((target) => !target.isReady);
-      default:
-        return attunementTargets;
-    }
-  }, [attunementTargets, dungeonBoardFilter]);
-
-  const selectedAttunementTarget = useMemo(
-    () =>
-      attunementTargets.find((target) => target.id === selectedAttunementTargetId) ??
-      filteredAttunementTargets[0] ??
-      attunementTargets[0] ??
-      null,
-    [attunementTargets, filteredAttunementTargets, selectedAttunementTargetId],
-  );
-
-  useEffect(() => {
-    if (activeBoard !== BOARD_TABS.DUNGEON) return;
-    const selectedVisible = filteredAttunementTargets.some(
-      (target) => target.id === selectedAttunementTargetId,
-    );
-    if (!selectedAttunementTargetId || !selectedVisible) {
-      setSelectedAttunementTargetId(
-        filteredAttunementTargets[0]?.id ?? attunementTargets[0]?.id ?? null,
-      );
-    }
-  }, [
-    activeBoard,
-    attunementTargets,
-    filteredAttunementTargets,
-    selectedAttunementTargetId,
-  ]);
-
-  useEffect(() => {
-    setSelectedAttunementMemberIds([]);
-  }, [selectedAttunementTarget?.id]);
 
   const availableHeroes = useMemo(
     () =>
@@ -540,37 +417,6 @@ export default function WorldMapModal({
     if (deployed !== false) setSelectedEliteMemberIds([]);
   };
 
-  const queueSelectedAttunementGoal = () => {
-    if (
-      !selectedAttunementTarget?.sourceMission ||
-      selectedAttunementMemberIds.length === 0
-    ) {
-      return;
-    }
-    const queued = onQueueAdventureGoal?.({
-      memberIds: selectedAttunementMemberIds,
-      keyId: selectedAttunementTarget.keyId,
-      sourceMissionId: selectedAttunementTarget.sourceMission.id,
-      targetMissionId: selectedAttunementTarget.goalTargetId,
-    });
-    if (queued !== false) setSelectedAttunementMemberIds([]);
-  };
-
-  const clearSelectedAttunementGoal = () => {
-    if (
-      !selectedAttunementTarget?.sourceMission ||
-      selectedAttunementMemberIds.length === 0
-    ) {
-      return;
-    }
-    const cleared = onClearAdventureGoal?.({
-      memberIds: selectedAttunementMemberIds,
-      keyId: selectedAttunementTarget.keyId,
-      sourceMissionId: selectedAttunementTarget.sourceMission.id,
-    });
-    if (cleared !== false) setSelectedAttunementMemberIds([]);
-  };
-
   const moveHeroToZone = (memberId, zoneId) => {
     const targetSummary = summaries.find((summary) => summary.zone.id === zoneId);
     if (!targetSummary?.zoneMission) return;
@@ -593,7 +439,7 @@ export default function WorldMapModal({
             Adventure Board
           </h2>
           <p className="text-xs md:text-sm text-cyan-100/60 truncate">
-            {guildFaction} world routes, dungeon runs, and attunement goals
+            {guildFaction} world routes and zone objectives
           </p>
         </div>
         {!isPage && (
@@ -608,30 +454,7 @@ export default function WorldMapModal({
         )}
       </header>
 
-      <div className="flex-none border-b border-cyan-900/45 bg-slate-950 px-3 py-2 md:px-5">
-        <div className="grid grid-cols-2 gap-2 sm:flex sm:w-fit">
-          {Object.values(BOARD_TABS).map((tab) => {
-            const selected = activeBoard === tab;
-            return (
-              <button
-                key={tab}
-                type="button"
-                onClick={() => setActiveBoard(tab)}
-                className={`rounded border px-4 py-2 text-xs font-bold uppercase tracking-wide transition-colors ${
-                  selected
-                    ? "border-cyan-400/70 bg-cyan-950/55 text-cyan-100"
-                    : "border-slate-700 bg-slate-900/70 text-slate-300 hover:border-cyan-600"
-                }`}
-              >
-                {tab}
-              </button>
-            );
-          })}
-        </div>
-      </div>
-
       <div className="flex-1 overflow-y-auto p-3 md:p-4">
-        {activeBoard === BOARD_TABS.WORLD ? (
         <div className="grid grid-cols-1 xl:grid-cols-[minmax(0,1.35fr)_minmax(360px,0.65fr)] gap-4 min-h-full">
           <section className="rounded-lg border border-cyan-900/50 bg-slate-950/75 p-3 flex flex-col gap-3">
             <div className="flex flex-col lg:flex-row lg:items-center lg:justify-between gap-3">
@@ -756,31 +579,6 @@ export default function WorldMapModal({
             )}
           </aside>
         </div>
-        ) : (
-          <DungeonBoard
-            roster={roster}
-            activeDungeonMissions={activeDungeonMissions}
-            gameTimeMs={gameTimeMs}
-            attunementTargets={attunementTargets}
-            filteredAttunementTargets={filteredAttunementTargets}
-            selectedAttunementTarget={selectedAttunementTarget}
-            selectedAttunementTargetId={selectedAttunementTarget?.id}
-            onSelectAttunementTarget={setSelectedAttunementTargetId}
-            selectedAttunementMemberIds={selectedAttunementMemberIds}
-            onToggleAttunementMember={(memberId) =>
-              setSelectedAttunementMemberIds((currentIds) =>
-                toggleSelection(currentIds, memberId),
-              )
-            }
-            onSelectAttunementMembers={setSelectedAttunementMemberIds}
-            onQueueAttunementGoal={queueSelectedAttunementGoal}
-            onClearAttunementGoal={clearSelectedAttunementGoal}
-            dungeonBoardFilter={dungeonBoardFilter}
-            onDungeonBoardFilterChange={setDungeonBoardFilter}
-            dungeonBoardFilterCounts={dungeonBoardFilterCounts}
-            busyMemberIds={busyMemberIds}
-          />
-        )}
       </div>
     </>
   );
@@ -836,436 +634,6 @@ function ZoneSelectionPanel({
       />
     </div>
   );
-}
-
-function DungeonBoard({
-  roster,
-  activeDungeonMissions,
-  gameTimeMs,
-  attunementTargets,
-  filteredAttunementTargets,
-  selectedAttunementTarget,
-  selectedAttunementTargetId,
-  onSelectAttunementTarget,
-  selectedAttunementMemberIds,
-  onToggleAttunementMember,
-  onSelectAttunementMembers,
-  onQueueAttunementGoal,
-  onClearAttunementGoal,
-  dungeonBoardFilter,
-  onDungeonBoardFilterChange,
-  dungeonBoardFilterCounts,
-  busyMemberIds,
-}) {
-  const activeRuns = Array.isArray(activeDungeonMissions)
-    ? activeDungeonMissions
-    : [];
-  const activeRaidCount = activeRuns.filter((mission) => mission?.isRaid).length;
-  const queuedGoalCount = (Array.isArray(roster) ? roster : []).reduce(
-    (sum, member) => sum + getAdventureGoalQueue(member).length,
-    0,
-  );
-  const blockedTargetCount = attunementTargets.filter(
-    (target) => !target.isReady,
-  ).length;
-  const sourceMission = selectedAttunementTarget?.sourceMission || null;
-  const selectedMembers = (Array.isArray(roster) ? roster : []).filter((member) =>
-    selectedAttunementMemberIds.includes(getMemberId(member)),
-  );
-  const selectedQueuedMembers = selectedMembers.filter((member) =>
-    hasQueuedTargetGoal(member, selectedAttunementTarget),
-  );
-  const selectableAttunementMemberIds = getSelectableAttunementMemberIds({
-    heroes: roster,
-    target: selectedAttunementTarget,
-  });
-  const allSelectableSelected =
-    selectableAttunementMemberIds.length > 0 &&
-    selectableAttunementMemberIds.every((memberId) =>
-      selectedAttunementMemberIds.includes(memberId),
-    );
-
-  return (
-    <div className="grid grid-cols-1 xl:grid-cols-[minmax(320px,0.72fr)_minmax(560px,1.28fr)] gap-4 min-h-full">
-      <section className="rounded-lg border border-cyan-900/50 bg-slate-950/75 p-3">
-        <div className="grid grid-cols-2 md:grid-cols-4 gap-2">
-          <Stat label="Active Runs" value={activeRuns.length} />
-          <Stat label="Raids" value={activeRaidCount} />
-          <Stat label="Queued" value={queuedGoalCount} />
-          <Stat label="Blocked" value={blockedTargetCount} />
-        </div>
-
-        <SectionTitle title="Current Dungeon Runs" />
-        <div className="rounded border border-slate-700/70 bg-slate-900/55 p-2">
-          {activeRuns.length === 0 ? (
-            <EmptyText>No dungeon or raid runs are active right now.</EmptyText>
-          ) : (
-            <div className="grid grid-cols-1 lg:grid-cols-2 gap-2">
-              {activeRuns.map((mission) => (
-                <ActiveMissionCard
-                  key={mission.instanceId || mission.id}
-                  mission={mission}
-                  gameTimeMs={gameTimeMs}
-                  roster={roster}
-                  showFinishAction={false}
-                  variant="compact"
-                />
-              ))}
-            </div>
-          )}
-        </div>
-
-        <SectionTitle title="Attunement Filters" />
-        <div className="grid grid-cols-2 md:grid-cols-3 gap-2">
-          {DUNGEON_BOARD_FILTER_ORDER.map((filter) => {
-            const selected = dungeonBoardFilter === filter;
-            return (
-              <button
-                key={filter}
-                type="button"
-                onClick={() => onDungeonBoardFilterChange(filter)}
-                className={`rounded border px-2 py-2 text-xs font-semibold transition-colors ${
-                  selected
-                    ? "border-cyan-500/70 bg-cyan-950/45 text-cyan-100"
-                    : "border-slate-700 bg-slate-950/55 text-slate-300 hover:border-cyan-700"
-                }`}
-              >
-                {filter} {dungeonBoardFilterCounts[filter] ?? 0}
-              </button>
-            );
-          })}
-        </div>
-      </section>
-
-      <section className="rounded-lg border border-cyan-900/50 bg-slate-950/75 p-3">
-        <SectionTitle title="Attunement Planner" />
-        <div className="space-y-3">
-          <div className="max-h-80 overflow-y-auto rounded border border-slate-700/70 bg-slate-900/55 p-3">
-            {filteredAttunementTargets.length === 0 ? (
-              <EmptyText>No attunement targets match this filter.</EmptyText>
-            ) : (
-              <div className="grid grid-cols-1 md:grid-cols-2 2xl:grid-cols-3 gap-3">
-                {filteredAttunementTargets.map((target) => (
-                  <AttunementTargetButton
-                    key={target.id}
-                    target={target}
-                    selected={selectedAttunementTargetId === target.id}
-                    onSelect={() => onSelectAttunementTarget(target.id)}
-                  />
-                ))}
-              </div>
-            )}
-          </div>
-
-          <div className="rounded border border-slate-700/70 bg-slate-900/55 p-3">
-            {!selectedAttunementTarget ? (
-              <EmptyText>No attunement target selected.</EmptyText>
-            ) : (
-              <>
-                <AttunementTargetDetail target={selectedAttunementTarget} />
-                <div className="mt-3 flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
-                  <SectionTitle
-                    title="Queue Heroes"
-                    hint="busy heroes will queue this as their next mission"
-                  />
-                  <button
-                    type="button"
-                    onClick={() =>
-                      onSelectAttunementMembers(
-                        allSelectableSelected ? [] : selectableAttunementMemberIds,
-                      )
-                    }
-                    disabled={selectableAttunementMemberIds.length === 0}
-                    className="rounded border border-cyan-700 bg-cyan-950/35 px-3 py-1.5 text-xs font-bold uppercase tracking-wide text-cyan-100 transition-colors hover:bg-cyan-900/45 disabled:cursor-not-allowed disabled:opacity-50"
-                  >
-                    {allSelectableSelected ? "Clear Selection" : "Select All"}
-                  </button>
-                </div>
-                <AttunementHeroPicker
-                  heroes={roster}
-                  target={selectedAttunementTarget}
-                  selectedIds={selectedAttunementMemberIds}
-                  busyMemberIds={busyMemberIds}
-                  onToggle={onToggleAttunementMember}
-                />
-                <div className="mt-3 grid grid-cols-1 sm:grid-cols-2 gap-2">
-                  <button
-                    type="button"
-                    onClick={onQueueAttunementGoal}
-                    disabled={!sourceMission || selectedMembers.length === 0}
-                    className="btn-quest rounded px-4 py-2 text-sm font-bold text-blue-100 disabled:cursor-not-allowed disabled:opacity-50"
-                  >
-                    Queue {selectedMembers.length} for{" "}
-                    {sourceMission?.dungeonWing || sourceMission?.name || "Source"}
-                  </button>
-                  <button
-                    type="button"
-                    onClick={onClearAttunementGoal}
-                    disabled={selectedQueuedMembers.length === 0}
-                    className="rounded border border-rose-800 bg-rose-950/35 px-4 py-2 text-sm font-bold text-rose-100 transition-colors hover:bg-rose-900/45 disabled:cursor-not-allowed disabled:opacity-50"
-                  >
-                    Clear {selectedQueuedMembers.length} Queued
-                  </button>
-                </div>
-              </>
-            )}
-          </div>
-        </div>
-      </section>
-    </div>
-  );
-}
-
-function AttunementTargetButton({ target, selected, onSelect }) {
-  const targetLabel = getAttunementTargetLabel(target);
-  return (
-    <button
-      type="button"
-      onClick={onSelect}
-      className={`w-full rounded border p-3 text-left transition-colors ${
-        selected
-          ? "border-amber-400/70 bg-amber-900/25"
-          : "border-slate-800 bg-slate-950/45 hover:border-cyan-600/70"
-      }`}
-    >
-      <div className="flex items-center gap-3">
-        <img
-          src={getKeyIconUrl(target.keyId)}
-          alt={getKeyLabel(target.keyId)}
-          className="h-11 w-11 rounded border border-slate-700 bg-slate-950"
-          onError={(event) => {
-            event.currentTarget.src = getWowIconUrl("inv_misc_key_03");
-          }}
-        />
-        <span className="min-w-0">
-          <strong className="block truncate text-sm text-slate-100">
-            {getKeyLabel(target.keyId)}
-          </strong>
-          <span className="block truncate text-xs text-slate-500">
-            {targetLabel}
-          </span>
-        </span>
-      </div>
-      <div className="mt-3 grid grid-cols-3 gap-2 text-xs">
-        <MiniStat label="Have" value={target.holders.length} />
-        <MiniStat label="Need" value={target.missing.length} />
-        <MiniStat label="Queued" value={target.queued.length} />
-      </div>
-      <span
-        className={`mt-2 inline-flex rounded border px-1.5 py-0.5 text-[10px] font-bold uppercase tracking-wide ${
-          target.isReady
-            ? "border-emerald-700 bg-emerald-950/40 text-emerald-200"
-            : "border-rose-800 bg-rose-950/40 text-rose-200"
-        }`}
-      >
-        {target.isReady ? "Ready" : "Blocked"}
-      </span>
-    </button>
-  );
-}
-
-function AttunementTargetDetail({ target }) {
-  const keyLabel = getKeyLabel(target.keyId);
-  const sourceQuestLabel = getKeySourceQuestLabel(target.keyId);
-  const sourceMission = target.sourceMission;
-  const targetLabel = getAttunementTargetLabel(target);
-
-  return (
-    <div className="rounded border border-slate-800 bg-slate-950/60 p-3 text-sm text-slate-300">
-      <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
-        <div className="flex min-w-0 items-center gap-3">
-        <img
-          src={getKeyIconUrl(target.keyId)}
-          alt={keyLabel}
-          className="h-12 w-12 rounded border border-slate-700 bg-slate-950"
-          onError={(event) => {
-            event.currentTarget.src = getWowIconUrl("inv_misc_key_03");
-          }}
-        />
-        <div className="min-w-0">
-          <div className="text-[10px] font-bold uppercase tracking-wide text-slate-500">
-            Key / Attunement
-          </div>
-          <h3 className="truncate text-lg font-bold text-slate-50">
-            {keyLabel}
-          </h3>
-          <p className="truncate text-xs text-slate-500">
-            {targetLabel}
-          </p>
-        </div>
-      </div>
-        <div
-          className={`flex-none rounded border px-2 py-1 text-xs font-bold uppercase tracking-wide ${
-            sourceMission
-              ? "border-emerald-700 bg-emerald-950/40 text-emerald-200"
-              : "border-rose-800 bg-rose-950/40 text-rose-200"
-          }`}
-        >
-          {sourceMission ? "Ready" : "Blocked"}
-        </div>
-      </div>
-      <div className="mt-3 grid grid-cols-1 gap-2 text-xs md:grid-cols-3">
-        <div>
-          <span className="block text-[10px] font-bold uppercase tracking-wide text-slate-500">
-            Source
-          </span>
-          <span className="text-cyan-100">
-            {sourceMission
-              ? sourceMission.dungeonWing || sourceMission.name
-              : sourceQuestLabel || "No playable source in current data"}
-          </span>
-        </div>
-        {sourceQuestLabel && (
-          <div>
-            <span className="block text-[10px] font-bold uppercase tracking-wide text-slate-500">
-              Quest
-            </span>
-            <span>{sourceQuestLabel}</span>
-          </div>
-        )}
-        <div>
-          <span className="block text-[10px] font-bold uppercase tracking-wide text-slate-500">
-            Progress
-          </span>
-          <span>
-            {target.holders.length} have it, {target.missing.length} still need it,{" "}
-            {target.queued.length} queued
-          </span>
-        </div>
-      </div>
-    </div>
-  );
-}
-
-function AttunementHeroPicker({
-  heroes,
-  target,
-  selectedIds,
-  busyMemberIds,
-  onToggle,
-}) {
-  const sortedHeroes = getAttunementEligibleMembers({
-    members: heroes,
-    target,
-  }).sort((left, right) => {
-    const leftBusy = isHeroOnMission(left, busyMemberIds);
-    const rightBusy = isHeroOnMission(right, busyMemberIds);
-    if (leftBusy !== rightBusy) return leftBusy ? 1 : -1;
-    const leftQueued = hasQueuedTargetGoal(left, target);
-    const rightQueued = hasQueuedTargetGoal(right, target);
-    if (leftQueued !== rightQueued) return leftQueued ? -1 : 1;
-    const levelDelta = getHeroLevel(right) - getHeroLevel(left);
-    if (levelDelta !== 0) return levelDelta;
-    return String(left?.name || "").localeCompare(String(right?.name || ""));
-  });
-
-  if (sortedHeroes.length === 0) {
-    return (
-      <EmptyText>
-        No heroes can currently start this attunement source.
-      </EmptyText>
-    );
-  }
-
-  return (
-    <div className="grid grid-cols-1 sm:grid-cols-2 2xl:grid-cols-3 gap-1.5">
-      {sortedHeroes.map((hero) => {
-        const memberId = getMemberId(hero);
-        const selected = selectedIds.includes(memberId);
-        const queued = hasQueuedTargetGoal(hero, target);
-        const onMission = isHeroOnMission(hero, busyMemberIds);
-
-        return (
-          <button
-            key={memberId}
-            type="button"
-            onClick={() => onToggle(memberId)}
-            className={`rounded border px-2 py-2 text-left transition-colors ${
-              selected
-                  ? "border-emerald-500/70 bg-emerald-950/35 text-emerald-100"
-                  : queued
-                    ? "border-amber-500/60 bg-amber-950/25 text-amber-100"
-                    : "border-slate-700 bg-slate-950/50 text-slate-200 hover:border-cyan-600"
-            }`}
-          >
-            <HeroIdentity hero={hero} compact />
-            <span className="mt-1 block truncate text-xs text-slate-500">
-              Level {hero.level ?? 1}
-              {hero.role ? `, ${getRoleIcon(hero.role)} ${hero.role}` : ""}
-            </span>
-            <div className="mt-1 flex flex-wrap gap-1">
-              {queued && <StatusPill tone="amber">Queued</StatusPill>}
-              {onMission && <StatusPill tone="slate">On Mission</StatusPill>}
-            </div>
-          </button>
-        );
-      })}
-    </div>
-  );
-}
-
-function StatusPill({ tone, children }) {
-  const className =
-    tone === "emerald"
-      ? "border-emerald-700 bg-emerald-950/40 text-emerald-200"
-      : tone === "amber"
-        ? "border-amber-700 bg-amber-950/40 text-amber-200"
-        : tone === "rose"
-          ? "border-rose-800 bg-rose-950/40 text-rose-200"
-          : "border-slate-700 bg-slate-900 text-slate-500";
-  return (
-    <span
-      className={`inline-flex rounded border px-1.5 py-0.5 text-[10px] font-bold uppercase tracking-wide ${className}`}
-    >
-      {children}
-    </span>
-  );
-}
-
-function hasQueuedTargetGoal(hero, target) {
-  if (!hero || !target?.sourceMission) return false;
-  const targetMissionIds = Array.isArray(target.targetMissionIds)
-    ? target.targetMissionIds.map((missionId) => String(missionId))
-    : [];
-  return getAdventureGoalQueue(hero).some(
-    (goal) =>
-      goal.keyId === target.keyId &&
-      goal.sourceMissionId === String(target.sourceMission.id) &&
-      (goal.targetMissionId === String(target.goalTargetId || "") ||
-        !goal.targetMissionId ||
-        targetMissionIds.includes(String(goal.targetMissionId))),
-  );
-}
-
-function getAttunementMissionLabel(mission) {
-  if (!mission) return "Unknown destination";
-  if (mission.dungeonWing && mission.dungeonSetName) {
-    return `${mission.dungeonSetName}: ${mission.dungeonWing}`;
-  }
-  return mission.dungeonWing || mission.name || "Unknown destination";
-}
-
-function getAttunementTargetLabel(target) {
-  const targetMissions = Array.isArray(target?.targetMissions)
-    ? target.targetMissions
-    : target?.targetMission
-      ? [target.targetMission]
-      : [];
-  const labels = [
-    ...new Set(targetMissions.map(getAttunementMissionLabel).filter(Boolean)),
-  ];
-  if (labels.length === 0) return "No locked destination found";
-  if (labels.length === 1) return `Unlocks ${labels[0]}`;
-  if (labels.length === 2) return `Unlocks ${labels[0]} and ${labels[1]}`;
-  return `Unlocks ${labels.length} places: ${labels
-    .slice(0, 2)
-    .join(", ")} +${labels.length - 2} more`;
-}
-
-function getSelectableAttunementMemberIds({ heroes, target }) {
-  return getAttunementEligibleMembers({ members: heroes, target })
-    .map((hero) => getMemberId(hero))
-    .filter(Boolean);
 }
 
 function Stat({ label, value }) {
@@ -1536,7 +904,10 @@ function ZoneDetail({
   });
   const zonePvpStats = worldPvpState?.zoneStats?.[zone.id] || {};
   const exposedHeroes = summary.heroesInZone.filter(
-    (row) => row?.member?.status !== "Questing" && pvpTerritory.active,
+    (row) =>
+      row?.member?.status !== "Questing" &&
+      row?.member?.status !== "Battleground" &&
+      pvpTerritory.active,
   );
   const tags = [
     pvpTerritory?.label,

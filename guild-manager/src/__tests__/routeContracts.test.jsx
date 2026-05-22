@@ -35,6 +35,10 @@ describe("route contracts", () => {
     expect(ROUTES.REALM).toBe("/home/realm");
     expect(ROUTES.MISSION_BOARD).toBe("/home/mission-board");
     expect(ROUTES.ADVENTURE_BOARD).toBe("/home/adventure-board");
+    expect(ROUTES.DUNGEON_BOARD).toBe("/home/dungeon-board");
+    expect(ROUTES.DUNGEON_BOARD_ALIAS).toBe("/dungeon-board");
+    expect(ROUTES.BATTLEFIELDS).toBe("/home/battlefields");
+    expect(ROUTES.BATTLEFIELDS_ALIAS).toBe("/battlefields");
   });
 
   it("renders setup on /start before a guild exists", () => {

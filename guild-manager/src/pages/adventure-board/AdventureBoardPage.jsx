@@ -12,8 +12,6 @@ export default function AdventureBoardPage({
   guildFaction,
   realmType,
   onDeploy,
-  onQueueAdventureGoal,
-  onClearAdventureGoal,
   getMissionPreview,
 }) {
   return (
@@ -31,8 +29,6 @@ export default function AdventureBoardPage({
       guildFaction={guildFaction}
       realmType={realmType}
       onDeploy={onDeploy}
-      onQueueAdventureGoal={onQueueAdventureGoal}
-      onClearAdventureGoal={onClearAdventureGoal}
       getMissionPreview={getMissionPreview}
     />
   );

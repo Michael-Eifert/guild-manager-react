@@ -293,7 +293,12 @@ export const isCharacterEligibleForCalendarEvent = ({
   if (mission.isRaid !== true) {
     const isActiveInDungeon = activeDungeonMemberIds.has(characterId);
     if (activeMemberIds.has(characterId) && !isActiveInDungeon) return false;
-    if (character.status === "Questing" && !isActiveInDungeon) return false;
+    if (
+      (character.status === "Questing" || character.status === "Battleground") &&
+      !isActiveInDungeon
+    ) {
+      return false;
+    }
   }
 
   const level = Number(character.level) || 1;

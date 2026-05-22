@@ -17,6 +17,7 @@ export default function MissionBoardPage({
   itemDatabase = [],
   missionBoardState,
   onMissionBoardStateChange,
+  guildInventory = null,
 }) {
   return (
     <MissionModal
@@ -38,6 +39,7 @@ export default function MissionBoardPage({
       itemDatabase={itemDatabase}
       missionBoardState={missionBoardState}
       onMissionBoardStateChange={onMissionBoardStateChange}
+      guildInventory={guildInventory}
     />
   );
 }

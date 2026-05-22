@@ -185,6 +185,11 @@ const GuildLogModal = ({ isOpen, onClose, logs, missionList = [] }) => {
                   </span>
                 ) : log.type === "guild-renown" ? (
                   <span className="text-amber-300">{log.message}</span>
+                ) : log.type === "profession" || log.type === "profession-material" ? (
+                  <span className="text-emerald-200">
+                    {log.message ||
+                      `${log.characterName || "Guild"} gathered ${log.quantity || 1} ${log.itemId || "material"}.`}
+                  </span>
                 ) : log.type === "calendar" ? (
                   <span className="text-indigo-200">{log.message}</span>
                 ) : log.type === "pvp" ? (

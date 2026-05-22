@@ -11,10 +11,19 @@ import { ensureRealmState } from "../server/realmGeneration";
 import { normalizeCharacterPersonalityTraits } from "../game/characterPersonality";
 import { ensureCharacterPvpData } from "../pvp/pvpCharacterUtils";
 import { ensureWorldPvpState } from "../pvp/worldPvpUtils";
+import {
+  BATTLEFIELD_CHARACTER_STATUS,
+} from "../pvp/battlefields/battlefieldDefinitions";
+import { ensureBattlefieldState } from "../pvp/battlefields/battlefieldUtils";
 import { normalizeEquipmentSlots } from "../utils";
+import { ensureGuildInventory } from "../inventory/guildInventoryUtils";
+import {
+  DEFAULT_STASH_POLICY,
+  ensureStashPolicy,
+} from "../inventory/itemEvaluation";
 
 export const SESSION_FORMAT = "guild-manager-session";
-export const SESSION_VERSION = 6;
+export const SESSION_VERSION = 7;
 const MAX_GUILD_LOG_ENTRIES = 50;
 const MIN_MISSION_DURATION_MS = 1000;
 const DEFAULT_DUNGEON_STEP_COUNT = 4;
@@ -24,7 +33,9 @@ const DEFAULT_MISSION_BOARD_STATE = Object.freeze({
   levelFilterMax: "",
   showAvailableDungeonsOnly: false,
   hideLowLevelDungeons: false,
+  consumableMode: "none",
 });
+const MISSION_CONSUMABLE_MODES = new Set(["none", "basic", "best"]);
 
 const toObject = (value) =>
   value && typeof value === "object" ? value : {};
@@ -52,6 +63,11 @@ export const normalizeMissionBoardState = (state) => {
         : String(safe.levelFilterMax),
     showAvailableDungeonsOnly: Boolean(safe.showAvailableDungeonsOnly),
     hideLowLevelDungeons: Boolean(safe.hideLowLevelDungeons),
+    consumableMode:
+      typeof safe.consumableMode === "string" &&
+      MISSION_CONSUMABLE_MODES.has(safe.consumableMode)
+        ? safe.consumableMode
+        : DEFAULT_MISSION_BOARD_STATE.consumableMode,
   };
 };
 
@@ -180,6 +196,9 @@ export const buildSessionPayload = ({
   guildRelationships,
   realmState,
   worldPvpState,
+  battlefieldState,
+  guildInventory,
+  stashPolicy,
   calendarState,
   raidLockouts,
   missionBoardState,
@@ -214,6 +233,9 @@ export const buildSessionPayload = ({
       guildRelationships: normalizeGuildRelationships(guildRelationships),
       realmState: realmState ? toObject(realmState) : null,
       worldPvpState: ensureWorldPvpState(worldPvpState),
+      battlefieldState: ensureBattlefieldState(battlefieldState),
+      guildInventory: ensureGuildInventory(guildInventory),
+      stashPolicy: ensureStashPolicy(stashPolicy),
       calendarState: normalizeCalendarState(
         calendarState || createInitialCalendarState(now),
         now,
@@ -336,6 +358,19 @@ export const hydrateSessionData = ({
     safePayload.worldPvpState,
     loadedCalendarDayIndex,
   );
+  const loadedBattlefieldState = ensureBattlefieldState(
+    safePayload.battlefieldState,
+  );
+  const loadedGuildInventory = ensureGuildInventory(
+    safePayload.guildInventory,
+    {
+      materialInventory: safePayload.materialInventory,
+      consumableInventory: safePayload.consumableInventory,
+    },
+  );
+  const loadedStashPolicy = ensureStashPolicy(
+    safePayload.stashPolicy || DEFAULT_STASH_POLICY,
+  );
   const loadedMissionBoardState = normalizeMissionBoardState(
     safePayload.missionBoardState,
   );
@@ -375,6 +410,13 @@ export const hydrateSessionData = ({
   const activeMemberIds = new Set(
     loadedActiveMissions.flatMap((mission) =>
       Array.isArray(mission.memberIds) ? mission.memberIds : [],
+    ),
+  );
+  const activeBattlefieldMemberIds = new Set(
+    loadedBattlefieldState.activeBattles.flatMap((battle) =>
+      Array.isArray(battle?.participantIds)
+        ? battle.participantIds.map((id) => String(id || "").trim()).filter(Boolean)
+        : [],
     ),
   );
   const normalizedRoster = loadedRoster.map((char) => {
@@ -422,6 +464,18 @@ export const hydrateSessionData = ({
         statusText: "On Mission",
       };
     }
+    if (activeBattlefieldMemberIds.has(baseCharacter.id)) {
+      return {
+        ...baseCharacter,
+        equipment: normalizedEquipment,
+        keys: normalizedKeys,
+        adventureGoalQueue: normalizedAdventureGoalQueue,
+        clearedMissionIds: normalizedClearedMissionIds,
+        personalityTraits: normalizedPersonalityTraits,
+        status: BATTLEFIELD_CHARACTER_STATUS,
+        statusText: "Warsong Gulch",
+      };
+    }
     if (baseCharacter.status === "Questing") {
       return {
         ...baseCharacter,
@@ -455,6 +509,9 @@ export const hydrateSessionData = ({
     loadedGuildRelationships,
     loadedRealmState,
     loadedWorldPvpState,
+    loadedBattlefieldState,
+    loadedGuildInventory,
+    loadedStashPolicy,
     loadedMissionBoardState,
     loadedProgression,
     loadedCalendarState,

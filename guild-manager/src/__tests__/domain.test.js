@@ -112,6 +112,7 @@ import {
 } from "../game/characterPersonality";
 import {
   buildCharacterNamePool,
+  EQUIPMENT_SLOT_ORDER,
   generateCharacters,
   getEquipmentSetBonuses,
   getItemEffectiveLevel,
@@ -244,6 +245,7 @@ import {
 } from "../data/imports/upperBlackrockSpireLootManifest";
 import {
   DEBUG_BLACKWING_LAIR_TEST_GUILD_ID,
+  DEBUG_MOLTEN_CORE_TEST_GUILD_ID,
   DEBUG_NAXXRAMAS_TEST_GUILD_ID,
   buildDebugRosterPreset,
   resolveDebugPreset,
@@ -275,6 +277,15 @@ const getRosterEquipmentSources = (roster) =>
       .map((item) => item.dungeonSetId || item.dungeon)
       .filter(Boolean),
   );
+
+const expectRosterHasExpandedEquipment = (roster) => {
+  roster.forEach((member) => {
+    EQUIPMENT_SLOT_ORDER.forEach((slot) => {
+      expect(member.equipment?.[slot], `${member.name} missing ${slot}`).toBeTruthy();
+      expect(member.equipment[slot].slot || slot).toBe(slot);
+    });
+  });
+};
 
 const isValidRaceClassCombo = (member) =>
   Array.isArray(DB_RACES[member?.race]) &&
@@ -414,6 +425,31 @@ describe("character personality traits", () => {
 });
 
 describe("debug raid setup presets", () => {
+  it("builds an MC test roster with attunements and expanded dungeon-ready gear", () => {
+    const preset = resolveDebugPreset(DEBUG_MOLTEN_CORE_TEST_GUILD_ID);
+    const roster = buildDebugRosterPreset({
+      faction: GUILD_FACTION.ALLIANCE,
+      level: preset.level,
+      count: preset.count,
+      roleOrder: preset.roleOrder,
+      guaranteedKeys: preset.guaranteedKeys,
+      gearProfile: preset.gearProfile,
+      itemDatabase: DB_ITEMS,
+    });
+    const averageItemLevel = getRosterAverageItemLevel(roster);
+
+    expect(roster).toHaveLength(40);
+    expectRosterHasExpandedEquipment(roster);
+    roster.forEach((member) => {
+      expect(member.keys).toEqual(
+        expect.arrayContaining(["molten_core_attunement"]),
+      );
+      expect(member.statusText).toBe("Raid-ready and attuned.");
+    });
+    expect(averageItemLevel).toBeGreaterThanOrEqual(50);
+    expect(roster.every(isValidRaceClassCombo)).toBe(true);
+  });
+
   it("builds a BWL test roster with MC and BWL attunements plus BWL-ready gear", () => {
     const preset = resolveDebugPreset(DEBUG_BLACKWING_LAIR_TEST_GUILD_ID);
     const roster = buildDebugRosterPreset({
@@ -429,6 +465,7 @@ describe("debug raid setup presets", () => {
     const sources = getRosterEquipmentSources(roster);
 
     expect(roster).toHaveLength(40);
+    expectRosterHasExpandedEquipment(roster);
     roster.forEach((member) => {
       expect(member.keys).toEqual(
         expect.arrayContaining([
@@ -463,6 +500,7 @@ describe("debug raid setup presets", () => {
     const sources = getRosterEquipmentSources(roster);
 
     expect(roster).toHaveLength(40);
+    expectRosterHasExpandedEquipment(roster);
     roster.forEach((member) => {
       expect(member.keys).toEqual(
         expect.arrayContaining([
@@ -3651,10 +3689,11 @@ describe("character activity priority", () => {
     ).toBe(false);
   });
 
-  it("labels PvP realm starter zones as safe and 10+ zones as contested", () => {
+  it("labels friendly starter zones as safe and enemy starter zones as hostile", () => {
     const elwynn = getZonesForFaction(GUILD_FACTION.ALLIANCE, true).find(
       (zone) => zone.id === "elwynn_forest",
     );
+    const durotar = ZONE_DEFINITIONS.find((zone) => zone.id === "durotar");
     const westfall = getZonesForFaction(GUILD_FACTION.ALLIANCE, true).find(
       (zone) => zone.id === "westfall",
     );
@@ -3662,9 +3701,29 @@ describe("character activity priority", () => {
       (zone) => zone.id === "ashenvale",
     );
 
-    expect(getZonePvpTerritory(elwynn, GUILD_SERVER_STYLE.PVP)?.label).toBe(
+    expect(
+      getZonePvpTerritory(
+        elwynn,
+        GUILD_SERVER_STYLE.PVP,
+        GUILD_FACTION.ALLIANCE,
+      )?.label,
+    ).toBe(
       "Safe Territory",
     );
+    expect(
+      getZonePvpTerritory(
+        durotar,
+        GUILD_SERVER_STYLE.PVP,
+        GUILD_FACTION.ALLIANCE,
+      )?.label,
+    ).toBe("Hostile Territory");
+    expect(
+      getZonePvpTerritory(
+        elwynn,
+        GUILD_SERVER_STYLE.PVP,
+        GUILD_FACTION.HORDE,
+      )?.label,
+    ).toBe("Hostile Territory");
     expect(getZonePvpTerritory(westfall, GUILD_SERVER_STYLE.PVP)?.label).toBe(
       "Contested Territory",
     );
@@ -3674,8 +3733,9 @@ describe("character activity priority", () => {
     expect(getZonePvpTerritory(ashenvale, GUILD_SERVER_STYLE.PVE)).toBeNull();
   });
 
-  it("builds world PvP profiles with only starter zones marked safe", () => {
+  it("builds faction-aware world PvP profiles for starter zones", () => {
     const elwynn = ZONE_DEFINITIONS.find((zone) => zone.id === "elwynn_forest");
+    const durotar = ZONE_DEFINITIONS.find((zone) => zone.id === "durotar");
     const westfall = ZONE_DEFINITIONS.find((zone) => zone.id === "westfall");
     const duskwood = ZONE_DEFINITIONS.find((zone) => zone.id === "duskwood");
     const ashenvale = ZONE_DEFINITIONS.find((zone) => zone.id === "ashenvale");
@@ -3702,6 +3762,28 @@ describe("character activity priority", () => {
     ).toMatchObject({
       pvpType: WORLD_PVP_PROFILE_TYPE.SAFE,
       active: false,
+    });
+    expect(
+      getWorldPvpProfile({
+        zone: durotar,
+        characterFaction: GUILD_FACTION.ALLIANCE,
+        realmType: GUILD_SERVER_STYLE.PVP,
+      }),
+    ).toMatchObject({
+      pvpType: WORLD_PVP_PROFILE_TYPE.HOSTILE,
+      active: true,
+      controllingFaction: GUILD_FACTION.HORDE,
+    });
+    expect(
+      getWorldPvpProfile({
+        zone: elwynn,
+        characterFaction: GUILD_FACTION.HORDE,
+        realmType: GUILD_SERVER_STYLE.PVP,
+      }),
+    ).toMatchObject({
+      pvpType: WORLD_PVP_PROFILE_TYPE.HOSTILE,
+      active: true,
+      controllingFaction: GUILD_FACTION.ALLIANCE,
     });
     expect(
       getWorldPvpProfile({

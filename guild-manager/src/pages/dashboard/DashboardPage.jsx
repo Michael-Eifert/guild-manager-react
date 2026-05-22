@@ -1,4 +1,3 @@
-import ActiveMissionCard from "../../components/ActiveMissionCard";
 import CharacterCard from "../../components/CharacterCard";
 import CharacterEquipCheckCard from "../../components/CharacterEquipCheckCard";
 import CharacterPersonalityCard from "../../components/CharacterPersonalityCard";
@@ -12,7 +11,8 @@ import {
   GUILD_MEMBER_SORT_OPTIONS,
   MEMBER_RANKING_MODES,
 } from "../../constants";
-import { getDungeonBossCount } from "../../missions/missionHelpers";
+import { PVP_ACTIVITY_FOCUS_OPTIONS } from "../../pvp/battlefields/battlefieldDefinitions";
+import { getPvpActivityConfig } from "../../pvp/battlefields/battlefieldUtils";
 import { normalizeAutoGroupSuccessRate } from "../../guild/guildSetup";
 import { getRoleIcon } from "../../utils";
 
@@ -51,12 +51,9 @@ export default function DashboardPage({
   onGuildSuccessRateChange,
   dungeonActivityInfoText,
   onGuildDungeonActivityChange,
+  onPvpActivityFocusChange,
   guildRoleSummary,
   guildClassSummary,
-  activeMissions,
-  getMissionInstanceId,
-  onManualFinish,
-  gameTimeMs,
   guildMemberSearch,
   onGuildMemberSearchChange,
   memberRankingMode,
@@ -116,6 +113,38 @@ export default function DashboardPage({
               }
             />
           </div>
+        </DashboardAccordionSection>
+
+        <DashboardAccordionSection
+          title="PvP Activity"
+          summary={`Current: ${getPvpActivityConfig(guildSetup.pvpActivityFocus).label}`}
+          isOpen={dashboardSectionsOpen.pvpActivity}
+          onToggle={() => onToggleDashboardSection("pvpActivity")}
+        >
+          <div className="grid grid-cols-2 lg:grid-cols-5 gap-2">
+            {PVP_ACTIVITY_FOCUS_OPTIONS.map((option) => {
+              const isActive = guildSetup.pvpActivityFocus === option.value;
+              return (
+                <button
+                  key={option.value}
+                  onClick={() => onPvpActivityFocusChange(option.value)}
+                  disabled={roster.length === 0}
+                  title={option.description}
+                  className={`px-3 py-2 rounded border text-xs md:text-sm font-bold transition-colors disabled:opacity-50 disabled:cursor-not-allowed ${
+                    isActive
+                      ? "border-red-500 bg-red-900/30 text-red-100"
+                      : "border-gray-600 bg-gray-800 text-gray-300 hover:bg-gray-700"
+                  }`}
+                >
+                  {option.label}
+                </button>
+              );
+            })}
+          </div>
+          <p className="mt-2 text-[11px] text-gray-500">
+            Controls automatic Warsong Gulch queues. Active heroes are never pulled
+            out of missions, dungeons, raids, or other battlegrounds.
+          </p>
         </DashboardAccordionSection>
 
         <DashboardAccordionSection
@@ -234,33 +263,6 @@ export default function DashboardPage({
       </div>
 
       <div className="mb-6 border-t border-amber-900/50"></div>
-
-      {activeMissions.length > 0 && (
-        <div className="mb-6">
-          <h3 className="text-sm font-bold text-gray-400 mb-2 uppercase tracking-wider">
-            Active
-          </h3>
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-            {activeMissions.map((mission, index) => {
-              const hasLargeBossCount =
-                mission.type === "dungeon" && getDungeonBossCount(mission) >= 5;
-              return (
-                <div
-                  key={`${getMissionInstanceId(mission)}-${index}`}
-                  className={hasLargeBossCount ? "md:col-span-2" : ""}
-                >
-                  <ActiveMissionCard
-                    mission={mission}
-                    onFinish={onManualFinish}
-                    gameTimeMs={gameTimeMs}
-                    roster={roster}
-                  />
-                </div>
-              );
-            })}
-          </div>
-        </div>
-      )}
 
       <div className="mb-6 rounded border border-gray-700 bg-gray-900/70 p-3">
         <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2 mb-3">

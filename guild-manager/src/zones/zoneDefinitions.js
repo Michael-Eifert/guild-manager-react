@@ -9,6 +9,7 @@ export const ZONE_FACTION = Object.freeze({
 export const ZONE_PROGRESS_CHECKPOINTS = Object.freeze([25, 50, 75, 100]);
 export const ZONE_PVP_TERRITORY = Object.freeze({
   SAFE: "Safe Territory",
+  HOSTILE: "Hostile Territory",
   CONTESTED: "Contested Territory",
 });
 export const ZONE_COMPLETION_ARCHETYPE = Object.freeze({
@@ -577,9 +578,21 @@ export const isZoneAccessibleForFaction = (zone, faction) => {
 export const isStarterZone = (zone) =>
   Boolean(zone?.id && STARTER_ZONE_IDS.has(zone.id));
 
-export const getZonePvpTerritory = (zone, realmType) => {
+export const getZonePvpTerritory = (zone, realmType, faction = null) => {
   if (realmType !== GUILD_SERVER_STYLE.PVP) return null;
   if (isStarterZone(zone)) {
+    const isEnemyStarterZone =
+      faction &&
+      zone?.faction &&
+      zone.faction !== ZONE_FACTION.NEUTRAL &&
+      zone.faction !== faction;
+    if (isEnemyStarterZone) {
+      return {
+        key: "hostile",
+        label: ZONE_PVP_TERRITORY.HOSTILE,
+        description: "Enemy starting area - your faction is exposed here.",
+      };
+    }
     return {
       key: "safe",
       label: ZONE_PVP_TERRITORY.SAFE,

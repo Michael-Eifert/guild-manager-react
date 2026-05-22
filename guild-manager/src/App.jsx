@@ -24,6 +24,14 @@ const App = () => (
       <Routes>
         <Route path={ROUTES.START} element={<StartPage />} />
         <Route path={`${ROUTES.HOME}/*`} element={<HomeRoot />} />
+        <Route
+          path={ROUTES.BATTLEFIELDS_ALIAS}
+          element={<Navigate to={ROUTES.BATTLEFIELDS} replace />}
+        />
+        <Route
+          path={ROUTES.DUNGEON_BOARD_ALIAS}
+          element={<Navigate to={ROUTES.DUNGEON_BOARD} replace />}
+        />
         <Route path="/" element={<RootRedirect />} />
         <Route path="*" element={<RootRedirect />} />
       </Routes>

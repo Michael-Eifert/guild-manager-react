@@ -206,8 +206,43 @@ import { resolveWorldPvpForDay } from "../pvp/worldPvpEngine";
 import { applyWeeklyPvpRollover } from "../pvp/pvpProgression";
 import { resolveWorldPvpRoamingAssignment } from "../pvp/worldPvpRoaming";
 import { ensureWorldPvpState } from "../pvp/worldPvpUtils";
+import {
+  BATTLEFIELD_CHARACTER_STATUS,
+  PVP_ACTIVITY_FOCUS,
+} from "../pvp/battlefields/battlefieldDefinitions";
+import {
+  advanceBattlefieldState,
+  resolveAutoBattlefieldQueue,
+  startWarsongGulchBattle,
+} from "../pvp/battlefields/battlefieldEngine";
+import { ensureBattlefieldState } from "../pvp/battlefields/battlefieldUtils";
 import { createDebugActions } from "../debug/debugActions";
 import { loadItemCatalog } from "../data/itemCatalog";
+import {
+  ensureGuildInventory,
+  getItemQuantity,
+  removeItemFromGuildInventory,
+} from "../inventory/guildInventoryUtils";
+import {
+  cleanupGuildStash,
+  DEFAULT_STASH_POLICY,
+  ensureStashPolicy,
+  shouldStoreItem,
+  tryAutoEquipItemFromGuildStash,
+} from "../inventory/itemEvaluation";
+import {
+  getInventoryItemDefinition,
+  INVENTORY_ITEM_CATEGORY,
+} from "../inventory/itemDefinitions";
+import { craftRecipe } from "../professions/craftingEngine";
+import {
+  CONSUMABLE_MODE,
+  consumeMissionConsumables,
+  formatConsumableUseSummary,
+  getConsumableMissionModifiers,
+} from "../professions/consumableEffects";
+import { getRecipeDefinition } from "../professions/recipeDefinitions";
+import { generatePassiveProfessionMaterial } from "../professions/professionUtils";
 import { ROUTES } from "../routes";
 
 const GUILD_FOCUS_CHANGE_COST_GOLD = 10;
@@ -215,6 +250,7 @@ const GUILD_FOCUS_CHANGE_COST_GOLD = 10;
 const DEFAULT_DASHBOARD_SECTIONS = Object.freeze({
   guildActivity: true,
   dungeonGroups: true,
+  pvpActivity: true,
   guildComposition: true,
 });
 
@@ -287,9 +323,19 @@ export const GameProvider = ({ children }) => {
   const [worldPvpState, setWorldPvpState] = useState(() =>
     ensureWorldPvpState(null, 0),
   );
+  const [battlefieldState, setBattlefieldState] = useState(() =>
+    ensureBattlefieldState(null),
+  );
+  const [guildInventory, setGuildInventory] = useState(() =>
+    ensureGuildInventory(null),
+  );
+  const [stashPolicy, setStashPolicy] = useState(() =>
+    ensureStashPolicy(DEFAULT_STASH_POLICY),
+  );
   const [showRecruit, setShowRecruit] = useState(false);
   const [showLootTable, setShowLootTable] = useState(false);
   const [showGuildLog, setShowGuildLog] = useState(false);
+  const [showProfessions, setShowProfessions] = useState(false);
   const [showDebug, setShowDebug] = useState(false);
   const [showOptions, setShowOptions] = useState(false);
   const [dashboardSectionsOpen, setDashboardSectionsOpen] = useState(
@@ -303,6 +349,7 @@ export const GameProvider = ({ children }) => {
     levelFilterMax: "",
     showAvailableDungeonsOnly: false,
     hideLowLevelDungeons: false,
+    consumableMode: CONSUMABLE_MODE.NONE,
   });
   const [memberRankingMode, setMemberRankingMode] = useState(
     MEMBER_RANKING_MODES.STANDARD,
@@ -329,6 +376,9 @@ export const GameProvider = ({ children }) => {
   const guildRelationshipsRef = useRef(guildRelationships);
   const realmStateRef = useRef(realmState);
   const worldPvpStateRef = useRef(worldPvpState);
+  const battlefieldStateRef = useRef(battlefieldState);
+  const guildInventoryRef = useRef(guildInventory);
+  const stashPolicyRef = useRef(stashPolicy);
   const gameTimeRef = useRef(gameTimeMs);
   const calendarStateRef = useRef(calendarState);
   const raidLockoutsRef = useRef(raidLockouts);
@@ -431,6 +481,15 @@ export const GameProvider = ({ children }) => {
   useEffect(() => {
     worldPvpStateRef.current = worldPvpState;
   }, [worldPvpState]);
+  useEffect(() => {
+    battlefieldStateRef.current = battlefieldState;
+  }, [battlefieldState]);
+  useEffect(() => {
+    guildInventoryRef.current = guildInventory;
+  }, [guildInventory]);
+  useEffect(() => {
+    stashPolicyRef.current = stashPolicy;
+  }, [stashPolicy]);
   useEffect(() => {
     gameTimeRef.current = gameTimeMs;
   }, [gameTimeMs]);
@@ -821,13 +880,28 @@ export const GameProvider = ({ children }) => {
   };
 
   const buildMissionRun = useCallback(
-    (quest, ids, startTime, rosterSnapshot, chainContext = null) => {
+    (
+      quest,
+      ids,
+      startTime,
+      rosterSnapshot,
+      chainContext = null,
+      runOptions = {},
+    ) => {
       const selectedMembers = (
         Array.isArray(rosterSnapshot) ? rosterSnapshot : rosterRef.current
       ).filter((c) => ids.includes(c.id));
       const missionPreview = getAdjustedMissionSuccessPreview(
         quest,
         selectedMembers,
+      );
+      const consumableModifiers = runOptions?.consumableModifiers || null;
+      const consumableSuccessBonus = Number(
+        consumableModifiers?.successBonusPercent,
+      ) || 0;
+      const adjustedSuccessChance = Math.min(
+        100,
+        Math.max(0, missionPreview.successChance + consumableSuccessBonus),
       );
       const totalDuration = quest.duration * 1000;
       const dungeonProgress =
@@ -868,7 +942,7 @@ export const GameProvider = ({ children }) => {
       const missionSuccess =
         quest.type === "dungeon"
           ? undefined
-          : Math.random() * 100 < missionPreview.successChance;
+          : Math.random() * 100 < adjustedSuccessChance;
 
       return {
         ...quest,
@@ -876,8 +950,10 @@ export const GameProvider = ({ children }) => {
         payoutGold: getMissionGoldReward(quest),
         wipeCost: getMissionWipeCost(quest),
         missionSuccess,
-        successChance: missionPreview.successChance,
-        failChance: missionPreview.failChance,
+        successChance: adjustedSuccessChance,
+        failChance: Math.max(0, 100 - adjustedSuccessChance),
+        consumableModifiers,
+        consumableSummary: formatConsumableUseSummary(consumableModifiers),
         moraleSuccessBonus: missionPreview.moraleSuccessBonus,
         partyPower: missionPreview.partyPower,
         missionPower: missionPreview.missionPower,
@@ -1418,6 +1494,10 @@ export const GameProvider = ({ children }) => {
       let finishedMissions = [];
       let newLogs = [];
       let newGold = currentGold;
+      let currentBattlefieldState = ensureBattlefieldState(
+        battlefieldStateRef.current,
+      );
+      let nextGuildInventory = ensureGuildInventory(guildInventoryRef.current);
 
       const playerMarket = resolvePlayerGuildDeparturesForDay({
         realmState: realmStateRef.current,
@@ -1682,6 +1762,52 @@ export const GameProvider = ({ children }) => {
         }
       });
 
+      const battlefieldAdvance = advanceBattlefieldState({
+        battlefieldState: currentBattlefieldState,
+        roster: newRoster,
+        now,
+        guildFaction: currentFaction,
+      });
+      currentBattlefieldState = battlefieldAdvance.battlefieldState;
+      newRoster = battlefieldAdvance.roster;
+      newLogs = [...newLogs, ...battlefieldAdvance.logs];
+      battlefieldAdvance.completedBattles.forEach((battle) => {
+        pushNotification({
+          type: battle.result === "victory" ? "achievement" : "info",
+          title:
+            battle.result === "victory"
+              ? "Warsong Gulch Victory"
+              : battle.result === "defeat"
+                ? "Warsong Gulch Defeat"
+                : "Warsong Gulch Draw",
+          message: `${battle.playerScore}-${battle.enemyScore}: +${battle.reward?.honorPerParticipant || 0} Honor.`,
+          durationMs: 5200,
+        });
+      });
+
+      const aggressivePvpQueue = resolveAutoBattlefieldQueue({
+        battlefieldState: currentBattlefieldState,
+        roster: newRoster,
+        activeMissions: newMissions,
+        guildSetup: guildSetupRef.current,
+        now,
+        currentDayIndex: calendarDayIndex,
+        guildFaction: currentFaction,
+        createId,
+        aggressiveOnly: true,
+      });
+      currentBattlefieldState = aggressivePvpQueue.battlefieldState;
+      newRoster = aggressivePvpQueue.roster;
+      newLogs = [...newLogs, ...aggressivePvpQueue.logs];
+      if (aggressivePvpQueue.queued) {
+        pushNotification({
+          type: "info",
+          title: "Warsong Gulch Queued",
+          message: `${aggressivePvpQueue.battle.participantIds.length} heroes joined the battleground queue.`,
+          durationMs: 4200,
+        });
+      }
+
       const autoDungeonAttempt = resolveAutoDungeonAttempt({
         mode:
           guildSetupRef.current?.focus === GUILD_FOCUS.RAID_ATTUNEMENTS &&
@@ -1880,6 +2006,29 @@ export const GameProvider = ({ children }) => {
         });
       });
 
+      const conservativePvpQueue = resolveAutoBattlefieldQueue({
+        battlefieldState: currentBattlefieldState,
+        roster: newRoster,
+        activeMissions: newMissions,
+        guildSetup: guildSetupRef.current,
+        now,
+        currentDayIndex: calendarDayIndex,
+        guildFaction: currentFaction,
+        createId,
+        aggressiveOnly: false,
+      });
+      currentBattlefieldState = conservativePvpQueue.battlefieldState;
+      newRoster = conservativePvpQueue.roster;
+      newLogs = [...newLogs, ...conservativePvpQueue.logs];
+      if (conservativePvpQueue.queued) {
+        pushNotification({
+          type: "info",
+          title: "Warsong Gulch Queued",
+          message: `${conservativePvpQueue.battle.participantIds.length} heroes joined the battleground queue.`,
+          durationMs: 4200,
+        });
+      }
+
       const activeMissionMemberIds = getActiveMissionMemberIdSet(newMissions);
       newRoster = newRoster.map((char) => {
         const memberId = String(char?.id || "");
@@ -1903,7 +2052,12 @@ export const GameProvider = ({ children }) => {
           char,
           currentFaction,
         );
-        if (normalizedChar.status === "Questing") return normalizedChar;
+        if (
+          normalizedChar.status === "Questing" ||
+          normalizedChar.status === BATTLEFIELD_CHARACTER_STATUS
+        ) {
+          return normalizedChar;
+        }
 
         let statusText = "Resting...";
         let gainXP = false;
@@ -2175,6 +2329,12 @@ export const GameProvider = ({ children }) => {
           if (professionSkillResult.attempted) {
             const pName = professionSkillResult.skilledProfessionName;
             statusText = PROF_ACTIONS[pName] || `Working on ${pName}...`;
+            const materialResult = generatePassiveProfessionMaterial({
+              character: normalizedChar,
+              professionName: pName,
+              guildInventory: nextGuildInventory,
+            });
+            nextGuildInventory = materialResult.guildInventory;
 
             if (professionSkillResult.changed) {
               return {
@@ -2252,12 +2412,21 @@ export const GameProvider = ({ children }) => {
         newLogs = [...newLogs, ...pvpRollover.logs];
       }
       worldPvpStateRef.current = nextWorldPvpState;
+      battlefieldStateRef.current = currentBattlefieldState;
 
       rosterRef.current = newRoster;
       missionsRef.current = newMissions;
       setRoster(newRoster);
       setActiveMissions(newMissions);
       setWorldPvpState(nextWorldPvpState);
+      setBattlefieldState(currentBattlefieldState);
+      if (
+        JSON.stringify(nextGuildInventory) !==
+        JSON.stringify(guildInventoryRef.current)
+      ) {
+        guildInventoryRef.current = nextGuildInventory;
+        setGuildInventory(nextGuildInventory);
+      }
       if (newGold !== currentGold) {
         goldRef.current = newGold;
         setGuildGold(newGold);
@@ -2585,6 +2754,67 @@ export const GameProvider = ({ children }) => {
           : `Automatic dungeon grouping set to ${mode}.`,
     });
   };
+  const handlePvpActivityFocusChange = (focus) => {
+    if (!Object.values(PVP_ACTIVITY_FOCUS).includes(focus)) return;
+    const nextBattlefieldState = {
+      ...ensureBattlefieldState(battlefieldStateRef.current),
+      automation: { dayIndex: getCurrentCalendarDayIndex(), queuedToday: 0, lastAttemptAt: 0 },
+    };
+    battlefieldStateRef.current = nextBattlefieldState;
+    setBattlefieldState(nextBattlefieldState);
+    setGuildSetup((prev) => ({
+      ...prev,
+      pvpActivityFocus: focus,
+    }));
+    pushNotification({
+      type: "info",
+      title: "PvP Directive",
+      message:
+        focus === PVP_ACTIVITY_FOCUS.AVOID
+          ? "Automatic battleground queues disabled."
+          : "PvP Activity Focus updated for Warsong Gulch.",
+    });
+  };
+  const handleQueueWarsongGulch = useCallback(
+    (participantIds = []) => {
+      const now = gameTimeRef.current;
+      const currentFaction =
+        guildSetupRef.current?.faction || GUILD_FACTION.ALLIANCE;
+      const queued = startWarsongGulchBattle({
+        battlefieldState: battlefieldStateRef.current,
+        roster: rosterRef.current,
+        participantIds,
+        activeMissions: missionsRef.current,
+        guildFaction: currentFaction,
+        now,
+        currentDayIndex: getCurrentCalendarDayIndex(),
+        createId,
+      });
+      if (!queued.started) {
+        pushNotification({
+          type: "error",
+          title: "Queue Failed",
+          message: queued.reason || "Could not queue Warsong Gulch.",
+        });
+        return false;
+      }
+      battlefieldStateRef.current = queued.battlefieldState;
+      rosterRef.current = queued.roster;
+      setBattlefieldState(queued.battlefieldState);
+      setRoster(queued.roster);
+      const time = new Date().toLocaleTimeString();
+      setGuildLog((prev) =>
+        [...queued.logs.map((log) => ({ time, ...log })), ...prev].slice(0, 50),
+      );
+      pushNotification({
+        type: "info",
+        title: "Warsong Gulch Queued",
+        message: `${queued.battle.participantIds.length} heroes entered ${queued.battle.bracketLabel}.`,
+      });
+      return true;
+    },
+    [getCurrentCalendarDayIndex, pushNotification],
+  );
   const handleGuildSuccessRateChange = (field, value) => {
     const normalizedValue = normalizeAutoGroupSuccessRate(value);
     if (field === "dungeonMinSuccessChance") {
@@ -2685,7 +2915,15 @@ export const GameProvider = ({ children }) => {
           ...prev,
           dungeonActivity: GUILD_DUNGEON_ACTIVITY_OPTIONS.includes(value)
             ? value
-            : GUILD_DUNGEON_ACTIVITY.NONE,
+            : DEFAULT_GUILD_SETUP.dungeonActivity,
+        };
+      }
+      if (field === "pvpActivityFocus") {
+        return {
+          ...prev,
+          pvpActivityFocus: Object.values(PVP_ACTIVITY_FOCUS).includes(value)
+            ? value
+            : DEFAULT_GUILD_SETUP.pvpActivityFocus,
         };
       }
       if (
@@ -3160,6 +3398,36 @@ export const GameProvider = ({ children }) => {
           }
         : null;
 
+      const consumableMode = options?.consumableMode || CONSUMABLE_MODE.NONE;
+      const consumableModifiers =
+        openingMission?.type === "dungeon"
+          ? getConsumableMissionModifiers({
+              mode: consumableMode,
+              mission: openingMission,
+              partySize: memberIds.length,
+              guildInventory: guildInventoryRef.current,
+            })
+          : null;
+      if (consumableModifiers?.hasConsumables) {
+        const nextInventory = consumeMissionConsumables({
+          guildInventory: guildInventoryRef.current,
+          modifiers: consumableModifiers,
+        });
+        guildInventoryRef.current = nextInventory;
+        setGuildInventory(nextInventory);
+        const time = new Date().toLocaleTimeString();
+        setGuildLog((prev) =>
+          [
+            {
+              time,
+              type: "profession",
+              message: `Prepared consumables for ${openingMission.name}: ${formatConsumableUseSummary(consumableModifiers)}`,
+            },
+            ...prev,
+          ].slice(0, 50),
+        );
+      }
+
       const startTime = gameTimeRef.current;
       const missionRun = buildMissionRun(
         openingMission,
@@ -3167,6 +3435,7 @@ export const GameProvider = ({ children }) => {
         startTime,
         rosterSnapshot,
         chainContext,
+        { consumableModifiers },
       );
       const missionRunWithCalendar = options?.calendarEventId
         ? { ...missionRun, calendarEventId: options.calendarEventId }
@@ -3739,6 +4008,189 @@ export const GameProvider = ({ children }) => {
     }
   };
 
+  const appendProfessionLogs = useCallback((logs) => {
+    const normalizedLogs = (Array.isArray(logs) ? logs : []).filter(Boolean);
+    if (normalizedLogs.length === 0) return;
+    const time = new Date().toLocaleTimeString();
+    setGuildLog((prev) =>
+      [
+        ...normalizedLogs.map((log) => ({
+          time,
+          type: log.type || "profession",
+          message: log.message,
+          ...log,
+        })),
+        ...prev,
+      ].slice(0, 50),
+    );
+  }, []);
+
+  const handleCraftRecipe = useCallback(
+    (characterId, recipeId) => {
+      const recipe = getRecipeDefinition(recipeId);
+      const character = rosterRef.current.find(
+        (member) => member.id === characterId,
+      );
+      const result = craftRecipe({
+        character,
+        recipe,
+        guildInventory: guildInventoryRef.current,
+      });
+      if (!result.crafted) {
+        pushNotification({
+          type: "error",
+          title: "Crafting Blocked",
+          message: result.reason || "This recipe cannot be crafted.",
+        });
+        return false;
+      }
+
+      let nextInventory = result.guildInventory;
+      let nextRoster = rosterRef.current.map((member) =>
+        member.id === characterId ? result.character : member,
+      );
+      let nextGold = goldRef.current;
+      const logs = [...result.logs];
+      const outputDefinition = getInventoryItemDefinition(result.outputItemId);
+
+      if (outputDefinition?.category === INVENTORY_ITEM_CATEGORY.EQUIPMENT) {
+        const equipResult = tryAutoEquipItemFromGuildStash({
+          itemId: result.outputItemId,
+          roster: nextRoster,
+          guildInventory: nextInventory,
+        });
+        nextInventory = equipResult.guildInventory;
+        nextRoster = equipResult.roster;
+        if (equipResult.log) logs.push(equipResult.log);
+
+        if (
+          !equipResult.equipped &&
+          recipe.purpose === "skillup" &&
+          !shouldStoreItem({
+            itemId: result.outputItemId,
+            roster: nextRoster,
+            policy: stashPolicyRef.current,
+          })
+        ) {
+          const sellQuantity = Math.min(
+            result.outputQuantity || 1,
+            getItemQuantity(nextInventory, result.outputItemId),
+          );
+          if (sellQuantity > 0) {
+            nextInventory = removeItemFromGuildInventory(
+              nextInventory,
+              result.outputItemId,
+              sellQuantity,
+            );
+            const saleGold =
+              sellQuantity * Math.max(0, Number(outputDefinition.sellValue) || 0);
+            nextGold += saleGold;
+            logs.push({
+              type: "profession",
+              message: `Sold ${sellQuantity} obsolete ${outputDefinition.name} for ${saleGold}g.`,
+            });
+          }
+        }
+      }
+
+      rosterRef.current = nextRoster;
+      guildInventoryRef.current = nextInventory;
+      goldRef.current = nextGold;
+      setRoster(nextRoster);
+      setGuildInventory(nextInventory);
+      setGuildGold(nextGold);
+      appendProfessionLogs(logs);
+      pushNotification({
+        type: "info",
+        title: "Crafting Complete",
+        message:
+          logs[0]?.message ||
+          `${character?.name || "Crafter"} completed a recipe.`,
+      });
+      return true;
+    },
+    [appendProfessionLogs, pushNotification],
+  );
+
+  const handleSellStashItem = useCallback(
+    (itemId, quantity = 1) => {
+      const definition = getInventoryItemDefinition(itemId);
+      const sellQuantity = Math.min(
+        Math.max(1, Math.floor(Number(quantity) || 1)),
+        getItemQuantity(guildInventoryRef.current, itemId),
+      );
+      if (!definition || sellQuantity <= 0) return false;
+      const saleGold = sellQuantity * Math.max(0, Number(definition.sellValue) || 0);
+      const nextInventory = removeItemFromGuildInventory(
+        guildInventoryRef.current,
+        itemId,
+        sellQuantity,
+      );
+      const nextGold = goldRef.current + saleGold;
+      guildInventoryRef.current = nextInventory;
+      goldRef.current = nextGold;
+      setGuildInventory(nextInventory);
+      setGuildGold(nextGold);
+      appendProfessionLogs([
+        {
+          type: "profession",
+          message: `Sold ${sellQuantity} ${definition.name} for ${saleGold}g.`,
+        },
+      ]);
+      return true;
+    },
+    [appendProfessionLogs],
+  );
+
+  const handleTryAutoEquipFromGuildStash = useCallback(
+    (itemId) => {
+      const equipResult = tryAutoEquipItemFromGuildStash({
+        itemId,
+        roster: rosterRef.current,
+        guildInventory: guildInventoryRef.current,
+      });
+      if (!equipResult.equipped) {
+        pushNotification({
+          type: "info",
+          title: "No Upgrade Found",
+          message: "No eligible guild member can use this as an upgrade.",
+        });
+        return false;
+      }
+      rosterRef.current = equipResult.roster;
+      guildInventoryRef.current = equipResult.guildInventory;
+      setRoster(equipResult.roster);
+      setGuildInventory(equipResult.guildInventory);
+      appendProfessionLogs([equipResult.log]);
+      return true;
+    },
+    [appendProfessionLogs, pushNotification],
+  );
+
+  const handleCleanupGuildStash = useCallback(() => {
+    const cleanup = cleanupGuildStash({
+      guildInventory: guildInventoryRef.current,
+      roster: rosterRef.current,
+      policy: stashPolicyRef.current,
+    });
+    const nextGold = goldRef.current + cleanup.goldGained;
+    guildInventoryRef.current = cleanup.guildInventory;
+    goldRef.current = nextGold;
+    setGuildInventory(cleanup.guildInventory);
+    setGuildGold(nextGold);
+    appendProfessionLogs(
+      cleanup.logs.length > 0
+        ? cleanup.logs
+        : [
+            {
+              type: "profession",
+              message: "Guild Stash cleanup found no obsolete equipment.",
+            },
+          ],
+    );
+    return cleanup;
+  }, [appendProfessionLogs]);
+
   const debugActions = useMemo(
     () =>
       createDebugActions({
@@ -3791,6 +4243,9 @@ export const GameProvider = ({ children }) => {
         guildRelationships,
         realmState,
         worldPvpState,
+        battlefieldState,
+        guildInventory,
+        stashPolicy,
         calendarState,
         raidLockouts,
         missionBoardState,
@@ -3839,6 +4294,9 @@ export const GameProvider = ({ children }) => {
             guildRelationships: guildRelationshipsRef,
             realmState: realmStateRef,
             worldPvpState: worldPvpStateRef,
+            battlefieldState: battlefieldStateRef,
+            guildInventory: guildInventoryRef,
+            stashPolicy: stashPolicyRef,
             calendarState: calendarStateRef,
             raidLockouts: raidLockoutsRef,
             gameTime: gameTimeRef,
@@ -3855,6 +4313,9 @@ export const GameProvider = ({ children }) => {
             setGuildRelationships,
             setRealmState,
             setWorldPvpState,
+            setBattlefieldState,
+            setGuildInventory,
+            setStashPolicy,
             setMissionBoardState,
             setCalendarState,
             setRaidLockouts,
@@ -3869,6 +4330,7 @@ export const GameProvider = ({ children }) => {
             setShowGuildLog(false);
             setShowDebug(false);
             setShowOptions(false);
+            setShowProfessions(false);
             navigate(ROUTES.DASHBOARD);
           },
         });
@@ -4041,6 +4503,7 @@ export const GameProvider = ({ children }) => {
 
   const game = {
     activeMissions,
+    battlefieldState,
     bestGuildMemberSearchMatchId,
     calendarState,
     currentCalendarDate,
@@ -4056,6 +4519,7 @@ export const GameProvider = ({ children }) => {
     gameTimeMs,
     getAdjustedMissionSuccessPreview,
     getMissionInstanceId,
+    guildInventory,
     guildActivityModeSummary,
     guildClassSummary,
     guildDerivedStats,
@@ -4070,12 +4534,14 @@ export const GameProvider = ({ children }) => {
     guildRelationships,
     guildRoleSummary,
     guildSetup,
+    handleCleanupGuildStash,
     handleCancelCalendarEvent,
     handleCancelCalendarSeries,
     handleChangeGuildFocus: handleGuildFocusChange,
     handleClearAdventureGoal,
     handleCreateCalendarEvent,
     handleCreateCalendarSeries,
+    handleCraftRecipe,
     handleDeclineApplications,
     handleDeploy,
     handleDismiss,
@@ -4091,13 +4557,17 @@ export const GameProvider = ({ children }) => {
     handleModeChange,
     handleOpenRecruit,
     handleProfChange,
+    handlePvpActivityFocusChange,
+    handleQueueWarsongGulch,
     handleQueueAdventureGoal,
     handleRecruit,
     handleRecruitApplications,
     handleSaveSession,
     handleScoutRecruitmentTier,
+    handleSellStashItem,
     handleStartCalendarEvent,
     handleStartGuild,
+    handleTryAutoEquipFromGuildStash,
     handleUpdateBackstory,
     handleUpdateCalendarEventRoster,
     handleUpgradeGuildTalent,
@@ -4136,13 +4606,16 @@ export const GameProvider = ({ children }) => {
     setShowGuildLog,
     setShowLootTable,
     setShowOptions,
+    setShowProfessions,
     setShowRecruit,
     showDebug,
     showGuildLog,
     showLootTable,
     showOptions,
+    showProfessions,
     showRecruit,
     SHOW_LEGACY_QUESTS,
+    stashPolicy,
     toggleDashboardSection,
     worldPvpState,
   };

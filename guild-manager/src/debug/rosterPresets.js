@@ -1,6 +1,7 @@
 import { CONFIG, DB_CLASSES } from "../constants";
 import {
   generateCharacter,
+  EQUIPMENT_SLOT_ORDER,
   getClassArmorTypes,
   getItemEffectiveLevel,
   getReqExp,
@@ -79,10 +80,11 @@ export const DEBUG_MOLTEN_CORE_ROLE_ORDER = Object.freeze([
   "DPS",
   "DPS",
 ]);
-const DEBUG_GEAR_SLOTS = ["head", "chest", "legs", "feet", "hands", "mainHand"];
+export const DEBUG_GEAR_SLOTS = EQUIPMENT_SLOT_ORDER;
 const MAX_DEBUG_PRESET_ITEM_QUALITY = 3;
 const MOLTEN_CORE_ATTUNEMENT_KEY_ID = "molten_core_attunement";
 const BLACKWING_LAIR_ATTUNEMENT_KEY_ID = "blackwing_lair_attunement";
+const DEBUG_GENERIC_SLOTS = new Set(["neck", "back", "trinket", "ring", "mainHand"]);
 
 const DEBUG_GEAR_PROFILES = Object.freeze({
   DUNGEON_READY: Object.freeze({
@@ -167,6 +169,41 @@ const getProfileSetScore = (item, gearProfile) => {
     ? gearProfile.preferredSetPrefixes
     : [];
   return preferredSetPrefixes.some((prefix) => setId.startsWith(prefix)) ? 20 : 0;
+};
+
+const getDebugFallbackItemType = (charClass, level, slot) => {
+  if (DEBUG_GENERIC_SLOTS.has(slot)) return "Generic";
+  return getClassArmorTypes(charClass, level)[0] || "Cloth";
+};
+
+const createDebugFallbackItem = ({
+  charClass,
+  level,
+  slot,
+  gearProfile = DEBUG_GEAR_PROFILES.DUNGEON_READY,
+}) => {
+  const safeLevel = Math.max(1, Math.min(CONFIG.LEVEL_CAP, Number(level) || 1));
+  const targetItemLevel = Number.isFinite(Number(gearProfile?.targetItemLevel))
+    ? Number(gearProfile.targetItemLevel)
+    : safeLevel;
+  const itemLevel = Math.max(1, Math.floor(targetItemLevel));
+  const quality = Math.max(
+    1,
+    Math.min(
+      Number(gearProfile?.maxQuality) || MAX_DEBUG_PRESET_ITEM_QUALITY,
+      itemLevel >= 60 ? 3 : 2,
+    ),
+  );
+  return {
+    id: `debug_${gearProfile?.id || "preset"}_${charClass}_${slot}_${safeLevel}`,
+    name: `Debug ${slot} (${charClass})`,
+    slot,
+    type: getDebugFallbackItemType(charClass, safeLevel, slot),
+    quality,
+    minLevel: Math.min(safeLevel, Math.max(1, itemLevel - 7)),
+    itemLevel,
+    source: "Debug Preset",
+  };
 };
 
 const getDebugGearItemForSlot = (
@@ -257,7 +294,14 @@ const getDebugGearItemForSlot = (
   if (candidates.length === 0) {
     candidates = allItems.filter(canUseItem);
   }
-  if (candidates.length === 0) return null;
+  if (candidates.length === 0) {
+    return createDebugFallbackItem({
+      charClass,
+      level,
+      slot,
+      gearProfile,
+    });
+  }
 
   candidates.sort((left, right) => scoreItem(right) - scoreItem(left));
   return candidates[0] || null;

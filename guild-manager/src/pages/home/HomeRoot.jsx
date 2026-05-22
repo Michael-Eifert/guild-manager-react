@@ -13,12 +13,15 @@ import {
   formatGameSpeedLabel,
   getNextGameSpeed,
 } from "../../progression";
+import { getActiveDungeonRunCount } from "../../dungeons/dungeonBoardUtils";
 import { getWowIconUrl } from "../../utils";
 import { ROUTES } from "../../routes";
 
 const AdventureBoardPage = lazy(() => import("../adventure-board/AdventureBoardPage"));
+const BattlefieldsPage = lazy(() => import("../battlefields/BattlefieldsPage"));
 const CalendarPage = lazy(() => import("../calendar/CalendarPage"));
 const DashboardPage = lazy(() => import("../dashboard/DashboardPage"));
+const DungeonBoardPage = lazy(() => import("../dungeon-board/DungeonBoardPage"));
 const GuildPage = lazy(() => import("../guild/GuildPage"));
 const MissionBoardPage = lazy(() => import("../mission-board/MissionBoardPage"));
 const RealmPage = lazy(() => import("../realm/RealmPage"));
@@ -29,6 +32,7 @@ const LootTableModal = lazy(() => import("../../components/modals/LootTableModal
 const GuildLogModal = lazy(() => import("../../components/modals/GuildLogModal"));
 const DebugModal = lazy(() => import("../../components/modals/DebugModal"));
 const OptionsModal = lazy(() => import("../../components/modals/OptionsModal"));
+const ProfessionsModal = lazy(() => import("../../components/modals/ProfessionsModal"));
 
 const GUILD_FOCUS_CHANGE_COST_GOLD = 10;
 
@@ -39,12 +43,15 @@ const HOME_ROUTE_PATHS = Object.freeze({
   REALM: "realm",
   MISSION_BOARD: "mission-board",
   ADVENTURE_BOARD: "adventure-board",
+  DUNGEON_BOARD: "dungeon-board",
+  BATTLEFIELDS: "battlefields",
 });
 
 export default function HomeRoot() {
   const game = useGame();
   const {
     activeMissions,
+    battlefieldState,
     bestGuildMemberSearchMatchId,
     calendarState,
     currentCalendarDate,
@@ -59,7 +66,7 @@ export default function HomeRoot() {
     gameSpeed,
     gameTimeMs,
     getAdjustedMissionSuccessPreview,
-    getMissionInstanceId,
+    guildInventory,
     guildActivityModeSummary,
     guildClassSummary,
     guildDerivedStats,
@@ -74,12 +81,14 @@ export default function HomeRoot() {
     guildRelationships,
     guildRoleSummary,
     guildSetup,
+    handleCleanupGuildStash,
     handleCancelCalendarEvent,
     handleCancelCalendarSeries,
     handleChangeGuildFocus,
     handleClearAdventureGoal,
     handleCreateCalendarEvent,
     handleCreateCalendarSeries,
+    handleCraftRecipe,
     handleDeclineApplications,
     handleDeploy,
     handleDismiss,
@@ -94,12 +103,16 @@ export default function HomeRoot() {
     handleModeChange,
     handleOpenRecruit,
     handleProfChange,
+    handlePvpActivityFocusChange,
+    handleQueueWarsongGulch,
     handleQueueAdventureGoal,
     handleRecruit,
     handleRecruitApplications,
     handleSaveSession,
     handleScoutRecruitmentTier,
+    handleSellStashItem,
     handleStartCalendarEvent,
+    handleTryAutoEquipFromGuildStash,
     handleUpdateBackstory,
     handleUpdateCalendarEventRoster,
     handleUpgradeGuildTalent,
@@ -137,13 +150,16 @@ export default function HomeRoot() {
     setShowGuildLog,
     setShowLootTable,
     setShowOptions,
+    setShowProfessions,
     setShowRecruit,
     showDebug,
     showGuildLog,
     showLootTable,
     showOptions,
+    showProfessions,
     showRecruit,
     SHOW_LEGACY_QUESTS,
+    stashPolicy,
     toggleDashboardSection,
     worldPvpState,
   } = game;
@@ -151,6 +167,8 @@ export default function HomeRoot() {
   if (!guildSetup.hasStarted) {
     return <Navigate to={ROUTES.START} replace />;
   }
+
+  const activeDungeonRunCount = getActiveDungeonRunCount(activeMissions);
 
   return (
     <div className="wow-shell w-full max-w-5xl mx-auto p-4 pb-20">
@@ -368,6 +386,51 @@ export default function HomeRoot() {
           </span>
           Adventure Board
         </NavLink>
+        <NavLink
+          to={ROUTES.DUNGEON_BOARD}
+          className={({ isActive }) =>
+            `home-nav-item wow-command flex-none px-4 py-3 rounded border text-cyan-100 hover:bg-gray-700 shadow flex items-center gap-2 whitespace-nowrap ${
+              activeDungeonRunCount > 0
+                ? "border-cyan-400 bg-cyan-950/45 shadow-cyan-900/40"
+                : "border-cyan-800 bg-gray-800"
+            } ${isActive ? "home-nav-active" : ""}`
+          }
+        >
+          <span className="text-xl" aria-hidden="true">
+            &#9878;
+          </span>
+          Dungeon Board
+          {activeDungeonRunCount > 0 && (
+            <span className="rounded-full border border-cyan-200/70 bg-cyan-300/20 px-2 py-0.5 text-xs text-cyan-50">
+              {activeDungeonRunCount}
+            </span>
+          )}
+        </NavLink>
+        <NavLink
+          to={ROUTES.BATTLEFIELDS}
+          className={({ isActive }) =>
+            `home-nav-item wow-command flex-none px-4 py-3 rounded bg-gray-800 border text-red-100 hover:bg-gray-700 shadow flex items-center gap-2 whitespace-nowrap ${
+              isActive ? "home-nav-active" : "border-red-800"
+            }`
+          }
+        >
+          <span className="text-xl" aria-hidden="true">
+            &#9876;&#65039;
+          </span>
+          Battlefields
+        </NavLink>
+        <button
+          onClick={() => setShowProfessions(true)}
+          aria-pressed={showProfessions}
+          className={`home-nav-item wow-command flex-none snap-start px-4 py-3 rounded bg-gray-800 border border-emerald-700 hover:bg-gray-700 shadow flex items-center gap-2 whitespace-nowrap ${
+            showProfessions ? "home-nav-active" : ""
+          }`}
+        >
+          <span className="text-xl" aria-hidden="true">
+            &#9874;
+          </span>
+          Professions
+        </button>
         <button
           onClick={() => setShowLootTable(true)}
           aria-pressed={showLootTable}
@@ -409,12 +472,9 @@ export default function HomeRoot() {
                 onGuildSuccessRateChange={handleGuildSuccessRateChange}
                 dungeonActivityInfoText={dungeonActivityInfoText}
                 onGuildDungeonActivityChange={handleGuildDungeonActivityChange}
+                onPvpActivityFocusChange={handlePvpActivityFocusChange}
                 guildRoleSummary={guildRoleSummary}
                 guildClassSummary={guildClassSummary}
-                activeMissions={activeMissions}
-                getMissionInstanceId={getMissionInstanceId}
-                onManualFinish={handleManualFinish}
-                gameTimeMs={gameTimeMs}
                 guildMemberSearch={guildMemberSearch}
                 onGuildMemberSearchChange={setGuildMemberSearch}
                 memberRankingMode={memberRankingMode}
@@ -511,6 +571,7 @@ export default function HomeRoot() {
                 itemDatabase={itemDatabase}
                 missionBoardState={missionBoardState}
                 onMissionBoardStateChange={setMissionBoardState}
+                guildInventory={guildInventory}
               />
             }
           />
@@ -529,9 +590,38 @@ export default function HomeRoot() {
                 guildFaction={guildSetup.faction}
                 realmType={guildSetup.serverStyle}
                 onDeploy={handleDeploy}
+                getMissionPreview={getAdjustedMissionSuccessPreview}
+              />
+            }
+          />
+          <Route
+            path={HOME_ROUTE_PATHS.DUNGEON_BOARD}
+            element={
+              <DungeonBoardPage
+                roster={roster}
+                missionList={missionList}
+                activeMissions={activeMissions}
+                gameTimeMs={gameTimeMs}
+                onManualFinish={handleManualFinish}
                 onQueueAdventureGoal={handleQueueAdventureGoal}
                 onClearAdventureGoal={handleClearAdventureGoal}
-                getMissionPreview={getAdjustedMissionSuccessPreview}
+              />
+            }
+          />
+          <Route
+            path={HOME_ROUTE_PATHS.BATTLEFIELDS}
+            element={
+              <BattlefieldsPage
+                roster={roster}
+                activeMissions={activeMissions}
+                battlefieldState={battlefieldState}
+                worldPvpState={worldPvpState}
+                guildLog={guildLog}
+                guildSetup={guildSetup}
+                currentDayIndex={currentCalendarDayIndex}
+                gameTimeMs={gameTimeMs}
+                onQueueWarsongGulch={handleQueueWarsongGulch}
+                onPvpActivityFocusChange={handlePvpActivityFocusChange}
               />
             }
           />
@@ -581,6 +671,20 @@ export default function HomeRoot() {
             isOpen={showLootTable}
             onClose={() => setShowLootTable(false)}
             itemDatabase={itemDatabase}
+          />
+        )}
+        {showProfessions && (
+          <ProfessionsModal
+            isOpen={showProfessions}
+            onClose={() => setShowProfessions(false)}
+            roster={roster}
+            guildInventory={guildInventory}
+            stashPolicy={stashPolicy}
+            guildGold={guildGold}
+            onCraftRecipe={handleCraftRecipe}
+            onSellStashItem={handleSellStashItem}
+            onCleanupGuildStash={handleCleanupGuildStash}
+            onTryAutoEquipFromGuildStash={handleTryAutoEquipFromGuildStash}
           />
         )}
         {showGuildLog && (

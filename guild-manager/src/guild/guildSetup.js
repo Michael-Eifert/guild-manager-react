@@ -9,6 +9,7 @@ import {
   GUILD_FOCUS_OPTIONS,
   GUILD_SERVER_OPTIONS,
 } from "../constants";
+import { normalizePvpActivityFocus } from "../pvp/battlefields/battlefieldUtils";
 
 export const getFactionDefaultGuildName = (faction) =>
   faction === GUILD_FACTION.HORDE ? "Horde Vanguard" : "Alliance Vanguard";
@@ -64,7 +65,7 @@ export const normalizeGuildSetup = (value, payloadData = {}) => {
     safe.dungeonActivity,
   )
     ? safe.dungeonActivity
-    : GUILD_DUNGEON_ACTIVITY.NONE;
+    : DEFAULT_GUILD_SETUP.dungeonActivity;
   const normalizedServer = GUILD_SERVER_OPTIONS.some(
     (option) => option.value === safe.server,
   )
@@ -95,6 +96,7 @@ export const normalizeGuildSetup = (value, payloadData = {}) => {
       ? Number(safe.lastFocusChangeDayIndex)
       : null,
     dungeonActivity: normalizedDungeonActivity,
+    pvpActivityFocus: normalizePvpActivityFocus(safe.pvpActivityFocus),
     eliteQuestMinSuccessChance: normalizeAutoGroupSuccessRate(
       safe.eliteQuestMinSuccessChance,
     ),

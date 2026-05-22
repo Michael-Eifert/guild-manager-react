@@ -43,6 +43,12 @@ import {
 import { getRelationshipSuccessModifier } from "../../social/relationshipSystem";
 import { getPartyMoraleSuccessBonus } from "../../game/characterMorale";
 import { hasCompletedZoneEliteQuest } from "../../automation/zoneEliteAutomation";
+import {
+  CONSUMABLE_MODE,
+  CONSUMABLE_MODE_OPTIONS,
+  formatConsumableUseSummary,
+  getConsumableMissionModifiers,
+} from "../../professions/consumableEffects";
 import BaseModal from "./BaseModal";
 import {
   getZoneById,
@@ -469,6 +475,7 @@ const MissionModal = ({
   onNotify,
   missionBoardState = null,
   onMissionBoardStateChange = null,
+  guildInventory = null,
 }) => {
   const initialBoardState =
     missionBoardState && typeof missionBoardState === "object"
@@ -503,6 +510,9 @@ const MissionModal = ({
   );
   const [hideLowLevelDungeons, setHideLowLevelDungeons] = useState(
     Boolean(initialBoardState.hideLowLevelDungeons),
+  );
+  const [consumableMode, setConsumableMode] = useState(
+    initialBoardState.consumableMode || CONSUMABLE_MODE.NONE,
   );
   const [characterFilterMinLevel, setCharacterFilterMinLevel] = useState("");
   const [characterFilterMaxLevel, setCharacterFilterMaxLevel] = useState("");
@@ -571,8 +581,10 @@ const MissionModal = ({
       levelFilterMax,
       showAvailableDungeonsOnly,
       hideLowLevelDungeons,
+      consumableMode,
     });
   }, [
+    consumableMode,
     hideLowLevelDungeons,
     levelFilterMax,
     levelFilterMin,
@@ -1055,6 +1067,34 @@ const MissionModal = ({
   const missionPreview = activePrepMission
     ? getAdjustedMissionPreview(activePrepMission, selectedPartyMembers)
     : null;
+  const consumableModifiers =
+    activePrepMission?.type === "dungeon"
+      ? getConsumableMissionModifiers({
+          mode: consumableMode,
+          mission: activePrepMission,
+          partySize: selectedPartyMembers.length,
+          guildInventory,
+        })
+      : null;
+  const displayMissionPreview =
+    missionPreview && consumableModifiers?.hasConsumables
+      ? {
+          ...missionPreview,
+          successChance: Math.min(
+            100,
+            Math.max(
+              0,
+              missionPreview.successChance +
+                (Number(consumableModifiers.successBonusPercent) || 0),
+            ),
+          ),
+          failChance: Math.max(
+            0,
+            missionPreview.failChance -
+              (Number(consumableModifiers.failReductionPercent) || 0),
+          ),
+        }
+      : missionPreview;
   const shouldShowTacticalOdds = Boolean(missionPreview) && !isSelectedZoneMission;
   const selectedPartyRoleCounts = selectedPartyMembers.reduce(
     (acc, member) => {
@@ -1300,11 +1340,10 @@ const MissionModal = ({
       !selectedZoneEliteQuest && isChainEnabled && selectedChainMissions.length > 1
         ? selectedChainMissions.map((mission) => mission.id)
         : null;
-    onDeploy(
-      missionToDeploy,
-      party,
-      chainMissionIds ? { chainMissionIds } : undefined,
-    );
+    onDeploy(missionToDeploy, party, {
+      ...(chainMissionIds ? { chainMissionIds } : {}),
+      consumableMode,
+    });
     onClose();
   };
 
@@ -2174,9 +2213,9 @@ const MissionModal = ({
                     className={`mt-2 rounded border px-3 py-2 ${
                       selectedPartyMembers.length === 0
                         ? "border-gray-700 bg-gray-900/70"
-                        : missionPreview.successChance >= 75
+                        : displayMissionPreview.successChance >= 75
                           ? "border-emerald-700/80 bg-emerald-950/20"
-                          : missionPreview.successChance >= 45
+                          : displayMissionPreview.successChance >= 45
                             ? "border-amber-700/80 bg-amber-950/20"
                             : "border-rose-700/80 bg-rose-950/20"
                     }`}
@@ -2195,7 +2234,7 @@ const MissionModal = ({
                             Success
                           </div>
                           <div className="text-lg md:text-xl font-bold text-emerald-200 leading-tight">
-                            {missionPreview.successChance}%
+                            {displayMissionPreview.successChance}%
                           </div>
                         </div>
                         <div className="rounded border border-rose-800 bg-rose-950/35 px-2 py-1.5">
@@ -2203,9 +2242,14 @@ const MissionModal = ({
                             Fail
                           </div>
                           <div className="text-lg md:text-xl font-bold text-rose-200 leading-tight">
-                            {missionPreview.failChance}%
+                            {displayMissionPreview.failChance}%
                           </div>
                         </div>
+                        {consumableModifiers?.hasConsumables && (
+                          <div className="col-span-2 rounded border border-cyan-800 bg-cyan-950/30 px-2 py-1.5 text-[11px] text-cyan-100">
+                            Consumables: {formatConsumableUseSummary(consumableModifiers)}
+                          </div>
+                        )}
                       </div>
                     )}
                   </div>
@@ -2219,6 +2263,38 @@ const MissionModal = ({
                       ? "Elite briefing: high-risk target with dangerous resistance. Bring appropriate levels and roles."
                       : "Quest briefing: a standard operation suited for steady progression and resource gains."}
                 </p>
+                {activePrepMission?.type === "dungeon" && (
+                  <div className="mt-3 rounded border border-cyan-900/70 bg-cyan-950/15 p-2">
+                    <div className="flex flex-wrap items-center justify-between gap-2">
+                      <span className="text-[11px] uppercase tracking-wide text-cyan-200 font-bold">
+                        Consumables
+                      </span>
+                      <div className="flex flex-wrap gap-1.5">
+                        {CONSUMABLE_MODE_OPTIONS.map((option) => (
+                          <button
+                            key={option.value}
+                            type="button"
+                            onClick={() => setConsumableMode(option.value)}
+                            className={`px-2 py-1 rounded border text-[11px] font-semibold transition-colors ${
+                              consumableMode === option.value
+                                ? "border-cyan-500 bg-cyan-800/40 text-cyan-100"
+                                : "border-gray-700 bg-gray-800 text-gray-300 hover:bg-gray-700"
+                            }`}
+                          >
+                            {option.label}
+                          </button>
+                        ))}
+                      </div>
+                    </div>
+                    <div className="mt-2 text-[11px] text-cyan-100/80">
+                      {consumableModifiers?.hasConsumables
+                        ? formatConsumableUseSummary(consumableModifiers)
+                        : consumableMode === CONSUMABLE_MODE.NONE
+                          ? "No consumables will be prepared."
+                          : "No matching consumables are available in the Guild Stash."}
+                    </div>
+                  </div>
+                )}
                 {selectedQuest.type === "zone" && zoneEliteMissionOptions.length > 0 && (
                   <div className="mt-3 rounded border border-emerald-900/70 bg-emerald-950/20 p-2">
                     <div className="text-[11px] uppercase tracking-wide text-emerald-200 font-bold">

@@ -1,4 +1,5 @@
 import { getCharacterPowerScore } from "../utils";
+import { isMissionBoardAvailableStatus } from "../missions/missionRosterGuards";
 import {
   ADVENTURE_GOAL_TYPE,
   getAdventureGoalQueue,
@@ -156,7 +157,12 @@ const getAvailableMembers = ({ roster, activeMissions }) => {
   const busyMemberIds = getBusyMemberIds(activeMissions);
   return (Array.isArray(roster) ? roster : []).filter((member) => {
     const memberId = String(member?.id || "");
-    return member && memberId && member.status !== "Questing" && !busyMemberIds.has(memberId);
+    return (
+      member &&
+      memberId &&
+      isMissionBoardAvailableStatus(member.status) &&
+      !busyMemberIds.has(memberId)
+    );
   });
 };
 
@@ -269,7 +275,7 @@ export const resolveAutoZoneEliteGroups = ({
     const memberId = String(member?.id || "");
     const zoneId = String(member?.currentZoneId || "").trim();
     if (!member || !memberId || !zoneId) return;
-    if (member.status === "Questing" || busyMemberIds.has(memberId)) return;
+    if (!isMissionBoardAvailableStatus(member.status) || busyMemberIds.has(memberId)) return;
     if (!zoneMembersByZoneId.has(zoneId)) zoneMembersByZoneId.set(zoneId, []);
     zoneMembersByZoneId.get(zoneId).push(member);
   });

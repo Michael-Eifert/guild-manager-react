@@ -89,9 +89,18 @@ export const getWorldPvpProfile = ({
   let hostileDisadvantage = 0;
 
   if (isStarterZone(zone)) {
-    pvpType = WORLD_PVP_PROFILE_TYPE.SAFE;
+    const isEnemyStarterZone =
+      zoneFaction !== ZONE_FACTION.NEUTRAL && zoneFaction !== faction;
+    pvpType = isEnemyStarterZone
+      ? WORLD_PVP_PROFILE_TYPE.HOSTILE
+      : WORLD_PVP_PROFILE_TYPE.SAFE;
     controllingFaction = zoneFaction === ZONE_FACTION.NEUTRAL ? faction : zoneFaction;
-    description = "Friendly territory. PvP is not expected here.";
+    hostileDisadvantage = isEnemyStarterZone
+      ? WORLD_PVP_TUNING.HOSTILE_DISADVANTAGE
+      : 0;
+    description = isEnemyStarterZone
+      ? "Enemy starting territory. PvP pressure is high for your faction."
+      : "Friendly territory. PvP is not expected here.";
   }
 
   return {
