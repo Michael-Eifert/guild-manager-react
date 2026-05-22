@@ -1,0 +1,72 @@
+import React from "react";
+import { renderToStaticMarkup } from "react-dom/server";
+import { MemoryRouter } from "react-router-dom";
+import { describe, expect, it, vi } from "vitest";
+
+import { GameContext } from "../app/GameContext";
+import HomeRoot from "../pages/home/HomeRoot";
+import StartPage from "../pages/start/StartPage";
+import { ROUTES } from "../routes";
+
+vi.mock("react-router-dom", async () => {
+  const actual = await vi.importActual("react-router-dom");
+  return {
+    ...actual,
+    Navigate: ({ to }) => <span data-route-redirect={to}>redirect:{to}</span>,
+  };
+});
+
+const noop = () => {};
+
+const renderWithGame = (element, game) =>
+  renderToStaticMarkup(
+    <MemoryRouter>
+      <GameContext.Provider value={game}>{element}</GameContext.Provider>
+    </MemoryRouter>,
+  );
+
+describe("route contracts", () => {
+  it("uses /start and /home based route constants", () => {
+    expect(ROUTES.START).toBe("/start");
+    expect(ROUTES.HOME).toBe("/home");
+    expect(ROUTES.DASHBOARD).toBe("/home");
+    expect(ROUTES.GUILD).toBe("/home/guild");
+    expect(ROUTES.CALENDAR).toBe("/home/calendar");
+    expect(ROUTES.REALM).toBe("/home/realm");
+    expect(ROUTES.MISSION_BOARD).toBe("/home/mission-board");
+    expect(ROUTES.ADVENTURE_BOARD).toBe("/home/adventure-board");
+  });
+
+  it("renders setup on /start before a guild exists", () => {
+    const html = renderWithGame(<StartPage />, {
+      dismissNotification: noop,
+      guildSetup: { hasStarted: false, name: "" },
+      handleGuildSetupChange: noop,
+      handleLoadButtonClick: noop,
+      handleLoadSessionFile: noop,
+      handleStartGuild: noop,
+      notifications: [],
+      sessionFileInputRef: { current: null },
+    });
+
+    expect(html).toContain("Found Your Guild");
+    expect(html).toContain("Start Game");
+  });
+
+  it("redirects /start to /home after a guild exists", () => {
+    const html = renderWithGame(<StartPage />, {
+      guildSetup: { hasStarted: true },
+    });
+
+    expect(html).toContain(`redirect:${ROUTES.HOME}`);
+  });
+
+  it("redirects /home to /start before a guild exists", () => {
+    const html = renderWithGame(<HomeRoot />, {
+      guildSetup: { hasStarted: false },
+    });
+
+    expect(html).toContain(`redirect:${ROUTES.START}`);
+  });
+
+});

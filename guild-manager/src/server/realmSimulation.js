@@ -65,6 +65,15 @@ const getRealmSimulationStepIndex = (dayIndex, dayProgress = 0) => {
   );
 };
 
+const getRealmSimulationDayForStep = (stepIndex) =>
+  Math.max(
+    1,
+    Math.floor(
+      (Math.max(1, Number(stepIndex) || 1) - 1) /
+        REALM_SIMULATION_STEPS_PER_DAY,
+    ) + 1,
+  );
+
 const maybeFormNpcGuildForDay = ({
   realmState,
   npcGuilds,
@@ -246,28 +255,30 @@ export const advanceRealmSimulation = ({
     return nextRealm;
   }
 
-  for (let step = lastSimulatedStep + 1; step <= safeCurrentStep; step += 1) {
-    const canBatchFullDay =
-      step % REALM_SIMULATION_STEPS_PER_DAY === 1 &&
-      step + REALM_SIMULATION_STEPS_PER_DAY - 1 <= safeCurrentStep;
-    const simulatedStep = canBatchFullDay
-      ? step + REALM_SIMULATION_STEPS_PER_DAY - 1
-      : step;
-    const day = Math.floor(simulatedStep / REALM_SIMULATION_STEPS_PER_DAY);
-    const dayFraction = canBatchFullDay ? 1 : REALM_SIMULATION_STEP_FRACTION;
+  for (
+    let simulatedStep = lastSimulatedStep + 1;
+    simulatedStep <= safeCurrentStep;
+    simulatedStep += 1
+  ) {
+    const day = getRealmSimulationDayForStep(simulatedStep);
+    const dayStepIndex = (simulatedStep - 1) % REALM_SIMULATION_STEPS_PER_DAY;
+    const dayFraction = REALM_SIMULATION_STEP_FRACTION;
     const isFullDayStep =
       simulatedStep % REALM_SIMULATION_STEPS_PER_DAY === 0;
     const random = createRandom(
       hashRealmSeed(`${nextRealm.id}:step:${simulatedStep}`),
     );
-    const activeNpcGuilds = maybeFormNpcGuildForDay({
-      realmState: nextRealm,
-      npcGuilds: nextRealm.npcGuilds,
-      playerGuildSnapshot,
-      guildSetup,
-      dayIndex: day,
-      random,
-    });
+    const activeNpcGuilds =
+      dayStepIndex === 0
+        ? maybeFormNpcGuildForDay({
+            realmState: nextRealm,
+            npcGuilds: nextRealm.npcGuilds,
+            playerGuildSnapshot,
+            guildSetup,
+            dayIndex: day,
+            random,
+          })
+        : nextRealm.npcGuilds;
     const npcGuilds = activeNpcGuilds.map((guild) =>
       advanceNpcGuildForDay({
         guild,
@@ -289,6 +300,7 @@ export const advanceRealmSimulation = ({
       npcGuilds: npcGuildsWithoutEvents,
       dayIndex: day,
       dayFraction,
+      dayStepIndex,
       playerRosterSize: Math.max(0, Number(playerGuildSnapshot?.rosterSize) || 0),
       playerAverageLevel: playerGuildSnapshot?.averageLevel,
       serverPopulation: nextRealm.populationLabel,
@@ -320,10 +332,6 @@ export const advanceRealmSimulation = ({
         : Number(nextRealm.lastSimulatedDayIndex) || 0,
       lastSimulatedStepIndex: simulatedStep,
     };
-
-    if (canBatchFullDay) {
-      step = simulatedStep;
-    }
   }
 
   return nextRealm;

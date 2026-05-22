@@ -155,6 +155,7 @@ const isRaidResetDay = (mission, dayIndex) => {
 const CalendarModal = ({
   isOpen,
   onClose,
+  variant = "modal",
   calendarState,
   currentDayIndex,
   missionList,
@@ -170,6 +171,8 @@ const CalendarModal = ({
   onCancelSeries,
   onStartEvent,
 }) => {
+  const isPage = variant === "page";
+  const isActive = isPage || isOpen;
   const currentDate = getCalendarDate(currentDayIndex);
   const raidMissions = useMemo(
     () => (Array.isArray(missionList) ? missionList : []).filter((mission) => mission?.isRaid),
@@ -202,7 +205,7 @@ const CalendarModal = ({
   const [autoSelectSummary, setAutoSelectSummary] = useState("");
 
   useEffect(() => {
-    if (!isOpen) return;
+    if (!isActive) return;
     setViewYear(currentDate.year);
     setViewMonthIndex(currentDate.monthIndex);
     setSelectedDayIndex(currentDayIndex);
@@ -226,7 +229,7 @@ const CalendarModal = ({
     currentDate.year,
     currentDayIndex,
     defaultMissionId,
-    isOpen,
+    isActive,
     raidMissionOptions,
   ]);
 
@@ -632,13 +635,8 @@ const CalendarModal = ({
     );
   };
 
-  return (
-    <BaseModal
-      isOpen={isOpen}
-      onClose={onClose}
-      overlayClassName="bg-black/85 backdrop-blur-sm p-0 md:p-4"
-      panelClassName="wow-modal-panel bg-gray-900 border-x-0 border-y-0 md:border-2 border-indigo-800 rounded-none md:rounded-lg w-full max-w-6xl h-full md:h-[86vh] flex flex-col relative shadow-2xl"
-    >
+  const content = (
+    <>
       <div className="p-4 border-b border-gray-700 flex justify-between items-center bg-gray-900 z-10">
         <div>
           <h2 className="text-xl md:text-2xl font-bold text-white fantasy-font">
@@ -648,9 +646,11 @@ const CalendarModal = ({
             Today: {formatCalendarDate(currentDayIndex)}
           </p>
         </div>
-        <button onClick={onClose} className="text-gray-500 hover:text-white text-3xl px-2">
-          &times;
-        </button>
+        {!isPage && (
+          <button onClick={onClose} className="text-gray-500 hover:text-white text-3xl px-2">
+            &times;
+          </button>
+        )}
       </div>
 
       <div className="flex-1 min-h-0 grid grid-cols-1 lg:grid-cols-[1.1fr_0.9fr]">
@@ -1289,6 +1289,25 @@ const CalendarModal = ({
           )}
         </div>
       </div>
+    </>
+  );
+
+  if (isPage) {
+    return (
+      <section className="wow-modal-panel flex min-h-[calc(100vh-220px)] flex-col overflow-hidden rounded-lg border-2 border-indigo-800 bg-gray-900 shadow-2xl">
+        {content}
+      </section>
+    );
+  }
+
+  return (
+    <BaseModal
+      isOpen={isOpen}
+      onClose={onClose}
+      overlayClassName="bg-black/85 backdrop-blur-sm p-0 md:p-4"
+      panelClassName="wow-modal-panel bg-gray-900 border-x-0 border-y-0 md:border-2 border-indigo-800 rounded-none md:rounded-lg w-full max-w-6xl h-full md:h-[86vh] flex flex-col relative shadow-2xl"
+    >
+      {content}
     </BaseModal>
   );
 };

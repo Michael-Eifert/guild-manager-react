@@ -1,6 +1,5 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { CONFIG, DB_CLASSES, GUILD_FACTION } from "../../constants";
-import { DB_ITEMS } from "../../data/items";
 import {
   getCharacterAverageItemLevel,
   getItemEffectiveLevel,
@@ -124,36 +123,37 @@ const RAID_PROGRESSION_ORDER = {
   Naxxramas: 41,
 };
 
-const LOOT_LEVEL_RANGE_BY_SOURCE = DB_ITEMS.reduce((ranges, item) => {
-  const source = getItemSource(item);
-  const itemLevel = getItemEffectiveLevel(item);
-  if (!source || !Number.isFinite(itemLevel) || itemLevel <= 0) return ranges;
-  const current = ranges.get(source);
-  if (!current) {
-    ranges.set(source, { min: itemLevel, max: itemLevel });
+const buildLootLevelRangesBySource = (items) =>
+  (Array.isArray(items) ? items : []).reduce((ranges, item) => {
+    const source = getItemSource(item);
+    const itemLevel = getItemEffectiveLevel(item);
+    if (!source || !Number.isFinite(itemLevel) || itemLevel <= 0) return ranges;
+    const current = ranges.get(source);
+    if (!current) {
+      ranges.set(source, { min: itemLevel, max: itemLevel });
+      return ranges;
+    }
+    current.min = Math.min(current.min, itemLevel);
+    current.max = Math.max(current.max, itemLevel);
     return ranges;
-  }
-  current.min = Math.min(current.min, itemLevel);
-  current.max = Math.max(current.max, itemLevel);
-  return ranges;
-}, new Map());
+  }, new Map());
 
-const getMissionLootLevelInfo = (mission) => {
+const getMissionLootLevelInfo = (mission, lootLevelRangesBySource) => {
   const source = getMissionLootSource(mission);
-  return LOOT_LEVEL_RANGE_BY_SOURCE.get(source) || null;
+  return lootLevelRangesBySource?.get(source) || null;
 };
 
-const getMissionLootLevelLabel = (mission) => {
-  const range = getMissionLootLevelInfo(mission);
+const getMissionLootLevelLabel = (mission, lootLevelRangesBySource) => {
+  const range = getMissionLootLevelInfo(mission, lootLevelRangesBySource);
   if (!range) return null;
   return range.min === range.max
     ? `iLvl ${range.max}`
     : `iLvl ${range.min}-${range.max}`;
 };
 
-const getMissionSetLootLevelInfo = (missions) => {
+const getMissionSetLootLevelInfo = (missions, lootLevelRangesBySource) => {
   const ranges = (Array.isArray(missions) ? missions : [])
-    .map(getMissionLootLevelInfo)
+    .map((mission) => getMissionLootLevelInfo(mission, lootLevelRangesBySource))
     .filter(Boolean);
   if (ranges.length === 0) return null;
   return ranges.reduce(
@@ -165,8 +165,8 @@ const getMissionSetLootLevelInfo = (missions) => {
   );
 };
 
-const getMissionSetLootLevelLabel = (missions) => {
-  const range = getMissionSetLootLevelInfo(missions);
+const getMissionSetLootLevelLabel = (missions, lootLevelRangesBySource) => {
+  const range = getMissionSetLootLevelInfo(missions, lootLevelRangesBySource);
   if (!range) return null;
   return range.min === range.max
     ? `Drops iLvl ${range.max}`
@@ -177,13 +177,13 @@ const getRaidProgressionOrder = (mission) =>
   RAID_PROGRESSION_ORDER[mission?.dungeonSetName || mission?.name] ??
   Number.POSITIVE_INFINITY;
 
-const compareRaidProgression = (left, right) => {
+const compareRaidProgression = (left, right, lootLevelRangesBySource) => {
   const leftOrder = getRaidProgressionOrder(left);
   const rightOrder = getRaidProgressionOrder(right);
   if (leftOrder !== rightOrder) return leftOrder - rightOrder;
 
-  const leftLoot = getMissionLootLevelInfo(left);
-  const rightLoot = getMissionLootLevelInfo(right);
+  const leftLoot = getMissionLootLevelInfo(left, lootLevelRangesBySource);
+  const rightLoot = getMissionLootLevelInfo(right, lootLevelRangesBySource);
   const leftMax = leftLoot?.max ?? Number.POSITIVE_INFINITY;
   const rightMax = rightLoot?.max ?? Number.POSITIVE_INFINITY;
   if (leftMax !== rightMax) return leftMax - rightMax;
@@ -451,6 +451,9 @@ const sortDungeonWingsByProgression = (left, right) => {
 const MissionModal = ({
   isOpen,
   onClose,
+  variant = "modal",
+  itemCatalog = null,
+  itemDatabase = [],
   roster,
   onDeploy,
   missionList,
@@ -471,6 +474,18 @@ const MissionModal = ({
     missionBoardState && typeof missionBoardState === "object"
       ? missionBoardState
       : {};
+  const isPage = variant === "page";
+  const isActive = isPage || isOpen;
+  const allItems = useMemo(
+    () => itemCatalog?.all?.() || (Array.isArray(itemDatabase) ? itemDatabase : []),
+    [itemCatalog, itemDatabase],
+  );
+  const lootLevelRangesBySource = useMemo(
+    () =>
+      itemCatalog?.getLootLevelRangesBySource?.() ||
+      buildLootLevelRangesBySource(allItems),
+    [allItems, itemCatalog],
+  );
   const [view, setView] = useState("list");
   const [selectedQuest, setSelectedQuest] = useState(null);
   const [party, setParty] = useState([]);
@@ -531,7 +546,7 @@ const MissionModal = ({
   );
 
   useEffect(() => {
-    if (!isOpen) return;
+    if (!isActive) return;
     setView("list");
     setParty([]);
     setSelectedQuest(null);
@@ -546,7 +561,7 @@ const MissionModal = ({
     setSelectedZoneEliteQuestId(null);
     setIsLootAccordionOpen(false);
     setIsAutoSelectMenuOpen(false);
-  }, [isOpen]);
+  }, [isActive]);
 
   useEffect(() => {
     if (typeof onMissionBoardStateChange !== "function") return;
@@ -1070,16 +1085,18 @@ const MissionModal = ({
   const selectedDungeonLootItems = useMemo(() => {
     if (!selectedDungeonLootSource) return [];
     return sortLootItems(
-      DB_ITEMS.filter((item) => getItemSource(item) === selectedDungeonLootSource),
+      allItems.filter((item) => getItemSource(item) === selectedDungeonLootSource),
     );
-  }, [selectedDungeonLootSource]);
+  }, [allItems, selectedDungeonLootSource]);
   const selectedDungeonLootByQuality = useMemo(
     () => groupByQuality(selectedDungeonLootItems),
     [selectedDungeonLootItems],
   );
 
   const orderedMissions = [...availableMissionList].sort((left, right) => {
-    if (left?.isRaid && right?.isRaid) return compareRaidProgression(left, right);
+    if (left?.isRaid && right?.isRaid) {
+      return compareRaidProgression(left, right, lootLevelRangesBySource);
+    }
     if ((left?.level || 0) !== (right?.level || 0)) return (left?.level || 0) - (right?.level || 0);
     return String(left?.name || "").localeCompare(String(right?.name || ""));
   });
@@ -1334,7 +1351,10 @@ const MissionModal = ({
       level: inRangeReferenceLevel,
     });
     const missionExpLabel = formatXpRewardText(inRangeMissionExpPerHero);
-    const missionLootLevelLabel = getMissionLootLevelLabel(mission);
+    const missionLootLevelLabel = getMissionLootLevelLabel(
+      mission,
+      lootLevelRangesBySource,
+    );
 
     return (
       <div
@@ -1917,23 +1937,20 @@ const MissionModal = ({
       ? "max-h-[34vh] md:max-h-[36vh]"
       : "max-h-[38vh] md:max-h-[44vh]";
 
-  return (
-    <BaseModal
-      isOpen={isOpen}
-      onClose={onClose}
-      overlayClassName="bg-black/85 backdrop-blur-sm p-0 md:p-4"
-      panelClassName="wow-modal-panel bg-gray-900 border-x-0 border-y-0 md:border-2 border-blue-900 rounded-none md:rounded-lg w-full max-w-4xl h-full md:h-[90vh] flex flex-col relative shadow-2xl"
-    >
+  const boardContent = (
+    <>
       <div className="p-4 border-b border-gray-700 bg-gray-900 flex justify-between items-center flex-none">
         <h2 className="text-xl md:text-2xl fantasy-font text-blue-400">
           {view === "list" ? "Mission Board" : "Tactical Map"}
         </h2>
-        <button
-          onClick={onClose}
-          className="text-gray-500 hover:text-white text-3xl px-2"
-        >
-          &times;
-        </button>
+        {!isPage && (
+          <button
+            onClick={onClose}
+            className="text-gray-500 hover:text-white text-3xl px-2"
+          >
+            &times;
+          </button>
+        )}
       </div>
       {view === "list" && (
         <div className="flex-1 flex flex-col min-h-0">
@@ -2057,7 +2074,10 @@ const MissionModal = ({
                           const isExpanded = Boolean(expandedDungeonGroups[group.key]);
                           const levelRangeLabel = getDungeonGroupLevelRangeLabel(group.missions);
                           const setTypeLabel = getMissionSetTypeLabel(group.missions);
-                          const setLootLevelLabel = getMissionSetLootLevelLabel(group.missions);
+                          const setLootLevelLabel = getMissionSetLootLevelLabel(
+                            group.missions,
+                            lootLevelRangesBySource,
+                          );
                           return (
                             <div
                               key={group.key}
@@ -3000,6 +3020,25 @@ const MissionModal = ({
           </div>
         </div>
       )}
+    </>
+  );
+
+  if (isPage) {
+    return (
+      <section className="wow-modal-panel flex min-h-[calc(100vh-220px)] flex-col overflow-hidden rounded-lg border-2 border-blue-900 bg-gray-900 shadow-2xl">
+        {boardContent}
+      </section>
+    );
+  }
+
+  return (
+    <BaseModal
+      isOpen={isOpen}
+      onClose={onClose}
+      overlayClassName="bg-black/85 backdrop-blur-sm p-0 md:p-4"
+      panelClassName="wow-modal-panel bg-gray-900 border-x-0 border-y-0 md:border-2 border-blue-900 rounded-none md:rounded-lg w-full max-w-4xl h-full md:h-[90vh] flex flex-col relative shadow-2xl"
+    >
+      {boardContent}
     </BaseModal>
   );
 };

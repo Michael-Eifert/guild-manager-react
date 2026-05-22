@@ -22,6 +22,7 @@ const GUILD_FOCUS_DESCRIPTIONS = Object.freeze({
 const GuildTalentsModal = ({
   isOpen,
   onClose,
+  variant = "modal",
   guildProgress,
   guildGold,
   guildDerivedStats,
@@ -32,8 +33,9 @@ const GuildTalentsModal = ({
   onUpgradeTalent,
 }) => {
   const [activeTab, setActiveTab] = useState("achievements");
+  const isPage = variant === "page";
 
-  if (!isOpen) return null;
+  if (!isPage && !isOpen) return null;
 
   const achievementEntries = buildGuildAchievementEntries(guildProgress);
   const unlockedAchievements = achievementEntries.filter(
@@ -45,13 +47,8 @@ const GuildTalentsModal = ({
     Number(guildSetup.lastFocusChangeDayIndex) === currentDayIndex;
   const canAffordFocusChange = (Number(guildGold) || 0) >= focusChangeCostGold;
 
-  return (
-    <BaseModal
-      isOpen={isOpen}
-      onClose={onClose}
-      overlayClassName="bg-black/85 backdrop-blur-sm p-0 md:p-4"
-      panelClassName="wow-modal-panel bg-gray-900 border-x-0 border-y-0 md:border-2 border-amber-800 rounded-none md:rounded-lg w-full max-w-4xl h-full md:h-[80vh] flex flex-col relative shadow-2xl"
-    >
+  const content = (
+    <>
       <div className="p-4 border-b border-gray-700 bg-gray-900 flex justify-between items-center">
         <div>
           <h2 className="text-xl md:text-2xl font-bold fantasy-font text-amber-200">
@@ -68,12 +65,14 @@ const GuildTalentsModal = ({
             Guild Gold: <span className="text-yellow-300 font-bold">{guildGold}</span>
           </div>
         </div>
-        <button
-          onClick={onClose}
-          className="text-gray-500 hover:text-white text-3xl px-2"
-        >
-          &times;
-        </button>
+        {!isPage && (
+          <button
+            onClick={onClose}
+            className="text-gray-500 hover:text-white text-3xl px-2"
+          >
+            &times;
+          </button>
+        )}
       </div>
 
       <div className="flex-1 overflow-y-auto custom-scrollbar p-4 space-y-4">
@@ -348,6 +347,25 @@ const GuildTalentsModal = ({
           </div>
         )}
       </div>
+    </>
+  );
+
+  if (isPage) {
+    return (
+      <section className="wow-modal-panel flex min-h-[calc(100vh-220px)] flex-col overflow-hidden rounded-lg border-2 border-amber-800 bg-gray-900 shadow-2xl">
+        {content}
+      </section>
+    );
+  }
+
+  return (
+    <BaseModal
+      isOpen={isOpen}
+      onClose={onClose}
+      overlayClassName="bg-black/85 backdrop-blur-sm p-0 md:p-4"
+      panelClassName="wow-modal-panel bg-gray-900 border-x-0 border-y-0 md:border-2 border-amber-800 rounded-none md:rounded-lg w-full max-w-4xl h-full md:h-[80vh] flex flex-col relative shadow-2xl"
+    >
+      {content}
     </BaseModal>
   );
 };

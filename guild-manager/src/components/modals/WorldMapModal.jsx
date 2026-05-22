@@ -229,6 +229,7 @@ const getHeroLevel = (hero) => Math.max(1, Number(hero?.level) || 1);
 export default function WorldMapModal({
   isOpen,
   onClose,
+  variant = "modal",
   roster = [],
   missionList = [],
   activeMissions = [],
@@ -244,6 +245,8 @@ export default function WorldMapModal({
   onClearAdventureGoal,
   getMissionPreview,
 }) {
+  const isPage = variant === "page";
+  const isActive = isPage || isOpen;
   const [activeBoard, setActiveBoard] = useState(BOARD_TABS.WORLD);
   const [activeFilter, setActiveFilter] = useState(WORLD_MAP_FILTERS.AVAILABLE);
   const [selectedZoneId, setSelectedZoneId] = useState(null);
@@ -310,7 +313,7 @@ export default function WorldMapModal({
     : null;
 
   useEffect(() => {
-    if (!isOpen || summaries.length === 0) return;
+    if (!isActive || summaries.length === 0) return;
     const isVisible = visibleSummaries.some(
       (summary) => summary.zone.id === selectedZoneId,
     );
@@ -319,7 +322,7 @@ export default function WorldMapModal({
         visibleSummaries[0]?.zone.id ?? summaries[0]?.zone.id ?? null,
       );
     }
-  }, [isOpen, selectedZoneId, summaries, visibleSummaries]);
+  }, [isActive, selectedZoneId, summaries, visibleSummaries]);
 
   useEffect(() => {
     setSelectedMemberIds([]);
@@ -582,13 +585,8 @@ export default function WorldMapModal({
     formatPercent(elitePreview?.chance) ??
     formatPercent(elitePreview?.successRate);
 
-  return (
-    <BaseModal
-      isOpen={isOpen}
-      onClose={onClose}
-      overlayClassName="bg-black/85 backdrop-blur-sm p-0 md:p-4"
-      panelClassName="wow-modal-panel bg-gray-950 border-x-0 border-y-0 md:border-2 border-cyan-900 rounded-none md:rounded-lg w-full max-w-7xl h-full md:h-[92vh] flex flex-col relative shadow-2xl overflow-hidden"
-    >
+  const boardContent = (
+    <>
       <header className="flex-none px-4 py-3 md:px-5 border-b border-cyan-900/60 bg-gray-950 flex items-center justify-between gap-3">
         <div className="min-w-0">
           <h2 className="fantasy-font text-xl md:text-2xl text-cyan-300 truncate">
@@ -598,14 +596,16 @@ export default function WorldMapModal({
             {guildFaction} world routes, dungeon runs, and attunement goals
           </p>
         </div>
-        <button
-          type="button"
-          onClick={onClose}
-          className="text-gray-500 hover:text-white text-3xl px-2 leading-none"
-          aria-label="Close adventure board"
-        >
-          &times;
-        </button>
+        {!isPage && (
+          <button
+            type="button"
+            onClick={onClose}
+            className="text-gray-500 hover:text-white text-3xl px-2 leading-none"
+            aria-label="Close adventure board"
+          >
+            &times;
+          </button>
+        )}
       </header>
 
       <div className="flex-none border-b border-cyan-900/45 bg-slate-950 px-3 py-2 md:px-5">
@@ -782,6 +782,25 @@ export default function WorldMapModal({
           />
         )}
       </div>
+    </>
+  );
+
+  if (isPage) {
+    return (
+      <section className="wow-modal-panel flex min-h-[calc(100vh-220px)] flex-col overflow-hidden rounded-lg border-2 border-cyan-900 bg-gray-950 shadow-2xl">
+        {boardContent}
+      </section>
+    );
+  }
+
+  return (
+    <BaseModal
+      isOpen={isOpen}
+      onClose={onClose}
+      overlayClassName="bg-black/85 backdrop-blur-sm p-0 md:p-4"
+      panelClassName="wow-modal-panel bg-gray-950 border-x-0 border-y-0 md:border-2 border-cyan-900 rounded-none md:rounded-lg w-full max-w-7xl h-full md:h-[92vh] flex flex-col relative shadow-2xl overflow-hidden"
+    >
+      {boardContent}
     </BaseModal>
   );
 }

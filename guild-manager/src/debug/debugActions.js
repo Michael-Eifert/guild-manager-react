@@ -38,6 +38,7 @@ export const applyDebugLevelAndProfessionDelta = (char, levelDelta) => {
 };
 
 export const createDebugActions = ({
+  itemDatabase = [],
   maxRoster = 0,
   goldCap = 0,
   refs,
@@ -48,6 +49,8 @@ export const createDebugActions = ({
 } = {}) => {
   const getFaction = () =>
     refs?.guildSetup?.current?.faction || GUILD_FACTION.ALLIANCE;
+  const getItemDatabase = () =>
+    Array.isArray(itemDatabase) ? itemDatabase : [];
 
   const notify = (notification) => {
     if (typeof pushNotification === "function") pushNotification(notification);
@@ -70,6 +73,7 @@ export const createDebugActions = ({
       roleOrder: preset.roleOrder,
       guaranteedKeys: preset.guaranteedKeys,
       gearProfile: preset.gearProfile,
+      itemDatabase: getItemDatabase(),
       usedNames: [],
     });
     const normalizedRoster = normalizeRosterZonesForFaction(
@@ -198,6 +202,7 @@ export const createDebugActions = ({
         roleOrder: preset.roleOrder,
         guaranteedKeys: preset.guaranteedKeys,
         gearProfile: preset.gearProfile,
+        itemDatabase: getItemDatabase(),
         usedNames: currentRoster.map((member) => member?.name).filter(Boolean),
       });
       const updatedRoster = normalizeRosterZonesForFaction(

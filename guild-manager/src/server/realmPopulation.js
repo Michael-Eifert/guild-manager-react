@@ -106,6 +106,37 @@ const NAME_SUFFIXES = Object.freeze([
 const clampNumber = (value, min, max) =>
   Math.max(min, Math.min(max, Number(value) || 0));
 
+const DAILY_STAT_COUNTER_KEYS = Object.freeze([
+  "arrivals",
+  "npcRecruits",
+  "poached",
+  "applications",
+  "guildDungeonRuns",
+  "guildDungeonClears",
+  "pugDungeonRuns",
+  "pugDungeonClears",
+  "dungeonWipes",
+]);
+
+const mergeDailyStats = (existingStats, dayIndex, nextStats) => {
+  const safeDayIndex = Math.max(0, Math.floor(Number(dayIndex) || 0));
+  const existing =
+    existingStats && typeof existingStats === "object" ? existingStats : {};
+  const isSameDay = Math.floor(Number(existing.dayIndex) || -1) === safeDayIndex;
+  return DAILY_STAT_COUNTER_KEYS.reduce(
+    (stats, key) => ({
+      ...stats,
+      [key]:
+        (isSameDay ? Number(existing[key]) || 0 : 0) +
+        (Number(nextStats?.[key]) || 0),
+    }),
+    {
+      ...(isSameDay ? existing : {}),
+      dayIndex: safeDayIndex,
+    },
+  );
+};
+
 const normalizeRealmLevelTarget = (value) => {
   const level = Number(value);
   if (!Number.isFinite(level) || level <= 1) return null;
@@ -689,10 +720,17 @@ const syncGuildRostersFromPopulation = (npcGuilds, players) =>
     };
   });
 
-const recruitNpcGuilds = ({ npcGuilds, players, dayIndex = 0, random }) => {
+const recruitNpcGuilds = ({
+  npcGuilds,
+  players,
+  dayIndex = 0,
+  dayFraction = 1,
+  random,
+}) => {
   let recruited = 0;
   const nextPlayers = [...players];
   const safeDayIndex = Math.max(0, Math.floor(Number(dayIndex) || 0));
+  const safeDayFraction = clampNumber(dayFraction, 0.05, 1);
   const guilds = [...npcGuilds]
     .sort((left, right) => {
       const leftIsFoundingDay =
@@ -723,9 +761,11 @@ const recruitNpcGuilds = ({ npcGuilds, players, dayIndex = 0, random }) => {
       ? Math.max(0, foundedRosterSize - currentSize)
       : 0;
     if (isFoundingDay && foundingOpenings <= 0) return;
+    const dailyAttempts = random() < 0.6 ? 2 : 1;
+    const scaledAttempts = Math.floor(dailyAttempts * safeDayFraction + random());
     const attempts = isFoundingDay
       ? Math.min(openSlots, foundingOpenings)
-      : Math.min(openSlots, random() < 0.6 ? 2 : 1);
+      : Math.min(openSlots, scaledAttempts);
     for (let attempt = 0; attempt < attempts; attempt += 1) {
       const candidates = nextPlayers
         .map((player, index) => ({ player, index }))
@@ -862,6 +902,7 @@ export const advanceRealmPopulationForDay = ({
   npcGuilds,
   dayIndex,
   dayFraction = 1,
+  dayStepIndex = null,
   playerRosterSize = 0,
   playerAverageLevel = null,
   serverPopulation = null,
@@ -870,11 +911,12 @@ export const advanceRealmPopulationForDay = ({
 } = {}) => {
   const safeRandom = typeof random === "function" ? random : Math.random;
   const safeDayFraction = clampNumber(dayFraction, 0.05, 1);
+  const safeDayIndex = Math.max(0, Math.floor(Number(dayIndex) || 0));
   const population = normalizeRealmPopulation({
     population: realmState?.population,
     realmId: realmState?.id,
     npcGuilds,
-    currentDayIndex: dayIndex,
+    currentDayIndex: safeDayIndex,
     playerRosterSize,
     serverPopulation:
       serverPopulation ||
@@ -891,16 +933,35 @@ export const advanceRealmPopulationForDay = ({
     }),
   );
   const currentTotal = players.length + playerRosterSize;
+  const dailyArrivalRandom = createPopulationRandom(
+    hashPopulationSeed(`${realmState?.id}:${safeDayIndex}:arrivals`),
+  );
   const arrivalRoll =
     REALM_DAILY_ARRIVAL_RANGE[0] +
     Math.floor(
-      safeRandom() *
+      dailyArrivalRandom() *
         (REALM_DAILY_ARRIVAL_RANGE[1] - REALM_DAILY_ARRIVAL_RANGE[0] + 1),
     );
+  const safeDayStepIndex = Number.isFinite(Number(dayStepIndex))
+    ? Math.max(0, Math.floor(Number(dayStepIndex)))
+    : null;
+  const allocatedArrivals =
+    safeDayStepIndex === null
+      ? Math.floor(arrivalRoll * safeDayFraction + safeRandom())
+      : Math.max(
+          0,
+          Math.floor(
+            arrivalRoll *
+              Math.min(1, (safeDayStepIndex + 1) * safeDayFraction),
+          ) -
+            Math.floor(
+              arrivalRoll * Math.min(1, safeDayStepIndex * safeDayFraction),
+            ),
+        );
   const arrivals = Math.max(
     0,
     Math.min(
-      Math.floor(arrivalRoll * safeDayFraction + safeRandom()),
+      allocatedArrivals,
       softCap - currentTotal,
     ),
   );
@@ -914,7 +975,7 @@ export const advanceRealmPopulationForDay = ({
       ensureRealmPlayerZone(
         generateFreeAgent({
           realmId: realmState?.id,
-          index: players.length + index + dayIndex * 1000,
+          index: players.length + index + safeDayIndex * 1000,
           random: safeRandom,
           usedNameKeys,
         }),
@@ -925,7 +986,8 @@ export const advanceRealmPopulationForDay = ({
   const recruitedResult = recruitNpcGuilds({
     npcGuilds,
     players,
-    dayIndex,
+    dayIndex: safeDayIndex,
+    dayFraction: safeDayFraction,
     random: safeRandom,
   });
   players = recruitedResult.players;
@@ -934,7 +996,7 @@ export const advanceRealmPopulationForDay = ({
   const dungeonResult = simulateRealmDungeonActivity({
     npcGuilds,
     players,
-    dayIndex,
+    dayIndex: safeDayIndex,
     dayFraction: safeDayFraction,
     random: safeRandom,
   });
@@ -943,7 +1005,7 @@ export const advanceRealmPopulationForDay = ({
     applications: population.applications,
     players,
     guildFaction,
-    dayIndex,
+    dayIndex: safeDayIndex,
     random: safeRandom,
   });
   const dungeonStats = dungeonResult.stats || {};
@@ -957,9 +1019,8 @@ export const advanceRealmPopulationForDay = ({
       ...population,
       players,
       applications: applicationResult.applications,
-      lastArrivalDayIndex: dayIndex,
-      dailyStats: {
-        dayIndex,
+      lastArrivalDayIndex: safeDayIndex,
+      dailyStats: mergeDailyStats(population.dailyStats, safeDayIndex, {
         arrivals,
         npcRecruits: recruitedResult.recruited,
         poached: poachResult.poached,
@@ -969,7 +1030,7 @@ export const advanceRealmPopulationForDay = ({
         pugDungeonRuns: dungeonStats.pugDungeonRuns || 0,
         pugDungeonClears: dungeonStats.pugDungeonClears || 0,
         dungeonWipes: dungeonStats.dungeonWipes || 0,
-      },
+      }),
     },
     npcGuilds: syncedGuilds,
     events: [

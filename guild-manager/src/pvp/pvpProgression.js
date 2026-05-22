@@ -45,7 +45,11 @@ export const shouldApplyWeeklyPvpRollover = ({
 } = {}) => {
   const safeDay = normalizeDayIndex(currentDay);
   const lastDay = normalizeDayIndex(lastRolloverDayIndex);
-  return safeDay > 0 && safeDay % PVP_WEEK_LENGTH_DAYS === 0 && lastDay < safeDay;
+  return (
+    safeDay > 0 &&
+    Math.floor(safeDay / PVP_WEEK_LENGTH_DAYS) >
+      Math.floor(lastDay / PVP_WEEK_LENGTH_DAYS)
+  );
 };
 
 const buildUnlockLog = ({

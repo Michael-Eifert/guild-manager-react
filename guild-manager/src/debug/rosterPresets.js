@@ -1,5 +1,4 @@
 import { CONFIG, DB_CLASSES } from "../constants";
-import { DB_ITEMS } from "../data/items";
 import {
   generateCharacter,
   getClassArmorTypes,
@@ -174,8 +173,10 @@ const getDebugGearItemForSlot = (
   charClass,
   level,
   slot,
+  itemDatabase = [],
   gearProfile = DEBUG_GEAR_PROFILES.DUNGEON_READY,
 ) => {
+  const allItems = Array.isArray(itemDatabase) ? itemDatabase : [];
   const allowedArmorTypes = getClassArmorTypes(charClass, level);
   const levelCap = Math.max(1, Number(level) || 1);
   const minTargetLevel = Math.max(1, levelCap - 10);
@@ -234,27 +235,27 @@ const getDebugGearItemForSlot = (
     );
   };
 
-  let candidates = DB_ITEMS.filter(
+  let candidates = allItems.filter(
     (item) =>
       canUseItem(item) &&
       matchesProfileSource(item) &&
       matchesProfileItemLevel(item),
   );
   if (candidates.length === 0) {
-    candidates = DB_ITEMS.filter(
+    candidates = allItems.filter(
       (item) => canUseItem(item) && matchesProfileItemLevel(item),
     );
   }
   if (candidates.length === 0) {
-    candidates = DB_ITEMS.filter((item) => canUseItem(item) && matchesProfileSource(item));
+    candidates = allItems.filter((item) => canUseItem(item) && matchesProfileSource(item));
   }
   if (candidates.length === 0) {
-    candidates = DB_ITEMS.filter(
+    candidates = allItems.filter(
       (item) => canUseItem(item) && (Number(item.minLevel) || 0) >= minTargetLevel,
     );
   }
   if (candidates.length === 0) {
-    candidates = DB_ITEMS.filter(canUseItem);
+    candidates = allItems.filter(canUseItem);
   }
   if (candidates.length === 0) return null;
 
@@ -266,6 +267,7 @@ const buildDebugReadyCharacter = (
   char,
   targetLevel,
   targetRole,
+  itemDatabase = [],
   gearProfile = DEBUG_GEAR_PROFILES.DUNGEON_READY,
 ) => {
   const safeLevel = Math.max(1, Math.min(CONFIG.LEVEL_CAP, Number(targetLevel) || 1));
@@ -292,6 +294,7 @@ const buildDebugReadyCharacter = (
       seeded.charClass,
       safeLevel,
       slot,
+      itemDatabase,
       gearProfile,
     );
     if (selectedItem) {
@@ -330,6 +333,7 @@ export const buildDebugRosterPreset = ({
   roleOrder,
   guaranteedKeys = [],
   gearProfile = DEBUG_GEAR_PROFILES.DUNGEON_READY,
+  itemDatabase = [],
   usedNames = [],
 }) => {
   const safeCount = Math.max(1, Math.floor(Number(count) || 1));
@@ -349,6 +353,7 @@ export const buildDebugRosterPreset = ({
       pickDebugCharacterForRole(faction, role, usedNameKeys),
       level,
       role,
+      itemDatabase,
       gearProfile,
     );
     if (!Array.isArray(guaranteedKeys) || guaranteedKeys.length === 0) {

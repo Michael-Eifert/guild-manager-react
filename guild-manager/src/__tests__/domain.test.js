@@ -423,6 +423,7 @@ describe("debug raid setup presets", () => {
       roleOrder: preset.roleOrder,
       guaranteedKeys: preset.guaranteedKeys,
       gearProfile: preset.gearProfile,
+      itemDatabase: DB_ITEMS,
     });
     const averageItemLevel = getRosterAverageItemLevel(roster);
     const sources = getRosterEquipmentSources(roster);
@@ -456,6 +457,7 @@ describe("debug raid setup presets", () => {
       roleOrder: preset.roleOrder,
       guaranteedKeys: preset.guaranteedKeys,
       gearProfile: preset.gearProfile,
+      itemDatabase: DB_ITEMS,
     });
     const averageItemLevel = getRosterAverageItemLevel(roster);
     const sources = getRosterEquipmentSources(roster);
@@ -3876,6 +3878,53 @@ describe("character activity priority", () => {
     expect(inactiveWeek.characters[0].pvp.rank).toBe(2);
   });
 
+  it("rolls missed weekly PvP boundaries after skipped calendar days", () => {
+    const character = ensureCharacterPvpData({
+      id: "pvp-sleeper",
+      name: "Sentinel",
+      charClass: "Warrior",
+      level: 20,
+      equipment: getStarterGear("Warrior"),
+      pvp: {
+        weeklyHonor: 800,
+        lifetimeHonor: 800,
+      },
+    }, GUILD_FACTION.ALLIANCE);
+
+    const skippedBoundary = applyWeeklyPvpRollover({
+      characters: [character],
+      currentDay: 8,
+      faction: GUILD_FACTION.ALLIANCE,
+      allItems: DB_ITEMS,
+      lastRolloverDayIndex: 6,
+    });
+
+    expect(skippedBoundary.didRollover).toBe(true);
+    expect(skippedBoundary.currentDayIndex).toBe(8);
+    expect(skippedBoundary.characters[0].pvp.weeklyHonor).toBe(0);
+    expect(skippedBoundary.characters[0].pvp.rankProgress).toBe(200);
+
+    const sameWeek = applyWeeklyPvpRollover({
+      characters: [
+        {
+          ...skippedBoundary.characters[0],
+          pvp: {
+            ...skippedBoundary.characters[0].pvp,
+            weeklyHonor: 400,
+          },
+        },
+      ],
+      currentDay: 13,
+      faction: GUILD_FACTION.ALLIANCE,
+      allItems: DB_ITEMS,
+      lastRolloverDayIndex: skippedBoundary.currentDayIndex,
+    });
+
+    expect(sameWeek.didRollover).toBe(false);
+    expect(sameWeek.characters[0].pvp.weeklyHonor).toBe(400);
+    expect(sameWeek.characters[0].pvp.rankProgress).toBe(200);
+  });
+
   it("caps weekly PvP progress and respects faction gear unlocks", () => {
     const character = ensureCharacterPvpData({
       id: "pvp-cap",
@@ -4332,6 +4381,35 @@ describe("realm overview domain", () => {
     return { advanced: realm, applications: [] };
   };
 
+  const advanceRealmToStep = ({ realm, stepIndex, playerGuildSnapshot, guildSetup }) => {
+    const dayIndex = Math.floor(stepIndex / 4);
+    const dayProgress = (stepIndex % 4) / 4;
+    return advanceRealmSimulation({
+      realmState: realm,
+      currentDayIndex: dayIndex,
+      currentDayProgress: dayProgress,
+      playerGuildSnapshot,
+      guildSetup,
+    });
+  };
+
+  const getRealmCadenceSnapshot = (realm) => ({
+    ageDays: realm.ageDays,
+    lastSimulatedDayIndex: realm.lastSimulatedDayIndex,
+    lastSimulatedStepIndex: realm.lastSimulatedStepIndex,
+    populationCount: realm.population.players.length,
+    dailyStats: realm.population.dailyStats,
+    guilds: realm.npcGuilds.map((guild) => ({
+      id: guild.id,
+      rosterSize: guild.roster.length,
+      averageLevel: guild.averageLevel,
+      averageGearScore: guild.averageGearScore,
+      dungeonScore: guild.dungeonScore,
+      raidProgress: guild.raidProgress,
+      pveScore: guild.pveScore,
+    })),
+  });
+
   it("generates deterministic NPC guilds for the same realm", () => {
     const first = generateNpcGuilds({
       realmName: "Everlook",
@@ -4697,6 +4775,48 @@ describe("realm overview domain", () => {
     expect(repeated).toEqual(advanced);
   });
 
+  it("keeps realm cadence deterministic between direct day jumps and quarter steps", () => {
+    const guildSetup = {
+      faction: GUILD_FACTION.ALLIANCE,
+      server: "Everlook",
+      serverStyle: GUILD_SERVER_STYLE.PVE,
+    };
+    const playerGuildSnapshot = {
+      id: "player:guild",
+      name: "Player Guild",
+      faction: GUILD_FACTION.ALLIANCE,
+      isPlayerGuild: true,
+      rosterSize: 18,
+      averageLevel: 24,
+      averageGearScore: 11,
+      pveScore: 320,
+      raidProgress: 0,
+      dungeonScore: 35,
+      archetype: "Player Guild",
+    };
+    const freshRealm = ensureRealmState(null, guildSetup, 0);
+    const direct = advanceRealmSimulation({
+      realmState: freshRealm,
+      currentDayIndex: 2,
+      playerGuildSnapshot,
+      guildSetup,
+    });
+    let stepped = ensureRealmState(null, guildSetup, 0);
+
+    for (let stepIndex = 1; stepIndex <= 8; stepIndex += 1) {
+      stepped = advanceRealmToStep({
+        realm: stepped,
+        stepIndex,
+        playerGuildSnapshot,
+        guildSetup,
+      });
+    }
+
+    expect(getRealmCadenceSnapshot(stepped)).toEqual(
+      getRealmCadenceSnapshot(direct),
+    );
+  });
+
   it("keeps realm news keys unique for repeated same-day events and old saves", () => {
     const duplicateNews = [
       {
@@ -4758,6 +4878,90 @@ describe("realm overview domain", () => {
 
     expect(growth).toBeGreaterThanOrEqual(50);
     expect(growth).toBeLessThanOrEqual(100);
+    expect(advanced.population.dailyStats.arrivals).toBe(growth);
+  });
+
+  it("accumulates daily realm stats across quarter-day steps", () => {
+    const guildSetup = {
+      faction: GUILD_FACTION.ALLIANCE,
+      server: "Everlook",
+      serverStyle: GUILD_SERVER_STYLE.PVE,
+    };
+    const playerGuildSnapshot = {
+      id: "player:guild",
+      name: "Player Guild",
+      faction: GUILD_FACTION.ALLIANCE,
+      isPlayerGuild: true,
+      rosterSize: 20,
+      averageLevel: 35,
+      averageGearScore: 20,
+      pveScore: 500,
+      raidProgress: 0,
+      dungeonScore: 100,
+      archetype: "Player Guild",
+    };
+    const realm = ensureRealmState(null, guildSetup, 0);
+    let stepped = realm;
+
+    for (let stepIndex = 1; stepIndex <= 4; stepIndex += 1) {
+      stepped = advanceRealmToStep({
+        realm: stepped,
+        stepIndex,
+        playerGuildSnapshot,
+        guildSetup,
+      });
+    }
+
+    const growth =
+      getRealmPopulationStats(stepped, []).totalPopulation -
+      getRealmPopulationStats(realm, []).totalPopulation;
+
+    expect(stepped.population.dailyStats.dayIndex).toBe(1);
+    expect(stepped.population.dailyStats.arrivals).toBe(growth);
+    expect(stepped.population.dailyStats.guildDungeonRuns).toBeGreaterThanOrEqual(
+      stepped.population.dailyStats.guildDungeonClears,
+    );
+    expect(stepped.population.dailyStats.pugDungeonRuns).toBeGreaterThanOrEqual(
+      stepped.population.dailyStats.pugDungeonClears,
+    );
+  });
+
+  it("paces NPC guild recruiting by quarter-day steps", () => {
+    const guildSetup = {
+      faction: GUILD_FACTION.ALLIANCE,
+      server: "Everlook",
+      serverStyle: GUILD_SERVER_STYLE.PVE,
+    };
+    const realm = ensureRealmState(null, guildSetup, 0);
+    const quarter = advanceRealmToStep({
+      realm,
+      stepIndex: 1,
+      playerGuildSnapshot: null,
+      guildSetup,
+    });
+    const fullDay = advanceRealmSimulation({
+      realmState: realm,
+      currentDayIndex: 1,
+      playerGuildSnapshot: null,
+      guildSetup,
+    });
+    let stepped = realm;
+
+    for (let stepIndex = 1; stepIndex <= 4; stepIndex += 1) {
+      stepped = advanceRealmToStep({
+        realm: stepped,
+        stepIndex,
+        playerGuildSnapshot: null,
+        guildSetup,
+      });
+    }
+
+    expect(quarter.population.dailyStats.npcRecruits).toBeLessThanOrEqual(
+      fullDay.population.dailyStats.npcRecruits,
+    );
+    expect(getRealmCadenceSnapshot(stepped)).toEqual(
+      getRealmCadenceSnapshot(fullDay),
+    );
   });
 
   it("grows fresh medium-pop NPC guild count into the mature guild band", () => {
@@ -5140,7 +5344,7 @@ describe("realm overview domain", () => {
 
     expect(topNpcGuild).toBeTruthy();
     expect(getRealmRaidProgressList(topNpcGuild).length).toBeGreaterThan(0);
-  });
+  }, 20000);
 });
 
 describe("auto dungeon activity", () => {

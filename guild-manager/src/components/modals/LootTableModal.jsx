@@ -1,11 +1,6 @@
 import { useEffect, useMemo, useState } from "react";
 import { DB_CLASSES, INITIAL_MISSIONS } from "../../constants";
 import {
-  PVP_GEAR_SET_NAME,
-  PVP_HONOR_SET_NAME,
-} from "../../data/imports/pvpHonorSetItems";
-import { DB_ITEMS } from "../../data/items";
-import {
   formatItemStats,
   getItemAllowedClasses,
   getItemEffectiveLevel,
@@ -26,6 +21,8 @@ import BaseModal from "./BaseModal";
 const SOURCE_ALL = "All";
 const SOURCE_PVP = "__pvp__";
 const SOURCE_SET_PIECES = "__set_pieces__";
+const PVP_HONOR_SET_NAME = "PvP Honor Sets";
+const PVP_GEAR_SET_NAME = "PvP Gear";
 const PVP_VIEW_HONOR_SETS = "honor_sets";
 const PVP_VIEW_GEAR = "gear";
 const DUNGEON_FILTER_NONE = "";
@@ -196,7 +193,16 @@ const buildSetPieceGroups = (items) => {
     });
 };
 
-const LootTableModal = ({ isOpen, onClose }) => {
+const LootTableModal = ({
+  isOpen,
+  onClose,
+  itemCatalog = null,
+  itemDatabase = [],
+}) => {
+  const allItems = useMemo(
+    () => itemCatalog?.all?.() || (Array.isArray(itemDatabase) ? itemDatabase : []),
+    [itemCatalog, itemDatabase],
+  );
   const [sourceFilter, setSourceFilter] = useState(SOURCE_ALL);
   const [dungeonFilter, setDungeonFilter] = useState(DUNGEON_FILTER_NONE);
   const [raidFilter, setRaidFilter] = useState(RAID_FILTER_NONE);
@@ -279,27 +285,27 @@ const LootTableModal = ({ isOpen, onClose }) => {
 
   const setPieceClassOptions = useMemo(() => {
     const classes = new Set();
-    DB_ITEMS.filter(isSetPieceItem).forEach((item) => {
+    allItems.filter(isSetPieceItem).forEach((item) => {
       getSetPieceClasses(item).forEach((className) => classes.add(className));
     });
     return [...classes].sort((left, right) => {
       const classOrder = getClassSortIndex(left) - getClassSortIndex(right);
       return classOrder || left.localeCompare(right);
     });
-  }, []);
+  }, [allItems]);
 
   const setPieceSetOptions = useMemo(() => {
-    const filteredItems = DB_ITEMS.filter(isSetPieceItem).filter((item) => {
+    const filteredItems = allItems.filter(isSetPieceItem).filter((item) => {
       if (!setPieceClassFilter) return true;
       return getSetPieceClasses(item).includes(setPieceClassFilter);
     });
     return [...new Set(filteredItems.map(getSetPieceGroupLabel))].sort((left, right) =>
       left.localeCompare(right),
     );
-  }, [setPieceClassFilter]);
+  }, [allItems, setPieceClassFilter]);
 
   const sourceSections = useMemo(() => {
-    const sortedItems = sortLootItems(DB_ITEMS);
+    const sortedItems = sortLootItems(allItems);
     const setPieceItems = sortedItems
       .filter(isSetPieceItem)
       .filter((item) => {
@@ -383,6 +389,7 @@ const LootTableModal = ({ isOpen, onClose }) => {
         setPieceGroups: [],
       }));
   }, [
+    allItems,
     dungeonOptions,
     raidOptions,
     setPieceClassFilter,

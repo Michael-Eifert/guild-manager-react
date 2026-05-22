@@ -273,6 +273,7 @@ function RosterMemberCard({ member }) {
 export default function RealmOverviewModal({
   isOpen,
   onClose,
+  variant = "modal",
   realmState,
   guildSetup,
   roster,
@@ -281,6 +282,7 @@ export default function RealmOverviewModal({
   raidLockouts,
   currentDayIndex = 0,
 }) {
+  const isPage = variant === "page";
   const [selectedGuildId, setSelectedGuildId] = useState(null);
   const [isDungeonProgressOpen, setIsDungeonProgressOpen] = useState(false);
   const playerGuildSnapshot = useMemo(
@@ -315,15 +317,10 @@ export default function RealmOverviewModal({
   const populationStats = getRealmPopulationStats(realmState, roster);
   const dailyStats = populationStats.dailyStats || {};
 
-  if (!isOpen) return null;
+  if (!isPage && !isOpen) return null;
 
-  return (
-    <BaseModal
-      isOpen={isOpen}
-      onClose={onClose}
-      overlayClassName="bg-black/80 backdrop-blur-sm p-0 md:p-4"
-      panelClassName="wow-modal-panel bg-gray-950 border-x-0 border-y-0 md:border-2 border-amber-900 rounded-none md:rounded-lg w-full max-w-6xl h-full md:h-[88vh] flex flex-col relative shadow-2xl overflow-hidden"
-    >
+  const content = (
+    <>
       <header className="flex-none px-4 py-3 md:px-5 border-b border-amber-900/60 bg-gray-950 flex items-center justify-between gap-3">
         <div className="min-w-0">
           <h2 className="fantasy-font text-xl md:text-2xl text-amber-300 truncate">
@@ -333,14 +330,16 @@ export default function RealmOverviewModal({
             {realmState?.name || "Unknown Realm"} ({realmState?.type || "PvE"})
           </p>
         </div>
-        <button
-          type="button"
-          onClick={onClose}
-          className="text-gray-500 hover:text-white text-3xl px-2 leading-none"
-          aria-label="Close realm overview"
-        >
-          &times;
-        </button>
+        {!isPage && (
+          <button
+            type="button"
+            onClick={onClose}
+            className="text-gray-500 hover:text-white text-3xl px-2 leading-none"
+            aria-label="Close realm overview"
+          >
+            &times;
+          </button>
+        )}
       </header>
 
       <div className="flex-1 overflow-y-auto p-3 md:p-4">
@@ -616,6 +615,25 @@ export default function RealmOverviewModal({
           </aside>
         </div>
       </div>
+    </>
+  );
+
+  if (isPage) {
+    return (
+      <section className="wow-modal-panel flex min-h-[calc(100vh-220px)] flex-col overflow-hidden rounded-lg border-2 border-amber-900 bg-gray-950 shadow-2xl">
+        {content}
+      </section>
+    );
+  }
+
+  return (
+    <BaseModal
+      isOpen={isOpen}
+      onClose={onClose}
+      overlayClassName="bg-black/80 backdrop-blur-sm p-0 md:p-4"
+      panelClassName="wow-modal-panel bg-gray-950 border-x-0 border-y-0 md:border-2 border-amber-900 rounded-none md:rounded-lg w-full max-w-6xl h-full md:h-[88vh] flex flex-col relative shadow-2xl overflow-hidden"
+    >
+      {content}
     </BaseModal>
   );
 }

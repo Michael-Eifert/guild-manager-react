@@ -31,6 +31,7 @@ export const getRealmNewsRenderKey = (entry, index = 0) => {
 export const capRealmNews = (news) => {
   const exactEntries = new Set();
   const usedIds = new Map();
+  const usedFinalIds = new Set();
   const capped = [];
 
   for (const entry of Array.isArray(news) ? news : []) {
@@ -45,12 +46,18 @@ export const capRealmNews = (news) => {
     if (!rawId) {
       capped.push({ ...entry, message });
     } else {
-      const idUseCount = usedIds.get(rawId) || 0;
+      let idUseCount = usedIds.get(rawId) || 0;
+      let id = idUseCount === 0 ? rawId : `${rawId}:${idUseCount}`;
+      while (usedFinalIds.has(id)) {
+        idUseCount += 1;
+        id = `${rawId}:${idUseCount}`;
+      }
       usedIds.set(rawId, idUseCount + 1);
+      usedFinalIds.add(id);
       capped.push(
-        idUseCount === 0
+        id === rawId
           ? { ...entry, message }
-          : { ...entry, id: `${rawId}:${idUseCount}`, message },
+          : { ...entry, id, message },
       );
     }
 

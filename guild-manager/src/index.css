@@ -260,6 +260,39 @@ body::after {
   color: #f0dbb5;
 }
 
+.home-nav-item {
+  position: relative;
+  transition:
+    border-color 150ms ease,
+    box-shadow 150ms ease,
+    color 150ms ease,
+    transform 150ms ease;
+}
+
+.home-nav-active {
+  border-color: #fde68a !important;
+  color: #fff7d6 !important;
+  box-shadow:
+    0 0 0 1px rgb(255 247 214 / 72%) inset,
+    0 0 0 2px rgb(251 191 36 / 42%),
+    0 0 24px rgb(251 191 36 / 32%),
+    0 12px 22px rgb(0 0 0 / 38%) !important;
+  transform: translateY(-1px);
+}
+
+.home-nav-active::after {
+  content: "";
+  position: absolute;
+  right: 0.65rem;
+  bottom: 0.28rem;
+  left: 0.65rem;
+  height: 2px;
+  border-radius: 999px;
+  background: linear-gradient(90deg, transparent, #fde68a, transparent);
+  box-shadow: 0 0 10px rgb(253 230 138 / 75%);
+  pointer-events: none;
+}
+
 .wow-card {
   background: linear-gradient(
     180deg,
