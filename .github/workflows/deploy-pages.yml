@@ -41,7 +41,7 @@ jobs:
 
       - name: Build
         env:
-          VITE_BASE_PATH: /guild-manager/
+          VITE_BASE_PATH: /${{ github.event.repository.name }}/
           VITE_GEMINI_PROXY_URL: ${{ secrets.VITE_GEMINI_PROXY_URL }}
         run: npm run build
 

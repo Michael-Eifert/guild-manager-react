@@ -204,13 +204,14 @@ The workflow:
 1. Runs from the `guild-manager/` working directory.
 2. Installs dependencies with `npm ci`.
 3. Builds with `npm run build`.
-4. Sets `VITE_BASE_PATH` to `/guild-manager/` for GitHub Pages.
+4. Sets `VITE_BASE_PATH` to the repository name for GitHub Pages.
 5. Publishes `guild-manager/dist`.
 
 The app router also uses Vite's base URL as its basename, so deployed routes
-resolve as `/guild-manager/start`, `/guild-manager/home`, and so on. The build
-copies `dist/index.html` to `dist/404.html` so direct loads and refreshes on
-nested routes keep serving the React app.
+resolve under the repository path, such as `/guild-manager-react/start` for a
+repository named `guild-manager-react`. The build copies `dist/index.html` to
+`dist/404.html` so direct loads and refreshes on nested routes keep serving the
+React app.
 
 To publish:
 
