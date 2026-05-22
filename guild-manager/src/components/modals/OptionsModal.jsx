@@ -6,7 +6,6 @@ const OptionsModal = ({
   onSaveSession,
   onLoadSession,
   onOpenDebug,
-  onOpenGuildTalents,
 }) => {
   return (
     <BaseModal
@@ -29,7 +28,7 @@ const OptionsModal = ({
           }}
           className="w-full px-4 py-3 rounded border border-emerald-800 bg-gray-800 text-emerald-200 hover:bg-gray-700 text-sm font-bold"
         >
-          💾 Save Session
+          &#128190; Save Session
         </button>
         <button
           onClick={() => {
@@ -38,16 +37,7 @@ const OptionsModal = ({
           }}
           className="w-full px-4 py-3 rounded border border-teal-800 bg-gray-800 text-teal-200 hover:bg-gray-700 text-sm font-bold"
         >
-          📂 Load Session
-        </button>
-        <button
-          onClick={() => {
-            onOpenGuildTalents();
-            onClose();
-          }}
-          className="w-full px-4 py-3 rounded border border-amber-800 bg-gray-800 text-amber-200 hover:bg-gray-700 text-sm font-bold"
-        >
-          🌟 Guild Talents
+          &#128193; Load Session
         </button>
         <button
           onClick={() => {
@@ -56,7 +46,7 @@ const OptionsModal = ({
           }}
           className="w-full px-4 py-3 rounded border border-red-900 bg-gray-900 text-red-300 hover:bg-red-900/20 text-sm font-bold"
         >
-          ⚙️ Debug Menu
+          &#9881;&#65039; Debug Menu
         </button>
       </div>
     </BaseModal>

@@ -1,5 +1,5 @@
 import React, { lazy, Suspense } from "react";
-import { Navigate, NavLink, Route, Routes, useNavigate } from "react-router-dom";
+import { Navigate, NavLink, Route, Routes } from "react-router-dom";
 
 import ToastNotifications from "../../components/ToastNotifications";
 import { useGame } from "../../app/useGame";
@@ -42,7 +42,6 @@ const HOME_ROUTE_PATHS = Object.freeze({
 });
 
 export default function HomeRoot() {
-  const navigate = useNavigate();
   const game = useGame();
   const {
     activeMissions,
@@ -556,7 +555,6 @@ export default function HomeRoot() {
             onSaveSession={handleSaveSession}
             onLoadSession={handleLoadButtonClick}
             onOpenDebug={() => setShowDebug(true)}
-            onOpenGuildTalents={() => navigate(ROUTES.GUILD)}
           />
         )}
 

@@ -13,12 +13,13 @@ describe("OptionsModal", () => {
         onSaveSession={noop}
         onLoadSession={noop}
         onOpenDebug={noop}
-        onOpenGuildTalents={noop}
       />,
     );
 
     expect(html).toContain("Settings");
     expect(html).toContain("Save Session");
-    expect(html).toContain("Guild Talents");
+    expect(html).toContain("Load Session");
+    expect(html).toContain("Debug Menu");
+    expect(html).not.toContain("Guild Talents");
   });
 });
