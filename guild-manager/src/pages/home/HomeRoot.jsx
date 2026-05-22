@@ -169,6 +169,9 @@ export default function HomeRoot() {
   }
 
   const activeDungeonRunCount = getActiveDungeonRunCount(activeMissions);
+  const activeBattlefieldCount = Array.isArray(battlefieldState?.activeBattles)
+    ? battlefieldState.activeBattles.length
+    : 0;
 
   return (
     <div className="wow-shell w-full max-w-5xl mx-auto p-4 pb-20">
@@ -409,15 +412,22 @@ export default function HomeRoot() {
         <NavLink
           to={ROUTES.BATTLEFIELDS}
           className={({ isActive }) =>
-            `home-nav-item wow-command flex-none px-4 py-3 rounded bg-gray-800 border text-red-100 hover:bg-gray-700 shadow flex items-center gap-2 whitespace-nowrap ${
-              isActive ? "home-nav-active" : "border-red-800"
-            }`
+            `home-nav-item wow-command flex-none px-4 py-3 rounded border text-red-100 hover:bg-gray-700 shadow flex items-center gap-2 whitespace-nowrap ${
+              activeBattlefieldCount > 0
+                ? "border-red-400 bg-red-950/45 shadow-red-900/40"
+                : "border-red-800 bg-gray-800"
+            } ${isActive ? "home-nav-active" : ""}`
           }
         >
           <span className="text-xl" aria-hidden="true">
             &#9876;&#65039;
           </span>
           Battlefields
+          {activeBattlefieldCount > 0 && (
+            <span className="rounded-full border border-red-200/70 bg-red-300/20 px-2 py-0.5 text-xs text-red-50">
+              {activeBattlefieldCount}
+            </span>
+          )}
         </NavLink>
         <button
           onClick={() => setShowProfessions(true)}
