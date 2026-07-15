@@ -75,6 +75,7 @@ import {
   GUILD_SERVER_POPULATION,
   GUILD_SERVER_STYLE,
   INITIAL_MISSIONS,
+  KEY_DEFINITIONS,
   DB_FUNNY_NAMES,
   DB_RACES,
 } from "../constants";
@@ -195,6 +196,10 @@ import {
 import { getUnlockedPvpGearForCharacter } from "../pvp/pvpGearUnlocks";
 import { DB_ITEMS } from "../data/items";
 import {
+  DIRE_MAUL_ACTIVE_LOOT_MANIFEST,
+  DIRE_MAUL_ITEMS,
+} from "../data/imports/direMaulLootManifest";
+import {
   PVP_GEAR_SET_ID,
   PVP_GEAR_SET_NAME,
   PVP_HONOR_SET_ID,
@@ -253,6 +258,98 @@ import {
 
 afterEach(() => {
   vi.restoreAllMocks();
+});
+
+describe("Dire Maul integration", () => {
+  const direMaulMissions = INITIAL_MISSIONS.filter(
+    (mission) => mission.dungeonSetId === "dire_maul",
+  ).sort((left, right) => left.wingOrder - right.wingOrder);
+  const direMaulItems = DB_ITEMS.filter(
+    (item) => item.dungeonSetId === "dire_maul",
+  );
+
+  it("adds East, West, and North with level 50 entry and the requested recommendations", () => {
+    expect(direMaulMissions).toHaveLength(3);
+    expect(direMaulMissions.map((mission) => mission.dungeonWing)).toEqual([
+      "East",
+      "West",
+      "North",
+    ]);
+    expect(direMaulMissions.map((mission) => mission.entryLevel)).toEqual([
+      50,
+      50,
+      50,
+    ]);
+    expect(direMaulMissions.map((mission) => mission.recommended)).toEqual([
+      "55 - 60",
+      "58 - 60",
+      "58 - 60",
+    ]);
+    expect(direMaulMissions.map((mission) => getDungeonBossCount(mission))).toEqual([
+      5,
+      5,
+      6,
+    ]);
+  });
+
+  it("uses Dire Maul East to unlock the Crescent Key wings", () => {
+    const [east, west, north] = direMaulMissions;
+    expect(KEY_DEFINITIONS.crescent_key.name).toBe("Crescent Key");
+    expect(east.requiresKey).toBe(false);
+    expect(east.rewardKeys).toEqual(["crescent_key"]);
+    expect(west.keyId).toBe("crescent_key");
+    expect(west.requiresKey).toBe(true);
+    expect(north.keyId).toBe("crescent_key");
+    expect(north.requiresKey).toBe(true);
+
+    const standaloneWest = evaluateMissionKeyAccess({
+      missions: [west],
+      partyMembers: [{ id: "tank", keys: [] }],
+    });
+    const chainedRun = evaluateMissionKeyAccess({
+      missions: [east, west, north],
+      partyMembers: [{ id: "tank", keys: [] }],
+    });
+
+    expect(standaloneWest.canEnter).toBe(false);
+    expect(chainedRun.canEnter).toBe(true);
+    expect(chainedRun.unlockedDuringSequence).toContain("crescent_key");
+  });
+
+  it("registers wing-specific, boss-sourced Dire Maul equipment", () => {
+    expect(DIRE_MAUL_ACTIVE_LOOT_MANIFEST.length).toBeGreaterThan(35);
+    expect(DIRE_MAUL_ITEMS).toHaveLength(DIRE_MAUL_ACTIVE_LOOT_MANIFEST.length);
+    expect(direMaulItems).toHaveLength(DIRE_MAUL_ITEMS.length);
+    expect(new Set(direMaulItems.map((item) => item.dungeonWing))).toEqual(
+      new Set(["East", "West", "North"]),
+    );
+    DIRE_MAUL_ITEMS.forEach((item) => {
+      expect(item.wowheadId).toBeTypeOf("number");
+      expect(item.quality).toBe(3);
+      expect(item.sourceBosses.length).toBeGreaterThan(0);
+      expect(item.icon).toContain("wow/icons/large/");
+    });
+  });
+
+  it("includes notable rewards from every wing", () => {
+    const expectedDrops = [
+      ["East", "Whipvine Cord"],
+      ["East", "Satyr's Bow"],
+      ["West", "Mindtap Talisman"],
+      ["West", "Eldritch Reinforced Legplates"],
+      ["North", "Barbarous Blade"],
+      ["North", "Rod of the Ogre Magi"],
+    ];
+
+    expectedDrops.forEach(([wing, name]) => {
+      expect(
+        direMaulItems.some(
+          (item) => item.dungeonWing === wing && item.name === name,
+        ),
+        `${wing}: ${name}`,
+      ).toBe(true);
+    });
+  });
 });
 
 const getEquippedItemLevels = (member) =>

@@ -98,6 +98,12 @@ export const KEY_DEFINITIONS = Object.freeze({
     name: "Shadowforge Key",
     icon: wowItemIcon("INV_Misc_Key_11"),
   },
+  crescent_key: {
+    id: "crescent_key",
+    name: "Crescent Key",
+    icon: wowItemIcon("INV_Misc_Key_10"),
+    sourceQuest: "Dire Maul East - Pusillin",
+  },
   seal_of_ascension: {
     id: "seal_of_ascension",
     name: "Seal of Ascension",

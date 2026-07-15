@@ -11,6 +11,7 @@ import { ONYXIAS_LAIR_ITEMS } from "./imports/onyxiasLairLootManifest";
 import { BLACKWING_LAIR_ITEMS } from "./imports/blackwingLairLootManifest";
 import { NAXXRAMAS_ITEMS } from "./imports/naxxramasLootManifest";
 import { PVP_HONOR_SET_ITEMS } from "./imports/pvpHonorSetItems";
+import { DIRE_MAUL_ITEMS } from "./imports/direMaulLootManifest";
 
 const wowItemIcon = (iconCode) =>
   `https://wow.zamimg.com/images/wow/icons/large/${iconCode.toLowerCase()}.jpg`;
@@ -18,6 +19,7 @@ const wowItemIcon = (iconCode) =>
 const ITEM_LEVEL_BANDS_BY_SOURCE = Object.freeze({
   blackrock_depths: { min: 52, max: 58 },
   stratholme: { min: 56, max: 60 },
+  dire_maul: { min: 56, max: 62 },
   blackrock_spire_lbrs: { min: 57, max: 60 },
   blackrock_spire_ubrs: { min: 58, max: 63 },
   zul_gurub: { min: 66, max: 70 },
@@ -7242,6 +7244,8 @@ const RAW_DB_ITEMS = [
   ...LOWER_BLACKROCK_SPIRE_ITEMS,
   // Upper Blackrock Spire loot is generated from the real-loot manifest.
   ...UPPER_BLACKROCK_SPIRE_ITEMS,
+  // Dire Maul loot is generated from the three wing-specific manifests.
+  ...DIRE_MAUL_ITEMS,
   // Molten Core raid loot is generated from the real-loot manifest.
   ...MOLTEN_CORE_ITEMS,
   // Zul'Gurub raid loot is generated from the real-loot manifest.
