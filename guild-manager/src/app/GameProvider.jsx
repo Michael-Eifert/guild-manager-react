@@ -1,12 +1,18 @@
+/* eslint-disable react-hooks/exhaustive-deps -- synchronized commit refs and setters are stable by contract during the provider migration */
 import React, {
   useState,
   useEffect,
   useRef,
   useCallback,
   useMemo,
+  useLayoutEffect,
 } from "react";
 import { useNavigate } from "react-router-dom";
-import { GameContext } from "./GameContext";
+import { createGameContextStore, GameContext } from "./GameContext";
+import { useSynchronizedState } from "./useSynchronizedState";
+import { useRuntimeInterval } from "./useRuntimeInterval";
+import { useHomeUiState } from "./useHomeUiState";
+import { useNotifications } from "./useNotifications";
 import {
   CONFIG,
   INITIAL_MISSIONS,
@@ -55,6 +61,7 @@ import {
 import {
   DEFAULT_GAME_SPEED,
   clampGameSpeed,
+  getNextGameSpeed,
   normalizeProgressionState,
   advanceGameTime,
 } from "../progression";
@@ -296,53 +303,54 @@ const {
 
 export const GameProvider = ({ children }) => {
   const navigate = useNavigate();
-  const [guildSetup, setGuildSetup] = useState(() =>
+  const servicesRef = useRef({
+    now: () => Date.now(),
+    random: () => Math.random(),
+    createId,
+  });
+  const services = servicesRef.current;
+  const [guildSetup, setGuildSetup, guildSetupRef] = useSynchronizedState(() =>
     normalizeGuildSetup(DEFAULT_GUILD_SETUP),
   );
-  const [roster, setRoster] = useState([]);
-  const [activeMissions, setActiveMissions] = useState([]);
-  const [missionList, setMissionList] = useState(() =>
+  const [roster, setRoster, rosterRef] = useSynchronizedState([]);
+  const [activeMissions, setActiveMissions, missionsRef] = useSynchronizedState([]);
+  const [missionList, setMissionList, missionListRef] = useSynchronizedState(() =>
     getMissionListWithZones(INITIAL_MISSIONS.map(cloneMissionTemplate)),
   );
   const [guildLog, setGuildLog] = useState([]);
-  const [guildGold, setGuildGold] = useState(0);
-  const [guildProgress, setGuildProgress] = useState(() =>
+  const [guildGold, setGuildGold, goldRef] = useSynchronizedState(0);
+  const [guildProgress, setGuildProgress, guildProgressRef] = useSynchronizedState(() =>
     createInitialGuildProgress(),
   );
-  const [guildRelationships, setGuildRelationships] = useState({});
+  const [guildRelationships, setGuildRelationships, guildRelationshipsRef] =
+    useSynchronizedState({});
   const [isPaused, setIsPaused] = useState(false);
   const [gameSpeed, setGameSpeed] = useState(DEFAULT_GAME_SPEED);
-  const [gameTimeMs, setGameTimeMs] = useState(() => Date.now());
-  const [calendarState, setCalendarState] = useState(() =>
-    createInitialCalendarState(Date.now()),
+  const [gameTimeMs, setGameTimeMs, gameTimeRef] = useSynchronizedState(() => services.now());
+  const [calendarState, setCalendarState, calendarStateRef] = useSynchronizedState(() =>
+    createInitialCalendarState(services.now()),
   );
-  const [raidLockouts, setRaidLockouts] = useState({});
-  const [realmState, setRealmState] = useState(() =>
+  const [raidLockouts, setRaidLockouts, raidLockoutsRef] = useSynchronizedState({});
+  const [realmState, setRealmState, realmStateRef] = useSynchronizedState(() =>
     ensureRealmState(null, DEFAULT_GUILD_SETUP, 0),
   );
-  const [worldPvpState, setWorldPvpState] = useState(() =>
+  const [worldPvpState, setWorldPvpState, worldPvpStateRef] = useSynchronizedState(() =>
     ensureWorldPvpState(null, 0),
   );
-  const [battlefieldState, setBattlefieldState] = useState(() =>
+  const [battlefieldState, setBattlefieldState, battlefieldStateRef] = useSynchronizedState(() =>
     ensureBattlefieldState(null),
   );
-  const [guildInventory, setGuildInventory] = useState(() =>
+  const [guildInventory, setGuildInventory, guildInventoryRef] = useSynchronizedState(() =>
     ensureGuildInventory(null),
   );
-  const [stashPolicy, setStashPolicy] = useState(() =>
+  const [stashPolicy, setStashPolicy, stashPolicyRef] = useSynchronizedState(() =>
     ensureStashPolicy(DEFAULT_STASH_POLICY),
   );
-  const [showRecruit, setShowRecruit] = useState(false);
-  const [showLootTable, setShowLootTable] = useState(false);
-  const [showGuildLog, setShowGuildLog] = useState(false);
-  const [showProfessions, setShowProfessions] = useState(false);
-  const [showDebug, setShowDebug] = useState(false);
-  const [showOptions, setShowOptions] = useState(false);
-  const [dashboardSectionsOpen, setDashboardSectionsOpen] = useState(
-    DEFAULT_DASHBOARD_SECTIONS,
-  );
-  const [detailCharId, setDetailCharId] = useState(null);
-  const [notifications, setNotifications] = useState([]);
+  const {
+    dismissNotification,
+    notifications,
+    pushNotification,
+  } = useNotifications({ createNotificationId: services.createId });
   const [missionBoardState, setMissionBoardState] = useState({
     selectedCategory: "all",
     levelFilterMin: "",
@@ -351,40 +359,45 @@ export const GameProvider = ({ children }) => {
     hideLowLevelDungeons: false,
     consumableMode: CONSUMABLE_MODE.NONE,
   });
-  const [memberRankingMode, setMemberRankingMode] = useState(
-    MEMBER_RANKING_MODES.STANDARD,
-  );
-  const [guildMemberSearch, setGuildMemberSearch] = useState("");
-  const [guildMemberMinLevelFilter, setGuildMemberMinLevelFilter] =
-    useState("");
-  const [guildMemberMaxLevelFilter, setGuildMemberMaxLevelFilter] =
-    useState("");
-  const [guildMemberSortMode, setGuildMemberSortMode] = useState(
-    GUILD_MEMBER_SORT.LEVEL_DESC,
-  );
+  const {
+    dashboardSectionsOpen,
+    detailCharId,
+    guildMemberMaxLevelFilter,
+    guildMemberMinLevelFilter,
+    guildMemberSearch,
+    guildMemberSortMode,
+    memberRankingMode,
+    setDashboardSectionsOpen,
+    setDetailCharId,
+    setGuildMemberMaxLevelFilter,
+    setGuildMemberMinLevelFilter,
+    setGuildMemberSearch,
+    setGuildMemberSortMode,
+    setMemberRankingMode,
+    setShowDebug,
+    setShowGuildLog,
+    setShowLootTable,
+    setShowOptions,
+    setShowProfessions,
+    setShowRecruit,
+    showDebug,
+    showGuildLog,
+    showLootTable,
+    showOptions,
+    showProfessions,
+    showRecruit,
+  } = useHomeUiState({
+    defaultDashboardSections: DEFAULT_DASHBOARD_SECTIONS,
+    defaultRankingMode: MEMBER_RANKING_MODES.STANDARD,
+    defaultSortMode: GUILD_MEMBER_SORT.LEVEL_DESC,
+  });
   const [itemCatalog, setItemCatalog] = useState(null);
 
-  const rosterRef = useRef(roster);
-  const missionsRef = useRef(activeMissions);
-  const missionListRef = useRef(missionList);
   const calendarEventStartLocksRef = useRef(new Set());
   const startCalendarEventRef = useRef(() => false);
   const autoDungeonStateRef = useRef({ nextAttemptAt: 0 });
-  const goldRef = useRef(guildGold);
-  const guildProgressRef = useRef(guildProgress);
-  const guildSetupRef = useRef(guildSetup);
-  const guildRelationshipsRef = useRef(guildRelationships);
-  const realmStateRef = useRef(realmState);
-  const worldPvpStateRef = useRef(worldPvpState);
-  const battlefieldStateRef = useRef(battlefieldState);
-  const guildInventoryRef = useRef(guildInventory);
-  const stashPolicyRef = useRef(stashPolicy);
-  const gameTimeRef = useRef(gameTimeMs);
-  const calendarStateRef = useRef(calendarState);
-  const raidLockoutsRef = useRef(raidLockouts);
-  const lastRealTimeRef = useRef(Date.now());
+  const lastRealTimeRef = useRef(services.now());
   const rewardedMissionIdsRef = useRef(new Set());
-  const notificationTimersRef = useRef(new Map());
   const sessionFileInputRef = useRef(null);
 
   useEffect(() => {
@@ -403,115 +416,9 @@ export const GameProvider = ({ children }) => {
 
   const itemDatabase = useMemo(() => itemCatalog?.all() || [], [itemCatalog]);
 
-  const dismissNotification = useCallback((notificationId) => {
-    setNotifications((prev) =>
-      prev.filter((notification) => notification.id !== notificationId),
-    );
-    const timerId = notificationTimersRef.current.get(notificationId);
-    if (timerId) {
-      window.clearTimeout(timerId);
-      notificationTimersRef.current.delete(notificationId);
-    }
-  }, []);
-
-  const pushNotification = useCallback(
-    (payload, fallbackType = "info", fallbackDurationMs = 4200) => {
-      const normalized =
-        typeof payload === "string"
-          ? {
-              message: payload,
-              type: fallbackType,
-              durationMs: fallbackDurationMs,
-            }
-          : {
-              message: payload?.message || "",
-              title: payload?.title || "",
-              type: payload?.type || fallbackType,
-              durationMs: payload?.durationMs ?? fallbackDurationMs,
-            };
-      if (!normalized.message) return;
-
-      const notificationId = createId();
-      setNotifications((prev) =>
-        [
-          ...prev,
-          {
-            id: notificationId,
-            message: normalized.message,
-            title: normalized.title,
-            type: normalized.type,
-          },
-        ].slice(-4),
-      );
-      const timerId = window.setTimeout(() => {
-        setNotifications((prev) =>
-          prev.filter((notification) => notification.id !== notificationId),
-        );
-        notificationTimersRef.current.delete(notificationId);
-      }, normalized.durationMs);
-      notificationTimersRef.current.set(notificationId, timerId);
-    },
-    [],
-  );
-
   useEffect(() => {
-    rosterRef.current = roster;
-  }, [roster]);
-  useEffect(() => {
-    missionsRef.current = activeMissions;
-  }, [activeMissions]);
-  useEffect(() => {
-    missionListRef.current = missionList;
-  }, [missionList]);
-  useEffect(() => {
-    goldRef.current = guildGold;
-  }, [guildGold]);
-  useEffect(() => {
-    guildProgressRef.current = guildProgress;
-  }, [guildProgress]);
-  useEffect(() => {
-    guildSetupRef.current = guildSetup;
-  }, [guildSetup]);
-  useEffect(() => {
-    guildRelationshipsRef.current = guildRelationships;
-  }, [guildRelationships]);
-  useEffect(() => {
-    realmStateRef.current = realmState;
-  }, [realmState]);
-  useEffect(() => {
-    worldPvpStateRef.current = worldPvpState;
-  }, [worldPvpState]);
-  useEffect(() => {
-    battlefieldStateRef.current = battlefieldState;
-  }, [battlefieldState]);
-  useEffect(() => {
-    guildInventoryRef.current = guildInventory;
-  }, [guildInventory]);
-  useEffect(() => {
-    stashPolicyRef.current = stashPolicy;
-  }, [stashPolicy]);
-  useEffect(() => {
-    gameTimeRef.current = gameTimeMs;
-  }, [gameTimeMs]);
-  useEffect(() => {
-    calendarStateRef.current = calendarState;
-  }, [calendarState]);
-  useEffect(() => {
-    raidLockoutsRef.current = raidLockouts;
-  }, [raidLockouts]);
-  useEffect(() => {
-    lastRealTimeRef.current = Date.now();
+    lastRealTimeRef.current = services.now();
   }, [isPaused, gameSpeed]);
-  useEffect(
-    () => () => {
-      notificationTimersRef.current.forEach((timerId) => {
-        window.clearTimeout(timerId);
-      });
-      notificationTimersRef.current.clear();
-    },
-    [],
-  );
-
   const normalizeRosterZones = useCallback(
     (
       rosterSnapshot,
@@ -605,14 +512,13 @@ export const GameProvider = ({ children }) => {
         typeof missionContext === "string"
           ? missionContext
           : missionContext?.name || "Dungeon";
-      let unlockedMilestones = [];
-      setGuildProgress((prev) => {
-        const result = applyDungeonClearMilestones(prev, missionContext);
-        unlockedMilestones = result.unlocked;
-        return result.guildProgress;
-      });
+      const result = applyDungeonClearMilestones(
+        guildProgressRef.current,
+        missionContext,
+      );
+      setGuildProgress(result.guildProgress);
 
-      unlockedMilestones.forEach((milestone) => {
+      result.unlocked.forEach((milestone) => {
         pushNotification({
           type: "achievement",
           title: "Achievement Unlocked",
@@ -627,12 +533,9 @@ export const GameProvider = ({ children }) => {
 
   const registerDungeonWipeMilestone = useCallback(
     (missionName) => {
-      let unlockedMilestone = null;
-      setGuildProgress((prev) => {
-        const result = applyDungeonWipeMilestone(prev);
-        unlockedMilestone = result.unlocked;
-        return result.guildProgress;
-      });
+      const result = applyDungeonWipeMilestone(guildProgressRef.current);
+      setGuildProgress(result.guildProgress);
+      const unlockedMilestone = result.unlocked;
 
       if (unlockedMilestone) {
         pushNotification({
@@ -653,32 +556,29 @@ export const GameProvider = ({ children }) => {
 
   const handleUpgradeGuildTalent = useCallback(
     (talentKey) => {
-      let upgradeSummary = null;
-      let blockedSummary = null;
       const availableGold = Math.max(0, Number(goldRef.current) || 0);
-      setGuildProgress((prev) => {
-        const result = upgradeGuildTalent(prev, talentKey, {
-          guildGold: availableGold,
-        });
-        if (result.upgraded && result.talent) {
-          upgradeSummary = {
+      const result = upgradeGuildTalent(guildProgressRef.current, talentKey, {
+        guildGold: availableGold,
+      });
+      setGuildProgress(result.guildProgress);
+      const upgradeSummary = result.upgraded && result.talent
+        ? {
             title: result.talent.title,
             suffix: result.talent.suffix,
             spentCost: result.spentCost,
             spentGold: result.spentGold,
             nextValue: result.nextValue,
-          };
-        } else if (result.talent) {
-          blockedSummary = {
+          }
+        : null;
+      const blockedSummary = !result.upgraded && result.talent
+        ? {
             title: result.talent.title,
             blockedByPrerequisite: Boolean(result.blockedByPrerequisite),
             blockers: Array.isArray(result.blockers) ? result.blockers : [],
             missingCost: Number(result.missingCost) || 0,
             missingGold: Number(result.missingGold) || 0,
-          };
-        }
-        return result.guildProgress;
-      });
+          }
+        : null;
 
       if (upgradeSummary) {
         const updatedGold = Math.max(
@@ -718,25 +618,22 @@ export const GameProvider = ({ children }) => {
   );
 
   useEffect(() => {
-    let newlyUnlocked = [];
-    setGuildProgress((prev) => {
-      const levelResult = applyLevelMilestones(prev, roster);
-      const rosterResult = applyRosterSizeMilestones(
-        levelResult.guildProgress,
-        roster,
-      );
-      newlyUnlocked = [
-        ...levelResult.unlocked.map(({ level, reward }) => ({
-          label: `First level ${level} character`,
-          reward,
-        })),
-        ...rosterResult.unlocked.map(({ label, reward }) => ({
-          label,
-          reward,
-        })),
-      ];
-      return rosterResult.guildProgress;
-    });
+    const levelResult = applyLevelMilestones(guildProgressRef.current, roster);
+    const rosterResult = applyRosterSizeMilestones(
+      levelResult.guildProgress,
+      roster,
+    );
+    setGuildProgress(rosterResult.guildProgress);
+    const newlyUnlocked = [
+      ...levelResult.unlocked.map(({ level, reward }) => ({
+        label: `First level ${level} character`,
+        reward,
+      })),
+      ...rosterResult.unlocked.map(({ label, reward }) => ({
+        label,
+        reward,
+      })),
+    ];
 
     if (newlyUnlocked.length > 0) {
       newlyUnlocked.forEach(({ label, reward }) => {
@@ -753,7 +650,7 @@ export const GameProvider = ({ children }) => {
 
   const tryApplyWorldTickLoot = useCallback(
     (char, logCollector) => {
-      const roll = Math.random();
+      const roll = services.random();
       const epicEligible =
         (Number(char?.level) || 1) >= WORLD_TICK_EPIC_MIN_LEVEL;
       const epicThreshold = epicEligible ? WORLD_TICK_EPIC_DROP_CHANCE : 0;
@@ -942,7 +839,7 @@ export const GameProvider = ({ children }) => {
       const missionSuccess =
         quest.type === "dungeon"
           ? undefined
-          : Math.random() * 100 < adjustedSuccessChance;
+          : services.random() * 100 < adjustedSuccessChance;
 
       return {
         ...quest,
@@ -1420,13 +1317,12 @@ export const GameProvider = ({ children }) => {
   );
 
   // --- GAME LOOP ---
-  useEffect(() => {
-    const tick = setInterval(() => {
+  useRuntimeInterval(() => {
       const previousGameTime = gameTimeRef.current;
       const clockStep = advanceGameTime({
         currentGameTime: previousGameTime,
         lastRealTime: lastRealTimeRef.current,
-        realNow: Date.now(),
+        realNow: services.now(),
         isPaused,
         speed: gameSpeed,
       });
@@ -2270,7 +2166,7 @@ export const GameProvider = ({ children }) => {
             statusText: zoneStatusLabel
               ? `🧭 Zone: ${zoneStatusLabel}`
               : statusText,
-            lastLevelUp: leveledUp ? Date.now() : normalizedChar.lastLevelUp,
+            lastLevelUp: leveledUp ? services.now() : normalizedChar.lastLevelUp,
             currentZoneId,
             currentZoneProgress,
             zoneProgress: currentZoneProgress,
@@ -2438,26 +2334,7 @@ export const GameProvider = ({ children }) => {
           [...newLogs.map((log) => ({ time, ...log })), ...prev].slice(0, 50),
         );
       }
-    }, CONFIG.TICK_RATE);
-    return () => clearInterval(tick);
-  }, [
-    applyDungeonStepLootAwards,
-    applyMissionWipeCosts,
-    buildMissionRun,
-    completeCalendarEvent,
-    gameSpeed,
-    getAdjustedMissionSuccessPreview,
-    isPaused,
-    itemDatabase,
-    normalizeRosterZones,
-    processMissionRewards,
-    recordMissionRelationships,
-    pushNotification,
-    resolveDungeonChainContinuation,
-    registerDungeonClearMilestones,
-    registerDungeonWipeMilestone,
-    tryApplyWorldTickLoot,
-  ]);
+  }, CONFIG.TICK_RATE);
 
   const handleOpenRecruit = () => {
     const openSlots = Math.max(
@@ -4255,7 +4132,11 @@ export const GameProvider = ({ children }) => {
       });
     } catch (error) {
       console.error("Failed to save session:", error);
-      alert("Could not save session file.");
+      pushNotification({
+        type: "error",
+        title: "Save Failed",
+        message: "Could not create the session file.",
+      });
     }
   };
 
@@ -4334,14 +4215,27 @@ export const GameProvider = ({ children }) => {
             navigate(ROUTES.DASHBOARD);
           },
         });
-        alert("Session loaded.");
+        pushNotification({
+          type: "success",
+          title: "Session Loaded",
+          message: "The guild session was loaded successfully.",
+        });
       },
       onInvalidSession: (error) => {
         console.error("Failed to load session:", error);
-        alert("Invalid session file.");
+        pushNotification({
+          type: "error",
+          title: "Invalid Session",
+          message: error?.message || "The selected session file is invalid.",
+          durationMs: 6500,
+        });
       },
       onReadError: () => {
-        alert("Could not read session file.");
+        pushNotification({
+          type: "error",
+          title: "Read Failed",
+          message: "Could not read the selected session file.",
+        });
       },
     });
   };
@@ -4501,7 +4395,46 @@ export const GameProvider = ({ children }) => {
   const openRecruitSlots = Math.max(0, guildDerivedStats.maxRoster - roster.length);
   const openRealmApplicationCount = realmApplicationCandidates.length;
 
+  const actionsRef = useRef({});
+  Object.assign(actionsRef.current, {
+    dismissNotification,
+    changeGuildSetup: handleGuildSetupChange,
+    loadSession: handleLoadButtonClick,
+    loadSessionFile: handleLoadSessionFile,
+    startGuild: handleStartGuild,
+    selectCharacter: setDetailCharId,
+    closeCharacterDetail: () => setDetailCharId(null),
+    togglePause: () => setIsPaused((current) => !current),
+    cycleGameSpeed: () =>
+      setGameSpeed((current) => getNextGameSpeed(current || DEFAULT_GAME_SPEED)),
+    updateMissionBoardState: setMissionBoardState,
+    updateMemberRankingMode: setMemberRankingMode,
+    updateMemberSearch: setGuildMemberSearch,
+    updateMemberMinLevel: setGuildMemberMinLevelFilter,
+    updateMemberMaxLevel: setGuildMemberMaxLevelFilter,
+    updateMemberSortMode: setGuildMemberSortMode,
+    updateMemberRole: (id, role) =>
+      setRoster((currentRoster) =>
+        currentRoster.map((character) =>
+          character.id === id ? { ...character, role } : character,
+        ),
+      ),
+    openDebug: () => setShowDebug(true),
+    closeDebug: () => setShowDebug(false),
+    openGuildLog: () => setShowGuildLog(true),
+    closeGuildLog: () => setShowGuildLog(false),
+    openLootTable: () => setShowLootTable(true),
+    closeLootTable: () => setShowLootTable(false),
+    openOptions: () => setShowOptions(true),
+    closeOptions: () => setShowOptions(false),
+    openProfessions: () => setShowProfessions(true),
+    closeProfessions: () => setShowProfessions(false),
+    openRecruit: () => setShowRecruit(true),
+    closeRecruit: () => setShowRecruit(false),
+  });
+
   const game = {
+    actions: actionsRef.current,
     activeMissions,
     battlefieldState,
     bestGuildMemberSearchMatchId,
@@ -4592,22 +4525,6 @@ export const GameProvider = ({ children }) => {
     realmState,
     roster,
     sessionFileInputRef,
-    setDetailCharId,
-    setGameSpeed,
-    setGuildMemberMaxLevelFilter,
-    setGuildMemberMinLevelFilter,
-    setGuildMemberSearch,
-    setGuildMemberSortMode,
-    setIsPaused,
-    setMissionBoardState,
-    setMemberRankingMode,
-    setRoster,
-    setShowDebug,
-    setShowGuildLog,
-    setShowLootTable,
-    setShowOptions,
-    setShowProfessions,
-    setShowRecruit,
     showDebug,
     showGuildLog,
     showLootTable,
@@ -4620,7 +4537,15 @@ export const GameProvider = ({ children }) => {
     worldPvpState,
   };
 
+  const contextStoreRef = useRef(null);
+  if (!contextStoreRef.current) {
+    contextStoreRef.current = createGameContextStore(game);
+  }
+  useLayoutEffect(() => {
+    contextStoreRef.current.setSnapshot(game);
+  }, [game]);
+
   return (
-    <GameContext.Provider value={game}>{children}</GameContext.Provider>
+    <GameContext.Provider value={contextStoreRef.current}>{children}</GameContext.Provider>
   );
 };

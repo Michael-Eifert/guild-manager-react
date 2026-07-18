@@ -2,17 +2,15 @@ import React, { lazy, Suspense } from "react";
 import { Navigate, NavLink, Route, Routes } from "react-router-dom";
 
 import ToastNotifications from "../../components/ToastNotifications";
+import AppErrorBoundary from "../../components/AppErrorBoundary";
+import LoadingFallback from "../../components/LoadingFallback";
 import { useGame } from "../../app/useGame";
 import { GUILD_POINT_LABEL } from "../../guildProgression";
 import {
   getFactionFallbackManagerName,
   getGuildServerLabel,
 } from "../../guild/guildSetup";
-import {
-  DEFAULT_GAME_SPEED,
-  formatGameSpeedLabel,
-  getNextGameSpeed,
-} from "../../progression";
+import { formatGameSpeedLabel } from "../../progression";
 import { getActiveDungeonRunCount } from "../../dungeons/dungeonBoardUtils";
 import { getWowIconUrl } from "../../utils";
 import { ROUTES } from "../../routes";
@@ -50,6 +48,7 @@ const HOME_ROUTE_PATHS = Object.freeze({
 export default function HomeRoot() {
   const game = useGame();
   const {
+    actions,
     activeMissions,
     battlefieldState,
     bestGuildMemberSearchMatchId,
@@ -136,22 +135,6 @@ export default function HomeRoot() {
     realmState,
     roster,
     sessionFileInputRef,
-    setDetailCharId,
-    setGameSpeed,
-    setGuildMemberMaxLevelFilter,
-    setGuildMemberMinLevelFilter,
-    setGuildMemberSearch,
-    setGuildMemberSortMode,
-    setIsPaused,
-    setMemberRankingMode,
-    setMissionBoardState,
-    setRoster,
-    setShowDebug,
-    setShowGuildLog,
-    setShowLootTable,
-    setShowOptions,
-    setShowProfessions,
-    setShowRecruit,
     showDebug,
     showGuildLog,
     showLootTable,
@@ -163,6 +146,30 @@ export default function HomeRoot() {
     toggleDashboardSection,
     worldPvpState,
   } = game;
+  const {
+    closeCharacterDetail,
+    closeDebug,
+    closeGuildLog,
+    closeLootTable,
+    closeOptions,
+    closeProfessions,
+    closeRecruit,
+    cycleGameSpeed,
+    openDebug,
+    openGuildLog,
+    openLootTable,
+    openOptions,
+    openProfessions,
+    selectCharacter,
+    togglePause,
+    updateMemberMaxLevel,
+    updateMemberMinLevel,
+    updateMemberRankingMode,
+    updateMemberRole,
+    updateMemberSearch,
+    updateMemberSortMode,
+    updateMissionBoardState,
+  } = actions || {};
 
   if (!guildSetup.hasStarted) {
     return <Navigate to={ROUTES.START} replace />;
@@ -239,7 +246,7 @@ export default function HomeRoot() {
             {GUILD_POINT_LABEL}: {guildProgress.renownPoints}
           </div>
           <button
-            onClick={() => setShowOptions(true)}
+            onClick={openOptions}
             aria-label="Settings"
             title="Settings"
             className="mt-2 inline-grid h-8 w-8 place-items-center rounded border border-gray-500 bg-gray-800 text-gray-200 shadow hover:bg-gray-700 align-top"
@@ -249,7 +256,7 @@ export default function HomeRoot() {
             </span>
           </button>
           <button
-            onClick={() => setIsPaused(!isPaused)}
+            onClick={togglePause}
             className={`mt-2 ml-2 px-3 py-1 rounded text-xs md:text-sm font-bold shadow border ${
               isPaused
                 ? "bg-gray-800 border-yellow-600 text-yellow-500"
@@ -263,9 +270,7 @@ export default function HomeRoot() {
             )}
           </button>
           <button
-            onClick={() =>
-              setGameSpeed((prev) => getNextGameSpeed(prev || DEFAULT_GAME_SPEED))
-            }
+            onClick={cycleGameSpeed}
             className={`mt-2 ml-2 px-3 py-1 rounded text-xs md:text-sm font-bold shadow border ${
               gameSpeed > 1
                 ? "bg-blue-900 border-blue-500 text-blue-100"
@@ -430,7 +435,7 @@ export default function HomeRoot() {
           )}
         </NavLink>
         <button
-          onClick={() => setShowProfessions(true)}
+          onClick={openProfessions}
           aria-pressed={showProfessions}
           className={`home-nav-item wow-command flex-none snap-start px-4 py-3 rounded bg-gray-800 border border-emerald-700 hover:bg-gray-700 shadow flex items-center gap-2 whitespace-nowrap ${
             showProfessions ? "home-nav-active" : ""
@@ -442,7 +447,7 @@ export default function HomeRoot() {
           Professions
         </button>
         <button
-          onClick={() => setShowLootTable(true)}
+          onClick={openLootTable}
           aria-pressed={showLootTable}
           className={`home-nav-item wow-command flex-none snap-start px-4 py-3 rounded bg-gray-800 border border-gray-600 hover:bg-gray-700 shadow flex items-center gap-2 whitespace-nowrap ${
             showLootTable ? "home-nav-active" : ""
@@ -454,7 +459,7 @@ export default function HomeRoot() {
           DB
         </button>
         <button
-          onClick={() => setShowGuildLog(true)}
+          onClick={openGuildLog}
           aria-pressed={showGuildLog}
           className={`home-nav-item wow-command flex-none snap-start px-4 py-3 rounded bg-gray-800 border border-gray-600 hover:bg-gray-700 shadow flex items-center gap-2 whitespace-nowrap ${
             showGuildLog ? "home-nav-active" : ""
@@ -467,8 +472,9 @@ export default function HomeRoot() {
         </button>
       </nav>
 
-      <Suspense fallback={null}>
-        <Routes>
+      <AppErrorBoundary>
+        <Suspense fallback={<LoadingFallback label="Loading guild page…" />}>
+          <Routes>
           <Route
             index
             element={
@@ -486,26 +492,26 @@ export default function HomeRoot() {
                 guildRoleSummary={guildRoleSummary}
                 guildClassSummary={guildClassSummary}
                 guildMemberSearch={guildMemberSearch}
-                onGuildMemberSearchChange={setGuildMemberSearch}
+                onGuildMemberSearchChange={updateMemberSearch}
                 memberRankingMode={memberRankingMode}
-                onMemberRankingModeChange={setMemberRankingMode}
+                onMemberRankingModeChange={updateMemberRankingMode}
                 guildMemberSortMode={guildMemberSortMode}
-                onGuildMemberSortModeChange={setGuildMemberSortMode}
+                onGuildMemberSortModeChange={updateMemberSortMode}
                 guildMemberMinLevelFilter={guildMemberMinLevelFilter}
-                onGuildMemberMinLevelFilterChange={setGuildMemberMinLevelFilter}
+                onGuildMemberMinLevelFilterChange={updateMemberMinLevel}
                 guildMemberMaxLevelFilter={guildMemberMaxLevelFilter}
-                onGuildMemberMaxLevelFilterChange={setGuildMemberMaxLevelFilter}
+                onGuildMemberMaxLevelFilterChange={updateMemberMaxLevel}
                 onClearGuildMemberFilters={() => {
-                  setGuildMemberSearch("");
-                  setGuildMemberMinLevelFilter("");
-                  setGuildMemberMaxLevelFilter("");
+                  updateMemberSearch("");
+                  updateMemberMinLevel("");
+                  updateMemberMaxLevel("");
                 }}
                 hasAnyGuildMemberLevelFilter={hasAnyGuildMemberLevelFilter}
                 hasGuildMemberSearch={hasGuildMemberSearch}
                 rankedRoster={rankedRoster}
                 hasGuildMemberSearchMatch={hasGuildMemberSearchMatch}
                 bestGuildMemberSearchMatchId={bestGuildMemberSearchMatchId}
-                onSelectCharacter={setDetailCharId}
+                onSelectCharacter={selectCharacter}
               />
             }
           />
@@ -580,7 +586,7 @@ export default function HomeRoot() {
                 onNotify={pushNotification}
                 itemDatabase={itemDatabase}
                 missionBoardState={missionBoardState}
-                onMissionBoardStateChange={setMissionBoardState}
+                onMissionBoardStateChange={updateMissionBoardState}
                 guildInventory={guildInventory}
               />
             }
@@ -636,8 +642,9 @@ export default function HomeRoot() {
             }
           />
           <Route path="*" element={<Navigate to={ROUTES.DASHBOARD} replace />} />
-        </Routes>
-      </Suspense>
+          </Routes>
+        </Suspense>
+      </AppErrorBoundary>
 
       <input
         ref={sessionFileInputRef}
@@ -647,21 +654,22 @@ export default function HomeRoot() {
         onChange={handleLoadSessionFile}
       />
 
-      <Suspense fallback={null}>
+      <AppErrorBoundary>
+        <Suspense fallback={<LoadingFallback label="Opening guild window…" />}>
         {showOptions && (
           <OptionsModal
             isOpen={showOptions}
-            onClose={() => setShowOptions(false)}
+            onClose={closeOptions}
             onSaveSession={handleSaveSession}
             onLoadSession={handleLoadButtonClick}
-            onOpenDebug={() => setShowDebug(true)}
+            onOpenDebug={openDebug}
           />
         )}
 
         {showRecruit && (
           <RecruitModal
             isOpen={showRecruit}
-            onClose={() => setShowRecruit(false)}
+            onClose={closeRecruit}
             onRecruit={handleRecruit}
             onRecruitApplications={handleRecruitApplications}
             onDeclineApplications={handleDeclineApplications}
@@ -679,14 +687,14 @@ export default function HomeRoot() {
         {showLootTable && (
           <LootTableModal
             isOpen={showLootTable}
-            onClose={() => setShowLootTable(false)}
+            onClose={closeLootTable}
             itemDatabase={itemDatabase}
           />
         )}
         {showProfessions && (
           <ProfessionsModal
             isOpen={showProfessions}
-            onClose={() => setShowProfessions(false)}
+            onClose={closeProfessions}
             roster={roster}
             guildInventory={guildInventory}
             stashPolicy={stashPolicy}
@@ -700,7 +708,7 @@ export default function HomeRoot() {
         {showGuildLog && (
           <GuildLogModal
             isOpen={showGuildLog}
-            onClose={() => setShowGuildLog(false)}
+            onClose={closeGuildLog}
             logs={guildLog}
             missionList={missionList}
           />
@@ -708,7 +716,7 @@ export default function HomeRoot() {
         {showDebug && (
           <DebugModal
             isOpen={showDebug}
-            onClose={() => setShowDebug(false)}
+            onClose={closeDebug}
             onBulkLevel={debugActions.bulkLevel}
             onAddGold={debugActions.addGold}
             onAddRenown={debugActions.addRenown}
@@ -733,23 +741,18 @@ export default function HomeRoot() {
             guildRelationships={guildRelationships}
             raidLockouts={raidLockouts}
             currentDayIndex={currentCalendarDayIndex}
-            onClose={() => setDetailCharId(null)}
+            onClose={closeCharacterDetail}
             onDismiss={handleDismiss}
             onModeChange={handleModeChange}
             onProfChange={handleProfChange}
             onGenerateBackstory={handleGenerateBackstory}
             onUpdateBackstory={handleUpdateBackstory}
             onLevelChange={debugActions.changeLevel}
-            onRoleChange={(id, role) =>
-              setRoster((currentRoster) =>
-                currentRoster.map((character) =>
-                  character.id !== id ? character : { ...character, role },
-                ),
-              )
-            }
+            onRoleChange={updateMemberRole}
           />
         )}
-      </Suspense>
+        </Suspense>
+      </AppErrorBoundary>
     </div>
   );
 }

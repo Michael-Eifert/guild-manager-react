@@ -10,6 +10,18 @@ with optional server-side support only for Oracle/Gemini text generation.
 
 ## Quick Start
 
+Requirements:
+
+- Node.js `20.19+` or `22.12+` (required by the current Vite version).
+- npm, which is included with Node.js.
+
+All npm commands below must be run from the application directory. If you
+cloned the complete repository, enter it first:
+
+```bash
+cd guild-manager
+```
+
 Install dependencies:
 
 ```bash
@@ -37,9 +49,17 @@ npm run preview
 Run checks:
 
 ```bash
-npm run lint
-npm run test
+npm run check
 ```
+
+`npm run check` runs linting, strict TypeScript checking, the complete test
+suite, a production build, and the bundle-size regression check. Individual
+commands such as `npm run lint`, `npm run typecheck`, `npm run test`, and
+`npm run build` remain available.
+
+Tailwind CSS and the Cinzel/Lato fonts are now installed locally and processed
+by Vite. Starting a separate Tailwind process or loading the Tailwind CDN is no
+longer required.
 
 ## What The App Contains
 
@@ -140,17 +160,43 @@ asset or API later if item data outgrows the bundled source.
 The browser app does not accept a Gemini API key directly. To enable Oracle
 actions, run the server-side proxy and expose only the proxy URL to Vite.
 
-Terminal 1:
+The proxy is optional and is only needed for Oracle/Gemini-generated text. The
+game itself still starts with just `npm run dev`.
+
+On PowerShell, start the proxy in terminal 1:
+
+```powershell
+$env:GEMINI_API_KEY="your_key_here"
+npm run proxy:gemini
+```
+
+Then start the app in terminal 2:
+
+```powershell
+$env:VITE_GEMINI_PROXY_URL="http://localhost:8787/api/gemini"
+npm run dev
+```
+
+On macOS, Linux, Git Bash, or another POSIX-compatible shell, use:
 
 ```bash
 GEMINI_API_KEY=your_key_here npm run proxy:gemini
 ```
 
-Terminal 2:
-
 ```bash
 VITE_GEMINI_PROXY_URL=http://localhost:8787/api/gemini npm run dev
 ```
+
+The proxy listens on port `8787` by default and exposes a health endpoint at
+`http://localhost:8787/health`. Set `PORT` to use a different port and update
+`VITE_GEMINI_PROXY_URL` accordingly.
+
+For a hosted proxy, set `NODE_ENV=production` and an explicit comma-separated
+`ALLOWED_ORIGINS` list. Optional controls include `MAX_CONCURRENT_REQUESTS`,
+`RATE_LIMIT_CAPACITY`, `RATE_LIMIT_REFILL_PER_MINUTE`, and `TRUST_PROXY=true`
+when the service is behind a trusted reverse proxy. The built-in limits reduce
+accidental abuse, but a public production deployment should still be protected
+by authenticated access or an API gateway.
 
 Without `VITE_GEMINI_PROXY_URL`, the game still runs. Oracle actions will show
 an error message instead of generating text.
@@ -203,9 +249,10 @@ The workflow:
 
 1. Runs from the `guild-manager/` working directory.
 2. Installs dependencies with `npm ci`.
-3. Builds with `npm run build`.
-4. Sets `VITE_BASE_PATH` to the repository name for GitHub Pages.
-5. Publishes `guild-manager/dist`.
+3. Runs linting, strict TypeScript checking, tests, and a production build.
+4. Checks the generated JavaScript against the checked-in bundle budget.
+5. Sets `VITE_BASE_PATH` to the repository name for GitHub Pages.
+6. Publishes `guild-manager/dist`.
 
 The app router also uses Vite's base URL as its basename, so deployed routes
 resolve under the repository path, such as `/guild-manager-react/start` for a

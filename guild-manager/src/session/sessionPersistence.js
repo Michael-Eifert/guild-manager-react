@@ -22,9 +22,14 @@ import {
   ensureStashPolicy,
 } from "../inventory/itemEvaluation";
 import { DEFAULT_PROF_PAIR, PROF_PAIRS } from "../constants";
+import {
+  CURRENT_SESSION_VERSION,
+  migrateSessionPayload,
+  SESSION_FORMAT_VALUE,
+} from "./sessionMigrations";
 
-export const SESSION_FORMAT = "guild-manager-session";
-export const SESSION_VERSION = 7;
+export const SESSION_FORMAT = SESSION_FORMAT_VALUE;
+export const SESSION_VERSION = CURRENT_SESSION_VERSION;
 const MAX_GUILD_LOG_ENTRIES = 50;
 const MIN_MISSION_DURATION_MS = 1000;
 const DEFAULT_DUNGEON_STEP_COUNT = 4;
@@ -312,7 +317,7 @@ export const downloadSessionPayload = (
 
 export const parseSessionPayload = (rawInput) => {
   const parsed = JSON.parse(String(rawInput || "{}"));
-  return parsed && typeof parsed === "object" ? parsed.data || parsed : {};
+  return migrateSessionPayload(parsed).data;
 };
 
 export const hydrateSessionData = ({

@@ -37,10 +37,9 @@ body::before {
   inset: 0;
   pointer-events: none;
   z-index: 0;
-  background-image: url("https://i.redd.it/eznae4smfel81.jpg");
-  background-size: cover;
-  background-position: center top;
-  background-repeat: no-repeat;
+  background-image:
+    radial-gradient(circle at 20% 10%, rgb(110 78 35 / 35%), transparent 42%),
+    radial-gradient(circle at 85% 20%, rgb(35 72 105 / 30%), transparent 48%);
   opacity: 0.22;
   filter: saturate(0.88) contrast(1.05);
 }
@@ -420,3 +419,6 @@ body::after {
   -ms-overflow-style: none;
   scrollbar-width: none;
 }
+@tailwind base;
+@tailwind components;
+@tailwind utilities;

@@ -2,14 +2,16 @@ import React, { lazy, Suspense } from "react";
 import { Navigate, Route, Routes } from "react-router-dom";
 
 import { GameProvider } from "./app/GameProvider";
-import { useGame } from "./app/useGame";
+import { useGameSelector } from "./app/useGame";
 import { ROUTES } from "./routes";
+import AppErrorBoundary from "./components/AppErrorBoundary";
+import LoadingFallback from "./components/LoadingFallback";
 
 const HomeRoot = lazy(() => import("./pages/home/HomeRoot"));
 const StartPage = lazy(() => import("./pages/start/StartPage"));
 
 const RootRedirect = () => {
-  const { guildSetup } = useGame();
+  const guildSetup = useGameSelector((game) => game.guildSetup);
   return (
     <Navigate
       to={guildSetup.hasStarted ? ROUTES.HOME : ROUTES.START}
@@ -19,9 +21,11 @@ const RootRedirect = () => {
 };
 
 const App = () => (
-  <GameProvider>
-    <Suspense fallback={null}>
-      <Routes>
+  <AppErrorBoundary>
+    <GameProvider>
+      <AppErrorBoundary>
+        <Suspense fallback={<LoadingFallback />}>
+          <Routes>
         <Route path={ROUTES.START} element={<StartPage />} />
         <Route path={`${ROUTES.HOME}/*`} element={<HomeRoot />} />
         <Route
@@ -34,9 +38,11 @@ const App = () => (
         />
         <Route path="/" element={<RootRedirect />} />
         <Route path="*" element={<RootRedirect />} />
-      </Routes>
-    </Suspense>
-  </GameProvider>
+          </Routes>
+        </Suspense>
+      </AppErrorBoundary>
+    </GameProvider>
+  </AppErrorBoundary>
 );
 
 export default App;

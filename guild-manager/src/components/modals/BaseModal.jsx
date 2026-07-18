@@ -1,4 +1,4 @@
-import { useEffect } from "react";
+import { useEffect, useRef } from "react";
 
 const joinClasses = (...classNames) => classNames.filter(Boolean).join(" ");
 
@@ -10,31 +10,78 @@ const BaseModal = ({
   panelClassName,
   closeOnEscape = true,
   closeOnBackdrop = true,
+  ariaLabel = "Dialog",
+  labelledBy,
 }) => {
+  const panelRef = useRef(null);
+
   useEffect(() => {
-    if (!isOpen || !closeOnEscape) return undefined;
+    if (!isOpen) return undefined;
+
+    const previousActiveElement = document.activeElement;
+    const previousOverflow = document.body.style.overflow;
+    document.body.style.overflow = "hidden";
+
+    const focusableSelector =
+      'button:not([disabled]), [href], input:not([disabled]), select:not([disabled]), textarea:not([disabled]), [tabindex]:not([tabindex="-1"])';
+    const focusableElements = () =>
+      Array.from(panelRef.current?.querySelectorAll(focusableSelector) || []);
+
+    const firstFocusable = focusableElements()[0];
+    (firstFocusable || panelRef.current)?.focus();
 
     const handleKeyDown = (event) => {
-      if (event.key === "Escape") {
+      if (event.key === "Escape" && closeOnEscape && onClose) {
+        event.preventDefault();
         onClose();
+      }
+      if (event.key !== "Tab") return;
+
+      const elements = focusableElements();
+      if (elements.length === 0) {
+        event.preventDefault();
+        panelRef.current?.focus();
+        return;
+      }
+      const first = elements[0];
+      const last = elements[elements.length - 1];
+      if (event.shiftKey && document.activeElement === first) {
+        event.preventDefault();
+        last.focus();
+      } else if (!event.shiftKey && document.activeElement === last) {
+        event.preventDefault();
+        first.focus();
       }
     };
 
     window.addEventListener("keydown", handleKeyDown);
-    return () => window.removeEventListener("keydown", handleKeyDown);
+    return () => {
+      window.removeEventListener("keydown", handleKeyDown);
+      document.body.style.overflow = previousOverflow;
+      if (previousActiveElement instanceof HTMLElement) previousActiveElement.focus();
+    };
   }, [isOpen, closeOnEscape, onClose]);
 
   if (!isOpen) return null;
 
   return (
     <div
-      onClick={closeOnBackdrop ? onClose : undefined}
+      onClick={closeOnBackdrop && onClose ? onClose : undefined}
       className={joinClasses(
         "fixed inset-0 z-50 flex items-center justify-center",
         overlayClassName,
       )}
     >
-      <div onClick={(event) => event.stopPropagation()} className={panelClassName}>
+      <div
+        ref={panelRef}
+        role="dialog"
+        aria-modal="true"
+        aria-label={labelledBy ? undefined : ariaLabel}
+        aria-labelledby={labelledBy}
+        tabIndex={-1}
+        onClick={(event) => event.stopPropagation()}
+        className={panelClassName}
+      >
         {children}
       </div>
     </div>

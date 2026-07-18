@@ -2,20 +2,14 @@ import { Navigate } from "react-router-dom";
 
 import GuildSetupScreen from "../../components/GuildSetupScreen";
 import ToastNotifications from "../../components/ToastNotifications";
-import { useGame } from "../../app/useGame";
+import { useGameActions, useGameSelector } from "../../app/useGame";
 import { ROUTES } from "../../routes";
 
 export default function StartPage() {
-  const {
-    dismissNotification,
-    guildSetup,
-    handleGuildSetupChange,
-    handleLoadButtonClick,
-    handleLoadSessionFile,
-    handleStartGuild,
-    notifications,
-    sessionFileInputRef,
-  } = useGame();
+  const actions = useGameActions();
+  const guildSetup = useGameSelector((game) => game.guildSetup);
+  const notifications = useGameSelector((game) => game.notifications);
+  const sessionFileInputRef = useGameSelector((game) => game.sessionFileInputRef);
 
   if (guildSetup.hasStarted) {
     return <Navigate to={ROUTES.HOME} replace />;
@@ -25,20 +19,20 @@ export default function StartPage() {
     <>
       <ToastNotifications
         notifications={notifications}
-        onDismiss={dismissNotification}
+        onDismiss={actions.dismissNotification}
       />
       <input
         ref={sessionFileInputRef}
         type="file"
         accept="application/json,.json"
         className="hidden"
-        onChange={handleLoadSessionFile}
+        onChange={actions.loadSessionFile}
       />
       <GuildSetupScreen
         guildSetup={guildSetup}
-        onChange={handleGuildSetupChange}
-        onStart={handleStartGuild}
-        onLoadSession={handleLoadButtonClick}
+        onChange={actions.changeGuildSetup}
+        onStart={actions.startGuild}
+        onLoadSession={actions.loadSession}
       />
     </>
   );

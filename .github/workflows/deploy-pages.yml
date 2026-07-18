@@ -39,11 +39,23 @@ jobs:
       - name: Install dependencies
         run: npm ci
 
+      - name: Lint
+        run: npm run lint
+
+      - name: Type check
+        run: npm run typecheck
+
+      - name: Test
+        run: npm run test
+
       - name: Build
         env:
           VITE_BASE_PATH: /${{ github.event.repository.name }}/
           VITE_GEMINI_PROXY_URL: ${{ secrets.VITE_GEMINI_PROXY_URL }}
         run: npm run build
+
+      - name: Check bundle budget
+        run: npm run bundle:check
 
       - name: Upload artifact
         uses: actions/upload-pages-artifact@v3
