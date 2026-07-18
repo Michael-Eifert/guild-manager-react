@@ -16,7 +16,6 @@ describe("MissionModal", () => {
       <MissionModal
         isOpen
         variant="page"
-        onClose={noop}
         onBack={noop}
         roster={roster}
         missionList={missionList}

@@ -1649,6 +1649,10 @@ describe("session persistence", () => {
     expect(result.normalizedRoster[0].pvp.weeklyHonor).toBe(120);
     expect(result.normalizedRoster[0].pvp.unlockedPvpGearIds).toEqual(["pvp-trinket"]);
     expect(result.normalizedRoster[0].history).toEqual([]);
+    expect(result.normalizedRoster[0].professions).toEqual([
+      { name: "Mining", skill: 1 },
+      { name: "Blacksmithing", skill: 1 },
+    ]);
     expect(result.normalizedRoster[0].status).toBe("Idle");
     expect(result.loadedWorldPvpState.pvpReputation).toBe(9);
     expect(result.loadedMissionBoardState).toMatchObject({
@@ -1695,6 +1699,38 @@ describe("session persistence", () => {
     expect(result.loadedRealmState.name).toBe("Everlook");
     expect(result.loadedRealmState.npcGuilds.length).toBeGreaterThan(0);
     expect(result.loadedGuildGold).toBe(getGuildDerivedStats(createInitialGuildProgress()).goldCap);
+  });
+
+  it("normalizes legacy object-shaped professions while hydrating a session", () => {
+    const result = hydrateSessionData({
+      payloadData: {
+        roster: [
+          {
+            id: "legacy-professions",
+            charClass: "Mage",
+            professions: { Tailoring: { skill: 42 }, Enchanting: 17 },
+          },
+        ],
+        activeMissions: [],
+        missionList: [],
+        guildProgress: createInitialGuildProgress(),
+        guildSetup: { name: "Test", hasStarted: true },
+      },
+      initialMissions: [],
+      normalizeGuildProgress,
+      normalizeGuildSetup: (value) => value,
+      getGuildDerivedStats,
+      normalizeProgressionState,
+      defaultGameSpeed: DEFAULT_GAME_SPEED,
+      defaultGuildSetup: {},
+      createId: () => "instance-id",
+      resolveDungeonBossCount: getDungeonBossCount,
+    });
+
+    expect(result.normalizedRoster[0].professions).toEqual([
+      { name: "Tailoring", skill: 42 },
+      { name: "Enchanting", skill: 17 },
+    ]);
   });
 
   it("persists and hydrates calendar state", () => {

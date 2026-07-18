@@ -1344,7 +1344,7 @@ const MissionModal = ({
       ...(chainMissionIds ? { chainMissionIds } : {}),
       consumableMode,
     });
-    onClose();
+    onClose?.();
   };
 
   const renderMissionCard = (mission, showSetName = true) => {

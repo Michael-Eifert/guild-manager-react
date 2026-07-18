@@ -247,6 +247,7 @@ const DetailModal = ({
     : "Highest rank reached";
 
   const hardCap = getSkillCap(char?.level || 1);
+  const professions = Array.isArray(char?.professions) ? char.professions : [];
   const averageItemLevel = getCharacterAverageItemLevel(char);
   const characterPower = getCharacterPowerScore(char);
   const setBonus = getCharacterSetBonus(char);
@@ -911,7 +912,7 @@ const DetailModal = ({
               </div>
 
               <div className="space-y-4">
-                {char.professions.map((prof, idx) => (
+                {professions.map((prof, idx) => (
                   <div key={idx} className="bg-gray-800 p-3 rounded border border-gray-700">
                     <div className="flex justify-between items-center mb-2">
                       <div className="flex items-center gap-2">

@@ -21,6 +21,7 @@ import {
   DEFAULT_STASH_POLICY,
   ensureStashPolicy,
 } from "../inventory/itemEvaluation";
+import { DEFAULT_PROF_PAIR, PROF_PAIRS } from "../constants";
 
 export const SESSION_FORMAT = "guild-manager-session";
 export const SESSION_VERSION = 7;
@@ -44,6 +45,33 @@ const clampNonNegativeNumber = (value, fallback = 0) => {
   const numeric = Number(value);
   if (!Number.isFinite(numeric)) return fallback;
   return Math.max(0, numeric);
+};
+
+const normalizeCharacterProfessions = (character) => {
+  const rawProfessions = character?.professions;
+  const normalizedProfessions = Array.isArray(rawProfessions)
+    ? rawProfessions
+        .filter((profession) => profession?.name)
+        .map((profession) => ({
+          ...profession,
+          skill: Math.max(1, Number(profession.skill) || 1),
+        }))
+    : rawProfessions && typeof rawProfessions === "object"
+      ? Object.entries(rawProfessions)
+          .filter(([name]) => Boolean(name))
+          .map(([name, value]) => ({
+            name,
+            skill: Math.max(
+              1,
+              Number(value && typeof value === "object" ? value.skill : value) || 1,
+            ),
+          }))
+      : [];
+
+  if (normalizedProfessions.length > 0) return normalizedProfessions;
+
+  const starterProfessions = PROF_PAIRS[character?.charClass] || DEFAULT_PROF_PAIR;
+  return starterProfessions.map((name) => ({ name, skill: 1 }));
 };
 
 export const normalizeMissionBoardState = (state) => {
@@ -432,6 +460,7 @@ export const hydrateSessionData = ({
       status: characterWithPvp?.status || "Idle",
       statusText: characterWithPvp?.statusText || "Awaiting Orders",
       history: normalizedHistory,
+      professions: normalizeCharacterProfessions(characterWithPvp),
     };
     const normalizedKeys = Array.isArray(char?.keys)
       ? [...new Set(char.keys.map((keyId) => String(keyId || "").trim()).filter(Boolean))]
