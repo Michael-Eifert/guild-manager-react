@@ -37,5 +37,7 @@ describe("RealmOverviewModal", () => {
     expect(html).toContain("Realm Overview");
     expect(html).toContain("Ashbringer");
     expect(html).toContain("Realm PvE Leaderboard");
+    expect(html).toContain("PvE Score Breakdown");
+    expect(html).toContain("Competition: Normal");
   });
 });

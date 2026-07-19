@@ -116,7 +116,12 @@ const pickParty = ({ candidates, usedPlayerIds, random }) => {
     .slice(0, REALM_DUNGEON_PARTY_SIZE);
 };
 
-const getDungeonSuccessChance = ({ mission, party, guild }) => {
+const getDungeonSuccessChance = ({
+  mission,
+  party,
+  guild,
+  difficultySuccessBonus = 0,
+}) => {
   const missionPower = getMissionPowerTarget(mission);
   const partyPower = average(party.map(getMemberPower));
   const baseFailChance = getMissionBaseFailChance(mission);
@@ -135,7 +140,8 @@ const getDungeonSuccessChance = ({ mission, party, guild }) => {
     Math.max(0, party.length - 1) * 2.5 -
     roleCompositionBonus -
     personalitySuccessBonus -
-    guildProfile.successBonus;
+    guildProfile.successBonus -
+    Number(difficultySuccessBonus || 0);
 
   return 100 - Math.round(clampNumber(rawFailChance, 5, 95));
 };
@@ -214,8 +220,14 @@ const runDungeonAttempt = ({
   mission,
   random,
   source,
+  difficultySuccessBonus = 0,
 }) => {
-  const successChance = getDungeonSuccessChance({ mission, party, guild });
+  const successChance = getDungeonSuccessChance({
+    mission,
+    party,
+    guild,
+    difficultySuccessBonus,
+  });
   const success = random() * 100 < successChance;
   const nextPlayers = applyDungeonRewardsToPlayers({
     players,
@@ -276,6 +288,8 @@ export const simulateRealmDungeonActivity = ({
   players = [],
   dayIndex = 0,
   dayFraction = 1,
+  rateMultiplier = 1,
+  successBonus = 0,
   random = Math.random,
 } = {}) => {
   const safeRandom = typeof random === "function" ? random : Math.random;
@@ -308,6 +322,7 @@ export const simulateRealmDungeonActivity = ({
       (guildPlayers.length / 14) *
       (clampNumber(guild.activityLevel, 1, 100) / 100) *
       profile.rate *
+      Math.max(0, Number(rateMultiplier) || 0) *
       safeDayFraction;
     const attempts = rollCount({
       expected: expectedRuns,
@@ -333,6 +348,7 @@ export const simulateRealmDungeonActivity = ({
         mission,
         random: safeRandom,
         source: "guild",
+        difficultySuccessBonus: successBonus,
       });
       nextPlayers = attemptResult.players;
       nextGuild = attemptResult.guild;

@@ -186,6 +186,65 @@ export const GUILD_SERVER_OPTIONS = Object.freeze([
   },
 ]);
 
+export const REALM_DIFFICULTY = Object.freeze({
+  EASY: "Easy",
+  NORMAL: "Normal",
+  HARD: "Hard",
+});
+
+export const REALM_DIFFICULTY_OPTIONS = Object.freeze([
+  Object.freeze({
+    value: REALM_DIFFICULTY.EASY,
+    label: "Easy",
+    description: "Rival guilds trail your progression and advance more slowly.",
+  }),
+  Object.freeze({
+    value: REALM_DIFFICULTY.NORMAL,
+    label: "Normal",
+    description: "Rival guilds keep pace while retaining their archetype strengths.",
+  }),
+  Object.freeze({
+    value: REALM_DIFFICULTY.HARD,
+    label: "Hard",
+    description: "Rival guilds push ahead and progress faster in PvE content.",
+  }),
+]);
+
+const REALM_DIFFICULTY_PROFILES = Object.freeze({
+  [REALM_DIFFICULTY.EASY]: Object.freeze({
+    levelTargetOffset: -2,
+    catchUpRate: 0.4,
+    itemLevelTargetOffset: -2,
+    dungeonRateMultiplier: 0.8,
+    dungeonSuccessBonus: -5,
+    raidRateMultiplier: 0.75,
+  }),
+  [REALM_DIFFICULTY.NORMAL]: Object.freeze({
+    levelTargetOffset: 0,
+    catchUpRate: 0.55,
+    itemLevelTargetOffset: 0,
+    dungeonRateMultiplier: 1,
+    dungeonSuccessBonus: 0,
+    raidRateMultiplier: 1,
+  }),
+  [REALM_DIFFICULTY.HARD]: Object.freeze({
+    levelTargetOffset: 2,
+    catchUpRate: 0.7,
+    itemLevelTargetOffset: 2,
+    dungeonRateMultiplier: 1.25,
+    dungeonSuccessBonus: 5,
+    raidRateMultiplier: 1.3,
+  }),
+});
+
+export const normalizeRealmDifficulty = (value) =>
+  Object.values(REALM_DIFFICULTY).includes(value)
+    ? value
+    : REALM_DIFFICULTY.NORMAL;
+
+export const getRealmDifficultyProfile = (value) =>
+  REALM_DIFFICULTY_PROFILES[normalizeRealmDifficulty(value)];
+
 export const GAMEPLAY_TUNING = Object.freeze({
   FAILED_MISSION_EXP_FACTOR: 0.2,
   LEVELING_TICK_EXP_MULTIPLIER: 1,
@@ -257,6 +316,7 @@ export const DEFAULT_GUILD_SETUP = Object.freeze({
     GUILD_SERVER_OPTIONS.find(
       (option) => option.value === GUILD_SERVER.EVERLOOK,
     )?.population || GUILD_SERVER_POPULATION.HIGH,
+  realmDifficulty: REALM_DIFFICULTY.NORMAL,
   focus: GUILD_FOCUS.LEVELING,
   lastFocusChangeDayIndex: null,
   dungeonActivity: GUILD_DUNGEON_ACTIVITY.BALANCED,

@@ -104,7 +104,6 @@ export const generateNpcGuilds = ({
     const averageGearScore = pickNumber(random, profile.averageGearScore);
     const dungeonScore = pickNumber(random, profile.dungeonScore);
     const raidProgress = pickNumber(random, profile.raidProgress);
-    const pveScore = pickNumber(random, profile.pveScore) + Math.round(activityLevel * 2);
     const id = `npc:${hashRealmSeed(`${realmName}:${name}`).toString(36)}`;
     const rosterSize = pickNumber(random, profile.rosterSize);
     const guildRoster = generateNpcGuildRoster({
@@ -136,7 +135,6 @@ export const generateNpcGuilds = ({
       averageLevel,
       averageGearScore,
       activityLevel,
-      pveScore,
       raidProgress,
       raidProgressByRaid,
       dungeonScore,
@@ -259,7 +257,12 @@ export const ensureRealmState = (
       : safeCurrentDay,
     lastSimulatedStepIndex: Number.isFinite(Number(safe.lastSimulatedStepIndex))
       ? Math.max(0, Math.floor(Number(safe.lastSimulatedStepIndex)))
-      : safeCurrentDay * 4,
+      : safeCurrentDay * (hasExistingState ? 4 : 20),
+    simulationStepsPerDay: Number.isFinite(Number(safe.simulationStepsPerDay))
+      ? Math.max(1, Math.floor(Number(safe.simulationStepsPerDay)))
+      : hasExistingState
+        ? 4
+        : 20,
   };
 };
 

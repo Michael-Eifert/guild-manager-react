@@ -20,7 +20,7 @@ const average = (values) => {
   return numericValues.reduce((sum, value) => sum + value, 0) / numericValues.length;
 };
 
-export const calculateRealmPveScore = (guild = {}) => {
+export const calculateRealmPveScoreBreakdown = (guild = {}) => {
   const averageLevel = Math.max(0, Number(guild.averageLevel) || 0);
   const averageGearScore = Math.max(0, Number(guild.averageGearScore) || 0);
   const rosterSize = Math.max(0, Number(guild.rosterSize) || 0);
@@ -29,16 +29,23 @@ export const calculateRealmPveScore = (guild = {}) => {
   const raidBossesCleared = getRealmRaidBossesCleared(guild);
   const raidClearCount = getRealmRaidClearCount(guild);
 
-  return Math.round(
-    averageLevel * 6 +
-      averageGearScore * 5 +
-      rosterSize * 2 +
-      maxLevelCount * 12 +
-      dungeonScore * 0.75 +
-      raidBossesCleared * 220 +
-      raidClearCount * 550,
-  );
+  const breakdown = {
+    level: Math.round(averageLevel * 6),
+    gear: Math.round(averageGearScore * 5),
+    roster: Math.round(rosterSize * 2),
+    maxLevel: Math.round(maxLevelCount * 12),
+    dungeons: Math.round(dungeonScore * 0.75),
+    raidBosses: Math.round(raidBossesCleared * 220),
+    raidClears: Math.round(raidClearCount * 550),
+  };
+  return {
+    ...breakdown,
+    total: Object.values(breakdown).reduce((sum, value) => sum + value, 0),
+  };
 };
+
+export const calculateRealmPveScore = (guild = {}) =>
+  calculateRealmPveScoreBreakdown(guild).total;
 
 const getUniqueClearedMissions = (roster, missionList, predicate) => {
   const missionLookup = new Map(
@@ -95,7 +102,7 @@ export const buildPlayerGuildSnapshot = ({
     Math.floor(Number(milestoneDungeon.clearCount) || 0),
   );
   const dungeonScore = Math.round(
-    dungeonClearCount * 55 + milestoneClearCount * 8 + averageGearScore * 4,
+    dungeonClearCount * 55 + milestoneClearCount * 8,
   );
   const raidProgressByRaid = buildPlayerRaidProgress({
     roster: members,
@@ -171,6 +178,7 @@ export const buildRealmRankings = ({ realmState, playerGuildSnapshot } = {}) => 
       return {
         ...row,
         pveScore: calculateRealmPveScore(row),
+        pveScoreBreakdown: calculateRealmPveScoreBreakdown(row),
       };
     });
   const playerRow = playerGuildSnapshot
@@ -184,6 +192,9 @@ export const buildRealmRankings = ({ realmState, playerGuildSnapshot } = {}) => 
         raidClearCount: getRealmRaidClearCount(playerGuildSnapshot),
         maxLevelCount: getRealmMaxLevelCount(playerGuildSnapshot.roster),
         pveScore: calculateRealmPveScore(playerGuildSnapshot),
+        pveScoreBreakdown: calculateRealmPveScoreBreakdown(
+          playerGuildSnapshot,
+        ),
         isPlayerGuild: true,
       }
     : null;

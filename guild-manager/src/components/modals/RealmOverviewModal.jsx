@@ -4,6 +4,7 @@ import BaseModal from "./BaseModal";
 import {
   buildPlayerGuildSnapshot,
   buildRealmRankings,
+  calculateRealmPveScoreBreakdown,
   getPlayerRealmRanking,
 } from "../../server/realmRankings";
 import {
@@ -13,7 +14,12 @@ import {
 import { getRealmNewsRenderKey } from "../../server/realmNews";
 import { getRealmPopulationStats } from "../../server/realmPopulation";
 import { getRealmRosterCap } from "../../server/realmRosters";
-import { DB_CLASSES, FACTION_EMBLEM_ICON, GUILD_FACTION } from "../../constants";
+import {
+  DB_CLASSES,
+  FACTION_EMBLEM_ICON,
+  GUILD_FACTION,
+  normalizeRealmDifficulty,
+} from "../../constants";
 import { getRacePortraitUrl, getWowIconUrl } from "../../utils";
 
 const formatNumber = (value) =>
@@ -313,6 +319,10 @@ export default function RealmOverviewModal({
     () => buildDungeonProgressRows({ guild: selectedGuild }),
     [selectedGuild],
   );
+  const selectedScoreBreakdown = selectedGuild
+    ? selectedGuild.pveScoreBreakdown ||
+      calculateRealmPveScoreBreakdown(selectedGuild)
+    : null;
   const news = Array.isArray(realmState?.news) ? realmState.news : [];
   const populationStats = getRealmPopulationStats(realmState, roster);
   const dailyStats = populationStats.dailyStats || {};
@@ -456,6 +466,38 @@ export default function RealmOverviewModal({
               </div>
             </div>
 
+            {selectedScoreBreakdown && (
+              <div className="mt-4 rounded border border-slate-700/70 bg-slate-900/55 p-3">
+                <div className="flex items-center justify-between gap-3">
+                  <div>
+                    <h3 className="text-xs font-bold uppercase tracking-wide text-slate-200">
+                      PvE Score Breakdown
+                    </h3>
+                    <p className="mt-1 text-sm text-slate-400">
+                      {selectedGuild.name}: {formatNumber(selectedScoreBreakdown.total)} total
+                    </p>
+                  </div>
+                </div>
+                <div className="mt-3 grid grid-cols-2 gap-2 sm:grid-cols-3 xl:grid-cols-5">
+                  <MiniRealmActivity label="Level" value={formatNumber(selectedScoreBreakdown.level)} />
+                  <MiniRealmActivity label="Gear" value={formatNumber(selectedScoreBreakdown.gear)} />
+                  <MiniRealmActivity
+                    label="Roster"
+                    value={formatNumber(
+                      selectedScoreBreakdown.roster + selectedScoreBreakdown.maxLevel,
+                    )}
+                  />
+                  <MiniRealmActivity label="Dungeons" value={formatNumber(selectedScoreBreakdown.dungeons)} />
+                  <MiniRealmActivity
+                    label="Raids"
+                    value={formatNumber(
+                      selectedScoreBreakdown.raidBosses + selectedScoreBreakdown.raidClears,
+                    )}
+                  />
+                </div>
+              </div>
+            )}
+
             <div className="mt-4 rounded border border-slate-700/70 bg-slate-900/55 p-3">
               <div className="flex flex-wrap items-start justify-between gap-2">
                 <div>
@@ -566,6 +608,9 @@ export default function RealmOverviewModal({
               <p className="mt-2 text-xs text-slate-500">
                 Today is realm day {Math.max(1, (Number(currentDayIndex) || 0) + 1)}.
               </p>
+              <div className="mt-3 inline-flex rounded border border-amber-800/60 bg-amber-950/25 px-2 py-1 text-xs font-bold text-amber-100">
+                Competition: {normalizeRealmDifficulty(guildSetup?.realmDifficulty)}
+              </div>
             </div>
 
             <div className="rounded border border-slate-700/70 bg-slate-900/55 p-3 flex-1 min-h-0">

@@ -26,6 +26,7 @@ import {
   pickNextZoneForCharacter,
 } from "../zones/zoneDefinitions";
 import {
+  NPC_GUILD_ARCHETYPES,
   REALM_DAILY_ARRIVAL_RANGE,
   REALM_GUILD_APPLICATION_CAP,
   REALM_GUILD_ROSTER_CAP,
@@ -545,7 +546,12 @@ export const getRealmGuildApplications = ({
     });
 };
 
-const advanceRealmPlayerZoneForDay = ({ player, random, guilded }) => {
+const advanceRealmPlayerZoneForDay = ({
+  player,
+  random,
+  guilded,
+  dayFraction = 1,
+}) => {
   const zone = getRealmPlayerZone(player);
   if (!zone) {
     return {
@@ -559,7 +565,11 @@ const advanceRealmPlayerZoneForDay = ({ player, random, guilded }) => {
 
   const activity = clampNumber(player.activityLevel, 1, 100) / 100;
   const zoneMultiplier = getCharacterZoneProgressMultiplier(player);
-  const gain = ((guilded ? 16 : 10) * activity + 2 + random() * 3) * zoneMultiplier;
+  const cadenceScale = clampNumber(dayFraction, 0.01, 1) / 0.25;
+  const gain =
+    ((guilded ? 16 : 10) * activity + 2 + random() * 3) *
+    zoneMultiplier *
+    cadenceScale;
   let zoneProgress = clampNumber(player.zoneProgress, 0, 99) + gain;
   let level = player.level;
   let itemLevel = player.itemLevel;
@@ -593,70 +603,122 @@ const advanceRealmPlayerZoneForDay = ({ player, random, guilded }) => {
   };
 };
 
-const getPlayerGuildAnchoredLevel = ({
-  player,
-  playerAverageLevel,
-  random,
-  dayFraction = 1,
-}) => {
-  const targetLevel = normalizeRealmLevelTarget(playerAverageLevel);
-  const currentLevel = Math.max(1, Number(player?.level) || 1);
-  if (!targetLevel) return currentLevel;
+const ARCHETYPE_PROGRESSION = Object.freeze({
+  [NPC_GUILD_ARCHETYPES.HARDCORE_RAIDERS]: Object.freeze({
+    levelOffset: 1,
+    itemLevelOffset: 0,
+    levelPerDay: 0.38,
+    itemLevelPerDay: 0.5,
+  }),
+  [NPC_GUILD_ARCHETYPES.DUNGEON_RUNNERS]: Object.freeze({
+    levelOffset: 0.5,
+    itemLevelOffset: 1,
+    levelPerDay: 0.34,
+    itemLevelPerDay: 0.42,
+  }),
+  [NPC_GUILD_ARCHETYPES.LEVELING_GUILD]: Object.freeze({
+    levelOffset: 1,
+    itemLevelOffset: 0,
+    levelPerDay: 0.32,
+    itemLevelPerDay: 0.22,
+  }),
+  [NPC_GUILD_ARCHETYPES.SOCIAL_GUILD]: Object.freeze({
+    levelOffset: -1,
+    itemLevelOffset: -1,
+    levelPerDay: 0.18,
+    itemLevelPerDay: 0.18,
+  }),
+  [NPC_GUILD_ARCHETYPES.CASUAL_ADVENTURERS]: Object.freeze({
+    levelOffset: -0.5,
+    itemLevelOffset: -0.5,
+    levelPerDay: 0.24,
+    itemLevelPerDay: 0.25,
+  }),
+});
 
-  const activity = clampNumber(player.activityLevel, 1, 100) / 100;
-  const levelingMultiplier = getCharacterLevelingExpMultiplier(player);
-  const guildedBonus = player.guildId ? 1.5 : 0;
-  const activitySpread = (activity - 0.65) * 6;
-  const personalitySpread = (levelingMultiplier - 1) * 5;
-  const variance = (random() - 0.5) * 4;
-  const personalTarget = clampNumber(
-    targetLevel + guildedBonus + activitySpread + personalitySpread + variance,
-    1,
-    CONFIG.LEVEL_CAP,
-  );
-  const gap = personalTarget - currentLevel;
+const DEFAULT_PROGRESSION = Object.freeze({
+  levelOffset: 0,
+  itemLevelOffset: 0,
+  levelPerDay: 0.14,
+  itemLevelPerDay: 0.08,
+});
 
-  if (gap <= 0) return currentLevel;
+const getStablePlayerVariance = (playerId) =>
+  ((hashPopulationSeed(`${playerId}:progression-variance`) % 2001) / 1000) - 1;
 
-  const safeDayFraction = clampNumber(dayFraction, 0.05, 1);
-  const catchUpRate = (player.guildId ? 0.55 : 0.42) * safeDayFraction;
-  const catchUpLevels = Math.max(
-    1,
-    Math.min(
-      Math.max(1, Math.ceil(10 * safeDayFraction)),
-      Math.floor(gap * catchUpRate + random() * (1 + safeDayFraction)),
-    ),
-  );
-  return Math.min(CONFIG.LEVEL_CAP, currentLevel + catchUpLevels);
+const rollExpectedGain = ({ expected, maxGain = 2, random }) => {
+  const capped = clampNumber(expected, 0, maxGain);
+  const whole = Math.floor(capped);
+  const remainder = capped - whole;
+  return Math.min(maxGain, whole + (random() < remainder ? 1 : 0));
 };
 
 const advanceRealmPlayerForDay = ({
   player,
   random,
   playerAverageLevel = null,
+  playerAverageItemLevel = null,
+  progression = DEFAULT_PROGRESSION,
+  difficultyProfile,
   dayFraction = 1,
 }) => {
-  const safeDayFraction = clampNumber(dayFraction, 0.05, 1);
+  const safeDayFraction = clampNumber(dayFraction, 0.01, 1);
   const guilded = Boolean(player.guildId);
   const activity = clampNumber(player.activityLevel, 1, 100) / 100;
   const levelingMultiplier = getCharacterLevelingExpMultiplier(player);
-  const levelChance =
-    (guilded ? 0.24 : 0.14) * activity * levelingMultiplier * safeDayFraction;
-  const itemChance = (guilded ? 0.18 : 0.08) * activity * safeDayFraction;
-  const anchoredLevel = getPlayerGuildAnchoredLevel({
-    player,
-    playerAverageLevel,
+  const profile = difficultyProfile || {
+    levelTargetOffset: 0,
+    itemLevelTargetOffset: 0,
+    catchUpRate: 0.55,
+  };
+  const currentLevel = Math.max(1, Number(player.level) || 1);
+  const currentItemLevel = Math.max(0, Number(player.itemLevel) || 0);
+  const stableVariance = getStablePlayerVariance(player.id);
+  const normalizedLevelTarget = normalizeRealmLevelTarget(playerAverageLevel);
+  const normalizedItemTarget = Number(playerAverageItemLevel);
+  const personalLevelTarget = normalizedLevelTarget
+    ? clampNumber(
+        normalizedLevelTarget +
+          Number(profile.levelTargetOffset || 0) +
+          Number(progression.levelOffset || 0) +
+          stableVariance,
+        1,
+        CONFIG.LEVEL_CAP,
+      )
+    : null;
+  const personalItemTarget = Number.isFinite(normalizedItemTarget)
+    ? clampNumber(
+        normalizedItemTarget +
+          Number(profile.itemLevelTargetOffset || 0) +
+          Number(progression.itemLevelOffset || 0) +
+          stableVariance,
+        0,
+        100,
+      )
+    : null;
+  const levelGap = personalLevelTarget == null
+    ? 0
+    : Math.max(0, personalLevelTarget - currentLevel - 1);
+  const itemGap = personalItemTarget == null
+    ? 0
+    : Math.max(0, personalItemTarget - currentItemLevel - 1);
+  const levelGain = rollExpectedGain({
+    expected:
+      Number(progression.levelPerDay || 0) *
+        activity *
+        levelingMultiplier *
+        safeDayFraction +
+      levelGap * Number(profile.catchUpRate || 0),
     random,
-    dayFraction: safeDayFraction,
   });
-  const level =
-    anchoredLevel < CONFIG.LEVEL_CAP && random() < levelChance
-      ? anchoredLevel + 1
-      : anchoredLevel;
-  const itemLevel =
-    random() < itemChance
-      ? Math.min(100, player.itemLevel + (guilded ? 2 : 1))
-      : player.itemLevel;
+  const itemLevelGain = rollExpectedGain({
+    expected:
+      Number(progression.itemLevelPerDay || 0) * activity * safeDayFraction +
+      itemGap * Number(profile.catchUpRate || 0),
+    random,
+  });
+  const level = Math.min(CONFIG.LEVEL_CAP, currentLevel + levelGain);
+  const itemLevel = Math.min(100, currentItemLevel + itemLevelGain);
   const loyaltyDelta = guilded ? (random() < 0.18 * safeDayFraction ? 1 : 0) : 0;
   const loyalty = clampNumber(player.loyalty + loyaltyDelta, 1, 100);
   const marketStatus =
@@ -673,11 +735,12 @@ const advanceRealmPlayerForDay = ({
     },
     random,
     guilded,
+    dayFraction: safeDayFraction,
   });
   return {
     ...player,
-    level: zoneState.level,
-    itemLevel: zoneState.itemLevel,
+    level: Math.min(CONFIG.LEVEL_CAP, currentLevel + 2, zoneState.level),
+    itemLevel: Math.min(100, currentItemLevel + 2, zoneState.itemLevel),
     loyalty,
     marketStatus,
     currentZoneId: zoneState.currentZoneId,
@@ -687,11 +750,14 @@ const advanceRealmPlayerForDay = ({
 };
 
 const syncGuildRostersFromPopulation = (npcGuilds, players) =>
-  npcGuilds.map((guild) => {
-    const roster = players
-      .filter((player) => player.guildId === guild.id)
-      .slice(0, REALM_GUILD_ROSTER_CAP)
-      .map((player) => ({
+  (() => {
+    const rosterByGuildId = new Map();
+    (Array.isArray(players) ? players : []).forEach((player) => {
+      const guildId = String(player?.guildId || "");
+      if (!guildId) return;
+      const roster = rosterByGuildId.get(guildId) || [];
+      if (roster.length >= REALM_GUILD_ROSTER_CAP) return;
+      roster.push({
         id: player.id,
         name: player.name,
         level: player.level,
@@ -701,24 +767,31 @@ const syncGuildRostersFromPopulation = (npcGuilds, players) =>
         charClass: player.charClass,
         role: player.role,
         personalityTraits: player.personalityTraits,
-      }));
-    const averageLevel =
-      roster.length > 0
-        ? roster.reduce((sum, member) => sum + member.level, 0) / roster.length
-        : guild.averageLevel;
-    const averageGearScore =
-      roster.length > 0
-        ? roster.reduce((sum, member) => sum + member.itemLevel, 0) / roster.length
-        : guild.averageGearScore;
-    return {
-      ...guild,
-      roster,
-      rosterSize: roster.length,
-      maxLevelCount: getRealmMaxLevelCount(roster),
-      averageLevel: Math.round(averageLevel * 10) / 10,
-      averageGearScore: Math.round(averageGearScore),
-    };
-  });
+      });
+      rosterByGuildId.set(guildId, roster);
+    });
+
+    return (Array.isArray(npcGuilds) ? npcGuilds : []).map((guild) => {
+      const roster = rosterByGuildId.get(String(guild.id || "")) || [];
+      const averageLevel =
+        roster.length > 0
+          ? roster.reduce((sum, member) => sum + member.level, 0) / roster.length
+          : guild.averageLevel;
+      const averageGearScore =
+        roster.length > 0
+          ? roster.reduce((sum, member) => sum + member.itemLevel, 0) /
+            roster.length
+          : guild.averageGearScore;
+      return {
+        ...guild,
+        roster,
+        rosterSize: roster.length,
+        maxLevelCount: getRealmMaxLevelCount(roster),
+        averageLevel: Math.round(averageLevel * 10) / 10,
+        averageGearScore: Math.round(averageGearScore),
+      };
+    });
+  })();
 
 const recruitNpcGuilds = ({
   npcGuilds,
@@ -897,16 +970,73 @@ const generatePlayerGuildApplications = ({
   };
 };
 
-export const advanceRealmPopulationForDay = ({
+export const advanceRealmPopulationProgression = ({
+  realmState,
+  npcGuilds,
+  dayIndex,
+  dayFraction = 0.05,
+  playerRosterSize = 0,
+  playerAverageLevel = null,
+  playerAverageItemLevel = null,
+  serverPopulation = null,
+  difficultyProfile,
+  random,
+} = {}) => {
+  const safeRandom = typeof random === "function" ? random : Math.random;
+  const safeDayFraction = clampNumber(dayFraction, 0.01, 1);
+  const safeDayIndex = Math.max(0, Math.floor(Number(dayIndex) || 0));
+  const population = Array.isArray(realmState?.population?.players)
+    ? realmState.population
+    : normalizeRealmPopulation({
+        population: realmState?.population,
+        realmId: realmState?.id,
+        npcGuilds,
+        currentDayIndex: safeDayIndex,
+        playerRosterSize,
+        serverPopulation:
+          serverPopulation ||
+          realmState?.populationLabel ||
+          realmState?.population?.serverPopulation,
+      });
+  const guildProgressionById = new Map(
+    (Array.isArray(npcGuilds) ? npcGuilds : []).map((guild) => [
+      String(guild?.id || ""),
+      ARCHETYPE_PROGRESSION[guild?.archetype] || DEFAULT_PROGRESSION,
+    ]),
+  );
+  const players = population.players.map((player) =>
+    advanceRealmPlayerForDay({
+      player,
+      random: safeRandom,
+      playerAverageLevel,
+      playerAverageItemLevel,
+      progression:
+        guildProgressionById.get(String(player?.guildId || "")) ||
+        DEFAULT_PROGRESSION,
+      difficultyProfile,
+      dayFraction: safeDayFraction,
+    }),
+  );
+
+  return {
+    population: {
+      ...population,
+      players,
+    },
+    npcGuilds: syncGuildRostersFromPopulation(npcGuilds, players),
+  };
+};
+
+export const advanceRealmPopulationActivity = ({
   realmState,
   npcGuilds,
   dayIndex,
   dayFraction = 1,
   dayStepIndex = null,
   playerRosterSize = 0,
-  playerAverageLevel = null,
   serverPopulation = null,
   guildFaction = GUILD_FACTION.ALLIANCE,
+  difficultyProfile,
   random,
 } = {}) => {
   const safeRandom = typeof random === "function" ? random : Math.random;
@@ -924,14 +1054,7 @@ export const advanceRealmPopulationForDay = ({
       realmState?.population?.serverPopulation,
   });
   const softCap = population.currentSoftCap;
-  let players = population.players.map((player) =>
-    advanceRealmPlayerForDay({
-      player,
-      random: safeRandom,
-      playerAverageLevel,
-      dayFraction: safeDayFraction,
-    }),
-  );
+  let players = population.players;
   const currentTotal = players.length + playerRosterSize;
   const dailyArrivalRandom = createPopulationRandom(
     hashPopulationSeed(`${realmState?.id}:${safeDayIndex}:arrivals`),
@@ -998,6 +1121,8 @@ export const advanceRealmPopulationForDay = ({
     players,
     dayIndex: safeDayIndex,
     dayFraction: safeDayFraction,
+    rateMultiplier: difficultyProfile?.dungeonRateMultiplier,
+    successBonus: difficultyProfile?.dungeonSuccessBonus,
     random: safeRandom,
   });
   players = dungeonResult.players;

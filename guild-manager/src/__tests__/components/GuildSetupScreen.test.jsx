@@ -20,6 +20,10 @@ describe("GuildSetupScreen", () => {
     expect(html).toContain("Starting Activity");
     expect(html).toContain("Dungeon Groups");
     expect(html).toContain("PvP Activity");
+    expect(html).toContain("Realm Competition");
+    expect(html).toContain("Easy");
+    expect(html).toContain("Normal");
+    expect(html).toContain("Hard");
     expect(html).toContain("Start Game");
   });
 });

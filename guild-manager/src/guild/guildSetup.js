@@ -8,6 +8,7 @@ import {
   GUILD_FOCUS,
   GUILD_FOCUS_OPTIONS,
   GUILD_SERVER_OPTIONS,
+  normalizeRealmDifficulty,
 } from "../constants";
 import { normalizePvpActivityFocus } from "../pvp/battlefields/battlefieldUtils";
 
@@ -89,6 +90,7 @@ export const normalizeGuildSetup = (value, payloadData = {}) => {
     server: normalizedServer,
     serverStyle: normalizedServerStyle,
     serverPopulation: normalizedServerPopulation,
+    realmDifficulty: normalizeRealmDifficulty(safe.realmDifficulty),
     focus: normalizedFocus,
     lastFocusChangeDayIndex: Number.isFinite(
       Number(safe.lastFocusChangeDayIndex),

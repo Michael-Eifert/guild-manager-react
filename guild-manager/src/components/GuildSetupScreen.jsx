@@ -5,6 +5,8 @@ import {
   GUILD_DUNGEON_ACTIVITY_OPTIONS,
   GUILD_SERVER_POPULATION,
   GUILD_SERVER_OPTIONS,
+  REALM_DIFFICULTY_OPTIONS,
+  normalizeRealmDifficulty,
 } from "../constants";
 import { PVP_ACTIVITY_FOCUS_OPTIONS } from "../pvp/battlefields/battlefieldDefinitions";
 
@@ -29,6 +31,9 @@ const GuildSetupScreen = ({ guildSetup, onChange, onStart, onLoadSession }) => {
     guildSetup?.dungeonActivity || DEFAULT_GUILD_SETUP.dungeonActivity;
   const selectedPvpActivityFocus =
     guildSetup?.pvpActivityFocus || DEFAULT_GUILD_SETUP.pvpActivityFocus;
+  const selectedRealmDifficulty = normalizeRealmDifficulty(
+    guildSetup?.realmDifficulty,
+  );
   const handleSubmit = (event) => {
     event.preventDefault();
     if (canStart) onStart();
@@ -225,6 +230,41 @@ const GuildSetupScreen = ({ guildSetup, onChange, onStart, onLoadSession }) => {
               </div>
             </div>
 
+            <div className="space-y-2">
+              <div>
+                <div className="text-xs uppercase tracking-wider text-gray-300 font-bold">
+                  Realm Competition
+                </div>
+                <div className="mt-1 text-xs text-gray-500">
+                  Sets how quickly rival guilds level, gear, and progress through PvE.
+                  This choice is fixed for the session.
+                </div>
+              </div>
+              <div className="grid grid-cols-1 gap-2 sm:grid-cols-3">
+                {REALM_DIFFICULTY_OPTIONS.map((option) => {
+                  const selected = option.value === selectedRealmDifficulty;
+                  return (
+                    <button
+                      key={option.value}
+                      type="button"
+                      onClick={() => onChange("realmDifficulty", option.value)}
+                      aria-pressed={selected}
+                      className={`rounded border p-3 text-left transition-colors ${
+                        selected
+                          ? "border-amber-400 bg-amber-950/35 text-amber-100"
+                          : "border-gray-700 bg-gray-800/65 text-gray-300 hover:border-amber-700"
+                      }`}
+                    >
+                      <div className="text-sm font-bold">{option.label}</div>
+                      <div className="mt-1 text-xs text-gray-400">
+                        {option.description}
+                      </div>
+                    </button>
+                  );
+                })}
+              </div>
+            </div>
+
             <div className="rounded border border-gray-700 bg-gray-800/60 p-3 text-xs text-gray-300">
               <div>Default faction: {GUILD_FACTION.ALLIANCE} (can be changed)</div>
               <div>Default focus: Leveling</div>
@@ -247,6 +287,7 @@ const GuildSetupScreen = ({ guildSetup, onChange, onStart, onLoadSession }) => {
                   {selectedRealm.population}
                 </span>
               </div>
+              <div>Realm competition: {selectedRealmDifficulty}</div>
               <div>Starting resources: 5 heroes and 5 gold</div>
               <div className="text-gray-400 mt-1">You can expand this setup later.</div>
             </div>

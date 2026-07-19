@@ -42,6 +42,7 @@ import { advanceRealmSimulation } from "../server/realmSimulation";
 import {
   buildPlayerGuildSnapshot,
   buildRealmRankings,
+  calculateRealmPveScoreBreakdown,
   getPlayerRealmRanking,
 } from "../server/realmRankings";
 import { getRealmRaidProgressList } from "../server/realmRaidProgress";
@@ -76,6 +77,7 @@ import {
   GUILD_SERVER_STYLE,
   INITIAL_MISSIONS,
   KEY_DEFINITIONS,
+  REALM_DIFFICULTY,
   DB_FUNNY_NAMES,
   DB_RACES,
 } from "../constants";
@@ -4597,8 +4599,8 @@ describe("realm overview domain", () => {
   };
 
   const advanceRealmToStep = ({ realm, stepIndex, playerGuildSnapshot, guildSetup }) => {
-    const dayIndex = Math.floor(stepIndex / 4);
-    const dayProgress = (stepIndex % 4) / 4;
+    const dayIndex = Math.floor(stepIndex / 20);
+    const dayProgress = (stepIndex % 20) / 20;
     return advanceRealmSimulation({
       realmState: realm,
       currentDayIndex: dayIndex,
@@ -4799,6 +4801,59 @@ describe("realm overview domain", () => {
       maxLevelCount: 1,
     });
     expect(rankings.map((row) => row.rank)).toEqual([1, 2]);
+  });
+
+  it("builds the PvE score from an exact, inspectable breakdown", () => {
+    const breakdown = calculateRealmPveScoreBreakdown({
+      averageLevel: 20,
+      averageGearScore: 10,
+      rosterSize: 8,
+      maxLevelCount: 1,
+      dungeonScore: 100,
+      raidProgressByRaid: {
+        molten_core: { clearedBosses: 2, completed: false },
+      },
+    });
+
+    expect(breakdown).toMatchObject({
+      level: 120,
+      gear: 50,
+      roster: 16,
+      maxLevel: 12,
+      dungeons: 75,
+      raidBosses: 440,
+      raidClears: 0,
+    });
+    expect(breakdown.total).toBe(
+      breakdown.level +
+        breakdown.gear +
+        breakdown.roster +
+        breakdown.maxLevel +
+        breakdown.dungeons +
+        breakdown.raidBosses +
+        breakdown.raidClears,
+    );
+  });
+
+  it("does not count player item level a second time as dungeon score", () => {
+    const snapshot = buildPlayerGuildSnapshot({
+      guildSetup: { name: "No Dungeons", faction: GUILD_FACTION.ALLIANCE },
+      roster: [
+        {
+          id: "geared",
+          level: 20,
+          equipment: {
+            chest: { itemLevel: 40, quality: 3 },
+          },
+          clearedMissionIds: [],
+        },
+      ],
+      missionList: INITIAL_MISSIONS,
+      guildProgress: createInitialGuildProgress(),
+    });
+
+    expect(snapshot.averageGearScore).toBeGreaterThan(0);
+    expect(snapshot.dungeonScore).toBe(0);
   });
 
   it("ranks meaningful raid boss progress above a no-raid dungeon lead", () => {
@@ -5018,7 +5073,7 @@ describe("realm overview domain", () => {
     });
     let stepped = ensureRealmState(null, guildSetup, 0);
 
-    for (let stepIndex = 1; stepIndex <= 8; stepIndex += 1) {
+    for (let stepIndex = 1; stepIndex <= 40; stepIndex += 1) {
       stepped = advanceRealmToStep({
         realm: stepped,
         stepIndex,
@@ -5030,6 +5085,30 @@ describe("realm overview domain", () => {
     expect(getRealmCadenceSnapshot(stepped)).toEqual(
       getRealmCadenceSnapshot(direct),
     );
+  });
+
+  it("converts legacy four-step realm saves to the twenty-step cadence", () => {
+    const guildSetup = {
+      faction: GUILD_FACTION.ALLIANCE,
+      server: "Everlook",
+      serverStyle: GUILD_SERVER_STYLE.PVE,
+    };
+    const realm = ensureRealmState(null, guildSetup, 0);
+    const legacyRealm = {
+      ...realm,
+      lastSimulatedStepIndex: 1,
+      simulationStepsPerDay: 4,
+    };
+    const converted = advanceRealmSimulation({
+      realmState: legacyRealm,
+      currentDayIndex: 0,
+      currentDayProgress: 0.25,
+      playerGuildSnapshot: null,
+      guildSetup,
+    });
+
+    expect(converted.lastSimulatedStepIndex).toBe(5);
+    expect(converted.simulationStepsPerDay).toBe(20);
   });
 
   it("keeps realm news keys unique for repeated same-day events and old saves", () => {
@@ -5118,7 +5197,7 @@ describe("realm overview domain", () => {
     const realm = ensureRealmState(null, guildSetup, 0);
     let stepped = realm;
 
-    for (let stepIndex = 1; stepIndex <= 4; stepIndex += 1) {
+    for (let stepIndex = 1; stepIndex <= 20; stepIndex += 1) {
       stepped = advanceRealmToStep({
         realm: stepped,
         stepIndex,
@@ -5150,7 +5229,7 @@ describe("realm overview domain", () => {
     const realm = ensureRealmState(null, guildSetup, 0);
     const quarter = advanceRealmToStep({
       realm,
-      stepIndex: 1,
+      stepIndex: 5,
       playerGuildSnapshot: null,
       guildSetup,
     });
@@ -5162,7 +5241,7 @@ describe("realm overview domain", () => {
     });
     let stepped = realm;
 
-    for (let stepIndex = 1; stepIndex <= 4; stepIndex += 1) {
+    for (let stepIndex = 1; stepIndex <= 20; stepIndex += 1) {
       stepped = advanceRealmToStep({
         realm: stepped,
         stepIndex,
@@ -5199,7 +5278,7 @@ describe("realm overview domain", () => {
     expect(advanced.npcGuilds.length).toBeGreaterThan(realm.npcGuilds.length);
     expect(advanced.npcGuilds.length).toBeGreaterThanOrEqual(10);
     expect(advanced.npcGuilds.length).toBeLessThanOrEqual(15);
-  });
+  }, 10000);
 
   it("seeds newly founded NPC guilds with existing realm players", () => {
     let realm = ensureRealmState(
@@ -5262,7 +5341,7 @@ describe("realm overview domain", () => {
     expect(advanced.npcGuilds.length).toBeGreaterThan(realm.npcGuilds.length);
     expect(advanced.npcGuilds.length).toBeGreaterThanOrEqual(15);
     expect(advanced.npcGuilds.length).toBeLessThanOrEqual(20);
-  });
+  }, 10000);
 
   it("keeps realm guild leveling near the player guild pace", () => {
     const realm = ensureRealmState(
@@ -5336,13 +5415,72 @@ describe("realm overview domain", () => {
       },
     });
 
-    expect(advanced.lastSimulatedStepIndex).toBe(1);
+    expect(advanced.lastSimulatedStepIndex).toBe(5);
     expect(advanced.npcGuilds.some((guild) => Number(guild.averageLevel) > 1)).toBe(
       true,
     );
     expect(advanced.population.players.some((player) => player.level > 1)).toBe(
       true,
     );
+  });
+
+  it("updates rival progression before the first quarter-day activity tick", () => {
+    const guildSetup = {
+      faction: GUILD_FACTION.ALLIANCE,
+      server: "Everlook",
+      serverStyle: GUILD_SERVER_STYLE.PVE,
+      realmDifficulty: REALM_DIFFICULTY.NORMAL,
+    };
+    const realm = ensureRealmState(null, guildSetup, 0);
+    const advanced = advanceRealmSimulation({
+      realmState: realm,
+      currentDayIndex: 0,
+      currentDayProgress: 0.17,
+      playerGuildSnapshot: {
+        rosterSize: 8,
+        averageLevel: 6,
+        averageGearScore: 4,
+      },
+      guildSetup,
+    });
+
+    expect(advanced.lastSimulatedStepIndex).toBe(3);
+    expect(advanced.npcGuilds.some((guild) => guild.averageLevel > 1)).toBe(true);
+    expect(
+      Math.max(...advanced.npcGuilds.map((guild) => guild.averageLevel)),
+    ).toBeGreaterThanOrEqual(4);
+    expect(advanced.population.dailyStats.arrivals || 0).toBe(0);
+  });
+
+  it("paces Easy, Normal, and Hard rival progression in order", () => {
+    const createAdvancedRealm = (realmDifficulty) => {
+      const guildSetup = {
+        faction: GUILD_FACTION.ALLIANCE,
+        server: "Everlook",
+        serverStyle: GUILD_SERVER_STYLE.PVE,
+        realmDifficulty,
+      };
+      return advanceRealmSimulation({
+        realmState: ensureRealmState(null, guildSetup, 0),
+        currentDayIndex: 0,
+        currentDayProgress: 0.17,
+        playerGuildSnapshot: {
+          rosterSize: 8,
+          averageLevel: 6,
+          averageGearScore: 4,
+        },
+        guildSetup,
+      });
+    };
+    const averageNpcLevel = (realm) =>
+      realm.npcGuilds.reduce((sum, guild) => sum + guild.averageLevel, 0) /
+      realm.npcGuilds.length;
+    const easy = createAdvancedRealm(REALM_DIFFICULTY.EASY);
+    const normal = createAdvancedRealm(REALM_DIFFICULTY.NORMAL);
+    const hard = createAdvancedRealm(REALM_DIFFICULTY.HARD);
+
+    expect(averageNpcLevel(easy)).toBeLessThan(averageNpcLevel(normal));
+    expect(averageNpcLevel(normal)).toBeLessThan(averageNpcLevel(hard));
   });
 
   it("scouts and removes realm recruitment candidates from the market", () => {
@@ -5662,7 +5800,7 @@ describe("realm overview domain", () => {
 
     expect(topNpcGuild).toBeTruthy();
     expect(getRealmRaidProgressList(topNpcGuild).length).toBeGreaterThan(0);
-  }, 20000);
+  }, 30000);
 });
 
 describe("auto dungeon activity", () => {

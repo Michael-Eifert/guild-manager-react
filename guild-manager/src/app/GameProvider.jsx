@@ -21,6 +21,7 @@ import {
   GUILD_FACTION,
   GUILD_FACTION_OPTIONS,
   GUILD_SERVER_OPTIONS,
+  normalizeRealmDifficulty,
   GAMEPLAY_TUNING,
   GUILD_ACTIVITY_MODES,
   GUILD_DUNGEON_ACTIVITY,
@@ -2798,6 +2799,12 @@ export const GameProvider = ({ children }) => {
           pvpActivityFocus: Object.values(PVP_ACTIVITY_FOCUS).includes(value)
             ? value
             : DEFAULT_GUILD_SETUP.pvpActivityFocus,
+        };
+      }
+      if (field === "realmDifficulty" && !prev.hasStarted) {
+        return {
+          ...prev,
+          realmDifficulty: normalizeRealmDifficulty(value),
         };
       }
       if (
