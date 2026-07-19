@@ -14,6 +14,13 @@ const BaseModal = ({
   labelledBy,
 }) => {
   const panelRef = useRef(null);
+  const onCloseRef = useRef(onClose);
+  const closeOnEscapeRef = useRef(closeOnEscape);
+
+  useEffect(() => {
+    onCloseRef.current = onClose;
+    closeOnEscapeRef.current = closeOnEscape;
+  }, [closeOnEscape, onClose]);
 
   useEffect(() => {
     if (!isOpen) return undefined;
@@ -31,9 +38,13 @@ const BaseModal = ({
     (firstFocusable || panelRef.current)?.focus();
 
     const handleKeyDown = (event) => {
-      if (event.key === "Escape" && closeOnEscape && onClose) {
+      if (
+        event.key === "Escape" &&
+        closeOnEscapeRef.current &&
+        onCloseRef.current
+      ) {
         event.preventDefault();
-        onClose();
+        onCloseRef.current();
       }
       if (event.key !== "Tab") return;
 
@@ -60,7 +71,7 @@ const BaseModal = ({
       document.body.style.overflow = previousOverflow;
       if (previousActiveElement instanceof HTMLElement) previousActiveElement.focus();
     };
-  }, [isOpen, closeOnEscape, onClose]);
+  }, [isOpen]);
 
   if (!isOpen) return null;
 

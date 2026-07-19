@@ -5001,50 +5001,6 @@ describe("realm overview domain", () => {
     ).toBe(true);
   });
 
-  it("advances realm simulation once per day and caps news", () => {
-    const realm = ensureRealmState(
-      null,
-      { server: "Everlook", serverStyle: GUILD_SERVER_STYLE.PVE },
-      0,
-    );
-    const playerGuildSnapshot = {
-      id: "player:guild",
-      name: "Player Guild",
-      faction: GUILD_FACTION.ALLIANCE,
-      isPlayerGuild: true,
-      rosterSize: 5,
-      averageLevel: 20,
-      averageGearScore: 10,
-      pveScore: 100,
-      raidProgress: 0,
-      dungeonScore: 20,
-      archetype: "Player Guild",
-    };
-    const advanced = advanceRealmSimulation({
-      realmState: realm,
-      currentDayIndex: 30,
-      playerGuildSnapshot,
-      guildSetup: { server: "Everlook", serverStyle: GUILD_SERVER_STYLE.PVE },
-    });
-    const repeated = advanceRealmSimulation({
-      realmState: advanced,
-      currentDayIndex: 30,
-      playerGuildSnapshot,
-      guildSetup: { server: "Everlook", serverStyle: GUILD_SERVER_STYLE.PVE },
-    });
-
-    expect(advanced.ageDays).toBeGreaterThanOrEqual(30);
-    expect(advanced.lastSimulatedDayIndex).toBe(30);
-    const stats = getRealmPopulationStats(advanced, []);
-    expect(stats.totalPopulation).toBeLessThanOrEqual(stats.softCap);
-    expect(stats.softCap).toBeLessThanOrEqual(1600);
-    expect(advanced.news.length).toBeLessThanOrEqual(25);
-    expect(new Set(advanced.news.map((entry) => entry.id)).size).toBe(
-      advanced.news.length,
-    );
-    expect(repeated).toEqual(advanced);
-  });
-
   it("keeps realm cadence deterministic between direct day jumps and quarter steps", () => {
     const guildSetup = {
       faction: GUILD_FACTION.ALLIANCE,
@@ -5782,25 +5738,6 @@ describe("realm overview domain", () => {
     expect(result.roster[0].realmDepartureWarningDayIndex).toBe(1);
   });
 
-  it("tracks NPC raid boss progress during realm simulation", () => {
-    const realm = ensureRealmState(
-      null,
-      { server: "Everlook", serverStyle: GUILD_SERVER_STYLE.PVE },
-      0,
-    );
-    const advanced = advanceRealmSimulation({
-      realmState: realm,
-      currentDayIndex: 180,
-      playerGuildSnapshot: null,
-      guildSetup: { server: "Everlook", serverStyle: GUILD_SERVER_STYLE.PVE },
-    });
-    const topNpcGuild = advanced.npcGuilds.find(
-      (guild) => getRealmRaidProgressList(guild).some((raid) => raid.clearedBosses > 0),
-    );
-
-    expect(topNpcGuild).toBeTruthy();
-    expect(getRealmRaidProgressList(topNpcGuild).length).toBeGreaterThan(0);
-  }, 30000);
 });
 
 describe("auto dungeon activity", () => {

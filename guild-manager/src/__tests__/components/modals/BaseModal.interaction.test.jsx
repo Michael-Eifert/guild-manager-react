@@ -51,4 +51,32 @@ describe("BaseModal interactions", () => {
     expect(document.activeElement).toBe(trigger);
     trigger.remove();
   });
+
+  it("preserves focus and scroll position when callbacks change while open", () => {
+    const firstOnClose = vi.fn();
+    const latestOnClose = vi.fn();
+    const { rerender } = render(
+      <BaseModal isOpen onClose={firstOnClose} ariaLabel="Stable dialog">
+        <button type="button">First</button>
+        <button type="button">Keep focus</button>
+      </BaseModal>,
+    );
+    const dialog = screen.getByRole("dialog", { name: "Stable dialog" });
+    const focusedButton = screen.getByRole("button", { name: "Keep focus" });
+    focusedButton.focus();
+    dialog.scrollTop = 120;
+
+    rerender(
+      <BaseModal isOpen onClose={latestOnClose} ariaLabel="Stable dialog">
+        <button type="button">First</button>
+        <button type="button">Keep focus</button>
+      </BaseModal>,
+    );
+
+    expect(document.activeElement).toBe(focusedButton);
+    expect(dialog.scrollTop).toBe(120);
+    fireEvent.keyDown(window, { key: "Escape" });
+    expect(firstOnClose).not.toHaveBeenCalled();
+    expect(latestOnClose).toHaveBeenCalledTimes(1);
+  });
 });
