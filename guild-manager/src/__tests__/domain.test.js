@@ -5368,6 +5368,109 @@ describe("realm overview domain", () => {
     ).toBe(false);
   });
 
+  it("randomizes recruitment candidates while guaranteeing the core roles", () => {
+    const players = [
+      ["tank-1", "Tank", "Warrior"],
+      ["tank-2", "Tank", "Warrior"],
+      ["healer-1", "Healer", "Priest"],
+      ["healer-2", "Healer", "Paladin"],
+      ["dps-1", "DPS", "Mage"],
+      ["dps-2", "DPS", "Rogue"],
+      ["dps-3", "DPS", "Hunter"],
+    ].map(([id, role, charClass]) =>
+      createRealmPlayer({
+        id,
+        name: id,
+        faction: GUILD_FACTION.ALLIANCE,
+        race: charClass === "Hunter" ? "Dwarf" : "Human",
+        charClass,
+        role,
+      }),
+    );
+    const realmState = { population: { players } };
+    const search = (random) =>
+      selectRealmRecruitmentCandidates({
+        realmState,
+        faction: GUILD_FACTION.ALLIANCE,
+        tier: { minLevel: 1, maxLevel: 10 },
+        count: 5,
+        random,
+      });
+
+    const first = search(() => 0);
+    const second = search(() => 0.999999);
+
+    for (const candidates of [first, second]) {
+      expect(candidates).toHaveLength(5);
+      expect(new Set(candidates.map((candidate) => candidate.role))).toEqual(
+        new Set(["Tank", "Healer", "DPS"]),
+      );
+    }
+    expect(first.map((candidate) => candidate.id)).not.toEqual(
+      second.map((candidate) => candidate.id),
+    );
+  });
+
+  it("balances roles after excluding applications and existing roster names", () => {
+    const players = [
+      createRealmPlayer({
+        id: "excluded-healer",
+        name: "Applicant",
+        faction: GUILD_FACTION.ALLIANCE,
+        race: "Human",
+        charClass: "Priest",
+        role: "Healer",
+      }),
+      createRealmPlayer({
+        id: "available-healer",
+        name: "Available",
+        faction: GUILD_FACTION.ALLIANCE,
+        race: "Human",
+        charClass: "Paladin",
+        role: "Healer",
+      }),
+      createRealmPlayer({
+        id: "tank",
+        name: "Tank",
+        faction: GUILD_FACTION.ALLIANCE,
+        race: "Human",
+        charClass: "Warrior",
+        role: "Tank",
+      }),
+      createRealmPlayer({
+        id: "dps",
+        name: "Rosterduplicate",
+        faction: GUILD_FACTION.ALLIANCE,
+        race: "Human",
+        charClass: "Mage",
+        role: "DPS",
+      }),
+      createRealmPlayer({
+        id: "available-dps",
+        name: "Available DPS",
+        faction: GUILD_FACTION.ALLIANCE,
+        race: "Human",
+        charClass: "Rogue",
+        role: "DPS",
+      }),
+    ];
+
+    const candidates = selectRealmRecruitmentCandidates({
+      realmState: { population: { players } },
+      faction: GUILD_FACTION.ALLIANCE,
+      tier: { minLevel: 1, maxLevel: 10 },
+      count: 3,
+      excludedPlayerIds: ["excluded-healer"],
+      excludedNames: ["rosterduplicate"],
+      random: () => 0.5,
+    });
+
+    expect(candidates.map((candidate) => candidate.id)).toEqual(
+      expect.arrayContaining(["available-healer", "tank", "available-dps"]),
+    );
+    expect(candidates).toHaveLength(3);
+  });
+
   it("reports realm recruitment market level stats", () => {
     const realm = ensureRealmState(
       null,

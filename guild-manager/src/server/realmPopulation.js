@@ -1072,29 +1072,62 @@ export const selectRealmRecruitmentCandidates = ({
   faction,
   tier,
   count = 5,
+  excludedPlayerIds = [],
+  excludedNames = [],
+  random = Math.random,
 } = {}) => {
   const minLevel = Math.max(1, Number(tier?.minLevel) || 1);
   const maxLevel = Math.max(minLevel, Number(tier?.maxLevel) || minLevel);
-  return (Array.isArray(realmState?.population?.players)
+  const safeCount = Math.max(0, Math.floor(Number(count) || 0));
+  const safeRandom = typeof random === "function" ? random : Math.random;
+  const excludedIdSet = new Set(
+    (Array.isArray(excludedPlayerIds) ? excludedPlayerIds : [])
+      .map((id) => String(id || "").trim())
+      .filter(Boolean),
+  );
+  const excludedNameSet = new Set(
+    (Array.isArray(excludedNames) ? excludedNames : [])
+      .map((name) => String(name || "").trim().toLocaleLowerCase())
+      .filter(Boolean),
+  );
+  const availablePlayers = (Array.isArray(realmState?.population?.players)
     ? realmState.population.players
     : []
-  )
-    .filter(
-      (player) =>
-        player.faction === faction &&
-        player.level >= minLevel &&
-        player.level <= maxLevel &&
-        (player.marketStatus === REALM_MARKET_STATUS.FREE_AGENT ||
-          player.marketStatus === REALM_MARKET_STATUS.OPEN_TO_OFFERS),
-    )
-    .sort((left, right) => {
-      if (left.guildId !== right.guildId) return left.guildId ? 1 : -1;
-      if ((right.itemLevel || 0) !== (left.itemLevel || 0)) {
-        return (right.itemLevel || 0) - (left.itemLevel || 0);
-      }
-      return String(left.name || "").localeCompare(String(right.name || ""));
-    })
-    .slice(0, count);
+  ).filter(
+    (player) =>
+      player.faction === faction &&
+      player.level >= minLevel &&
+      player.level <= maxLevel &&
+      !excludedIdSet.has(String(player.id || "")) &&
+      !excludedNameSet.has(
+        String(player.name || "").trim().toLocaleLowerCase(),
+      ) &&
+      (player.marketStatus === REALM_MARKET_STATUS.FREE_AGENT ||
+        player.marketStatus === REALM_MARKET_STATUS.OPEN_TO_OFFERS),
+  );
+
+  const shuffledPlayers = [...availablePlayers];
+  for (let index = shuffledPlayers.length - 1; index > 0; index -= 1) {
+    const swapIndex = Math.floor(safeRandom() * (index + 1));
+    [shuffledPlayers[index], shuffledPlayers[swapIndex]] = [
+      shuffledPlayers[swapIndex],
+      shuffledPlayers[index],
+    ];
+  }
+
+  const selected = [];
+  const remaining = [...shuffledPlayers];
+  ["Tank", "Healer", "DPS"].forEach((requiredRole) => {
+    if (selected.length >= safeCount) return;
+    const roleIndex = remaining.findIndex(
+      (player) => player.role === requiredRole,
+    );
+    if (roleIndex < 0) return;
+    selected.push(remaining[roleIndex]);
+    remaining.splice(roleIndex, 1);
+  });
+
+  return [...selected, ...remaining].slice(0, safeCount);
 };
 
 export const getRealmRecruitmentMarketStats = ({

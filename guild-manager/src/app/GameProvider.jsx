@@ -2387,14 +2387,11 @@ export const GameProvider = ({ children }) => {
       realmState: realmStateRef.current,
       faction: guildSetupRef.current?.faction || GUILD_FACTION.ALLIANCE,
       tier,
-      count: scoutCount + applicationPlayerIds.size,
+      count: scoutCount,
+      excludedPlayerIds: [...applicationPlayerIds],
+      excludedNames: [...usedNameSet],
+      random: services.random,
     })
-      .filter((player) => !applicationPlayerIds.has(String(player?.id || "")))
-      .filter(
-        (player) =>
-          !usedNameSet.has(String(player?.name || "").trim().toLowerCase()),
-      )
-      .slice(0, scoutCount)
       .map((player) => buildRealmRecruitmentCandidate({ player }));
 
     const updatedGold = Math.max(0, currentGold - scoutCost);
