@@ -1,19 +1,28 @@
-export const EMPTY_GUILD_INVENTORY = Object.freeze({ items: Object.freeze({}) });
+import type { GuildInventory, InventoryEntry } from "../types/itemTypes";
 
-const normalizeItemId = (itemId) => String(itemId || "").trim();
+type LegacyInventorySources = {
+  materialInventory?: Record<string, number>;
+  consumableInventory?: Record<string, number>;
+};
 
-const normalizeQuantity = (quantity) => {
+export const EMPTY_GUILD_INVENTORY: Readonly<GuildInventory> = Object.freeze({
+  items: Object.freeze({}),
+});
+
+const normalizeItemId = (itemId: unknown) => String(itemId || "").trim();
+
+const normalizeQuantity = (quantity: unknown) => {
   const numeric = Number(quantity);
   if (!Number.isFinite(numeric)) return 0;
   return Math.max(0, Math.floor(numeric));
 };
 
-export const cleanupZeroQuantityItems = (guildInventory) => {
+export const cleanupZeroQuantityItems = (guildInventory: GuildInventory | null | undefined): GuildInventory => {
   const safeItems =
     guildInventory?.items && typeof guildInventory.items === "object"
       ? guildInventory.items
       : {};
-  const items = Object.entries(safeItems).reduce((acc, [itemId, quantity]) => {
+  const items = Object.entries(safeItems).reduce<Record<string, number>>((acc, [itemId, quantity]) => {
     const normalizedItemId = normalizeItemId(itemId);
     const normalizedQuantity = normalizeQuantity(quantity);
     if (normalizedItemId && normalizedQuantity > 0) {
@@ -24,13 +33,16 @@ export const cleanupZeroQuantityItems = (guildInventory) => {
   return { items };
 };
 
-export const ensureGuildInventory = (existingInventory = null, fallbackSources = {}) => {
+export const ensureGuildInventory = (
+  existingInventory: GuildInventory | null | undefined = null,
+  fallbackSources: LegacyInventorySources = {},
+): GuildInventory => {
   const baseInventory = cleanupZeroQuantityItems(existingInventory);
-  const mergedItems = { ...baseInventory.items };
+  const mergedItems: Record<string, number> = { ...baseInventory.items };
 
-  [fallbackSources?.materialInventory, fallbackSources?.consumableInventory]
-    .filter((source) => source && typeof source === "object")
+  [fallbackSources.materialInventory, fallbackSources.consumableInventory]
     .forEach((source) => {
+      if (!source) return;
       Object.entries(source).forEach(([itemId, quantity]) => {
         const normalizedItemId = normalizeItemId(itemId);
         const normalizedQuantity = normalizeQuantity(quantity);
@@ -43,20 +55,20 @@ export const ensureGuildInventory = (existingInventory = null, fallbackSources =
   return cleanupZeroQuantityItems({ items: mergedItems });
 };
 
-export const getItemQuantity = (guildInventory, itemId) => {
+export const getItemQuantity = (guildInventory: GuildInventory | null | undefined, itemId: unknown) => {
   const normalizedItemId = normalizeItemId(itemId);
   if (!normalizedItemId) return 0;
   return normalizeQuantity(guildInventory?.items?.[normalizedItemId]);
 };
 
-export const hasItem = (guildInventory, itemId, quantity = 1) =>
+export const hasItem = (guildInventory: GuildInventory | null | undefined, itemId: unknown, quantity: unknown = 1) =>
   getItemQuantity(guildInventory, itemId) >= normalizeQuantity(quantity || 1);
 
 export const addItemToGuildInventory = (
-  guildInventory,
-  itemId,
-  quantity = 1,
-) => {
+  guildInventory: GuildInventory | null | undefined,
+  itemId: unknown,
+  quantity: unknown = 1,
+): GuildInventory => {
   const normalizedItemId = normalizeItemId(itemId);
   const normalizedQuantity = normalizeQuantity(quantity);
   const safeInventory = ensureGuildInventory(guildInventory);
@@ -71,10 +83,10 @@ export const addItemToGuildInventory = (
 };
 
 export const removeItemFromGuildInventory = (
-  guildInventory,
-  itemId,
-  quantity = 1,
-) => {
+  guildInventory: GuildInventory | null | undefined,
+  itemId: unknown,
+  quantity: unknown = 1,
+): GuildInventory => {
   const normalizedItemId = normalizeItemId(itemId);
   const normalizedQuantity = normalizeQuantity(quantity);
   const safeInventory = ensureGuildInventory(guildInventory);
@@ -91,14 +103,20 @@ export const removeItemFromGuildInventory = (
   return { items: nextItems };
 };
 
-export const addItemsToGuildInventory = (guildInventory, entries = []) =>
+export const addItemsToGuildInventory = (
+  guildInventory: GuildInventory | null | undefined,
+  entries: readonly InventoryEntry[] = [],
+) =>
   (Array.isArray(entries) ? entries : []).reduce(
     (inventory, entry) =>
       addItemToGuildInventory(inventory, entry?.itemId, entry?.amount ?? entry?.quantity ?? 1),
     ensureGuildInventory(guildInventory),
   );
 
-export const removeItemsFromGuildInventory = (guildInventory, entries = []) =>
+export const removeItemsFromGuildInventory = (
+  guildInventory: GuildInventory | null | undefined,
+  entries: readonly InventoryEntry[] = [],
+) =>
   (Array.isArray(entries) ? entries : []).reduce(
     (inventory, entry) =>
       removeItemFromGuildInventory(

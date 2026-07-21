@@ -11,8 +11,17 @@ import {
   characterHasProfession,
   getCharacterProfessionSkill,
 } from "./professionUtils";
+import type { Character } from "../types/characterTypes";
+import type { GuildInventory } from "../types/itemTypes";
+import type { RecipeDefinition } from "./recipeDefinitions";
 
-export const canCraftRecipe = ({ character, recipe, guildInventory }) => {
+interface CraftRecipeInput {
+  character: Character;
+  recipe: RecipeDefinition;
+  guildInventory: GuildInventory;
+}
+
+export const canCraftRecipe = ({ character, recipe, guildInventory }: CraftRecipeInput) => {
   if (!character || !recipe) {
     return { canCraft: false, reason: "Missing crafter or recipe." };
   }
@@ -45,7 +54,7 @@ export const craftRecipe = ({
   recipe,
   guildInventory,
   random = Math.random,
-}) => {
+}: CraftRecipeInput & { random?: () => number }) => {
   const craftCheck = canCraftRecipe({ character, recipe, guildInventory });
   const safeInventory = ensureGuildInventory(guildInventory);
   if (!craftCheck.canCraft) {

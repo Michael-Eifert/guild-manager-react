@@ -14,6 +14,19 @@ import {
   getInventoryItemDefinition,
   toEquipmentItem,
 } from "./itemDefinitions";
+import type { Character } from "../types/characterTypes";
+import type {
+  GuildInventory,
+  InventoryItemDefinition,
+} from "../types/itemTypes";
+
+export interface StashPolicy {
+  keepPotentialUpgrades: boolean;
+  keepRareAndEpic: boolean;
+  keepCraftedGear: boolean;
+  autoSellObsoleteGear: boolean;
+  maxStoredEquipmentStacks: number;
+}
 
 export const DEFAULT_STASH_POLICY = Object.freeze({
   keepPotentialUpgrades: true,
@@ -23,15 +36,22 @@ export const DEFAULT_STASH_POLICY = Object.freeze({
   maxStoredEquipmentStacks: 40,
 });
 
-export const ensureStashPolicy = (existingPolicy = null) => ({
+export const ensureStashPolicy = (
+  existingPolicy: Partial<StashPolicy> | null = null,
+): StashPolicy => ({
   ...DEFAULT_STASH_POLICY,
   ...(existingPolicy && typeof existingPolicy === "object" ? existingPolicy : {}),
 });
 
-export const getStableInventoryItemId = (item) =>
+export const getStableInventoryItemId = (
+  item: { id?: unknown; itemId?: unknown } | null | undefined,
+) =>
   String(item?.id || item?.itemId || "").trim();
 
-export const canCharacterUseInventoryEquipment = (character, definition) => {
+export const canCharacterUseInventoryEquipment = (
+  character: Character | null | undefined,
+  definition: InventoryItemDefinition | null | undefined,
+) => {
   if (!character || !definition) return false;
   if (definition.category !== INVENTORY_ITEM_CATEGORY.EQUIPMENT) return false;
   const requiredLevel = Number(definition.levelRequirement || definition.minLevel) || 1;
@@ -43,15 +63,19 @@ export const canCharacterUseInventoryEquipment = (character, definition) => {
   return armorType === "Generic" || allowedArmorTypes.includes(armorType);
 };
 
-export const getBestUpgradeCandidate = ({ itemId, roster }) => {
+export const getBestUpgradeCandidate = ({ itemId, roster }: {
+  itemId: unknown;
+  roster: readonly Character[];
+}) => {
   const definition = getInventoryItemDefinition(itemId);
   const equipmentItem = toEquipmentItem(definition);
-  if (!equipmentItem) return null;
+  if (!equipmentItem?.slot) return null;
+  const equipmentSlot = equipmentItem.slot;
 
   return (Array.isArray(roster) ? roster : [])
     .filter((character) => canCharacterUseInventoryEquipment(character, definition))
     .map((character) => {
-      const currentItem = character?.equipment?.[equipmentItem.slot];
+      const currentItem = character?.equipment?.[equipmentSlot];
       const currentItemLevel = getItemEffectiveLevel(currentItem);
       const newItemLevel = getItemEffectiveLevel(equipmentItem);
       return {
@@ -70,13 +94,17 @@ export const getBestUpgradeCandidate = ({ itemId, roster }) => {
     })[0] || null;
 };
 
-export const isPotentialUpgrade = (itemId, roster) =>
+export const isPotentialUpgrade = (itemId: unknown, roster: readonly Character[]) =>
   Boolean(getBestUpgradeCandidate({ itemId, roster }));
 
 export const tryAutoEquipItemFromGuildStash = ({
   itemId,
   roster,
   guildInventory,
+}: {
+  itemId: unknown;
+  roster: Character[];
+  guildInventory: GuildInventory;
 }) => {
   const safeInventory = ensureGuildInventory(guildInventory);
   if (getItemQuantity(safeInventory, itemId) <= 0) {
@@ -100,7 +128,7 @@ export const tryAutoEquipItemFromGuildStash = ({
       ...character,
       equipment: {
         ...(character.equipment || {}),
-        [candidate.item.slot]: candidate.item,
+        [candidate.item.slot as string]: candidate.item,
       },
     };
   });
@@ -120,6 +148,10 @@ export const shouldStoreItem = ({
   itemId,
   roster,
   policy = DEFAULT_STASH_POLICY,
+}: {
+  itemId: unknown;
+  roster: readonly Character[];
+  policy?: StashPolicy;
 }) => {
   const definition = getInventoryItemDefinition(itemId);
   if (!definition) return false;
@@ -136,6 +168,10 @@ export const cleanupGuildStash = ({
   guildInventory,
   roster,
   policy = DEFAULT_STASH_POLICY,
+}: {
+  guildInventory: GuildInventory;
+  roster: readonly Character[];
+  policy?: StashPolicy;
 }) => {
   const safePolicy = ensureStashPolicy(policy);
   let nextInventory = ensureGuildInventory(guildInventory);

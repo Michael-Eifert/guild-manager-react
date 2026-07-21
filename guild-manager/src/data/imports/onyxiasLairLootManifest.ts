@@ -1,7 +1,9 @@
+import type { LootManifestEntry } from "../../types/itemTypes";
+
 const ONYXIAS_LAIR_SET_ID = "onyxias_lair";
 const ONYXIAS_LAIR_SET_NAME = "Onyxia's Lair";
 
-const wowItemIcon = (iconCode) =>
+const wowItemIcon = (iconCode: string) =>
   `https://wow.zamimg.com/images/wow/icons/large/${String(iconCode || "inv_misc_questionmark").toLowerCase()}.jpg`;
 
 const BOSS = Object.freeze({
@@ -201,8 +203,10 @@ export const ONYXIAS_LAIR_ACTIVE_LOOT_MANIFEST = Object.freeze([
 
 export const unsupportedOnyxiasLairDrops = Object.freeze([]);
 
-export const convertOnyxiasLairManifestEntry = (entry) => ({
-  id: entry.internalId,
+export const convertOnyxiasLairManifestEntry = (
+  entry: LootManifestEntry,
+) => ({
+  id: entry.internalId as number,
   wowheadId: entry.wowheadId,
   name: entry.name,
   slot: entry.slot,
@@ -212,7 +216,7 @@ export const convertOnyxiasLairManifestEntry = (entry) => ({
   itemLevel: entry.itemLevel,
   dungeonSetId: ONYXIAS_LAIR_SET_ID,
   dungeonSetName: ONYXIAS_LAIR_SET_NAME,
-  icon: wowItemIcon(entry.iconCode),
+  icon: wowItemIcon(entry.iconCode || "inv_misc_questionmark"),
   sourceBosses: Array.isArray(entry.sourceBosses) ? [...entry.sourceBosses] : [],
   allowedClasses: Array.isArray(entry.allowedClasses)
     ? [...entry.allowedClasses]

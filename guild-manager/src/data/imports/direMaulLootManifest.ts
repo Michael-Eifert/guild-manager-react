@@ -1,7 +1,7 @@
 const DIRE_MAUL_SET_ID = "dire_maul";
 const DIRE_MAUL_SET_NAME = "Dire Maul";
 
-const wowItemIcon = (iconCode) =>
+const wowItemIcon = (iconCode: string) =>
   `https://wow.zamimg.com/images/wow/icons/large/${String(iconCode || "inv_misc_questionmark").toLowerCase()}.jpg`;
 
 export const DIRE_MAUL_BOSSES = Object.freeze({
@@ -22,6 +22,18 @@ export const DIRE_MAUL_BOSSES = Object.freeze({
   KROMCRUSH: "Captain Kromcrush",
   KING: "King Gordok & Cho'Rush the Observer",
 });
+
+type DireMaulManifestEntry = readonly [
+  wowheadId: number,
+  name: string,
+  slot: string,
+  type: string,
+  minLevel: number,
+  iconCode: string,
+  dungeonWing: string,
+  sourceBoss: string,
+  stats: Readonly<Record<string, number>>,
+];
 
 // Active equipment from the notable/boss loot tables in the three Wowhead guides.
 // Stats use the game's compact stat model while names, wings, and boss sources mirror Classic.
@@ -74,9 +86,9 @@ export const DIRE_MAUL_ACTIVE_LOOT_MANIFEST = Object.freeze([
   [18534, "Rod of the Ogre Magi", "mainHand", "Generic", 58, "inv_staff_32", "North", DIRE_MAUL_BOSSES.KING, { intellect: 15, spirit: 12, stamina: 9 }],
   [18537, "Counterattack Lodestone", "trinket", "Generic", 58, "inv_stone_15", "North", DIRE_MAUL_BOSSES.KING, { agility: 12, stamina: 10 }],
   [18538, "Treant's Bane", "mainHand", "Generic", 58, "inv_axe_17", "North", DIRE_MAUL_BOSSES.KING, { strength: 17, stamina: 10 }],
-]);
+] satisfies readonly DireMaulManifestEntry[]);
 
-export const convertDireMaulManifestEntry = (entry) => {
+export const convertDireMaulManifestEntry = (entry: DireMaulManifestEntry) => {
   const [wowheadId, name, slot, type, minLevel, iconCode, dungeonWing, sourceBoss, stats] = entry;
   return {
     id: wowheadId,

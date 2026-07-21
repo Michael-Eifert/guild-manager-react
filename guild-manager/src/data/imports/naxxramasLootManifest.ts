@@ -1,3 +1,5 @@
+import type { LootManifestEntry } from "../../types/itemTypes";
+
 const NAXXRAMAS_SET_ID = "naxxramas";
 const NAXXRAMAS_SET_NAME = "Naxxramas";
 
@@ -16,7 +18,7 @@ const ACTIVE_EQUIPMENT_SLOTS = Object.freeze([
   "mainHand",
 ]);
 
-const wowItemIcon = (iconCode) =>
+const wowItemIcon = (iconCode: string) =>
   `https://wow.zamimg.com/images/wow/icons/large/${String(iconCode || "inv_misc_questionmark").toLowerCase()}.jpg`;
 
 const BOSS = Object.freeze({
@@ -271,7 +273,9 @@ const TIER_THREE_CLASS_SETS = Object.freeze([
 ]);
 
 const TIER_THREE_PIECES = TIER_THREE_CLASS_SETS.flatMap((classSet, classIndex) =>
-  Object.entries(classSet.pieces).map(([pieceSlot, [wowheadId, name]], slotIndex) => ({
+  Object.entries(
+    classSet.pieces as unknown as Readonly<Record<string, readonly [number, string]>>,
+  ).map(([pieceSlot, [wowheadId, name]], slotIndex) => ({
     internalId: 403000 + classIndex * 20 + slotIndex,
     wowheadId,
     name,
@@ -280,12 +284,16 @@ const TIER_THREE_PIECES = TIER_THREE_CLASS_SETS.flatMap((classSet, classIndex) =
     minLevel: 60,
     itemLevel: 90,
     iconCode:
-      TIER_THREE_ICON_BY_SLOT[classSet.type]?.[pieceSlot] || "inv_misc_questionmark",
+      (TIER_THREE_ICON_BY_SLOT as Readonly<Record<string, Readonly<Record<string, string>>>>)[classSet.type]?.[pieceSlot] || "inv_misc_questionmark",
     allowedClasses: [classSet.className],
     setId: classSet.setId,
     setName: classSet.setName,
     stats: { ...classSet.stats },
-    ...SLOT_SOURCE[pieceSlot],
+    ...(SLOT_SOURCE as unknown as Readonly<Record<string, {
+      slot?: string;
+      unsupportedSlot?: string;
+      sourceBosses: readonly string[];
+    }>>)[pieceSlot],
   })),
 );
 
@@ -789,7 +797,9 @@ const NAXXRAMAS_ACCESSORY_DROPS = Object.freeze([
 ]);
 
 export const NAXXRAMAS_ACTIVE_LOOT_MANIFEST = Object.freeze([
-  ...TIER_THREE_PIECES.filter((entry) => ACTIVE_EQUIPMENT_SLOTS.includes(entry.slot)),
+  ...TIER_THREE_PIECES.filter((entry) =>
+    (ACTIVE_EQUIPMENT_SLOTS as readonly string[]).includes(entry.slot || ""),
+  ),
   ...EXTRA_NAXXRAMAS_DROPS,
   ...NAXXRAMAS_ACCESSORY_DROPS,
 ]);
@@ -799,8 +809,10 @@ export const unsupportedNaxxramasDrops = Object.freeze([
   ...UNSUPPORTED_EXTRA_DROPS,
 ]);
 
-export const convertNaxxramasManifestEntry = (entry) => ({
-  id: entry.internalId,
+export const convertNaxxramasManifestEntry = (
+  entry: LootManifestEntry,
+) => ({
+  id: entry.internalId as number,
   wowheadId: entry.wowheadId,
   name: entry.name,
   slot: entry.slot,
@@ -810,7 +822,7 @@ export const convertNaxxramasManifestEntry = (entry) => ({
   itemLevel: entry.itemLevel,
   dungeonSetId: NAXXRAMAS_SET_ID,
   dungeonSetName: NAXXRAMAS_SET_NAME,
-  icon: wowItemIcon(entry.iconCode),
+  icon: wowItemIcon(entry.iconCode || "inv_misc_questionmark"),
   sourceBosses: Array.isArray(entry.sourceBosses) ? [...entry.sourceBosses] : [],
   allowedClasses: Array.isArray(entry.allowedClasses)
     ? [...entry.allowedClasses]

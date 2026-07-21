@@ -1,3 +1,5 @@
+import type { LootManifestEntry } from "../../types/itemTypes";
+
 const AHN_QIRAJ_TEMPLE_SET_ID = "ahn_qiraj_temple";
 const AHN_QIRAJ_TEMPLE_SET_NAME = "Temple of Ahn'Qiraj";
 const ACTIVE_EQUIPMENT_SLOTS = Object.freeze([
@@ -15,7 +17,7 @@ const ACTIVE_EQUIPMENT_SLOTS = Object.freeze([
   "mainHand",
 ]);
 
-const wowItemIcon = (iconCode) =>
+const wowItemIcon = (iconCode: string) =>
   `https://wow.zamimg.com/images/wow/icons/large/${String(iconCode || "inv_misc_questionmark").toLowerCase()}.jpg`;
 
 const BOSS = Object.freeze({
@@ -689,8 +691,10 @@ export const unsupportedAhnQirajTempleDrops = Object.freeze(
   ),
 );
 
-export const convertAhnQirajTempleManifestEntry = (entry) => ({
-  id: entry.internalId ?? entry.wowheadId,
+export const convertAhnQirajTempleManifestEntry = (
+  entry: LootManifestEntry,
+) => ({
+  id: (entry.internalId ?? entry.wowheadId) as number,
   name: entry.name,
   slot: entry.slot,
   quality: entry.quality,
@@ -703,12 +707,12 @@ export const convertAhnQirajTempleManifestEntry = (entry) => ({
     ? [...entry.allowedClasses]
     : undefined,
   internalId: entry.internalId,
-  icon: wowItemIcon(entry.iconCode),
+  icon: wowItemIcon(entry.iconCode || "inv_misc_questionmark"),
   stats: entry.stats ? { ...entry.stats } : undefined,
 });
 
 export const AHN_QIRAJ_TEMPLE_ITEMS = Object.freeze(
   AHN_QIRAJ_TEMPLE_ACTIVE_LOOT_MANIFEST
-    .filter((entry) => ACTIVE_EQUIPMENT_SLOTS.includes(entry.slot))
+    .filter((entry) => (ACTIVE_EQUIPMENT_SLOTS as readonly string[]).includes(entry.slot || ""))
     .map(convertAhnQirajTempleManifestEntry),
 );

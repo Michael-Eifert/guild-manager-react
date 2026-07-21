@@ -4,12 +4,39 @@ import {
   removeItemFromGuildInventory,
 } from "../inventory/guildInventoryUtils";
 import { getInventoryItemDefinition } from "../inventory/itemDefinitions";
+import type { GuildInventory } from "../types/itemTypes";
+import type { Mission } from "../types/missionTypes";
 
 export const CONSUMABLE_MODE = Object.freeze({
   NONE: "none",
   BASIC: "basic",
   BEST: "best",
 });
+
+export type ConsumableMode =
+  typeof CONSUMABLE_MODE[keyof typeof CONSUMABLE_MODE];
+
+interface ConsumableEffect {
+  dungeonSuccessBonus: number;
+  raidSuccessBonus: number;
+  wipeChanceReduction: number;
+}
+
+export interface ConsumedItem {
+  itemId: string;
+  quantity: number;
+  coverageDenominator: number;
+  name: string;
+}
+
+export interface ConsumableMissionModifiers {
+  mode: ConsumableMode;
+  consumedItems: ConsumedItem[];
+  effects: ConsumableEffect;
+  successBonusPercent: number;
+  failReductionPercent: number;
+  hasConsumables: boolean;
+}
 
 export const CONSUMABLE_MODE_OPTIONS = Object.freeze([
   { value: CONSUMABLE_MODE.NONE, label: "No Consumables" },
@@ -38,12 +65,18 @@ export const CONSUMABLE_EFFECTS = Object.freeze({
     raidSuccessBonus: 0.04,
     wipeChanceReduction: 0.02,
   },
-});
+} satisfies Record<string, ConsumableEffect>);
 
-const getEffectForItem = (itemId) =>
-  CONSUMABLE_EFFECTS[getInventoryItemDefinition(itemId)?.effect || itemId] || null;
+const EFFECTS_BY_ID: Readonly<Record<string, ConsumableEffect>> = CONSUMABLE_EFFECTS;
 
-const takeAvailable = ({ guildInventory, itemId, desiredQuantity }) => {
+const getEffectForItem = (itemId: string) =>
+  EFFECTS_BY_ID[getInventoryItemDefinition(itemId)?.effect || itemId] || null;
+
+const takeAvailable = ({ guildInventory, itemId, desiredQuantity }: {
+  guildInventory: GuildInventory;
+  itemId: string;
+  desiredQuantity: number;
+}) => {
   const available = getItemQuantity(guildInventory, itemId);
   return Math.max(0, Math.min(available, Math.floor(Number(desiredQuantity) || 0)));
 };
@@ -53,12 +86,17 @@ export const getConsumableMissionModifiers = ({
   mission,
   partySize = 0,
   guildInventory,
-}) => {
+}: {
+  mode?: ConsumableMode;
+  mission?: Pick<Mission, "isRaid"> | null;
+  partySize?: number;
+  guildInventory: GuildInventory;
+}): ConsumableMissionModifiers => {
   const safeInventory = ensureGuildInventory(guildInventory);
   const safePartySize = Math.max(1, Math.floor(Number(partySize) || 1));
   const groupCount = Math.max(1, Math.ceil(safePartySize / 5));
   const isRaid = mission?.isRaid === true;
-  const selected = [];
+  const selected: Array<Omit<ConsumedItem, "name">> = [];
 
   if (mode === CONSUMABLE_MODE.BASIC) {
     selected.push({
@@ -153,6 +191,9 @@ export const getConsumableMissionModifiers = ({
 export const consumeMissionConsumables = ({
   guildInventory,
   modifiers,
+}: {
+  guildInventory: GuildInventory;
+  modifiers: Pick<ConsumableMissionModifiers, "consumedItems"> | null | undefined;
 }) => {
   let nextInventory = ensureGuildInventory(guildInventory);
   (Array.isArray(modifiers?.consumedItems) ? modifiers.consumedItems : []).forEach(
@@ -167,7 +208,9 @@ export const consumeMissionConsumables = ({
   return nextInventory;
 };
 
-export const formatConsumableUseSummary = (modifiers) => {
+export const formatConsumableUseSummary = (
+  modifiers: Pick<ConsumableMissionModifiers, "consumedItems" | "successBonusPercent"> | null | undefined,
+) => {
   const consumedItems = Array.isArray(modifiers?.consumedItems)
     ? modifiers.consumedItems
     : [];

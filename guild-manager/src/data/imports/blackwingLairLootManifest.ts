@@ -1,7 +1,9 @@
+import type { LootManifestEntry } from "../../types/itemTypes";
+
 const BLACKWING_LAIR_SET_ID = "blackwing_lair";
 const BLACKWING_LAIR_SET_NAME = "Blackwing Lair";
 
-const wowItemIcon = (iconCode) =>
+const wowItemIcon = (iconCode: string) =>
   `https://wow.zamimg.com/images/wow/icons/large/${String(iconCode || "inv_misc_questionmark").toLowerCase()}.jpg`;
 
 const BOSS = Object.freeze({
@@ -194,7 +196,7 @@ const TIER_TWO_ICON_BY_WOWHEAD_ID = Object.freeze({
   16964: "inv_gauntlets_10",
 });
 
-const getSlotIcon = (slot, armorType) => {
+const getSlotIcon = (slot: string, armorType: string) => {
   if (slot === "chest") return armorType === "Cloth" ? "inv_chest_cloth_03" : "inv_chest_chain_05";
   if (slot === "feet") return armorType === "Cloth" ? "inv_boots_07" : "inv_boots_plate_03";
   if (slot === "hands") return armorType === "Cloth" ? "inv_gauntlets_17" : "inv_gauntlets_30";
@@ -203,11 +205,13 @@ const getSlotIcon = (slot, armorType) => {
   return "inv_misc_questionmark";
 };
 
-const getTierTwoIcon = (wowheadId, slot, armorType) =>
-  TIER_TWO_ICON_BY_WOWHEAD_ID[wowheadId] || getSlotIcon(slot, armorType);
+const getTierTwoIcon = (wowheadId: number, slot: string, armorType: string) =>
+  (TIER_TWO_ICON_BY_WOWHEAD_ID as Readonly<Record<number, string>>)[wowheadId] || getSlotIcon(slot, armorType);
 
 const TIER_TWO_PIECES = TIER_TWO_CLASS_SETS.flatMap((classSet, classIndex) =>
-  Object.entries(classSet.pieces).map(([pieceSlot, [wowheadId, name]], slotIndex) => ({
+  Object.entries(
+    classSet.pieces as unknown as Readonly<Record<string, readonly [number, string]>>,
+  ).map(([pieceSlot, [wowheadId, name]], slotIndex) => ({
     internalId: 402000 + classIndex * 10 + slotIndex,
     wowheadId,
     name,
@@ -220,7 +224,11 @@ const TIER_TWO_PIECES = TIER_TWO_CLASS_SETS.flatMap((classSet, classIndex) =>
     setId: classSet.setId,
     setName: classSet.setName,
     stats: { ...classSet.stats },
-    ...SLOT_SOURCE[pieceSlot],
+    ...(SLOT_SOURCE as unknown as Readonly<Record<string, {
+      slot?: string;
+      unsupportedSlot?: string;
+      sourceBosses: readonly string[];
+    }>>)[pieceSlot],
   })),
 );
 
@@ -568,8 +576,10 @@ export const unsupportedBlackwingLairDrops = Object.freeze(
   TIER_TWO_PIECES.filter((entry) => entry.unsupportedSlot),
 );
 
-export const convertBlackwingLairManifestEntry = (entry) => ({
-  id: entry.internalId,
+export const convertBlackwingLairManifestEntry = (
+  entry: LootManifestEntry,
+) => ({
+  id: entry.internalId as number,
   wowheadId: entry.wowheadId,
   name: entry.name,
   slot: entry.slot,
@@ -579,7 +589,7 @@ export const convertBlackwingLairManifestEntry = (entry) => ({
   itemLevel: entry.itemLevel,
   dungeonSetId: BLACKWING_LAIR_SET_ID,
   dungeonSetName: BLACKWING_LAIR_SET_NAME,
-  icon: wowItemIcon(entry.iconCode),
+  icon: wowItemIcon(entry.iconCode || "inv_misc_questionmark"),
   sourceBosses: Array.isArray(entry.sourceBosses) ? [...entry.sourceBosses] : [],
   allowedClasses: Array.isArray(entry.allowedClasses)
     ? [...entry.allowedClasses]

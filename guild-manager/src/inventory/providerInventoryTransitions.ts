@@ -7,10 +7,10 @@ import {
 } from "./itemEvaluation";
 import { getInventoryItemDefinition, INVENTORY_ITEM_CATEGORY } from "./itemDefinitions";
 import { getItemQuantity, removeItemFromGuildInventory } from "./guildInventoryUtils";
-import type { Character, GuildLogEntry, UnknownRecord } from "../app/gameTypes";
-
-type Inventory = UnknownRecord;
-type AnyRecord = Record<string, any>;
+import type { GuildLogEntry } from "../app/gameTypes";
+import type { Character } from "../types/characterTypes";
+import type { GuildInventory } from "../types/itemTypes";
+import type { StashPolicy } from "./itemEvaluation";
 
 export const craftInventoryRecipe = ({
   characterId,
@@ -23,12 +23,15 @@ export const craftInventoryRecipe = ({
   characterId: string;
   recipeId: string;
   roster: Character[];
-  guildInventory: Inventory;
-  stashPolicy: UnknownRecord;
+  guildInventory: GuildInventory;
+  stashPolicy: StashPolicy;
   guildGold: number;
 }) => {
   const recipe = getRecipeDefinition(recipeId);
   const character = roster.find((member) => member.id === characterId);
+  if (!recipe || !character) {
+    return { crafted: false as const, reason: "Missing crafter or recipe." };
+  }
   const result = craftRecipe({ character, recipe, guildInventory });
   if (!result.crafted) return { crafted: false as const, reason: result.reason };
 
@@ -54,7 +57,7 @@ export const craftInventoryRecipe = ({
       !shouldStoreItem({
         itemId: result.outputItemId,
         roster: nextRoster,
-        policy: stashPolicy as any,
+        policy: stashPolicy,
       })
     ) {
       const quantity = Math.min(
@@ -91,7 +94,7 @@ export const sellGuildStashItem = ({
 }: {
   itemId: string;
   quantity?: number;
-  guildInventory: Inventory;
+  guildInventory: GuildInventory;
   guildGold: number;
 }) => {
   const definition = getInventoryItemDefinition(itemId);
@@ -118,7 +121,7 @@ export const autoEquipGuildStashItem = ({
 }: {
   itemId: string;
   roster: Character[];
-  guildInventory: Inventory;
+  guildInventory: GuildInventory;
 }) => tryAutoEquipItemFromGuildStash({ itemId, roster, guildInventory });
 
 export const cleanGuildStash = ({
@@ -128,14 +131,14 @@ export const cleanGuildStash = ({
   guildGold,
 }: {
   roster: Character[];
-  guildInventory: Inventory;
-  stashPolicy: AnyRecord;
+  guildInventory: GuildInventory;
+  stashPolicy: StashPolicy;
   guildGold: number;
 }) => {
   const cleanup = cleanupGuildStash({
     guildInventory,
     roster,
-    policy: stashPolicy as any,
+    policy: stashPolicy,
   });
   return { ...cleanup, guildGold: guildGold + cleanup.goldGained };
 };

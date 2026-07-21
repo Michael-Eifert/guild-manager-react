@@ -1,6 +1,8 @@
 import type { ItemDefinition } from "../types/itemTypes";
 import type { Mission } from "../types/missionTypes";
 
+type LootTableItem = ItemDefinition & Required<Pick<ItemDefinition, "quality" | "minLevel" | "slot">>;
+
 export const SOURCE_WORLD = "World";
 
 export const getItemSource = (item: Pick<ItemDefinition, "dungeon" | "dungeonSetName">) =>
@@ -19,15 +21,15 @@ export const parseRecommendedRange = (recommended: unknown) => {
   return { min, max };
 };
 
-export const groupByQuality = (items: readonly ItemDefinition[]) =>
-  items.reduce<Record<number, ItemDefinition[]>>((acc, item) => {
+export const groupByQuality = (items: readonly LootTableItem[]) =>
+  items.reduce<Record<number, LootTableItem[]>>((acc, item) => {
     const key = item.quality;
     if (!acc[key]) acc[key] = [];
     acc[key].push(item);
     return acc;
   }, {});
 
-export const sortLootItems = (items: readonly ItemDefinition[]) =>
+export const sortLootItems = (items: readonly LootTableItem[]) =>
   [...items].sort((a, b) => {
     if (a.quality !== b.quality) return b.quality - a.quality;
     if (a.minLevel !== b.minLevel) return a.minLevel - b.minLevel;

@@ -1,3 +1,5 @@
+import type { InventoryItemDefinition, ItemDefinition } from "../types/itemTypes";
+
 export const INVENTORY_ITEM_CATEGORY = Object.freeze({
   MATERIAL: "material",
   CONSUMABLE: "consumable",
@@ -246,15 +248,20 @@ export const PROFESSION_ITEM_DEFINITIONS = Object.freeze({
     profession: "Leatherworking",
     sellValue: 12,
   },
-});
+} satisfies Record<string, InventoryItemDefinition>);
 
-export const getInventoryItemDefinition = (itemId) =>
-  PROFESSION_ITEM_DEFINITIONS[String(itemId || "").trim()] || null;
+const INVENTORY_DEFINITIONS_BY_ID: Readonly<Record<string, InventoryItemDefinition>> =
+  PROFESSION_ITEM_DEFINITIONS;
+
+export const getInventoryItemDefinition = (itemId: unknown): InventoryItemDefinition | null =>
+  INVENTORY_DEFINITIONS_BY_ID[String(itemId || "").trim()] || null;
 
 export const getAllInventoryItemDefinitions = () =>
   Object.values(PROFESSION_ITEM_DEFINITIONS);
 
-export const toEquipmentItem = (definition) => {
+export const toEquipmentItem = (
+  definition: InventoryItemDefinition | null | undefined,
+): ItemDefinition | null => {
   if (!definition || definition.category !== INVENTORY_ITEM_CATEGORY.EQUIPMENT) {
     return null;
   }

@@ -4,6 +4,27 @@ export const CRAFTING_PROFESSIONS = Object.freeze({
   ALCHEMY: "Alchemy",
 });
 
+export type CraftingProfession =
+  typeof CRAFTING_PROFESSIONS[keyof typeof CRAFTING_PROFESSIONS];
+
+export interface RecipeMaterial {
+  itemId: string;
+  amount: number;
+}
+
+export interface RecipeDefinition {
+  id: string;
+  name: string;
+  profession: CraftingProfession;
+  requiredSkill: number;
+  type: "gear" | "consumable";
+  outputItemId: string;
+  outputQuantity: number;
+  materials: RecipeMaterial[];
+  skillGainChance: number;
+  purpose: "skillup" | "upgrade" | "consumable";
+}
+
 export const RECIPE_DEFINITIONS = Object.freeze([
   {
     id: "recipe_apprentice_cloth_robe",
@@ -156,10 +177,10 @@ export const RECIPE_DEFINITIONS = Object.freeze([
     skillGainChance: 0.4,
     purpose: "consumable",
   },
-]);
+] satisfies readonly RecipeDefinition[]);
 
-export const getRecipeDefinition = (recipeId) =>
+export const getRecipeDefinition = (recipeId: string) =>
   RECIPE_DEFINITIONS.find((recipe) => recipe.id === recipeId) || null;
 
-export const getRecipesForProfession = (professionName) =>
+export const getRecipesForProfession = (professionName: string) =>
   RECIPE_DEFINITIONS.filter((recipe) => recipe.profession === professionName);

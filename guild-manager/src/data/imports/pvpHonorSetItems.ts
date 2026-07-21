@@ -5,7 +5,7 @@ export const PVP_HONOR_SET_NAME = "PvP Honor Sets";
 export const PVP_GEAR_SET_ID = "pvp_gear";
 export const PVP_GEAR_SET_NAME = "PvP Gear";
 
-const wowItemIcon = (iconCode) =>
+const wowItemIcon = (iconCode: string) =>
   `https://wow.zamimg.com/images/wow/icons/large/${String(iconCode || "inv_misc_questionmark").toLowerCase()}.jpg`;
 
 const PVP_HONOR_QUALITY = Object.freeze({
@@ -1373,29 +1373,62 @@ const SETS = Object.freeze([
   },
 ]);
 
-const buildStatsForItem = ({ className, slot, quality }) => {
-  const baseStats = CLASS_STATS[className] || { stamina: 16 };
+type HonorSetVariant = {
+  faction: string;
+  quality: string;
+  setId: string;
+  setName: string;
+  pieces: Readonly<Record<string, string>>;
+};
+
+const buildStatsForItem = ({
+  className,
+  slot,
+  quality,
+}: {
+  className: string;
+  slot: string;
+  quality: string;
+}) => {
+  const baseStats =
+    (CLASS_STATS as Readonly<Record<string, Readonly<Record<string, number>>>>)[className] ||
+    { stamina: 16 };
   const slotScale =
     slot === "chest" || slot === "legs" ? 1.1 : slot === "head" ? 1 : 0.85;
   const qualityScale = quality === PVP_HONOR_QUALITY.EPIC ? 1.18 : 1;
-  return Object.entries(baseStats).reduce((stats, [stat, value]) => {
+  return Object.entries(baseStats).reduce<Record<string, number>>((stats, [stat, value]) => {
     stats[stat] = Math.max(1, Math.round(value * slotScale * qualityScale));
     return stats;
   }, {});
 };
 
-const getHonorRankForItem = (quality, slot) =>
+const getHonorRankForItem = (quality: string, slot: string) =>
   quality === PVP_HONOR_QUALITY.EPIC
-    ? EPIC_RANK_BY_SLOT[slot]
-    : PVP_HONOR_RANK_BY_SLOT[slot];
+    ? (EPIC_RANK_BY_SLOT as Readonly<Record<string, number>>)[slot]
+    : (PVP_HONOR_RANK_BY_SLOT as Readonly<Record<string, number>>)[slot];
 
-const getPvpItemMetadata = (itemName) => PVP_ITEM_METADATA_BY_NAME[itemName] || {};
+const getPvpItemMetadata = (itemName: string): { id?: number; icon?: string } =>
+  (PVP_ITEM_METADATA_BY_NAME as Readonly<Record<string, { id: number; icon: string }>>)[itemName] || {};
 
-const buildVariantItems = ({ className, type, variant, variantIndex, classIndex }) =>
+const buildVariantItems = ({
+  className,
+  type,
+  variant,
+  variantIndex,
+  classIndex,
+}: {
+  className: string;
+  type: string;
+  variant: HonorSetVariant;
+  variantIndex: number;
+  classIndex: number;
+}) =>
   PVP_HONOR_SLOT_ORDER.map((slot, slotIndex) => {
     const itemName = variant.pieces[slot];
     const metadata = getPvpItemMetadata(itemName);
-    const iconCode = metadata.icon || ICON_BY_ARMOR_AND_SLOT[type]?.[slot];
+    const iconCode = metadata.icon ||
+      (ICON_BY_ARMOR_AND_SLOT as Readonly<Record<string, Readonly<Record<string, string>>>>)[type]?.[slot] ||
+      "inv_misc_questionmark";
     const requiredPvpRank = getHonorRankForItem(variant.quality, slot);
 
     return {
@@ -1403,10 +1436,10 @@ const buildVariantItems = ({ className, type, variant, variantIndex, classIndex 
       wowheadId: metadata.id,
       name: itemName,
       slot,
-      quality: PVP_HONOR_ITEM_QUALITY[variant.quality],
+      quality: (PVP_HONOR_ITEM_QUALITY as Readonly<Record<string, number>>)[variant.quality],
       type,
       minLevel: 60,
-      itemLevel: PVP_HONOR_ITEM_LEVEL[variant.quality],
+      itemLevel: (PVP_HONOR_ITEM_LEVEL as Readonly<Record<string, number>>)[variant.quality],
       dungeonSetId: PVP_HONOR_SET_ID,
       dungeonSetName: PVP_HONOR_SET_NAME,
       icon: wowItemIcon(iconCode),
@@ -1550,8 +1583,21 @@ const PVP_EXTRA_REWARD_BLUEPRINTS = Object.freeze([
   }),
 ]);
 
+type PvpExtraRewardBlueprint = {
+  rank: number;
+  idBase: number;
+  slot: string;
+  quality: number;
+  itemLevel: number;
+  names: Readonly<Record<string, string>>;
+  wowheadIds?: Readonly<Record<string, number>>;
+  icons?: Readonly<Record<string, string>>;
+  icon?: string;
+  stats: Readonly<Record<string, number>>;
+};
+
 export const PVP_EXTRA_REWARD_ITEMS = Object.freeze(
-  PVP_EXTRA_REWARD_BLUEPRINTS.flatMap((blueprint) =>
+  (PVP_EXTRA_REWARD_BLUEPRINTS as readonly PvpExtraRewardBlueprint[]).flatMap((blueprint) =>
     [GUILD_FACTION.ALLIANCE, GUILD_FACTION.HORDE].map((faction, factionIndex) => ({
       id: blueprint.idBase + factionIndex,
       wowheadId: blueprint.wowheadIds?.[faction] ?? null,
@@ -1563,7 +1609,7 @@ export const PVP_EXTRA_REWARD_ITEMS = Object.freeze(
       itemLevel: blueprint.itemLevel,
       dungeonSetId: PVP_GEAR_SET_ID,
       dungeonSetName: PVP_GEAR_SET_NAME,
-      icon: wowItemIcon(blueprint.icons?.[faction] ?? blueprint.icon),
+      icon: wowItemIcon(blueprint.icons?.[faction] ?? blueprint.icon ?? "inv_misc_questionmark"),
       faction,
       pvpGear: true,
       pvpRewardCategory: "gear",

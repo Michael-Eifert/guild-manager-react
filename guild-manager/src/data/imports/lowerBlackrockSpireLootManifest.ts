@@ -1,3 +1,5 @@
+import type { LootManifestEntry } from "../../types/itemTypes";
+
 const BLACKROCK_SPIRE_SET_ID = "blackrock_spire";
 const BLACKROCK_SPIRE_SET_NAME = "Blackrock Spire";
 const LOWER_BLACKROCK_SPIRE_WING_NAME = "Lower Blackrock Spire";
@@ -14,7 +16,7 @@ const ACTIVE_EQUIPMENT_SLOTS = Object.freeze([
   "mainHand",
 ]);
 
-const wowItemIcon = (iconCode) =>
+const wowItemIcon = (iconCode: string) =>
   `https://wow.zamimg.com/images/wow/icons/large/${String(iconCode || "inv_misc_questionmark").toLowerCase()}.jpg`;
 
 const BOSS = Object.freeze({
@@ -495,8 +497,10 @@ export const unsupportedLowerBlackrockSpireDrops = Object.freeze([
     ![16718, 16679].includes(entry.wowheadId),
 ));
 
-export const convertLowerBlackrockSpireManifestEntry = (entry) => ({
-  id: entry.wowheadId,
+export const convertLowerBlackrockSpireManifestEntry = (
+  entry: LootManifestEntry,
+) => ({
+  id: entry.wowheadId as number,
   name: entry.name,
   slot: entry.slot,
   quality: entry.quality,
@@ -510,7 +514,7 @@ export const convertLowerBlackrockSpireManifestEntry = (entry) => ({
     ? [...entry.allowedClasses]
     : undefined,
   wowheadId: entry.wowheadId,
-  icon: wowItemIcon(entry.iconCode),
+  icon: wowItemIcon(entry.iconCode || "inv_misc_questionmark"),
   setId: entry.setId,
   setName: entry.setName,
   stats: entry.stats ? { ...entry.stats } : undefined,
@@ -518,6 +522,6 @@ export const convertLowerBlackrockSpireManifestEntry = (entry) => ({
 
 export const LOWER_BLACKROCK_SPIRE_ITEMS = Object.freeze(
   LOWER_BLACKROCK_SPIRE_ACTIVE_LOOT_MANIFEST
-    .filter((entry) => ACTIVE_EQUIPMENT_SLOTS.includes(entry.slot))
+    .filter((entry) => (ACTIVE_EQUIPMENT_SLOTS as readonly string[]).includes(entry.slot || ""))
     .map(convertLowerBlackrockSpireManifestEntry),
 );

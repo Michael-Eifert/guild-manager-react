@@ -12,8 +12,11 @@ import { BLACKWING_LAIR_ITEMS } from "./imports/blackwingLairLootManifest";
 import { NAXXRAMAS_ITEMS } from "./imports/naxxramasLootManifest";
 import { PVP_HONOR_SET_ITEMS } from "./imports/pvpHonorSetItems";
 import { DIRE_MAUL_ITEMS } from "./imports/direMaulLootManifest";
+import type { ItemDefinition } from "../types/itemTypes";
 
-const wowItemIcon = (iconCode) =>
+type ItemLevelBand = { min: number; max: number };
+
+const wowItemIcon = (iconCode: string) =>
   `https://wow.zamimg.com/images/wow/icons/large/${iconCode.toLowerCase()}.jpg`;
 
 const ITEM_LEVEL_BANDS_BY_SOURCE = Object.freeze({
@@ -66,10 +69,10 @@ const RAID_FINAL_BOSS_ITEM_LEVEL = Object.freeze({
   },
 });
 
-const clampItemLevel = (value, band) =>
+const clampItemLevel = (value: unknown, band: ItemLevelBand) =>
   Math.max(band.min, Math.min(band.max, Math.floor(Number(value) || band.min)));
 
-const getStableItemLevelOffset = (item, band) => {
+const getStableItemLevelOffset = (item: ItemDefinition, band: ItemLevelBand) => {
   const span = Math.max(0, band.max - band.min);
   if (span === 0) return 0;
   const source = `${item?.id || ""}:${item?.name || ""}`;
@@ -80,7 +83,7 @@ const getStableItemLevelOffset = (item, band) => {
   return hash % (span + 1);
 };
 
-const getItemSourceKeyForLevelBand = (item) => {
+const getItemSourceKeyForLevelBand = (item: ItemDefinition): string | null => {
   if (item?.dungeonSetId === "blackrock_spire") {
     const sourceBosses = Array.isArray(item.sourceBosses)
       ? item.sourceBosses
@@ -102,16 +105,24 @@ const getItemSourceKeyForLevelBand = (item) => {
   return item?.dungeonSetId || null;
 };
 
-const getFixedSetTierItemLevel = (item) => {
+const getFixedSetTierItemLevel = (item: ItemDefinition) => {
   const setId = String(item?.setId || "").trim();
   const matchedPrefix = Object.keys(SET_TIER_ITEM_LEVEL).find((prefix) =>
     setId.startsWith(prefix),
   );
-  return matchedPrefix ? SET_TIER_ITEM_LEVEL[matchedPrefix] : null;
+  return matchedPrefix
+    ? (SET_TIER_ITEM_LEVEL as Readonly<Record<string, number>>)[matchedPrefix]
+    : null;
 };
 
-const getRaidBossItemLevel = (item, sourceKey, band) => {
-  const bossLevels = RAID_FINAL_BOSS_ITEM_LEVEL[sourceKey];
+const getRaidBossItemLevel = (
+  item: ItemDefinition,
+  sourceKey: string,
+  band: ItemLevelBand,
+) => {
+  const bossLevels = (
+    RAID_FINAL_BOSS_ITEM_LEVEL as Readonly<Record<string, Readonly<Record<string, number>>>>
+  )[sourceKey];
   if (!bossLevels) return null;
   const sourceBosses = Array.isArray(item.sourceBosses)
     ? item.sourceBosses
@@ -123,7 +134,7 @@ const getRaidBossItemLevel = (item, sourceKey, band) => {
   return clampItemLevel(bossLevels[matchedBoss], band);
 };
 
-const getNormalizedItemLevel = (item) => {
+const getNormalizedItemLevel = (item: ItemDefinition) => {
   const explicitItemLevel = Number(item?.itemLevel);
   if (Number.isFinite(explicitItemLevel) && explicitItemLevel > 0) {
     return Math.floor(explicitItemLevel);
@@ -131,7 +142,10 @@ const getNormalizedItemLevel = (item) => {
   const fixedSetItemLevel = getFixedSetTierItemLevel(item);
   if (fixedSetItemLevel !== null) return fixedSetItemLevel;
   const sourceKey = getItemSourceKeyForLevelBand(item);
-  const band = ITEM_LEVEL_BANDS_BY_SOURCE[sourceKey];
+  if (!sourceKey) return null;
+  const band = (
+    ITEM_LEVEL_BANDS_BY_SOURCE as Readonly<Record<string, ItemLevelBand>>
+  )[sourceKey];
   if (!band) return null;
   if (sourceKey === "molten_core") {
     return Number(item?.quality) >= 5 ? 90 : 70;
@@ -147,7 +161,7 @@ const getNormalizedItemLevel = (item) => {
   );
 };
 
-const applyItemLevelTuning = (item) => {
+const applyItemLevelTuning = <T extends ItemDefinition>(item: T): T & { itemLevel?: number } => {
   const itemLevel = getNormalizedItemLevel(item);
   return itemLevel ? { ...item, itemLevel } : item;
 };
@@ -866,14 +880,25 @@ const tierZeroSource = Object.freeze({
   },
 });
 
-const getTierZeroStats = (slot, role) => {
-  const weight = TIER_ZERO_SLOT_WEIGHT[slot] || 0;
+const getTierZeroStats = (slot: string, role: string) => {
+  const weight = (TIER_ZERO_SLOT_WEIGHT as Readonly<Record<string, number>>)[slot] || 0;
+  const roleStats = TIER_ZERO_ROLE_STATS as Readonly<
+    Record<string, Readonly<Record<string, number>>>
+  >;
   return Object.fromEntries(
-    Object.entries(TIER_ZERO_ROLE_STATS[role] || TIER_ZERO_ROLE_STATS.strength).map(
+    Object.entries(roleStats[role] || roleStats.strength).map(
       ([stat, value]) => [stat, value + weight],
     ),
   );
 };
+
+type TierZeroCompletionBlueprint = readonly [
+  classKey: string,
+  wowheadId: number,
+  name: string,
+  slot: string,
+  sourceKey: string,
+];
 
 const TIER_ZERO_COMPLETION_BLUEPRINTS = Object.freeze([
   ["DRUID", 16714, "Wildheart Bracers", "wrist", "world"],
@@ -915,12 +940,18 @@ const TIER_ZERO_COMPLETION_BLUEPRINTS = Object.freeze([
   ["WARRIOR", 16731, "Helm of Valor", "head", "scholomance"],
   ["WARRIOR", 16732, "Legplates of Valor", "legs", "stratholme"],
   ["WARRIOR", 16737, "Gauntlets of Valor", "hands", "scholomance"],
-]);
+] satisfies readonly TierZeroCompletionBlueprint[]);
 
 const buildTierZeroCompletionItems = () =>
   TIER_ZERO_COMPLETION_BLUEPRINTS.map(
     ([classKey, wowheadId, name, slot, sourceKey], index) => {
-      const classMeta = TIER_ZERO_CLASS_META[classKey];
+      const classMeta = (TIER_ZERO_CLASS_META as Readonly<Record<string, {
+        className: string;
+        type: string;
+        setId: string;
+        setName: string;
+        role: string;
+      }>>)[String(classKey)];
       return {
         id: 93000 + index,
         wowheadId,
@@ -929,16 +960,20 @@ const buildTierZeroCompletionItems = () =>
         quality: 3,
         type: classMeta.type,
         minLevel: slot === "head" || slot === "legs" ? 57 : 54,
-        ...tierZeroSource[sourceKey],
+        ...(tierZeroSource as Readonly<Record<string, object>>)[String(sourceKey)],
         sourceBosses:
           sourceKey === "world"
             ? ["High-level world and dungeon enemies"]
             : undefined,
-        icon: wowItemIcon(TIER_ZERO_SLOT_ICONS[slot]?.[classMeta.type] || "INV_Misc_QuestionMark"),
+        icon: wowItemIcon(
+          (TIER_ZERO_SLOT_ICONS as Readonly<
+            Record<string, Readonly<Record<string, string>>>
+          >)[String(slot)]?.[classMeta.type] || "INV_Misc_QuestionMark",
+        ),
         allowedClasses: [classMeta.className],
         setId: classMeta.setId,
         setName: classMeta.setName,
-        stats: getTierZeroStats(slot, classMeta.role),
+        stats: getTierZeroStats(String(slot), classMeta.role),
       };
     },
   );

@@ -15,7 +15,7 @@ const ACTIVE_EQUIPMENT_SLOTS = Object.freeze([
   "mainHand",
 ]);
 
-const wowItemIcon = (iconCode) =>
+const wowItemIcon = (iconCode: string) =>
   `https://wow.zamimg.com/images/wow/icons/large/${String(iconCode || "inv_misc_questionmark").toLowerCase()}.jpg`;
 
 const BOSS = Object.freeze({
@@ -418,7 +418,9 @@ export const unsupportedZulGurubDrops = Object.freeze(
   ),
 );
 
-export const convertZulGurubManifestEntry = (entry) => ({
+export const convertZulGurubManifestEntry = (
+  entry: typeof ZUL_GURUB_ACTIVE_LOOT_MANIFEST[number],
+) => ({
   id: entry.wowheadId,
   name: entry.name,
   slot: entry.slot,
@@ -432,12 +434,12 @@ export const convertZulGurubManifestEntry = (entry) => ({
     ? [...entry.allowedClasses]
     : undefined,
   wowheadId: entry.wowheadId,
-  icon: wowItemIcon(entry.iconCode),
+  icon: wowItemIcon(entry.iconCode || "inv_misc_questionmark"),
   stats: entry.stats ? { ...entry.stats } : undefined,
 });
 
 export const ZUL_GURUB_ITEMS = Object.freeze(
   ZUL_GURUB_ACTIVE_LOOT_MANIFEST
-    .filter((entry) => ACTIVE_EQUIPMENT_SLOTS.includes(entry.slot))
+    .filter((entry) => (ACTIVE_EQUIPMENT_SLOTS as readonly string[]).includes(entry.slot || ""))
     .map(convertZulGurubManifestEntry),
 );

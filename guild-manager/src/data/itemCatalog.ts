@@ -3,18 +3,38 @@ import {
   getItemEffectiveLevel,
   isItemUsableByClass,
 } from "../utils";
+import type { ItemDefinition } from "../types/itemTypes";
 
-const EMPTY_ITEMS = Object.freeze([]);
+export interface ItemCatalogFilters {
+  source?: string | string[];
+  quality?: number | number[] | string;
+  minLevel?: number;
+  maxLevel?: number;
+  className?: string;
+  slot?: string | string[];
+  setPiecesOnly?: boolean;
+  worldOnly?: boolean;
+  dungeonOnly?: boolean;
+}
 
-let itemCatalogPromise = null;
+export interface ItemCatalog {
+  all: () => readonly ItemDefinition[];
+  byId: (id: unknown) => ItemDefinition | null;
+  query: (filters?: ItemCatalogFilters) => ItemDefinition[];
+  getLootLevelRangesBySource: () => Map<string, { min: number; max: number }>;
+}
 
-const hasDungeonSource = (item) =>
+const EMPTY_ITEMS: readonly ItemDefinition[] = Object.freeze([]);
+
+let itemCatalogPromise: Promise<ItemCatalog> | null = null;
+
+const hasDungeonSource = (item: ItemDefinition) =>
   Boolean(
     (typeof item?.dungeon === "string" && item.dungeon.trim()) ||
       (typeof item?.dungeonSetId === "string" && item.dungeonSetId.trim()),
   );
 
-const matchesQuality = (item, quality) => {
+const matchesQuality = (item: ItemDefinition, quality: ItemCatalogFilters["quality"]) => {
   if (quality === undefined || quality === null || quality === "") return true;
   const qualities = Array.isArray(quality) ? quality : [quality];
   const qualitySet = new Set(
@@ -25,7 +45,11 @@ const matchesQuality = (item, quality) => {
   return qualitySet.size === 0 || qualitySet.has(Number(item?.quality));
 };
 
-const matchesLevelRange = (item, minLevel, maxLevel) => {
+const matchesLevelRange = (
+  item: ItemDefinition,
+  minLevel: number | undefined,
+  maxLevel: number | undefined,
+) => {
   const itemLevel = Number(item?.minLevel) || 0;
   const min = Number(minLevel);
   const max = Number(maxLevel);
@@ -34,7 +58,7 @@ const matchesLevelRange = (item, minLevel, maxLevel) => {
   return true;
 };
 
-const matchesSource = (item, source) => {
+const matchesSource = (item: ItemDefinition, source: ItemCatalogFilters["source"]) => {
   if (!source) return true;
   const sourceValues = Array.isArray(source) ? source : [source];
   const sourceSet = new Set(
@@ -44,12 +68,12 @@ const matchesSource = (item, source) => {
   return sourceSet.has(getItemSource(item));
 };
 
-const matchesClass = (item, className) => {
+const matchesClass = (item: ItemDefinition, className: string | undefined) => {
   const normalizedClassName = String(className || "").trim();
   return !normalizedClassName || isItemUsableByClass(item, normalizedClassName);
 };
 
-const matchesSlot = (item, slot) => {
+const matchesSlot = (item: ItemDefinition, slot: ItemCatalogFilters["slot"]) => {
   if (!slot) return true;
   const slots = Array.isArray(slot) ? slot : [slot];
   const slotSet = new Set(
@@ -58,25 +82,27 @@ const matchesSlot = (item, slot) => {
   return slotSet.size === 0 || slotSet.has(String(item?.slot || ""));
 };
 
-export const createItemCatalog = (items = EMPTY_ITEMS) => {
+export const createItemCatalog = (
+  items: readonly ItemDefinition[] = EMPTY_ITEMS,
+): ItemCatalog => {
   const allItems = Object.freeze([...(Array.isArray(items) ? items : [])]);
   const itemsById = new Map(
     allItems
       .filter((item) => item?.id !== undefined && item?.id !== null)
       .map((item) => [String(item.id), item]),
   );
-  let lootLevelRangesBySource = null;
+  let lootLevelRangesBySource: Map<string, { min: number; max: number }> | null = null;
 
   return Object.freeze({
     all() {
       return allItems;
     },
 
-    byId(id) {
+    byId(id: unknown) {
       return itemsById.get(String(id)) || null;
     },
 
-    query(filters = {}) {
+    query(filters: ItemCatalogFilters = {}) {
       const {
         source,
         quality,
@@ -105,7 +131,7 @@ export const createItemCatalog = (items = EMPTY_ITEMS) => {
 
     getLootLevelRangesBySource() {
       if (lootLevelRangesBySource) return lootLevelRangesBySource;
-      lootLevelRangesBySource = allItems.reduce((ranges, item) => {
+      const calculatedRanges = allItems.reduce((ranges, item) => {
         const source = getItemSource(item);
         const itemLevel = getItemEffectiveLevel(item);
         if (!source || !Number.isFinite(itemLevel) || itemLevel <= 0) {
@@ -119,8 +145,9 @@ export const createItemCatalog = (items = EMPTY_ITEMS) => {
         current.min = Math.min(current.min, itemLevel);
         current.max = Math.max(current.max, itemLevel);
         return ranges;
-      }, new Map());
-      return lootLevelRangesBySource;
+      }, new Map<string, { min: number; max: number }>());
+      lootLevelRangesBySource = calculatedRanges;
+      return calculatedRanges;
     },
   });
 };

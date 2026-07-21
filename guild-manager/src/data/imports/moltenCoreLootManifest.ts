@@ -1,3 +1,5 @@
+import type { LootManifestEntry } from "../../types/itemTypes";
+
 const MOLTEN_CORE_SET_ID = "molten_core";
 const MOLTEN_CORE_SET_NAME = "Molten Core";
 const ACTIVE_EQUIPMENT_SLOTS = Object.freeze([
@@ -15,7 +17,7 @@ const ACTIVE_EQUIPMENT_SLOTS = Object.freeze([
   "mainHand",
 ]);
 
-const wowItemIcon = (iconCode) =>
+const wowItemIcon = (iconCode: string) =>
   `https://wow.zamimg.com/images/wow/icons/large/${String(iconCode || "inv_misc_questionmark").toLowerCase()}.jpg`;
 
 const BOSS = Object.freeze({
@@ -131,8 +133,9 @@ const SET_SLOT_BOSSES = Object.freeze({
   legs: [BOSS.MAGMADAR],
 });
 
-const resolveSetSlotBosses = (slot, itemName) => {
-  if (SET_SLOT_BOSSES[slot]) return SET_SLOT_BOSSES[slot];
+const resolveSetSlotBosses = (slot: string, itemName: string) => {
+  const bossesBySlot = SET_SLOT_BOSSES as Readonly<Record<string, readonly string[]>>;
+  if (bossesBySlot[slot]) return bossesBySlot[slot];
   if (slot === "feet") {
     if (
       [
@@ -304,8 +307,8 @@ const buildSetManifestEntries = () =>
       type: setDefinition.type,
       minLevel: 60,
       iconCode:
-        SET_PIECE_ICON_CODES[piece.wowheadId] ||
-        ALL_ARMOR_TYPES[setDefinition.type][piece.slot],
+        (SET_PIECE_ICON_CODES as Readonly<Record<number, string>>)[piece.wowheadId] ||
+        (ALL_ARMOR_TYPES as Readonly<Record<string, Readonly<Record<string, string>>>>)[setDefinition.type][piece.slot],
       sourceBosses: resolveSetSlotBosses(piece.slot, piece.name),
       allowedClasses: setDefinition.allowedClasses,
       setId: setDefinition.setId,
@@ -1340,8 +1343,10 @@ export const unsupportedMoltenCoreDrops = Object.freeze([
     entry.unsupportedSlot !== "finger",
 ));
 
-export const convertMoltenCoreManifestEntry = (entry) => ({
-  id: entry.wowheadId,
+export const convertMoltenCoreManifestEntry = (
+  entry: LootManifestEntry,
+) => ({
+  id: entry.wowheadId as number,
   name: entry.name,
   slot: entry.slot,
   quality: entry.quality,
@@ -1354,7 +1359,7 @@ export const convertMoltenCoreManifestEntry = (entry) => ({
     ? [...entry.allowedClasses]
     : undefined,
   wowheadId: entry.wowheadId,
-  icon: wowItemIcon(entry.iconCode),
+  icon: wowItemIcon(entry.iconCode || "inv_misc_questionmark"),
   setId: entry.setId,
   setName: entry.setName,
   stats: entry.stats ? { ...entry.stats } : undefined,
