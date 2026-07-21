@@ -27,6 +27,9 @@ export const WORLD_PVP_OUTCOME = Object.freeze({
   DEFEAT: "defeat",
 });
 
+export type WorldPvpOutcome =
+  typeof WORLD_PVP_OUTCOME[keyof typeof WORLD_PVP_OUTCOME];
+
 export const WORLD_PVP_REWARD_TABLE = Object.freeze({
   [WORLD_PVP_OUTCOME.VICTORY]: {
     honor: 24,

@@ -2,8 +2,9 @@ import {
   WORLD_PVP_OUTCOME,
   WORLD_PVP_REWARD_TABLE,
 } from "./worldPvpDefinitions";
+import type { WorldPvpOutcome } from "./worldPvpDefinitions";
 
-export const getWorldPvpRewards = (outcome) => {
+export const getWorldPvpRewards = (outcome: WorldPvpOutcome) => {
   const reward =
     WORLD_PVP_REWARD_TABLE[outcome] ||
     WORLD_PVP_REWARD_TABLE[WORLD_PVP_OUTCOME.DRAW];

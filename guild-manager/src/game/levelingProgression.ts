@@ -3,7 +3,7 @@ import { getReqExp } from "../utils";
 
 const { LEVELING_TICK_EXP_MULTIPLIER } = GAMEPLAY_TUNING;
 
-const getLevelingTargetSecondsPerLevel = (level) => {
+const getLevelingTargetSecondsPerLevel = (level: number) => {
   const safeLevel = Math.max(1, Number(level) || 1);
   if (safeLevel <= 5) return 10;
   if (safeLevel <= 12) return 20;
@@ -16,7 +16,7 @@ const getLevelingTargetSecondsPerLevel = (level) => {
   return 300;
 };
 
-export const getLevelingTickExpGain = (level, totalExpMultiplier = 1) => {
+export const getLevelingTickExpGain = (level: number, totalExpMultiplier = 1) => {
   const safeLevel = Math.max(1, Number(level) || 1);
   const reqExp = getReqExp(safeLevel);
   const targetSeconds = getLevelingTargetSecondsPerLevel(safeLevel);

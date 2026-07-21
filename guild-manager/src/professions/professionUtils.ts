@@ -1,15 +1,26 @@
 import { addItemToGuildInventory } from "../inventory/guildInventoryUtils";
 import { pickMaterialForProfession } from "./materialDefinitions";
+import type { Character, CharacterProfession } from "../types/characterTypes";
+import type { GuildInventory } from "../types/itemTypes";
 
-export const getCharacterProfession = (character, professionName) =>
+export const getCharacterProfession = (
+  character: Character | null | undefined,
+  professionName: string,
+): CharacterProfession | null =>
   (Array.isArray(character?.professions) ? character.professions : []).find(
     (profession) => profession?.name === professionName,
   ) || null;
 
-export const getCharacterProfessionSkill = (character, professionName) =>
+export const getCharacterProfessionSkill = (
+  character: Character | null | undefined,
+  professionName: string,
+) =>
   Number(getCharacterProfession(character, professionName)?.skill) || 0;
 
-export const characterHasProfession = (character, professionName) =>
+export const characterHasProfession = (
+  character: Character | null | undefined,
+  professionName: string,
+) =>
   Boolean(getCharacterProfession(character, professionName));
 
 export const applyProfessionSkillGain = ({
@@ -17,7 +28,12 @@ export const applyProfessionSkillGain = ({
   professionName,
   amount = 1,
   maxSkill = 300,
-}) => {
+}: {
+  character: Character;
+  professionName: string;
+  amount?: number;
+  maxSkill?: number;
+}): Character => {
   const safeAmount = Math.max(0, Math.floor(Number(amount) || 0));
   if (!character || safeAmount <= 0) return character;
   return {
@@ -40,6 +56,11 @@ export const generatePassiveProfessionMaterial = ({
   professionName,
   guildInventory,
   random = Math.random,
+}: {
+  character: Character;
+  professionName: string;
+  guildInventory: GuildInventory;
+  random?: () => number;
 }) => {
   const profession = getCharacterProfession(character, professionName);
   if (!profession) {

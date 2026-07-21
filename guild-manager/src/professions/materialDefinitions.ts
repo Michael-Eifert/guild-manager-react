@@ -1,4 +1,17 @@
-const MATERIAL_TABLE = Object.freeze({
+export interface MaterialCandidate {
+  itemId: string;
+  minSkill: number;
+  weight: number;
+}
+
+export type MaterialProfessionName =
+  | "Tailoring"
+  | "Skinning"
+  | "Leatherworking"
+  | "Herbalism"
+  | "Alchemy";
+
+const MATERIAL_TABLE: Readonly<Record<MaterialProfessionName, readonly MaterialCandidate[]>> = Object.freeze({
   Tailoring: [
     { itemId: "linen_cloth", minSkill: 1, weight: 6 },
     { itemId: "simple_thread", minSkill: 1, weight: 2 },
@@ -30,8 +43,8 @@ const MATERIAL_TABLE = Object.freeze({
   ],
 });
 
-export const getMaterialCandidatesForProfession = (professionName, skill = 1) =>
-  (MATERIAL_TABLE[professionName] || []).filter(
+export const getMaterialCandidatesForProfession = (professionName: string, skill = 1) =>
+  ((MATERIAL_TABLE as Readonly<Partial<Record<string, readonly MaterialCandidate[]>>>)[professionName] || []).filter(
     (entry) => (Number(skill) || 1) >= entry.minSkill,
   );
 
@@ -39,6 +52,10 @@ export const pickMaterialForProfession = ({
   professionName,
   skill = 1,
   random = Math.random,
+}: {
+  professionName: string;
+  skill?: number;
+  random?: () => number;
 }) => {
   const candidates = getMaterialCandidatesForProfession(professionName, skill);
   if (candidates.length === 0) return null;

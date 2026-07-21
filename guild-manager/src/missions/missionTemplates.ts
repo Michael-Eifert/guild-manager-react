@@ -1,4 +1,6 @@
-export const cloneMissionTemplate = (mission) => ({
+import type { Mission } from "../types/missionTypes";
+
+export const cloneMissionTemplate = <T extends Mission>(mission: T): T => ({
   ...mission,
   rewardQualities: Array.isArray(mission.rewardQualities)
     ? [...mission.rewardQualities]
@@ -20,4 +22,4 @@ export const cloneMissionTemplate = (mission) => ({
     typeof mission.raidRoleRequirement === "object"
       ? { ...mission.raidRoleRequirement }
       : mission.raidRoleRequirement,
-});
+}) as T;

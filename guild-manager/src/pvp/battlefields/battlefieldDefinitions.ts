@@ -74,5 +74,5 @@ export const PVP_ACTIVITY_FOCUS_OPTIONS = Object.freeze([
 
 export const DEFAULT_PVP_ACTIVITY_FOCUS = PVP_ACTIVITY_FOCUS.LOW;
 
-export const getOpposingFaction = (faction) =>
+export const getOpposingFaction = (faction: string) =>
   faction === GUILD_FACTION.HORDE ? GUILD_FACTION.ALLIANCE : GUILD_FACTION.HORDE;

@@ -1,4 +1,7 @@
-const normalizeIdList = (value) => [
+import type { Character, CharacterId } from "../types/characterTypes";
+import type { Mission } from "../types/missionTypes";
+
+const normalizeIdList = (value: unknown): CharacterId[] => [
   ...new Set(
     (Array.isArray(value) ? value : [])
       .map((id) => String(id || "").trim())
@@ -6,17 +9,17 @@ const normalizeIdList = (value) => [
   ),
 ];
 
-export const getMissionMemberIds = (mission) =>
+export const getMissionMemberIds = (mission: Pick<Mission, "memberIds"> | null | undefined) =>
   normalizeIdList(mission?.memberIds);
 
-export const getActiveMissionMemberIdSet = (activeMissions) =>
+export const getActiveMissionMemberIdSet = (activeMissions: readonly Mission[]) =>
   new Set(
     (Array.isArray(activeMissions) ? activeMissions : []).flatMap((mission) =>
       getMissionMemberIds(mission),
     ),
   );
 
-export const isMissionBoardAvailableStatus = (status) => {
+export const isMissionBoardAvailableStatus = (status: unknown) => {
   const normalizedStatus = String(status || "Idle");
   return (
     normalizedStatus === "Idle" ||
@@ -35,6 +38,10 @@ export const isMissionMemberGroupAvailable = ({
   memberIds,
   roster = [],
   activeMissions = [],
+}: {
+  memberIds: unknown;
+  roster?: readonly Character[];
+  activeMissions?: readonly Mission[];
 }) => {
   const requestedMemberIds = normalizeIdList(memberIds);
   if (requestedMemberIds.length === 0) return false;
@@ -52,10 +59,10 @@ export const isMissionMemberGroupAvailable = ({
   });
 };
 
-export const pruneOverlappingActiveMissions = (activeMissions) => {
-  const occupiedMemberIds = new Set();
-  const prunedMissions = [];
-  const canceledMissions = [];
+export const pruneOverlappingActiveMissions = (activeMissions: readonly Mission[]) => {
+  const occupiedMemberIds = new Set<CharacterId>();
+  const prunedMissions: Mission[] = [];
+  const canceledMissions: Mission[] = [];
 
   (Array.isArray(activeMissions) ? activeMissions : []).forEach((mission) => {
     const memberIds = getMissionMemberIds(mission);

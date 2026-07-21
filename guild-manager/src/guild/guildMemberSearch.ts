@@ -1,10 +1,15 @@
-export const normalizeGuildMemberSearch = (value) =>
+import type { Character } from "../types/characterTypes";
+
+export const normalizeGuildMemberSearch = (value: unknown) =>
   String(value || "")
     .trim()
     .toLowerCase()
     .replace(/[^a-z0-9]/g, "");
 
-export const getGuildMemberSearchScore = (member, searchTerm) => {
+export const getGuildMemberSearchScore = (
+  member: Pick<Character, "name">,
+  searchTerm: unknown,
+) => {
   const query = normalizeGuildMemberSearch(searchTerm);
   const name = normalizeGuildMemberSearch(member?.name);
   if (!query || !name) return 0;

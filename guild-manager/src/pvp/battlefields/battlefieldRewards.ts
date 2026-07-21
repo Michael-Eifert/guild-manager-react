@@ -2,11 +2,27 @@ import { GUILD_FACTION } from "../../constants";
 import { awardCharacterHonor } from "../pvpProgression";
 import { BATTLEFIELD_IDS } from "./battlefieldDefinitions";
 import { buildBattlefieldStatusRoster } from "./battlefieldUtils";
+import type { Character } from "../../types/characterTypes";
 
-const randomInt = (rng, min, max) =>
+const awardHonor = awardCharacterHonor as (
+  character: Character,
+  reward: { honor: number; honorableKills?: number },
+  faction: string,
+) => Character;
+
+interface WarsongBattle {
+  id: string;
+  battlefieldId: string;
+  participantIds?: string[];
+  result?: "victory" | "defeat" | "draw";
+  playerScore?: number;
+  enemyScore?: number;
+}
+
+const randomInt = (rng: () => number, min: number, max: number) =>
   Math.floor(min + rng() * (max - min + 1));
 
-export const getWarsongHonorReward = (battle, rng = Math.random) => {
+export const getWarsongHonorReward = (battle: WarsongBattle, rng = Math.random) => {
   const result = battle?.result || "draw";
   const base =
     result === "victory"
@@ -33,6 +49,11 @@ export const applyBattlefieldRewards = ({
   roster,
   faction = GUILD_FACTION.ALLIANCE,
   rng = Math.random,
+}: {
+  battle?: WarsongBattle | null;
+  roster?: Character[];
+  faction?: string;
+  rng?: () => number;
 } = {}) => {
   if (!battle || battle.battlefieldId !== BATTLEFIELD_IDS.WARSONG_GULCH) {
     return { roster, battle, logs: [] };
@@ -45,7 +66,7 @@ export const applyBattlefieldRewards = ({
   const nextRoster = buildBattlefieldStatusRoster({
     roster: (Array.isArray(roster) ? roster : []).map((character) => {
       if (!participantSet.has(String(character?.id || ""))) return character;
-      return awardCharacterHonor(
+      return awardHonor(
         character,
         {
           honor: reward.honorPerParticipant,
@@ -80,4 +101,3 @@ export const applyBattlefieldRewards = ({
     logs,
   };
 };
-

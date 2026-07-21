@@ -1,12 +1,15 @@
+import type { ItemDefinition } from "../types/itemTypes";
+import type { Mission } from "../types/missionTypes";
+
 export const SOURCE_WORLD = "World";
 
-export const getItemSource = (item) =>
+export const getItemSource = (item: Pick<ItemDefinition, "dungeon" | "dungeonSetName">) =>
   item?.dungeon || item?.dungeonSetName || SOURCE_WORLD;
 
-export const getMissionLootSource = (mission) =>
+export const getMissionLootSource = (mission: Pick<Mission, "dungeonSetName" | "name">) =>
   mission?.dungeonSetName || mission?.name || SOURCE_WORLD;
 
-export const parseRecommendedRange = (recommended) => {
+export const parseRecommendedRange = (recommended: unknown) => {
   if (typeof recommended !== "string") return null;
   const values = recommended.match(/\d+/g);
   if (!values || values.length < 2) return null;
@@ -16,15 +19,15 @@ export const parseRecommendedRange = (recommended) => {
   return { min, max };
 };
 
-export const groupByQuality = (items) =>
-  items.reduce((acc, item) => {
+export const groupByQuality = (items: readonly ItemDefinition[]) =>
+  items.reduce<Record<number, ItemDefinition[]>>((acc, item) => {
     const key = item.quality;
     if (!acc[key]) acc[key] = [];
     acc[key].push(item);
     return acc;
   }, {});
 
-export const sortLootItems = (items) =>
+export const sortLootItems = (items: readonly ItemDefinition[]) =>
   [...items].sort((a, b) => {
     if (a.quality !== b.quality) return b.quality - a.quality;
     if (a.minLevel !== b.minLevel) return a.minLevel - b.minLevel;
