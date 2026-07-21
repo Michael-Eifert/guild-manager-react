@@ -5,17 +5,17 @@
   "type": "module",
   "scripts": {
     "dev": "vite",
-    "build": "vite build && node scripts/create-spa-404.mjs",
+    "build": "vite build && tsx scripts/create-spa-404.ts",
     "lint": "eslint .",
     "typecheck": "npm run typecheck:app && npm run typecheck:test && npm run typecheck:node",
     "typecheck:app": "tsc --noEmit -p tsconfig.app.json",
     "typecheck:test": "tsc --noEmit -p tsconfig.test.json",
     "typecheck:node": "tsc --noEmit -p tsconfig.node.json",
     "migration:check": "tsx scripts/check-typescript-migration.ts",
-    "bundle:check": "node scripts/check-bundle-size.mjs",
+    "bundle:check": "tsx scripts/check-bundle-size.ts",
     "check": "npm run migration:check && npm run lint && npm run typecheck && npm run test && npm run build && npm run bundle:check",
     "test": "vitest run",
-    "proxy:gemini": "node server/gemini-proxy.mjs",
+    "proxy:gemini": "tsx server/gemini-proxy.ts",
     "preview": "vite preview"
   },
   "dependencies": {

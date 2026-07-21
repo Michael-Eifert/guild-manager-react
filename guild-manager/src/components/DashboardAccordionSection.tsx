@@ -1,4 +1,13 @@
 import React from "react";
+import type { ReactNode } from "react";
+
+type DashboardAccordionSectionProps = {
+  title: ReactNode;
+  summary?: ReactNode;
+  isOpen: boolean;
+  onToggle: () => void;
+  children?: ReactNode;
+};
 
 const DashboardAccordionSection = ({
   title,
@@ -6,7 +15,7 @@ const DashboardAccordionSection = ({
   isOpen,
   onToggle,
   children,
-}) => (
+}: DashboardAccordionSectionProps) => (
   <section className="rounded border border-gray-700 bg-gray-900/70">
     <button
       type="button"

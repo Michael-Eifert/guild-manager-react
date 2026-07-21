@@ -1,6 +1,6 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 
-import { createGeminiProxyServer, createProxyConfig } from "../../server/gemini-proxy.mjs";
+import { createGeminiProxyServer, createProxyConfig } from "../../server/gemini-proxy";
 
 const servers = [];
 afterEach(async () => {

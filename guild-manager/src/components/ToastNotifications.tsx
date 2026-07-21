@@ -1,4 +1,5 @@
 import React from "react";
+import type { GameNotification } from "../app/gameTypes";
 
 const TOAST_STYLE_BY_TYPE = {
   error: {
@@ -18,9 +19,17 @@ const TOAST_STYLE_BY_TYPE = {
   },
 };
 
-const getToastStyle = (type) => TOAST_STYLE_BY_TYPE[type] || TOAST_STYLE_BY_TYPE.info;
+const getToastStyle = (type: string) =>
+  (TOAST_STYLE_BY_TYPE as Record<string, typeof TOAST_STYLE_BY_TYPE.info>)[type] ||
+  TOAST_STYLE_BY_TYPE.info;
 
-const ToastNotifications = ({ notifications, onDismiss }) => {
+const ToastNotifications = ({
+  notifications,
+  onDismiss,
+}: {
+  notifications: GameNotification[];
+  onDismiss: (id: string) => void;
+}) => {
   if (!Array.isArray(notifications) || notifications.length === 0) {
     return null;
   }

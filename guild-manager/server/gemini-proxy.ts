@@ -1,13 +1,14 @@
 import http from "node:http";
 import { pathToFileURL } from "node:url";
+import type { IncomingMessage, OutgoingHttpHeaders, ServerResponse } from "node:http";
 
-const parseOrigins = (value, isProduction) => {
+const parseOrigins = (value: unknown, isProduction: boolean) => {
   const origins = String(value || "").split(",").map((origin) => origin.trim()).filter(Boolean);
   if (origins.length > 0) return new Set(origins);
   return new Set(isProduction ? [] : ["http://localhost:5173"]);
 };
 
-export const createProxyConfig = (environment = process.env) => {
+export const createProxyConfig = (environment: NodeJS.ProcessEnv = process.env) => {
   const isProduction = environment.NODE_ENV === "production";
   return {
     port: Number(environment.PORT) || 8787,
@@ -25,8 +26,15 @@ export const createProxyConfig = (environment = process.env) => {
   };
 };
 
-const writeJson = (response, status, payload, origin) => {
-  const headers = {
+export type GeminiProxyConfig = ReturnType<typeof createProxyConfig>;
+
+const writeJson = (
+  response: ServerResponse,
+  status: number,
+  payload: unknown,
+  origin?: string | null,
+) => {
+  const headers: OutgoingHttpHeaders = {
     "Content-Type": "application/json; charset=utf-8",
     "Cache-Control": "no-store",
     "X-Content-Type-Options": "nosniff",
@@ -41,21 +49,24 @@ const writeJson = (response, status, payload, origin) => {
   response.end(status === 204 ? undefined : JSON.stringify(payload));
 };
 
-const readRequestBody = (request, limitBytes) => new Promise((resolve, reject) => {
-  const chunks = [];
+type RequestBodyError = Error & { code?: string };
+
+const readRequestBody = (request: IncomingMessage, limitBytes: number) =>
+  new Promise<string>((resolve, reject) => {
+  const chunks: Buffer[] = [];
   let bytes = 0;
   let rejected = false;
-  request.on("data", (chunk) => {
+  request.on("data", (chunk: Buffer | string) => {
     if (rejected) return;
     bytes += chunk.length;
     if (bytes > limitBytes) {
-      const error = new Error("Request too large");
+      const error: RequestBodyError = new Error("Request too large");
       error.code = "REQUEST_TOO_LARGE";
       rejected = true;
       reject(error);
       return;
     }
-    chunks.push(chunk);
+    chunks.push(Buffer.isBuffer(chunk) ? chunk : Buffer.from(chunk));
   });
   request.on("end", () => {
     if (!rejected) resolve(Buffer.concat(chunks).toString("utf8"));
@@ -63,7 +74,7 @@ const readRequestBody = (request, limitBytes) => new Promise((resolve, reject) =
   request.on("error", reject);
 });
 
-const getClientAddress = (request, trustProxy) => {
+const getClientAddress = (request: IncomingMessage, trustProxy: boolean) => {
   if (trustProxy) {
     const forwarded = String(request.headers["x-forwarded-for"] || "").split(",")[0].trim();
     if (forwarded) return forwarded;
@@ -71,9 +82,17 @@ const getClientAddress = (request, trustProxy) => {
   return request.socket.remoteAddress || "unknown";
 };
 
-const createRateLimiter = ({ capacity, refillPerMinute, now = Date.now }) => {
-  const buckets = new Map();
-  return (key) => {
+const createRateLimiter = ({
+  capacity,
+  refillPerMinute,
+  now = Date.now,
+}: {
+  capacity: number;
+  refillPerMinute: number;
+  now?: () => number;
+}) => {
+  const buckets = new Map<string, { tokens: number; updatedAt: number }>();
+  return (key: string) => {
     const currentTime = now();
     const previous = buckets.get(key) || { tokens: capacity, updatedAt: currentTime };
     const refill = ((currentTime - previous.updatedAt) / 60_000) * refillPerMinute;
@@ -87,13 +106,21 @@ const createRateLimiter = ({ capacity, refillPerMinute, now = Date.now }) => {
   };
 };
 
-export const createGeminiProxyServer = ({ config = createProxyConfig(), fetchImpl = globalThis.fetch, logger = console } = {}) => {
+export const createGeminiProxyServer = ({
+  config = createProxyConfig(),
+  fetchImpl = globalThis.fetch,
+  logger = console,
+}: {
+  config?: GeminiProxyConfig;
+  fetchImpl?: typeof globalThis.fetch;
+  logger?: Pick<Console, "error" | "info">;
+} = {}) => {
   let activeRequests = 0;
   const consumeRateLimit = createRateLimiter({
     capacity: config.rateLimitCapacity,
     refillPerMinute: config.rateLimitRefillPerMinute,
   });
-  const resolveOrigin = (request) => {
+  const resolveOrigin = (request: IncomingMessage) => {
     const origin = String(request.headers.origin || "");
     if (config.allowWildcardOrigin) return "*";
     return config.allowedOrigins.has(origin) ? origin : null;
@@ -141,7 +168,7 @@ export const createGeminiProxyServer = ({ config = createProxyConfig(), fetchImp
     activeRequests += 1;
     try {
       const rawBody = await readRequestBody(request, config.bodyLimitBytes);
-      const payload = JSON.parse(rawBody);
+      const payload = JSON.parse(rawBody) as { prompt?: unknown; isJson?: unknown };
       const prompt = String(payload?.prompt || "").trim();
       if (!prompt) {
         writeJson(response, 400, { error: "Missing prompt", requestId }, origin);
@@ -172,7 +199,9 @@ export const createGeminiProxyServer = ({ config = createProxyConfig(), fetchImp
         clearTimeout(timeout);
       }
 
-      const geminiData = await geminiResponse.json();
+      const geminiData = await geminiResponse.json() as {
+        candidates?: Array<{ content?: { parts?: Array<{ text?: string }> } }>;
+      };
       if (!geminiResponse.ok) {
         logger.error(JSON.stringify({ requestId, event: "upstream_error", status: geminiResponse.status }));
         writeJson(response, 502, { error: "Text generation failed", requestId }, origin);
@@ -184,10 +213,11 @@ export const createGeminiProxyServer = ({ config = createProxyConfig(), fetchImp
         return;
       }
       writeJson(response, 200, { text, requestId }, origin);
-    } catch (error) {
-      const status = error?.code === "REQUEST_TOO_LARGE" ? 413 : error instanceof SyntaxError ? 400 : error?.name === "AbortError" ? 504 : 500;
+    } catch (error: unknown) {
+      const caughtError = error as RequestBodyError;
+      const status = caughtError.code === "REQUEST_TOO_LARGE" ? 413 : error instanceof SyntaxError ? 400 : caughtError.name === "AbortError" ? 504 : 500;
       const message = status === 413 ? "Request is too large" : status === 400 ? "Invalid JSON" : status === 504 ? "Text generation timed out" : "Proxy request failed";
-      logger.error(JSON.stringify({ requestId, event: "proxy_error", name: error?.name, status }));
+      logger.error(JSON.stringify({ requestId, event: "proxy_error", name: caughtError.name, status }));
       if (!response.headersSent) writeJson(response, status, { error: message, requestId }, origin);
     } finally {
       activeRequests -= 1;
@@ -201,7 +231,7 @@ if (isEntrypoint) {
   const config = createProxyConfig();
   const server = createGeminiProxyServer({ config });
   server.listen(config.port, () => console.log(JSON.stringify({ event: "proxy_started", port: config.port, model: config.model })));
-  const shutdown = (signal) => {
+  const shutdown = (signal: NodeJS.Signals) => {
     console.log(JSON.stringify({ event: "proxy_stopping", signal }));
     server.close(() => process.exit(0));
     setTimeout(() => process.exit(1), 10_000).unref();

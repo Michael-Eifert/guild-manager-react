@@ -25,4 +25,12 @@ export interface Mission {
   dungeonLootTable?: object;
   bonusDrops?: object[];
   raidRoleRequirement?: object;
+  dungeonSetId?: string;
+  wingOrder?: number;
+  raidReset?: {
+    type?: string;
+    intervalDays?: number;
+    anchorDayIndex?: number;
+    weekday?: number;
+  };
 }

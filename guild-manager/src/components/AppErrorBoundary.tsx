@@ -1,19 +1,33 @@
 import React from "react";
+import type { ErrorInfo, ReactNode } from "react";
+
+type AppErrorBoundaryProps = {
+  children?: ReactNode;
+  resetKey?: unknown;
+};
+
+type AppErrorBoundaryState = {
+  error: Error | null;
+  errorId: string | null;
+};
 
 const createErrorId = () =>
   globalThis.crypto?.randomUUID?.() || `error-${Date.now().toString(36)}`;
 
-class AppErrorBoundary extends React.Component {
-  constructor(props) {
+class AppErrorBoundary extends React.Component<
+  AppErrorBoundaryProps,
+  AppErrorBoundaryState
+> {
+  constructor(props: AppErrorBoundaryProps) {
     super(props);
     this.state = { error: null, errorId: null };
   }
 
-  static getDerivedStateFromError(error) {
+  static getDerivedStateFromError(error: Error): AppErrorBoundaryState {
     return { error, errorId: createErrorId() };
   }
 
-  componentDidCatch(error, info) {
+  componentDidCatch(error: Error, info: ErrorInfo) {
     console.error("Application render failed", {
       errorId: this.state.errorId,
       error,
@@ -21,7 +35,7 @@ class AppErrorBoundary extends React.Component {
     });
   }
 
-  componentDidUpdate(previousProps) {
+  componentDidUpdate(previousProps: AppErrorBoundaryProps) {
     if (
       this.state.error &&
       previousProps.resetKey !== this.props.resetKey

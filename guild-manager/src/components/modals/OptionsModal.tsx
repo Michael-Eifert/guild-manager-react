@@ -6,6 +6,12 @@ const OptionsModal = ({
   onSaveSession,
   onLoadSession,
   onOpenDebug,
+}: {
+  isOpen: boolean;
+  onClose: () => void;
+  onSaveSession: () => void;
+  onLoadSession: () => void;
+  onOpenDebug: () => void;
 }) => {
   return (
     <BaseModal

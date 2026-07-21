@@ -7,10 +7,29 @@ import {
   getWowIconUrl,
 } from "../utils";
 import { ensureCharacterPvpData } from "../pvp/pvpCharacterUtils";
+import type { Character } from "../types/characterTypes";
 
-const CharacterCard = ({ char, onClick }) => {
+type CharacterCardCharacter = Character & {
+  charClass: string;
+  level: number;
+  exp: number;
+  maxExp: number;
+  lastLevelUp: number;
+  race: string;
+  gender: string;
+};
+
+type CharacterCardProps = {
+  char: CharacterCardCharacter;
+  onClick: (character: CharacterCardCharacter) => void;
+};
+
+const CharacterCard = ({ char, onClick }: CharacterCardProps) => {
   const [now, setNow] = useState(() => Date.now());
-  const classData = DB_CLASSES[char.charClass];
+  const classData = (DB_CLASSES as Record<string, {
+    color: string;
+    icon?: string;
+  }>)[char.charClass];
 
   useEffect(() => {
     if (!char.lastLevelUp) return undefined;

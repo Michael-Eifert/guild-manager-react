@@ -1,6 +1,20 @@
 import { useEffect, useRef } from "react";
+import type { ReactNode } from "react";
 
-const joinClasses = (...classNames) => classNames.filter(Boolean).join(" ");
+const joinClasses = (...classNames: Array<string | undefined | false>) =>
+  classNames.filter(Boolean).join(" ");
+
+export type BaseModalProps = {
+  isOpen: boolean;
+  onClose?: () => void;
+  children?: ReactNode;
+  overlayClassName?: string;
+  panelClassName?: string;
+  closeOnEscape?: boolean;
+  closeOnBackdrop?: boolean;
+  ariaLabel?: string;
+  labelledBy?: string;
+};
 
 const BaseModal = ({
   isOpen,
@@ -12,8 +26,8 @@ const BaseModal = ({
   closeOnBackdrop = true,
   ariaLabel = "Dialog",
   labelledBy,
-}) => {
-  const panelRef = useRef(null);
+}: BaseModalProps) => {
+  const panelRef = useRef<HTMLDivElement>(null);
   const onCloseRef = useRef(onClose);
   const closeOnEscapeRef = useRef(closeOnEscape);
 
@@ -32,12 +46,14 @@ const BaseModal = ({
     const focusableSelector =
       'button:not([disabled]), [href], input:not([disabled]), select:not([disabled]), textarea:not([disabled]), [tabindex]:not([tabindex="-1"])';
     const focusableElements = () =>
-      Array.from(panelRef.current?.querySelectorAll(focusableSelector) || []);
+      Array.from(
+        panelRef.current?.querySelectorAll<HTMLElement>(focusableSelector) || [],
+      );
 
     const firstFocusable = focusableElements()[0];
     (firstFocusable || panelRef.current)?.focus();
 
-    const handleKeyDown = (event) => {
+    const handleKeyDown = (event: KeyboardEvent) => {
       if (
         event.key === "Escape" &&
         closeOnEscapeRef.current &&

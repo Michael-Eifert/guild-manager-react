@@ -1,15 +1,29 @@
-export const getDungeonMissionGroups = (missions) => {
-  const groups = [];
-  const groupedSets = new Map();
+import type { Mission } from "../../types/missionTypes";
+
+export interface DungeonMissionGroup {
+  key: string;
+  type: "set" | "single";
+  name: string;
+  missions: Mission[];
+}
+
+export const getDungeonMissionGroups = (missions: readonly Mission[]) => {
+  const groups: DungeonMissionGroup[] = [];
+  const groupedSets = new Map<string, DungeonMissionGroup>();
   missions.forEach((mission) => {
     if (mission?.dungeonSetId && mission?.dungeonSetName) {
       const groupKey = `set:${mission.dungeonSetId}`;
       if (!groupedSets.has(groupKey)) {
-        const group = { key: groupKey, type: "set", name: mission.dungeonSetName, missions: [] };
+        const group: DungeonMissionGroup = {
+          key: groupKey,
+          type: "set",
+          name: mission.dungeonSetName,
+          missions: [],
+        };
         groupedSets.set(groupKey, group);
         groups.push(group);
       }
-      groupedSets.get(groupKey).missions.push(mission);
+      groupedSets.get(groupKey)?.missions.push(mission);
       return;
     }
     groups.push({ key: `mission:${mission.id}`, type: "single", name: mission?.name || "Dungeon", missions: [mission] });
@@ -28,7 +42,7 @@ export const getDungeonMissionGroups = (missions) => {
     : group);
 };
 
-export const sortDungeonWingsByProgression = (left, right) => {
+export const sortDungeonWingsByProgression = (left: Mission, right: Mission) => {
   if ((left?.level || 0) !== (right?.level || 0)) return (left?.level || 0) - (right?.level || 0);
   const leftWingOrder = Number(left?.wingOrder) || 0;
   const rightWingOrder = Number(right?.wingOrder) || 0;

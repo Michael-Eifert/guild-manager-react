@@ -1,3 +1,13 @@
+export interface ZoneMapLayout {
+  x: number;
+  y: number;
+  continent: string;
+}
+
+export interface ZoneReference {
+  id: string;
+}
+
 export const ZONE_MAP_LAYOUT_BY_ZONE_ID = Object.freeze({
   teldrassil: { x: 13, y: 20, continent: "Kalimdor" },
   darkshore: { x: 18, y: 30, continent: "Kalimdor" },
@@ -43,8 +53,9 @@ export const ZONE_MAP_LAYOUT_BY_ZONE_ID = Object.freeze({
   stranglethorn_vale_south: { x: 77, y: 91, continent: "Eastern Kingdoms" },
 });
 
-export const getZoneMapLayout = (zoneId) =>
-  ZONE_MAP_LAYOUT_BY_ZONE_ID[zoneId] ?? { x: 50, y: 50, continent: "Azeroth" };
+export const getZoneMapLayout = (zoneId: string): ZoneMapLayout =>
+  (ZONE_MAP_LAYOUT_BY_ZONE_ID as Readonly<Record<string, ZoneMapLayout>>)[zoneId] ??
+  { x: 50, y: 50, continent: "Azeroth" };
 
 const ZONE_CLASSIC_MAP_BY_ZONE_ID = Object.freeze({
   teldrassil: { mapId: 141, slug: "teldrassil" },
@@ -90,9 +101,12 @@ const ZONE_CLASSIC_MAP_BY_ZONE_ID = Object.freeze({
   silithus: { mapId: 1377, slug: "silithus" },
 });
 
-const getClassicMapConfig = (zone) => ZONE_CLASSIC_MAP_BY_ZONE_ID[zone?.id] ?? null;
+const getClassicMapConfig = (zone: ZoneReference) =>
+  (ZONE_CLASSIC_MAP_BY_ZONE_ID as Readonly<
+    Record<string, { mapId: number; slug: string }>
+  >)[zone.id] ?? null;
 
-export const getZoneRegionalMap = (zone) => {
+export const getZoneRegionalMap = (zone: ZoneReference) => {
   const classicMap = getClassicMapConfig(zone);
   if (!classicMap) return null;
 

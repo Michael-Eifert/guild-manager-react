@@ -6,5 +6,5 @@
     "module": "NodeNext",
     "moduleResolution": "NodeNext"
   },
-  "include": ["server", "scripts", "vite.config.js"]
+  "include": ["server", "scripts", "vite.config.ts"]
 }

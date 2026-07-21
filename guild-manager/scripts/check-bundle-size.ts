@@ -1,8 +1,15 @@
 import { readdir, readFile, stat } from "node:fs/promises";
 
+type BundleMetrics = {
+  totalJsBytes: number;
+  largestJsBytes: number;
+};
+
+type BundleBaseline = BundleMetrics & { allowedIncreasePercent: number };
+
 const baseline = JSON.parse(
   await readFile(new URL("./bundle-size-baseline.json", import.meta.url), "utf8"),
-);
+) as BundleBaseline;
 const assetsDirectory = new URL("../dist/assets/", import.meta.url);
 const files = (await readdir(assetsDirectory)).filter((file) => file.endsWith(".js"));
 const sizes = await Promise.all(
@@ -12,7 +19,10 @@ const actual = {
   totalJsBytes: sizes.reduce((total, size) => total + size, 0),
   largestJsBytes: Math.max(0, ...sizes),
 };
-const failures = Object.entries(actual).filter(([key, value]) => {
+const failures = (Object.entries(actual) as Array<[
+  keyof BundleMetrics,
+  number,
+]>).filter(([key, value]) => {
   const allowed = Math.ceil(baseline[key] * (1 + baseline.allowedIncreasePercent / 100));
   return value > allowed;
 });
