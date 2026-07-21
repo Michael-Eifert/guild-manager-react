@@ -36,7 +36,12 @@ export const getDefaultDungeonProgress = (mission, startTime, totalDuration) => 
   };
 };
 
-export const advanceDungeonMission = (mission, now, instant = false) => {
+export const advanceDungeonMission = (
+  mission,
+  now,
+  instant = false,
+  random = Math.random,
+) => {
   if (mission.type !== "dungeon") {
     return { mission, stepLogs: [] };
   }
@@ -84,7 +89,7 @@ export const advanceDungeonMission = (mission, now, instant = false) => {
   ) {
     const stepIndex = progress.currentStep;
     const bossName = getDungeonBossLabel(mission, stepIndex);
-    const succeeded = Math.random() * 100 < successChance;
+    const succeeded = random() * 100 < successChance;
     const attemptForStep =
       progress.stepResults.filter((result) => result?.step === stepIndex + 1).length + 1;
 

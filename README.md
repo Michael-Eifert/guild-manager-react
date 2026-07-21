@@ -84,7 +84,8 @@ Important entry points:
 - `src/main.jsx` mounts React and the router.
 - `src/App.jsx` wires the top-level route shell.
 - `src/routes.js` centralizes route constants.
-- `src/app/GameProvider.jsx` owns the main game state, tick loop, and actions.
+- `src/app/GameProvider.tsx` is the typed context composition boundary; the
+  runtime controller and extracted TypeScript domain modules own game behavior.
 - `src/pages/home/HomeRoot.jsx` renders the main authenticated/started-game
   shell and route navigation.
 
