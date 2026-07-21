@@ -1,6 +1,6 @@
-# Alliance Guild Manager
+# Guild Manager
 
-Alliance Guild Manager is a World of Warcraft-inspired guild management game
+Guild Manager is a World of Warcraft-inspired guild management game
 built with React and Vite. You found a guild, recruit heroes, assign roles and
 professions, send parties into zones, dungeons, raids, and PvP, then grow the
 guild through loot, renown, talents, calendar planning, and realm simulation.
