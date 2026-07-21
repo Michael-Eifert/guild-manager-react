@@ -129,14 +129,35 @@ export type GameRuntimeSnapshot = {
   guildInventory: UnknownRecord;
 };
 
-export type GameActions = Record<string, (...args: any[]) => any>;
+export type GuildSetupState = {
+  hasStarted?: boolean;
+  name?: string;
+  faction?: string;
+  focus?: string;
+  dungeonActivity?: string;
+  pvpActivityFocus?: string;
+  realmDifficulty?: string;
+  server?: string;
+  serverStyle?: string;
+  serverPopulation?: string;
+};
+
+export interface GameActions {
+  dismissNotification: (notificationId: string) => void;
+  changeGuildSetup: (field: string, value: unknown) => void;
+  loadSession: () => void;
+  loadSessionFile: (event: ChangeEvent<HTMLInputElement>) => void;
+  startGuild: () => void;
+}
 
 /** Public provider value. Domain modules refine individual fields as they migrate. */
 export type GameProviderSnapshot = UnknownRecord & {
   actions: GameActions;
+  guildSetup: GuildSetupState;
   roster: Character[];
   activeMissions: Mission[];
   notifications: GameNotification[];
+  sessionFileInputRef: RefObject<HTMLInputElement | null>;
   gameTimeMs: number;
   gameSpeed: number;
   isPaused: boolean;
@@ -146,3 +167,4 @@ export type TransitionResult = {
   state: GameState;
   events: GameEvent[];
 };
+import type { ChangeEvent, RefObject } from "react";
