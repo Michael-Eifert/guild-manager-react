@@ -5,6 +5,24 @@ export const PERSONALITY_TRAIT_ID = Object.freeze({
   RAIDER: "raider",
 });
 
+export type PersonalityTraitId =
+  typeof PERSONALITY_TRAIT_ID[keyof typeof PERSONALITY_TRAIT_ID];
+
+type PersonalityEffects = {
+  levelingExpMultiplier?: number;
+  zoneProgressMultiplier?: number;
+  dungeonSuccessBonus?: number;
+  raidSuccessBonus?: number;
+};
+
+type PersonalityTrait = {
+  id: PersonalityTraitId;
+  name: string;
+  rarity: string;
+  description: string;
+  effects: Readonly<PersonalityEffects>;
+};
+
 export const PERSONALITY_TRAIT_DEFINITIONS = Object.freeze({
   [PERSONALITY_TRAIT_ID.CASUAL_GAMER]: Object.freeze({
     id: PERSONALITY_TRAIT_ID.CASUAL_GAMER,
@@ -47,6 +65,10 @@ export const PERSONALITY_TRAIT_DEFINITIONS = Object.freeze({
   }),
 });
 
+const PERSONALITY_TRAITS_BY_ID = PERSONALITY_TRAIT_DEFINITIONS as Readonly<
+  Record<PersonalityTraitId, PersonalityTrait>
+>;
+
 const TRAIT_ROLL_TABLE = Object.freeze([
   Object.freeze({ id: PERSONALITY_TRAIT_ID.POWER_LEVELER, chance: 0.05 }),
   Object.freeze({ id: PERSONALITY_TRAIT_ID.DUNGEON_EXPERT, chance: 0.15 }),
@@ -54,7 +76,7 @@ const TRAIT_ROLL_TABLE = Object.freeze([
   Object.freeze({ id: PERSONALITY_TRAIT_ID.CASUAL_GAMER, chance: 0.45 }),
 ]);
 
-export const normalizeCharacterPersonalityTraits = (traits) => {
+export const normalizeCharacterPersonalityTraits = (traits: unknown): PersonalityTraitId[] => {
   const source = Array.isArray(traits)
     ? traits
     : traits
@@ -64,7 +86,9 @@ export const normalizeCharacterPersonalityTraits = (traits) => {
     ...new Set(
       source
         .map((trait) =>
-          typeof trait === "string" ? trait : String(trait?.id || "").trim(),
+          typeof trait === "string"
+            ? trait
+            : String((trait as { id?: unknown } | null)?.id || "").trim(),
         )
         .filter((traitId) =>
           Object.prototype.hasOwnProperty.call(
@@ -73,7 +97,7 @@ export const normalizeCharacterPersonalityTraits = (traits) => {
           ),
         ),
     ),
-  ];
+  ] as PersonalityTraitId[];
 };
 
 export const rollCharacterPersonalityTraits = ({ random = Math.random } = {}) => {
@@ -86,12 +110,18 @@ export const rollCharacterPersonalityTraits = ({ random = Math.random } = {}) =>
   return [];
 };
 
-export const getCharacterPersonalityTraits = (character) =>
+export const getCharacterPersonalityTraits = (character: {
+  personalityTraits?: unknown;
+  personalityTrait?: unknown;
+} | null | undefined) =>
   normalizeCharacterPersonalityTraits(
     character?.personalityTraits || character?.personalityTrait,
-  ).map((traitId) => PERSONALITY_TRAIT_DEFINITIONS[traitId]);
+  ).map((traitId) => PERSONALITY_TRAITS_BY_ID[traitId]);
 
-export const getCharacterPersonalityEffects = (character) =>
+export const getCharacterPersonalityEffects = (character: {
+  personalityTraits?: unknown;
+  personalityTrait?: unknown;
+} | null | undefined) =>
   getCharacterPersonalityTraits(character).reduce(
     (effects, trait) => ({
       levelingExpMultiplier:
@@ -115,14 +145,14 @@ export const getCharacterPersonalityEffects = (character) =>
     },
   );
 
-export const getCharacterLevelingExpMultiplier = (character) =>
+export const getCharacterLevelingExpMultiplier = (character: Parameters<typeof getCharacterPersonalityEffects>[0]) =>
   getCharacterPersonalityEffects(character).levelingExpMultiplier;
 
-export const getCharacterZoneProgressMultiplier = (character) =>
+export const getCharacterZoneProgressMultiplier = (character: Parameters<typeof getCharacterPersonalityEffects>[0]) =>
   getCharacterPersonalityEffects(character).zoneProgressMultiplier;
 
-export const getCharacterDungeonSuccessBonus = (character) =>
+export const getCharacterDungeonSuccessBonus = (character: Parameters<typeof getCharacterPersonalityEffects>[0]) =>
   getCharacterPersonalityEffects(character).dungeonSuccessBonus;
 
-export const getCharacterRaidSuccessBonus = (character) =>
+export const getCharacterRaidSuccessBonus = (character: Parameters<typeof getCharacterPersonalityEffects>[0]) =>
   getCharacterPersonalityEffects(character).raidSuccessBonus;

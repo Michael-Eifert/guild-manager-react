@@ -68,7 +68,7 @@ export const getAdjustedMissionSuccessPreview = ({
   relationships,
 }: {
   mission: AnyRecord;
-  members: AnyRecord[];
+  members: Character[];
   guildFocus?: unknown;
   relationships: AnyRecord;
 }) => {

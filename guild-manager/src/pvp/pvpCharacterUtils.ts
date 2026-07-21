@@ -3,14 +3,15 @@ import {
   getPvpRankByProgress,
   getPvpTitleForRank,
 } from "./pvpRanks";
+import type { Character, CharacterPvpState } from "../types/characterTypes";
 
-const normalizeNumber = (value, fallback = 0) => {
+const normalizeNumber = (value: unknown, fallback = 0) => {
   const numeric = Number(value);
   if (!Number.isFinite(numeric)) return fallback;
   return Math.max(0, Math.floor(numeric));
 };
 
-const normalizeIdList = (value) => [
+const normalizeIdList = (value: unknown): string[] => [
   ...new Set(
     (Array.isArray(value) ? value : [])
       .map((id) => String(id || "").trim())
@@ -18,10 +19,12 @@ const normalizeIdList = (value) => [
   ),
 ];
 
-const normalizeFaction = (faction) =>
+const normalizeFaction = (faction: unknown): string =>
   faction === GUILD_FACTION.HORDE ? GUILD_FACTION.HORDE : GUILD_FACTION.ALLIANCE;
 
-export const createDefaultPvpData = (faction = GUILD_FACTION.ALLIANCE) => ({
+export const createDefaultPvpData = (
+  faction: string = GUILD_FACTION.ALLIANCE,
+): CharacterPvpState => ({
   lifetimeHonor: 0,
   weeklyHonor: 0,
   rankProgress: 0,
@@ -34,10 +37,10 @@ export const createDefaultPvpData = (faction = GUILD_FACTION.ALLIANCE) => ({
 });
 
 export const ensureCharacterPvpData = (
-  character,
-  faction = GUILD_FACTION.ALLIANCE,
-) => {
-  const safeCharacter = character && typeof character === "object" ? character : {};
+  character: Character,
+  faction: string = GUILD_FACTION.ALLIANCE,
+): Character & { pvp: CharacterPvpState } => {
+  const safeCharacter = character;
   const safeFaction = normalizeFaction(safeCharacter.faction || faction);
   const source = safeCharacter.pvp && typeof safeCharacter.pvp === "object"
     ? safeCharacter.pvp

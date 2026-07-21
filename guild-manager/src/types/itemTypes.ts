@@ -30,6 +30,9 @@ export interface ItemDefinition {
   dungeonWing?: string;
   setName?: string;
   wowheadId?: number;
+  requiredPvpRank?: number;
+  pvpHonorRank?: number;
+  faction?: string;
 }
 
 export interface GuildInventory {

@@ -1,6 +1,8 @@
 import { GUILD_FACTION } from "../constants";
 import { isItemUsableByClass } from "../utils";
 import { getPvpTitleForRank } from "./pvpRanks";
+import type { Character } from "../types/characterTypes";
+import type { ItemDefinition } from "../types/itemTypes";
 
 export const PVP_RANK_REWARD_TIERS = Object.freeze([
   Object.freeze({ rank: 1, label: "Title", itemSlots: [] }),
@@ -19,15 +21,15 @@ export const PVP_RANK_REWARD_TIERS = Object.freeze([
   Object.freeze({ rank: 14, label: "Epic Weapon", itemSlots: ["mainHand"] }),
 ]);
 
-const normalizeFaction = (faction) =>
+const normalizeFaction = (faction: unknown): string =>
   faction === GUILD_FACTION.HORDE ? GUILD_FACTION.HORDE : GUILD_FACTION.ALLIANCE;
 
-export const getPvpRewardTiersForRank = (rank) => {
+export const getPvpRewardTiersForRank = (rank: unknown) => {
   const safeRank = Math.max(0, Math.floor(Number(rank) || 0));
   return PVP_RANK_REWARD_TIERS.filter((tier) => tier.rank <= safeRank);
 };
 
-export const getNewPvpRewardTiers = (oldRank, newRank) => {
+export const getNewPvpRewardTiers = (oldRank: unknown, newRank: unknown) => {
   const previousRank = Math.max(0, Math.floor(Number(oldRank) || 0));
   const safeNewRank = Math.max(0, Math.floor(Number(newRank) || 0));
   return PVP_RANK_REWARD_TIERS.filter(
@@ -36,8 +38,8 @@ export const getNewPvpRewardTiers = (oldRank, newRank) => {
 };
 
 export const getPvpRewardSummaryForRank = (
-  rank,
-  faction = GUILD_FACTION.ALLIANCE,
+  rank: unknown,
+  faction: string = GUILD_FACTION.ALLIANCE,
 ) => {
   const safeRank = Math.max(0, Math.floor(Number(rank) || 0));
   if (safeRank <= 0) return "No PvP rewards unlocked yet.";
@@ -49,7 +51,7 @@ export const getPvpRewardSummaryForRank = (
     : `${title}: PvP title unlocked`;
 };
 
-export const getItemRequiredPvpRank = (item) =>
+export const getItemRequiredPvpRank = (item: ItemDefinition | null | undefined) =>
   Math.max(
     0,
     Math.floor(Number(item?.requiredPvpRank ?? item?.pvpHonorRank) || 0),
@@ -59,7 +61,11 @@ export const isPvpGearUnlockedForCharacter = ({
   character,
   item,
   faction = GUILD_FACTION.ALLIANCE,
-} = {}) => {
+}: {
+  character: Character;
+  item: ItemDefinition;
+  faction?: string;
+}) => {
   if (!item?.pvpGear) return false;
   const pvp = character?.pvp || {};
   const highestRank = Math.max(0, Math.floor(Number(pvp.highestRank ?? pvp.rank) || 0));
@@ -72,9 +78,9 @@ export const isPvpGearUnlockedForCharacter = ({
 };
 
 export const getUnlockedPvpGearForCharacter = (
-  character,
-  allItems = [],
-  faction = GUILD_FACTION.ALLIANCE,
+  character: Character,
+  allItems: readonly ItemDefinition[] = [],
+  faction: string = GUILD_FACTION.ALLIANCE,
 ) =>
   (Array.isArray(allItems) ? allItems : [])
     .filter((item) =>
@@ -91,9 +97,9 @@ export const getUnlockedPvpGearForCharacter = (
     });
 
 export const getUnlockedPvpGearIdsForCharacter = (
-  character,
-  allItems = [],
-  faction = GUILD_FACTION.ALLIANCE,
+  character: Character,
+  allItems: readonly ItemDefinition[] = [],
+  faction: string = GUILD_FACTION.ALLIANCE,
 ) =>
   getUnlockedPvpGearForCharacter(character, allItems, faction).map((item) =>
     String(item.id),

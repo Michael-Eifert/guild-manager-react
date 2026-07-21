@@ -1,4 +1,5 @@
 import { GUILD_FACTION } from "../constants";
+import type { Character } from "../types/characterTypes";
 
 export const PVP_RANKS = Object.freeze([
   Object.freeze({
@@ -123,20 +124,25 @@ export const PVP_RANKS = Object.freeze([
   }),
 ]);
 
-const normalizeFaction = (faction) =>
+const normalizeFaction = (faction: unknown): string =>
   faction === GUILD_FACTION.HORDE ? GUILD_FACTION.HORDE : GUILD_FACTION.ALLIANCE;
 
-export const getPvpTitleForRank = (rank, faction = GUILD_FACTION.ALLIANCE) => {
+export const getPvpTitleForRank = (
+  rank: unknown,
+  faction: string = GUILD_FACTION.ALLIANCE,
+) => {
   const safeRank = Math.max(0, Math.min(14, Math.floor(Number(rank) || 0)));
   return (
-    PVP_RANKS[safeRank]?.titles?.[normalizeFaction(faction)] ||
+    (PVP_RANKS[safeRank]?.titles as Readonly<Record<string, string>>)?.[
+      normalizeFaction(faction)
+    ] ||
     PVP_RANKS[0].titles[GUILD_FACTION.ALLIANCE]
   );
 };
 
 export const getPvpRankByProgress = (
-  rankProgress,
-  faction = GUILD_FACTION.ALLIANCE,
+  rankProgress: unknown,
+  faction: string = GUILD_FACTION.ALLIANCE,
 ) => {
   const progress = Math.max(0, Math.floor(Number(rankProgress) || 0));
   const rankDef = [...PVP_RANKS]
@@ -148,14 +154,14 @@ export const getPvpRankByProgress = (
   };
 };
 
-export const getNextPvpRank = (rank) => {
+export const getNextPvpRank = (rank: unknown) => {
   const safeRank = Math.max(0, Math.min(14, Math.floor(Number(rank) || 0)));
   return PVP_RANKS.find((entry) => entry.rank === safeRank + 1) || null;
 };
 
 export const getPvpRankProgressInfo = (
-  character,
-  faction = GUILD_FACTION.ALLIANCE,
+  character: Pick<Character, "pvp"> | null | undefined,
+  faction: string = GUILD_FACTION.ALLIANCE,
 ) => {
   const pvp = character?.pvp || {};
   const rankProgress = Math.max(0, Math.floor(Number(pvp.rankProgress) || 0));

@@ -10,20 +10,22 @@ import {
   getPvpRankByProgress,
   getPvpTitleForRank,
 } from "./pvpRanks";
+import type { Character, CharacterPvpState } from "../types/characterTypes";
+import type { ItemDefinition } from "../types/itemTypes";
 
 export const PVP_PROGRESS_PER_HONOR = 0.25;
 export const PVP_WEEKLY_PROGRESS_CAP = 1200;
 export const PVP_WEEK_LENGTH_DAYS = 7;
 
-const normalizeFaction = (faction) =>
+const normalizeFaction = (faction: unknown): string =>
   faction === GUILD_FACTION.HORDE ? GUILD_FACTION.HORDE : GUILD_FACTION.ALLIANCE;
 
-const normalizeDayIndex = (value) => Math.max(0, Math.floor(Number(value) || 0));
+const normalizeDayIndex = (value: unknown) => Math.max(0, Math.floor(Number(value) || 0));
 
 export const awardCharacterHonor = (
-  character,
-  { honor, honorableKills = 0 } = {},
-  faction = GUILD_FACTION.ALLIANCE,
+  character: Character,
+  { honor, honorableKills = 0 }: { honor?: number; honorableKills?: number } = {},
+  faction: string = GUILD_FACTION.ALLIANCE,
 ) => {
   const normalized = ensureCharacterPvpData(character, faction);
   const honorGain = Math.max(0, Math.floor(Number(honor) || 0));
@@ -42,7 +44,7 @@ export const awardCharacterHonor = (
 export const shouldApplyWeeklyPvpRollover = ({
   currentDay,
   lastRolloverDayIndex = 0,
-} = {}) => {
+}: { currentDay?: number; lastRolloverDayIndex?: number } = {}) => {
   const safeDay = normalizeDayIndex(currentDay);
   const lastDay = normalizeDayIndex(lastRolloverDayIndex);
   return (
@@ -58,6 +60,12 @@ const buildUnlockLog = ({
   nextCharacter,
   newRewardTiers,
   equippedItems,
+}: {
+  character: Character;
+  oldRank: number;
+  nextCharacter: Character & { pvp: CharacterPvpState };
+  newRewardTiers: Array<{ label: string }>;
+  equippedItems: ItemDefinition[];
 }) => {
   const rankChanged = nextCharacter.pvp.rank > oldRank;
   const unlockedCount = Math.max(
@@ -92,9 +100,15 @@ const buildUnlockLog = ({
   };
 };
 
-const applyPvpAutoEquip = ({ character, unlockedItems }) => {
-  const equipment = normalizeEquipmentSlots(character?.equipment);
-  const equippedItems = [];
+const applyPvpAutoEquip = ({ character, unlockedItems }: {
+  character: Character & { pvp: CharacterPvpState };
+  unlockedItems: readonly ItemDefinition[];
+}) => {
+  const equipment = normalizeEquipmentSlots(character?.equipment) as Record<
+    string,
+    ItemDefinition | null | undefined
+  >;
+  const equippedItems: ItemDefinition[] = [];
   const nextEquipment = { ...equipment };
 
   (Array.isArray(unlockedItems) ? unlockedItems : []).forEach((item) => {
@@ -121,6 +135,12 @@ export const applyWeeklyPvpRollover = ({
   faction = GUILD_FACTION.ALLIANCE,
   allItems = [],
   lastRolloverDayIndex = 0,
+}: {
+  characters?: Character[];
+  currentDay?: number;
+  faction?: string;
+  allItems?: readonly ItemDefinition[];
+  lastRolloverDayIndex?: number;
 } = {}) => {
   const safeDay = normalizeDayIndex(currentDay);
   const safeFaction = normalizeFaction(faction);
@@ -128,7 +148,14 @@ export const applyWeeklyPvpRollover = ({
     currentDay: safeDay,
     lastRolloverDayIndex,
   });
-  const logs = [];
+  const logs: Array<{
+    type: string;
+    characterId: string;
+    characterName?: string;
+    rank: number;
+    title: string;
+    message: string;
+  }> = [];
 
   if (!didRollover) {
     return {

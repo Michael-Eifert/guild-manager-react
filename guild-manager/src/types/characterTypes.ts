@@ -16,6 +16,9 @@ export interface CharacterPvpState {
   weeklyHonor: number;
   honorableKills: number;
   unlockedPvpGearIds: string[];
+  rankProgress: number;
+  highestRank: number;
+  highestTitle: string;
 }
 
 export interface Character {
@@ -32,4 +35,8 @@ export interface Character {
   professions?: CharacterProfession[];
   equipment?: Record<string, ItemDefinition | null | undefined>;
   pvp?: Partial<CharacterPvpState>;
+  morale?: number;
+  personalityTrait?: string | { id?: string };
+  personalityTraits?: Array<string | { id?: string }>;
+  faction?: string;
 }
