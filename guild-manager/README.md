@@ -104,7 +104,9 @@ Important entry points:
 - `src/main.jsx` mounts React and the router.
 - `src/App.jsx` wires the top-level route shell.
 - `src/routes.js` centralizes route constants.
-- `src/app/GameProvider.jsx` owns the main game state, tick loop, and actions.
+- `src/app/GameProvider.tsx` is the typed context composition boundary.
+- `src/app/useGameProviderController.js` coordinates the legacy state slices while
+  provider behavior is moved into typed domain modules.
 - `src/pages/home/HomeRoot.jsx` renders the main authenticated/started-game
   shell and route navigation.
 
@@ -125,9 +127,12 @@ views. The route constants should be used instead of hard-coded path strings.
 
 ## State And Data Flow
 
-`GameProvider` is the central runtime owner. It manages roster state, active
-missions, guild progression, calendar state, realm simulation, PvP state,
-notifications, options/debug modal state, and session import/export.
+`GameProvider` is intentionally a small context boundary. The controller hook
+coordinates roster state, missions, progression, calendar, realm simulation,
+PvP, and notifications. Pure provider-facing calculations live in typed modules
+such as `providerSelectors.ts`, `missionRuntime.ts`, and
+`providerInventoryTransitions.ts`; session actions are isolated behind
+`sessionActions.ts`.
 
 Most gameplay helpers are pure or near-pure functions in domain folders such as
 `missions/`, `game/`, `pvp/`, `zones/`, and `server/`. Prefer adding behavior

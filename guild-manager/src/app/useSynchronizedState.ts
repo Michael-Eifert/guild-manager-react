@@ -10,22 +10,13 @@ export type StateCommit<T> = (update: StateUpdater<T>) => T;
 export const useSynchronizedState = <T>(
   initialValue: T | (() => T),
 ): [T, StateCommit<T>, MutableRefObject<T>] => {
-  const initialRef = useRef<{ initialized: boolean; value: T }>({
-    initialized: false,
-    value: undefined as T,
-  });
-  if (!initialRef.current.initialized) {
-    initialRef.current = {
-      initialized: true,
-      value:
-        typeof initialValue === "function"
-          ? (initialValue as () => T)()
-          : initialValue,
-    };
-  }
-
-  const [state, setState] = useState<T>(initialRef.current.value);
-  const stateRef = useRef<T>(initialRef.current.value);
+  const [initialState] = useState<T>(() =>
+    typeof initialValue === "function"
+      ? (initialValue as () => T)()
+      : initialValue,
+  );
+  const [state, setState] = useState<T>(initialState);
+  const stateRef = useRef<T>(initialState);
   const commit = useCallback<StateCommit<T>>((update) => {
     const nextState =
       typeof update === "function"

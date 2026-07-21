@@ -1,5 +1,6 @@
 /* eslint-disable react-hooks/exhaustive-deps -- synchronized commit refs and setters are stable by contract during the provider migration */
-import React, {
+// Transitional JavaScript composition controller: extracted domain modules are strictly typed.
+import {
   useState,
   useEffect,
   useRef,
@@ -8,11 +9,34 @@ import React, {
   useLayoutEffect,
 } from "react";
 import { useNavigate } from "react-router-dom";
-import { createGameContextStore, GameContext } from "./GameContext";
+import { createGameContextStore } from "./GameContext";
 import { useSynchronizedState } from "./useSynchronizedState";
-import { useRuntimeInterval } from "./useRuntimeInterval";
+import { useGameRuntime } from "./useGameRuntime";
 import { useHomeUiState } from "./useHomeUiState";
 import { useNotifications } from "./useNotifications";
+import { createSessionActions } from "./sessionActions";
+import {
+  autoEquipGuildStashItem,
+  cleanGuildStash,
+  craftInventoryRecipe,
+  sellGuildStashItem,
+} from "../inventory/providerInventoryTransitions";
+import {
+  buildMissionAchievementCatalog,
+  getDungeonActivityInfoText,
+  getGuildActivityModeSummary,
+  getMemberLevelBounds,
+  rankGuildRoster,
+} from "./providerSelectors";
+import {
+  applyDungeonStepLootAwards as calculateDungeonStepLootAwards,
+  applyMissionWipeCosts as calculateMissionWipeCosts,
+  buildMissionRun as createMissionRun,
+  getAdjustedMissionSuccessPreview as calculateMissionSuccessPreview,
+  getMissionInstanceId,
+  resolveDungeonChainContinuation as calculateDungeonChainContinuation,
+  sortDungeonChainMissions,
+} from "../missions/missionRuntime";
 import {
   CONFIG,
   INITIAL_MISSIONS,
@@ -40,8 +64,6 @@ import {
   generateCharacters,
   getItemEffectiveLevel,
   getCharacterAverageItemLevel,
-  getMissionSuccessPreview,
-  getMissionVeteranCoverage,
   createId,
   getClassArmorTypes,
   isItemUsableByClass,
@@ -51,7 +73,6 @@ import {
 import {
   GUILD_POINT_LABEL,
   createInitialGuildProgress,
-  normalizeGuildProgress,
   getGuildDerivedStats,
   applyLevelMilestones,
   applyRosterSizeMilestones,
@@ -61,17 +82,8 @@ import {
 } from "../guildProgression";
 import {
   DEFAULT_GAME_SPEED,
-  clampGameSpeed,
   getNextGameSpeed,
-  normalizeProgressionState,
-  advanceGameTime,
 } from "../progression";
-import {
-  loadSessionFile,
-  openSessionFilePicker,
-  saveSessionFile,
-} from "../session/sessionFileActions";
-import { applyLoadedSessionToApp } from "../session/applyLoadedSession";
 import {
   evaluateMissionKeyAccess,
   getDungeonBossCount,
@@ -79,7 +91,6 @@ import {
   getDungeonOverlevelExpMultiplier,
   getMissionLevelExpMultiplier,
   getMissionGoldReward,
-  getMissionWipeCost,
   getMissionLootLevelRange,
   resolveMissionRewardQualities,
 } from "../missions/missionHelpers";
@@ -118,7 +129,6 @@ import {
 import {
   isRelationshipEligibleMission,
   removeMemberRelationships,
-  getRelationshipSuccessModifier,
   updateRelationshipsForSharedActivity,
 } from "../social/relationshipSystem";
 import {
@@ -153,10 +163,7 @@ import {
   buildAdventureGoal,
   removeAdventureGoalFromCharacter,
 } from "../automation/adventureGoals";
-import {
-  advanceDungeonMission,
-  getDefaultDungeonProgress,
-} from "../game/dungeonEngine";
+import { advanceDungeonMission } from "../game/dungeonEngine";
 import {
   applyProfessionSkillAttempts,
   resolveCharacterActivityPlan,
@@ -167,11 +174,9 @@ import {
 } from "../game/characterPersonality";
 import { getLevelingTickExpGain } from "../game/levelingProgression";
 import {
-  MORALE_WIPE_DELTA,
   MORALE_ZONE_CLEAR_DELTA,
   applyMoraleDelta,
   getCharacterMorale,
-  getPartyMoraleSuccessBonus,
   isCharacterInZoneLevelRange,
 } from "../game/characterMorale";
 import { advanceActiveMissionsForTick } from "../game/gameTickEngine";
@@ -193,7 +198,6 @@ import {
 } from "../calendar/calendarLogic";
 import {
   getRaidLockoutStatus,
-  getRaidResumeProgress,
   normalizeRaidLockouts,
   startRaidLockout,
   updateRaidLockoutProgress,
@@ -226,30 +230,17 @@ import {
 import { ensureBattlefieldState } from "../pvp/battlefields/battlefieldUtils";
 import { createDebugActions } from "../debug/debugActions";
 import { loadItemCatalog } from "../data/itemCatalog";
+import { ensureGuildInventory } from "../inventory/guildInventoryUtils";
 import {
-  ensureGuildInventory,
-  getItemQuantity,
-  removeItemFromGuildInventory,
-} from "../inventory/guildInventoryUtils";
-import {
-  cleanupGuildStash,
   DEFAULT_STASH_POLICY,
   ensureStashPolicy,
-  shouldStoreItem,
-  tryAutoEquipItemFromGuildStash,
 } from "../inventory/itemEvaluation";
-import {
-  getInventoryItemDefinition,
-  INVENTORY_ITEM_CATEGORY,
-} from "../inventory/itemDefinitions";
-import { craftRecipe } from "../professions/craftingEngine";
 import {
   CONSUMABLE_MODE,
   consumeMissionConsumables,
   formatConsumableUseSummary,
   getConsumableMissionModifiers,
 } from "../professions/consumableEffects";
-import { getRecipeDefinition } from "../professions/recipeDefinitions";
 import { generatePassiveProfessionMaterial } from "../professions/professionUtils";
 import { ROUTES } from "../routes";
 
@@ -302,7 +293,7 @@ const {
 } = WORLD_DROP_CONFIG;
 // --- MAIN APP COMPONENT ---
 
-export const GameProvider = ({ children }) => {
+export const useGameProviderController = () => {
   const navigate = useNavigate();
   const servicesRef = useRef({
     now: () => Date.now(),
@@ -680,102 +671,18 @@ export const GameProvider = ({ children }) => {
     [itemDatabase],
   );
 
-  const applyMissionWipeCosts = useCallback(
-    (mission, stepLogs, availableGold) => {
-      if (mission?.type !== "dungeon") {
-        return { updatedGold: availableGold, wipeCostLog: null };
-      }
-      const wipeEvents = (Array.isArray(stepLogs) ? stepLogs : []).filter(
-        (log) => log?.type === "mission-attempt",
-      );
-      if (wipeEvents.length === 0) {
-        return { updatedGold: availableGold, wipeCostLog: null };
-      }
+  const applyMissionWipeCosts = useCallback(calculateMissionWipeCosts, []);
 
-      const wipeCost = getMissionWipeCost(mission);
-      if (wipeCost <= 0) {
-        return { updatedGold: availableGold, wipeCostLog: null };
-      }
-
-      const totalCost = wipeCost * wipeEvents.length;
-      const paidAmount = Math.max(
-        0,
-        Math.min(Math.floor(availableGold), totalCost),
-      );
-      const unpaidAmount = Math.max(0, totalCost - paidAmount);
-
-      return {
-        updatedGold: Math.max(0, availableGold - paidAmount),
-        wipeCostLog:
-          paidAmount > 0 || unpaidAmount > 0
-            ? {
-                type: "wipe-cost",
-                missionName: mission?.name || "Dungeon",
-                wipeCount: wipeEvents.length,
-                wipeCost,
-                amount: paidAmount,
-                unpaidAmount,
-              }
-            : null,
-      };
-    },
+  const getAdjustedMissionSuccessPreview = useCallback(
+    (mission, members) =>
+      calculateMissionSuccessPreview({
+        mission,
+        members,
+        guildFocus: guildSetupRef.current?.focus,
+        relationships: guildRelationshipsRef.current,
+      }),
     [],
   );
-
-  const getMissionInstanceId = (mission) =>
-    mission.instanceId ||
-    `${mission.questId || mission.id}-${mission.startTime || 0}`;
-
-  const getAdjustedMissionSuccessPreview = useCallback((mission, members) => {
-    const preview = getMissionSuccessPreview(mission, members);
-    const dungeonBonus =
-      mission?.type === "dungeon"
-        ? getGuildFocusBonuses(guildSetupRef.current?.focus).dungeonSuccessBonus
-        : 0;
-    const veteranCoverage = getMissionVeteranCoverage(mission, members);
-    const moraleSuccessBonus =
-      mission?.type === "dungeon" ? getPartyMoraleSuccessBonus(members) : 0;
-    const relationshipSuccessModifier = getRelationshipSuccessModifier({
-      relationships: guildRelationshipsRef.current,
-      memberIds: members.map((member) => member?.id),
-    });
-    const adjustedSuccess = Math.min(
-      100,
-      Math.max(
-        0,
-        preview.successChance +
-          dungeonBonus +
-          veteranCoverage.successBonus +
-          moraleSuccessBonus +
-          relationshipSuccessModifier.successModifier,
-      ),
-    );
-    return {
-      ...preview,
-      successChance: adjustedSuccess,
-      failChance: Math.max(0, 100 - adjustedSuccess),
-      focusSuccessBonus: dungeonBonus,
-      moraleSuccessBonus,
-      relationshipSuccessModifier:
-        relationshipSuccessModifier.successModifier,
-      relationshipSuccessModifierLevel: relationshipSuccessModifier.level,
-      relationshipSuccessModifierPair:
-        relationshipSuccessModifier.affectedPairKey,
-      veteranSuccessBonus: veteranCoverage.successBonus,
-      veteranExperiencedCount: veteranCoverage.experiencedCount,
-      veteranCoverageRatio: veteranCoverage.coverageRatio,
-    };
-  }, []);
-
-  const sortDungeonChainMissions = (left, right) => {
-    if ((left?.level || 0) !== (right?.level || 0)) {
-      return (left?.level || 0) - (right?.level || 0);
-    }
-    const leftWingOrder = Number(left?.wingOrder) || 0;
-    const rightWingOrder = Number(right?.wingOrder) || 0;
-    if (leftWingOrder !== rightWingOrder) return leftWingOrder - rightWingOrder;
-    return String(left?.name || "").localeCompare(String(right?.name || ""));
-  };
 
   const buildMissionRun = useCallback(
     (
@@ -786,316 +693,34 @@ export const GameProvider = ({ children }) => {
       chainContext = null,
       runOptions = {},
     ) => {
-      const selectedMembers = (
-        Array.isArray(rosterSnapshot) ? rosterSnapshot : rosterRef.current
-      ).filter((c) => ids.includes(c.id));
-      const missionPreview = getAdjustedMissionSuccessPreview(
+      return createMissionRun({
         quest,
-        selectedMembers,
-      );
-      const consumableModifiers = runOptions?.consumableModifiers || null;
-      const consumableSuccessBonus = Number(
-        consumableModifiers?.successBonusPercent,
-      ) || 0;
-      const adjustedSuccessChance = Math.min(
-        100,
-        Math.max(0, missionPreview.successChance + consumableSuccessBonus),
-      );
-      const totalDuration = quest.duration * 1000;
-      const dungeonProgress =
-        quest.type === "dungeon"
-          ? getDefaultDungeonProgress(quest, startTime, totalDuration)
-          : null;
-      let resumedDungeonProgress = dungeonProgress;
-      let adjustedTotalDuration = totalDuration;
-      let adjustedFinishTime = startTime + totalDuration;
-      if (quest?.isRaid === true && dungeonProgress) {
-        const resumeClearedSteps = getRaidResumeProgress({
-          raidLockouts: raidLockoutsRef.current,
-          mission: quest,
-          currentDayIndex: getCurrentCalendarDayIndex(),
-          memberIds: ids,
-        });
-        const bossCount = getDungeonBossCount(quest);
-        const safeResumeSteps = Math.max(
-          0,
-          Math.min(bossCount - 1, resumeClearedSteps),
-        );
-        if (safeResumeSteps > 0) {
-          const remainingSteps = Math.max(1, bossCount - safeResumeSteps);
-          adjustedTotalDuration = dungeonProgress.stepDuration * remainingSteps;
-          adjustedFinishTime = startTime + adjustedTotalDuration;
-          resumedDungeonProgress = {
-            ...dungeonProgress,
-            currentStep: safeResumeSteps,
-            clearedSteps: safeResumeSteps,
-            lootAwardedSteps: Array.from(
-              { length: safeResumeSteps },
-              (_, index) => index + 1,
-            ),
-            nextStepAt: startTime + dungeonProgress.stepDuration,
-          };
-        }
-      }
-      const missionSuccess =
-        quest.type === "dungeon"
-          ? undefined
-          : services.random() * 100 < adjustedSuccessChance;
-
-      return {
-        ...quest,
-        instanceId: createId(),
-        payoutGold: getMissionGoldReward(quest),
-        wipeCost: getMissionWipeCost(quest),
-        missionSuccess,
-        successChance: adjustedSuccessChance,
-        failChance: Math.max(0, 100 - adjustedSuccessChance),
-        consumableModifiers,
-        consumableSummary: formatConsumableUseSummary(consumableModifiers),
-        moraleSuccessBonus: missionPreview.moraleSuccessBonus,
-        partyPower: missionPreview.partyPower,
-        missionPower: missionPreview.missionPower,
-        questId: quest.id,
+        memberIds: ids,
         startTime,
-        finishTime: adjustedFinishTime,
-        totalDuration: adjustedTotalDuration,
-        dungeonProgress: resumedDungeonProgress,
-        memberIds: [...ids],
-        chainContext: chainContext
-          ? {
-              ...chainContext,
-              remainingMissionIds: Array.isArray(
-                chainContext.remainingMissionIds,
-              )
-                ? [...chainContext.remainingMissionIds]
-                : [],
-            }
-          : null,
-      };
+        roster: Array.isArray(rosterSnapshot) ? rosterSnapshot : rosterRef.current,
+        chainContext,
+        runOptions,
+        raidLockouts: raidLockoutsRef.current,
+        currentDayIndex: getCurrentCalendarDayIndex(),
+        services,
+        getSuccessPreview: getAdjustedMissionSuccessPreview,
+      });
     },
     [getAdjustedMissionSuccessPreview, getCurrentCalendarDayIndex],
   );
 
   const resolveDungeonChainContinuation = useCallback(
     ({ mission, missionSucceeded, rosterSnapshot, startTime }) => {
-      const chainContext = mission?.chainContext;
-      if (
-        mission?.type !== "dungeon" ||
-        !chainContext ||
-        !Array.isArray(mission?.memberIds) ||
-        mission.memberIds.length === 0
-      ) {
-        return {
-          queuedMission: null,
-          updatedRoster: rosterSnapshot,
-          chainLogs: [],
-          notification: null,
-        };
-      }
-
-      const chainName =
-        chainContext?.setName || mission?.dungeonSetName || "Dungeon Chain";
-      const totalMissions = Math.max(
-        1,
-        Number(chainContext?.totalMissions) ||
-          (Array.isArray(chainContext?.remainingMissionIds)
-            ? chainContext.remainingMissionIds.length + 1
-            : 1),
-      );
-      const currentPosition = Math.max(
-        1,
-        Math.min(totalMissions, Number(chainContext?.currentPosition) || 1),
-      );
-      const remainingMissionIds = Array.isArray(
-        chainContext?.remainingMissionIds,
-      )
-        ? chainContext.remainingMissionIds
-        : [];
-
-      if (!missionSucceeded) {
-        return {
-          queuedMission: null,
-          updatedRoster: rosterSnapshot,
-          chainLogs: [
-            {
-              type: "dungeon-chain",
-              outcome: "stopped",
-              chainName,
-              missionName: mission.name,
-              position: currentPosition,
-              total: totalMissions,
-            },
-          ],
-          notification: null,
-        };
-      }
-
-      if (remainingMissionIds.length === 0) {
-        return {
-          queuedMission: null,
-          updatedRoster: rosterSnapshot,
-          chainLogs: [
-            {
-              type: "dungeon-chain",
-              outcome: "completed",
-              chainName,
-              missionName: mission.name,
-              position: totalMissions,
-              total: totalMissions,
-            },
-          ],
-          notification: {
-            type: "success",
-            title: "Dungeon Chain Complete",
-            message: `${chainName} finished.`,
-            durationMs: 3600,
-          },
-        };
-      }
-
-      const missionLookup = new Map(
-        (Array.isArray(missionListRef.current)
-          ? missionListRef.current
-          : []
-        ).map((missionEntry) => [missionEntry.id, missionEntry]),
-      );
-      const nextMissionTemplate = missionLookup.get(remainingMissionIds[0]);
-      if (!nextMissionTemplate || nextMissionTemplate.type !== "dungeon") {
-        return {
-          queuedMission: null,
-          updatedRoster: rosterSnapshot,
-          chainLogs: [
-            {
-              type: "dungeon-chain",
-              outcome: "stopped",
-              chainName,
-              missionName: mission.name,
-              position: currentPosition,
-              total: totalMissions,
-            },
-          ],
-          notification: {
-            type: "error",
-            title: "Dungeon Chain Stopped",
-            message: "Missing mission data for next wing.",
-          },
-        };
-      }
-
-      const chainPartyMembers = rosterSnapshot.filter((char) =>
-        mission.memberIds.includes(char.id),
-      );
-      const nextMissionKeyAccess = evaluateMissionKeyAccess({
-        missions: [nextMissionTemplate],
-        partyMembers: chainPartyMembers,
-      });
-      if (!nextMissionKeyAccess.canEnter) {
-        const missingKeyLabel = nextMissionKeyAccess.missingKeyIds
-          .map((keyId) => getKeyLabel(keyId) || keyId)
-          .join(", ");
-        return {
-          queuedMission: null,
-          updatedRoster: rosterSnapshot,
-          chainLogs: [
-            {
-              type: "dungeon-chain",
-              outcome: "stopped",
-              chainName,
-              missionName: nextMissionTemplate.name,
-              position: currentPosition,
-              total: totalMissions,
-            },
-          ],
-          notification: {
-            type: "error",
-            title: "Dungeon Chain Stopped",
-            message: `Missing key for ${nextMissionTemplate.dungeonWing || nextMissionTemplate.name}: ${missingKeyLabel}.`,
-          },
-        };
-      }
-      if (nextMissionTemplate?.isRaid === true) {
-        const nextRaidStatus = getRaidLockoutStatus({
-          raidLockouts: raidLockoutsRef.current,
-          mission: nextMissionTemplate,
-          currentDayIndex: getCurrentCalendarDayIndex(),
-          memberIds: mission.memberIds,
-        });
-        if (nextRaidStatus.isWingLocked) {
-          const missingWings =
-            nextRaidStatus.missingRequiredWingLabels?.join(", ") ||
-            nextRaidStatus.missingRequiredWingIds?.join(", ") ||
-            "required wings";
-          return {
-            queuedMission: null,
-            updatedRoster: rosterSnapshot,
-            chainLogs: [
-              {
-                type: "dungeon-chain",
-                outcome: "stopped",
-                chainName,
-                missionName: nextMissionTemplate.name,
-                position: currentPosition,
-                total: totalMissions,
-              },
-            ],
-            notification: {
-              type: "error",
-              title: "Raid Chain Stopped",
-              message: `${nextMissionTemplate.dungeonWing || nextMissionTemplate.name} unlocks after clearing: ${missingWings}.`,
-            },
-          };
-        }
-      }
-
-      const nextPosition = Math.min(totalMissions, currentPosition + 1);
-      const nextChainContext = {
-        ...chainContext,
-        totalMissions,
-        currentPosition: nextPosition,
-        remainingMissionIds: remainingMissionIds.slice(1),
-      };
-
-      const queuedMission = buildMissionRun(
-        nextMissionTemplate,
-        mission.memberIds,
+      return calculateDungeonChainContinuation({
+        mission,
+        missionSucceeded,
+        roster: rosterSnapshot,
         startTime,
-        rosterSnapshot,
-        nextChainContext,
-      );
-      const queuedMissionWithCalendar = mission.calendarEventId
-        ? { ...queuedMission, calendarEventId: mission.calendarEventId }
-        : queuedMission;
-
-      const updatedRoster = rosterSnapshot.map((char) =>
-        mission.memberIds.includes(char.id)
-          ? {
-              ...char,
-              status: "Questing",
-              statusText: `Chain: ${nextMissionTemplate.name}`,
-            }
-          : char,
-      );
-
-      return {
-        queuedMission: queuedMissionWithCalendar,
-        updatedRoster,
-        chainLogs: [
-          {
-            type: "dungeon-chain",
-            outcome: "continued",
-            chainName,
-            missionName: nextMissionTemplate.name,
-            position: nextPosition,
-            total: totalMissions,
-          },
-        ],
-        notification: {
-          type: "info",
-          title: "Dungeon Chain",
-          message: `Next wing: ${nextMissionTemplate.dungeonWing || nextMissionTemplate.name} (${nextPosition}/${totalMissions})`,
-          durationMs: 2800,
-        },
-      };
+        missionList: missionListRef.current,
+        raidLockouts: raidLockoutsRef.current,
+        currentDayIndex: getCurrentCalendarDayIndex(),
+        buildRun: buildMissionRun,
+      });
     },
     [buildMissionRun, getCurrentCalendarDayIndex],
   );
@@ -1155,99 +780,14 @@ export const GameProvider = ({ children }) => {
   );
 
   const applyDungeonStepLootAwards = useCallback(
-    ({ activeMissions, finishedMissions, rosterSnapshot, stepLogs }) => {
-      const awardDungeonStepLoot = missionRewardProcessor.awardDungeonStepLoot;
-      if (typeof awardDungeonStepLoot !== "function") {
-        return {
-          activeMissions,
-          finishedMissions,
-          roster: rosterSnapshot,
-          logs: stepLogs,
-        };
-      }
-
-      let nextRoster = rosterSnapshot;
-      const nextActiveMissions = [...activeMissions];
-      const nextFinishedMissions = [...finishedMissions];
-      const allMissions = [
-        ...nextActiveMissions.map((mission, index) => ({
-          mission,
-          index,
-          bucket: "active",
-        })),
-        ...nextFinishedMissions.map((mission, index) => ({
-          mission,
-          index,
-          bucket: "finished",
-        })),
-      ];
-      const nextLogs = [];
-
-      (Array.isArray(stepLogs) ? stepLogs : []).forEach((log) => {
-        nextLogs.push(log);
-        if (log?.type !== "dungeon-step") return;
-
-        const matchingMission = allMissions.find(({ mission }) => {
-          const logInstanceId = String(log?.missionInstanceId || "");
-          if (
-            logInstanceId &&
-            getMissionInstanceId(mission) === logInstanceId
-          ) {
-            return true;
-          }
-          return (
-            !logInstanceId &&
-            mission?.name === log?.missionName &&
-            mission?.type === "dungeon"
-          );
-        });
-        if (!matchingMission) return;
-
-        if (log.outcome === "failed") {
-          const memberIds = new Set(
-            (Array.isArray(matchingMission.mission?.memberIds)
-              ? matchingMission.mission.memberIds
-              : []
-            ).map((memberId) => String(memberId || "")),
-          );
-          if (memberIds.size > 0) {
-            nextRoster = nextRoster.map((member) =>
-              memberIds.has(String(member?.id || ""))
-                ? applyMoraleDelta(member, MORALE_WIPE_DELTA)
-                : member,
-            );
-          }
-          return;
-        }
-
-        if (log.outcome !== "cleared") return;
-
-        const awardResult = awardDungeonStepLoot({
-          mission: matchingMission.mission,
-          currentRoster: nextRoster,
-          stepLog: log,
-        });
-        if (!awardResult?.mission) return;
-
-        matchingMission.mission = awardResult.mission;
-        if (matchingMission.bucket === "active") {
-          nextActiveMissions[matchingMission.index] = awardResult.mission;
-        } else {
-          nextFinishedMissions[matchingMission.index] = awardResult.mission;
-        }
-        nextRoster = awardResult.updatedRoster || nextRoster;
-        if (Array.isArray(awardResult.missionLogs)) {
-          nextLogs.push(...awardResult.missionLogs);
-        }
-      });
-
-      return {
-        activeMissions: nextActiveMissions,
-        finishedMissions: nextFinishedMissions,
-        roster: nextRoster,
-        logs: nextLogs,
-      };
-    },
+    ({ activeMissions, finishedMissions, rosterSnapshot, stepLogs }) =>
+      calculateDungeonStepLootAwards({
+        activeMissions,
+        finishedMissions,
+        roster: rosterSnapshot,
+        stepLogs,
+        awardDungeonStepLoot: missionRewardProcessor.awardDungeonStepLoot,
+      }),
     [missionRewardProcessor],
   );
 
@@ -1318,23 +858,15 @@ export const GameProvider = ({ children }) => {
   );
 
   // --- GAME LOOP ---
-  useRuntimeInterval(() => {
-      const previousGameTime = gameTimeRef.current;
-      const clockStep = advanceGameTime({
-        currentGameTime: previousGameTime,
-        lastRealTime: lastRealTimeRef.current,
-        realNow: services.now(),
-        isPaused,
-        speed: gameSpeed,
-      });
-      gameTimeRef.current = clockStep.gameTime;
-      lastRealTimeRef.current = clockStep.lastRealTime;
-      const now = gameTimeRef.current;
-      const elapsedGameMs = Math.max(0, now - previousGameTime);
-      setGameTimeMs(now);
-
-      if (isPaused) return;
-
+  useGameRuntime({
+    isPaused,
+    gameSpeed,
+    services,
+    gameTimeRef,
+    lastRealTimeRef,
+    setGameTimeMs,
+    intervalMs: CONFIG.TICK_RATE,
+    onActiveTick: ({ now, elapsedGameMs }) => {
       const currentFaction =
         guildSetupRef.current?.faction || GUILD_FACTION.ALLIANCE;
       let currentRoster = normalizeRosterZones(
@@ -1538,6 +1070,7 @@ export const GameProvider = ({ children }) => {
         now,
         currentGold: newGold,
         applyMissionWipeCosts,
+        random: services.random,
       });
       newMissions = missionTick.activeMissions;
       finishedMissions = missionTick.finishedMissions;
@@ -2335,7 +1868,8 @@ export const GameProvider = ({ children }) => {
           [...newLogs.map((log) => ({ time, ...log })), ...prev].slice(0, 50),
         );
       }
-  }, CONFIG.TICK_RATE);
+    },
+  });
 
   const handleOpenRecruit = () => {
     const openSlots = Math.max(
@@ -3762,7 +3296,9 @@ export const GameProvider = ({ children }) => {
   const handleManualFinish = (m) => {
     const now = gameTimeRef.current;
     const dungeonAdvance =
-      m.type === "dungeon" ? advanceDungeonMission(m, now, true) : null;
+      m.type === "dungeon"
+        ? advanceDungeonMission(m, now, true, services.random)
+        : null;
     const missionToResolve = dungeonAdvance ? dungeonAdvance.mission : m;
     const missionInstanceId = getMissionInstanceId(missionToResolve);
     if (rewardedMissionIdsRef.current.has(missionInstanceId)) return;
@@ -3908,14 +3444,13 @@ export const GameProvider = ({ children }) => {
 
   const handleCraftRecipe = useCallback(
     (characterId, recipeId) => {
-      const recipe = getRecipeDefinition(recipeId);
-      const character = rosterRef.current.find(
-        (member) => member.id === characterId,
-      );
-      const result = craftRecipe({
-        character,
-        recipe,
+      const result = craftInventoryRecipe({
+        characterId,
+        recipeId,
+        roster: rosterRef.current,
         guildInventory: guildInventoryRef.current,
+        stashPolicy: stashPolicyRef.current,
+        guildGold: goldRef.current,
       });
       if (!result.crafted) {
         pushNotification({
@@ -3925,68 +3460,17 @@ export const GameProvider = ({ children }) => {
         });
         return false;
       }
-
-      let nextInventory = result.guildInventory;
-      let nextRoster = rosterRef.current.map((member) =>
-        member.id === characterId ? result.character : member,
-      );
-      let nextGold = goldRef.current;
-      const logs = [...result.logs];
-      const outputDefinition = getInventoryItemDefinition(result.outputItemId);
-
-      if (outputDefinition?.category === INVENTORY_ITEM_CATEGORY.EQUIPMENT) {
-        const equipResult = tryAutoEquipItemFromGuildStash({
-          itemId: result.outputItemId,
-          roster: nextRoster,
-          guildInventory: nextInventory,
-        });
-        nextInventory = equipResult.guildInventory;
-        nextRoster = equipResult.roster;
-        if (equipResult.log) logs.push(equipResult.log);
-
-        if (
-          !equipResult.equipped &&
-          recipe.purpose === "skillup" &&
-          !shouldStoreItem({
-            itemId: result.outputItemId,
-            roster: nextRoster,
-            policy: stashPolicyRef.current,
-          })
-        ) {
-          const sellQuantity = Math.min(
-            result.outputQuantity || 1,
-            getItemQuantity(nextInventory, result.outputItemId),
-          );
-          if (sellQuantity > 0) {
-            nextInventory = removeItemFromGuildInventory(
-              nextInventory,
-              result.outputItemId,
-              sellQuantity,
-            );
-            const saleGold =
-              sellQuantity * Math.max(0, Number(outputDefinition.sellValue) || 0);
-            nextGold += saleGold;
-            logs.push({
-              type: "profession",
-              message: `Sold ${sellQuantity} obsolete ${outputDefinition.name} for ${saleGold}g.`,
-            });
-          }
-        }
-      }
-
-      rosterRef.current = nextRoster;
-      guildInventoryRef.current = nextInventory;
-      goldRef.current = nextGold;
-      setRoster(nextRoster);
-      setGuildInventory(nextInventory);
-      setGuildGold(nextGold);
-      appendProfessionLogs(logs);
+      rosterRef.current = result.roster;
+      guildInventoryRef.current = result.guildInventory;
+      goldRef.current = result.guildGold;
+      setRoster(result.roster);
+      setGuildInventory(result.guildInventory);
+      setGuildGold(result.guildGold);
+      appendProfessionLogs(result.logs);
       pushNotification({
         type: "info",
         title: "Crafting Complete",
-        message:
-          logs[0]?.message ||
-          `${character?.name || "Crafter"} completed a recipe.`,
+        message: result.message,
       });
       return true;
     },
@@ -3995,29 +3479,16 @@ export const GameProvider = ({ children }) => {
 
   const handleSellStashItem = useCallback(
     (itemId, quantity = 1) => {
-      const definition = getInventoryItemDefinition(itemId);
-      const sellQuantity = Math.min(
-        Math.max(1, Math.floor(Number(quantity) || 1)),
-        getItemQuantity(guildInventoryRef.current, itemId),
-      );
-      if (!definition || sellQuantity <= 0) return false;
-      const saleGold = sellQuantity * Math.max(0, Number(definition.sellValue) || 0);
-      const nextInventory = removeItemFromGuildInventory(
-        guildInventoryRef.current,
-        itemId,
-        sellQuantity,
-      );
-      const nextGold = goldRef.current + saleGold;
-      guildInventoryRef.current = nextInventory;
-      goldRef.current = nextGold;
-      setGuildInventory(nextInventory);
-      setGuildGold(nextGold);
-      appendProfessionLogs([
-        {
-          type: "profession",
-          message: `Sold ${sellQuantity} ${definition.name} for ${saleGold}g.`,
-        },
-      ]);
+      const result = sellGuildStashItem({
+        itemId, quantity, guildInventory: guildInventoryRef.current,
+        guildGold: goldRef.current,
+      });
+      if (!result) return false;
+      guildInventoryRef.current = result.guildInventory;
+      goldRef.current = result.guildGold;
+      setGuildInventory(result.guildInventory);
+      setGuildGold(result.guildGold);
+      appendProfessionLogs([result.log]);
       return true;
     },
     [appendProfessionLogs],
@@ -4025,7 +3496,7 @@ export const GameProvider = ({ children }) => {
 
   const handleTryAutoEquipFromGuildStash = useCallback(
     (itemId) => {
-      const equipResult = tryAutoEquipItemFromGuildStash({
+      const equipResult = autoEquipGuildStashItem({
         itemId,
         roster: rosterRef.current,
         guildInventory: guildInventoryRef.current,
@@ -4049,16 +3520,16 @@ export const GameProvider = ({ children }) => {
   );
 
   const handleCleanupGuildStash = useCallback(() => {
-    const cleanup = cleanupGuildStash({
+    const cleanup = cleanGuildStash({
       guildInventory: guildInventoryRef.current,
       roster: rosterRef.current,
-      policy: stashPolicyRef.current,
+      stashPolicy: stashPolicyRef.current,
+      guildGold: goldRef.current,
     });
-    const nextGold = goldRef.current + cleanup.goldGained;
     guildInventoryRef.current = cleanup.guildInventory;
-    goldRef.current = nextGold;
+    goldRef.current = cleanup.guildGold;
     setGuildInventory(cleanup.guildInventory);
-    setGuildGold(nextGold);
+    setGuildGold(cleanup.guildGold);
     appendProfessionLogs(
       cleanup.logs.length > 0
         ? cleanup.logs
@@ -4111,255 +3582,74 @@ export const GameProvider = ({ children }) => {
     ],
   );
 
-  const handleSaveSession = () => {
-    try {
-      saveSessionFile({
-        roster,
-        activeMissions,
-        missionList,
-        guildLog,
-        guildGold,
-        guildProgress,
-        guildSetup,
-        guildRelationships,
-        realmState,
-        worldPvpState,
-        battlefieldState,
-        guildInventory,
-        stashPolicy,
-        calendarState,
-        raidLockouts,
-        missionBoardState,
-        gameSpeed,
-        isPaused,
-        gameTimeMs: gameTimeRef.current,
-      });
-    } catch (error) {
-      console.error("Failed to save session:", error);
-      pushNotification({
-        type: "error",
-        title: "Save Failed",
-        message: "Could not create the session file.",
-      });
-    }
-  };
+  const {
+    saveSession: handleSaveSession,
+    openSession: handleLoadButtonClick,
+    loadSession: handleLoadSessionFile,
+  } = createSessionActions({
+    state: {
+      roster, activeMissions, missionList, guildLog, guildGold, guildProgress,
+      guildSetup, guildRelationships, realmState, worldPvpState, battlefieldState,
+      guildInventory, stashPolicy, calendarState, raidLockouts, missionBoardState,
+      gameSpeed, isPaused,
+    },
+    refs: {
+      rewardedMissionIds: rewardedMissionIdsRef, roster: rosterRef,
+      missions: missionsRef, gold: goldRef, guildProgress: guildProgressRef,
+      guildSetup: guildSetupRef, guildRelationships: guildRelationshipsRef,
+      realmState: realmStateRef, worldPvpState: worldPvpStateRef,
+      battlefieldState: battlefieldStateRef, guildInventory: guildInventoryRef,
+      stashPolicy: stashPolicyRef, calendarState: calendarStateRef,
+      raidLockouts: raidLockoutsRef, gameTime: gameTimeRef,
+      lastRealTime: lastRealTimeRef, sessionFileInput: sessionFileInputRef,
+    },
+    setters: {
+      setRoster, setActiveMissions, setMissionList, setGuildLog, setGuildGold,
+      setGuildProgress, setGuildSetup, setGuildRelationships, setRealmState,
+      setWorldPvpState, setBattlefieldState, setGuildInventory, setStashPolicy,
+      setMissionBoardState, setCalendarState, setRaidLockouts, setIsPaused,
+      setGameSpeed, setGameTimeMs, setDetailCharId,
+    },
+    closeOverlays: () => {
+      setShowRecruit(false);
+      setShowLootTable(false);
+      setShowGuildLog(false);
+      setShowDebug(false);
+      setShowOptions(false);
+      setShowProfessions(false);
+      navigate(ROUTES.DASHBOARD);
+    },
+    normalizeRosterZones,
+    createId: services.createId,
+    pushNotification,
+  });
 
-  const handleLoadButtonClick = () => {
-    openSessionFilePicker(sessionFileInputRef);
-  };
-
-  const handleLoadSessionFile = (event) => {
-    loadSessionFile({
-      event,
-      hydrateOptions: {
-        initialMissions: getMissionListWithZones(INITIAL_MISSIONS),
-        normalizeGuildProgress,
-        normalizeGuildSetup,
-        getGuildDerivedStats,
-        normalizeProgressionState,
-        defaultGameSpeed: DEFAULT_GAME_SPEED,
-        createId,
-        resolveDungeonBossCount: getDungeonBossCount,
-        defaultGuildSetup: DEFAULT_GUILD_SETUP,
-      },
-      onLoaded: (loadedSession) => {
-        applyLoadedSessionToApp({
-          loadedSession,
-          factionFallback: GUILD_FACTION.ALLIANCE,
-          normalizeRosterZones,
-          getMissionListWithZones,
-          clampGameSpeed,
-          refs: {
-            rewardedMissionIds: rewardedMissionIdsRef,
-            roster: rosterRef,
-            missions: missionsRef,
-            gold: goldRef,
-            guildProgress: guildProgressRef,
-            guildSetup: guildSetupRef,
-            guildRelationships: guildRelationshipsRef,
-            realmState: realmStateRef,
-            worldPvpState: worldPvpStateRef,
-            battlefieldState: battlefieldStateRef,
-            guildInventory: guildInventoryRef,
-            stashPolicy: stashPolicyRef,
-            calendarState: calendarStateRef,
-            raidLockouts: raidLockoutsRef,
-            gameTime: gameTimeRef,
-            lastRealTime: lastRealTimeRef,
-          },
-          setters: {
-            setRoster,
-            setActiveMissions,
-            setMissionList,
-            setGuildLog,
-            setGuildGold,
-            setGuildProgress,
-            setGuildSetup,
-            setGuildRelationships,
-            setRealmState,
-            setWorldPvpState,
-            setBattlefieldState,
-            setGuildInventory,
-            setStashPolicy,
-            setMissionBoardState,
-            setCalendarState,
-            setRaidLockouts,
-            setIsPaused,
-            setGameSpeed,
-            setGameTimeMs,
-            setDetailCharId,
-          },
-          closeOverlays: () => {
-            setShowRecruit(false);
-            setShowLootTable(false);
-            setShowGuildLog(false);
-            setShowDebug(false);
-            setShowOptions(false);
-            setShowProfessions(false);
-            navigate(ROUTES.DASHBOARD);
-          },
-        });
-        pushNotification({
-          type: "success",
-          title: "Session Loaded",
-          message: "The guild session was loaded successfully.",
-        });
-      },
-      onInvalidSession: (error) => {
-        console.error("Failed to load session:", error);
-        pushNotification({
-          type: "error",
-          title: "Invalid Session",
-          message: error?.message || "The selected session file is invalid.",
-          durationMs: 6500,
-        });
-      },
-      onReadError: () => {
-        pushNotification({
-          type: "error",
-          title: "Read Failed",
-          message: "Could not read the selected session file.",
-        });
-      },
-    });
-  };
-
-  const guildActivityModeSummary =
-    roster.length === 0
-      ? null
-      : (() => {
-          const firstMode = roster[0]?.activityMode || "Auto";
-          const uniform = roster.every(
-            (member) => (member?.activityMode || "Auto") === firstMode,
-          );
-          return uniform ? firstMode : "Mixed";
-        })();
-  const dungeonActivityInfoText =
-    guildSetup.dungeonActivity === GUILD_DUNGEON_ACTIVITY.MINIMAL
-      ? "Groups are formed every other day."
-      : guildSetup.dungeonActivity === GUILD_DUNGEON_ACTIVITY.BALANCED
-        ? "Groups are formed every day."
-        : guildSetup.dungeonActivity === GUILD_DUNGEON_ACTIVITY.ALWAYS
-          ? "Groups will be formed several times a day."
-          : "Automatic dungeon groups are disabled.";
-
-  const parsedGuildMemberMinLevel = Number(guildMemberMinLevelFilter);
-  const parsedGuildMemberMaxLevel = Number(guildMemberMaxLevelFilter);
-  const hasGuildMemberMinLevelFilter =
-    guildMemberMinLevelFilter !== "" &&
-    Number.isFinite(parsedGuildMemberMinLevel) &&
-    parsedGuildMemberMinLevel > 0;
-  const hasGuildMemberMaxLevelFilter =
-    guildMemberMaxLevelFilter !== "" &&
-    Number.isFinite(parsedGuildMemberMaxLevel) &&
-    parsedGuildMemberMaxLevel > 0;
-  const normalizedGuildMemberMinLevel = hasGuildMemberMinLevelFilter
-    ? Math.max(1, Math.floor(parsedGuildMemberMinLevel))
-    : null;
-  const normalizedGuildMemberMaxLevel = hasGuildMemberMaxLevelFilter
-    ? Math.max(1, Math.floor(parsedGuildMemberMaxLevel))
-    : null;
-  const hasAnyGuildMemberLevelFilter =
-    hasGuildMemberMinLevelFilter || hasGuildMemberMaxLevelFilter;
+  const guildActivityModeSummary = getGuildActivityModeSummary(roster);
+  const dungeonActivityInfoText = getDungeonActivityInfoText(
+    guildSetup.dungeonActivity,
+    GUILD_DUNGEON_ACTIVITY,
+  );
+  const memberLevelBounds = getMemberLevelBounds(
+    guildMemberMinLevelFilter,
+    guildMemberMaxLevelFilter,
+  );
+  const hasAnyGuildMemberLevelFilter = memberLevelBounds.hasAnyFilter;
   const normalizedGuildMemberSearch =
     normalizeGuildMemberSearch(guildMemberSearch);
   const hasGuildMemberSearch = normalizedGuildMemberSearch.length > 0;
-  const rankedRoster = useMemo(() => {
-    const levelBounds =
-      normalizedGuildMemberMinLevel !== null &&
-      normalizedGuildMemberMaxLevel !== null
-        ? {
-            min: Math.min(
-              normalizedGuildMemberMinLevel,
-              normalizedGuildMemberMaxLevel,
-            ),
-            max: Math.max(
-              normalizedGuildMemberMinLevel,
-              normalizedGuildMemberMaxLevel,
-            ),
-          }
-        : {
-            min: normalizedGuildMemberMinLevel ?? 1,
-            max: normalizedGuildMemberMaxLevel ?? Number.POSITIVE_INFINITY,
-          };
-
-    const filteredRoster = roster.filter((member) => {
-      if (!hasAnyGuildMemberLevelFilter) return true;
-      const level = Number(member?.level) || 1;
-      return level >= levelBounds.min && level <= levelBounds.max;
-    });
-
-    const sortedRoster = [...filteredRoster].sort((left, right) => {
-      const leftLevel = Number(left?.level) || 1;
-      const rightLevel = Number(right?.level) || 1;
-      const leftItemLevel = getCharacterAverageItemLevel(left);
-      const rightItemLevel = getCharacterAverageItemLevel(right);
-
-      if (guildMemberSortMode === GUILD_MEMBER_SORT.LEVEL_ASC) {
-        if (leftLevel !== rightLevel) return leftLevel - rightLevel;
-        if (rightItemLevel !== leftItemLevel)
-          return rightItemLevel - leftItemLevel;
-      } else if (guildMemberSortMode === GUILD_MEMBER_SORT.ILVL_DESC) {
-        if (rightItemLevel !== leftItemLevel)
-          return rightItemLevel - leftItemLevel;
-        if (rightLevel !== leftLevel) return rightLevel - leftLevel;
-      } else if (guildMemberSortMode === GUILD_MEMBER_SORT.ILVL_ASC) {
-        if (leftItemLevel !== rightItemLevel)
-          return leftItemLevel - rightItemLevel;
-        if (leftLevel !== rightLevel) return leftLevel - rightLevel;
-      } else {
-        if (rightLevel !== leftLevel) return rightLevel - leftLevel;
-        if (rightItemLevel !== leftItemLevel)
-          return rightItemLevel - leftItemLevel;
-      }
-
-      return String(left?.name || "").localeCompare(String(right?.name || ""));
-    });
-
-    if (!hasGuildMemberSearch) return sortedRoster;
-
-    return sortedRoster
-      .map((member, index) => ({
-        member,
-        index,
-        searchScore: getGuildMemberSearchScore(
-          member,
-          normalizedGuildMemberSearch,
-        ),
-      }))
-      .sort((left, right) => {
-        if (right.searchScore !== left.searchScore) {
-          return right.searchScore - left.searchScore;
-        }
-        return left.index - right.index;
-      })
-      .map((entry) => entry.member);
-  }, [
+  const rankedRoster = useMemo(() => rankGuildRoster({
+    roster,
+    levelBounds: memberLevelBounds,
+    sortMode: guildMemberSortMode,
+    sortModes: GUILD_MEMBER_SORT,
+    normalizedSearch: normalizedGuildMemberSearch,
+    getItemLevel: getCharacterAverageItemLevel,
+    getSearchScore: getGuildMemberSearchScore,
+  }), [
     guildMemberSortMode,
-    hasGuildMemberSearch,
-    hasAnyGuildMemberLevelFilter,
-    normalizedGuildMemberMaxLevel,
-    normalizedGuildMemberMinLevel,
+    memberLevelBounds.hasAnyFilter,
+    memberLevelBounds.max,
+    memberLevelBounds.min,
     normalizedGuildMemberSearch,
     roster,
   ]);
@@ -4371,29 +3661,7 @@ export const GameProvider = ({ children }) => {
     bestGuildMemberSearchScore > 0 ? rankedRoster[0]?.id : null;
   const hasGuildMemberSearchMatch = bestGuildMemberSearchMatchId !== null;
   const missionAchievementCatalog = useMemo(
-    () =>
-      [...missionList]
-        .filter((mission) => mission?.type === "dungeon")
-        .sort((left, right) => {
-          if ((left?.level || 0) !== (right?.level || 0)) {
-            return (left?.level || 0) - (right?.level || 0);
-          }
-          return String(left?.name || "").localeCompare(
-            String(right?.name || ""),
-          );
-        })
-        .map((mission) => ({
-          id: mission.id,
-          name: mission.name,
-          label:
-            mission?.type === "dungeon" && mission?.dungeonWing
-              ? `${mission.dungeonWing}${mission?.dungeonSetName ? ` (${mission.dungeonSetName})` : ""}`
-              : mission.name,
-          isRaid: mission.isRaid === true,
-          recommended: mission.recommended,
-          minLevel: mission.minLevel,
-          entryLevel: mission.entryLevel,
-        })),
+    () => buildMissionAchievementCatalog(missionList),
     [missionList],
   );
   const openRecruitSlots = Math.max(0, guildDerivedStats.maxRoster - roster.length);
@@ -4549,7 +3817,5 @@ export const GameProvider = ({ children }) => {
     contextStoreRef.current.setSnapshot(game);
   }, [game]);
 
-  return (
-    <GameContext.Provider value={contextStoreRef.current}>{children}</GameContext.Provider>
-  );
+  return contextStoreRef.current;
 };
