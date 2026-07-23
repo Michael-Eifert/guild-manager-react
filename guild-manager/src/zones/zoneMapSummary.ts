@@ -4,6 +4,8 @@ import {
   getZoneEliteQuestTemplates,
   isZoneAccessibleForFaction,
 } from "./zoneDefinitions";
+import type { Character } from "../types/characterTypes";
+import type { Mission } from "../types/missionTypes";
 
 export const WORLD_MAP_FILTERS = Object.freeze({
   ACTIVE: "Active",
@@ -12,17 +14,58 @@ export const WORLD_MAP_FILTERS = Object.freeze({
   ALL: "All",
 });
 
-const clampProgress = (value) => {
+type ZoneDefinition = (typeof ZONE_DEFINITIONS)[number];
+type WorldMapFilter =
+  typeof WORLD_MAP_FILTERS[keyof typeof WORLD_MAP_FILTERS];
+type ActiveZoneElite = {
+  zoneId: string;
+  questId: string;
+  missionName: string;
+};
+type ZoneProgressRow = {
+  member: Character;
+  memberId: string;
+  name: string;
+  race?: string;
+  gender?: string;
+  role?: string;
+  charClass?: string;
+  className?: string;
+  level: number;
+  progress: number;
+  inZone: boolean;
+  isGroupQuesting: boolean;
+  activeZoneEliteName: string | null;
+  cleared: boolean;
+};
+export type WorldMapZoneSummary = {
+  zone: ZoneDefinition;
+  zoneMission: Mission | null;
+  accessible: boolean;
+  heroCount: number;
+  heroesInZone: ZoneProgressRow[];
+  progressRows: ZoneProgressRow[];
+  clearedCount: number;
+  guildBestProgress: number;
+  activeAverageProgress: number;
+  eliteQuests: Array<Mission & { isActive: boolean }>;
+  activeEliteCount: number;
+};
+
+const clampProgress = (value: unknown) => {
   const numeric = Number(value);
   if (!Number.isFinite(numeric)) return 0;
   return Math.min(100, Math.max(0, Math.round(numeric)));
 };
 
-const getMemberId = (member) => member?.id ?? member?.name;
+const getMemberId = (member: Character) => member.id ?? member.name ?? "";
 
-const getMemberName = (member) => member?.name ?? "Unknown Hero";
+const getMemberName = (member: Character) => member.name ?? "Unknown Hero";
 
-export const getCharacterZoneProgressForZone = (member, zoneId) => {
+export const getCharacterZoneProgressForZone = (
+  member: Character | null | undefined,
+  zoneId: string,
+) => {
   if (!member || !zoneId) return 0;
   const savedProgress = member.zoneProgressById?.[zoneId];
   if (member.currentZoneId === zoneId) {
@@ -31,10 +74,10 @@ export const getCharacterZoneProgressForZone = (member, zoneId) => {
   return clampProgress(savedProgress);
 };
 
-const hasClearedZone = (member, zoneId) =>
+const hasClearedZone = (member: Character, zoneId: string) =>
   Array.isArray(member?.zonesCleared) && member.zonesCleared.includes(zoneId);
 
-const getActiveQuestId = (mission) =>
+const getActiveQuestId = (mission: Mission) =>
   String(
     mission?.questId ??
       mission?.quest?.id ??
@@ -43,11 +86,11 @@ const getActiveQuestId = (mission) =>
       "",
   );
 
-const buildActiveMissionSet = (activeMissions) =>
+const buildActiveMissionSet = (activeMissions: Mission[]) =>
   new Set((activeMissions ?? []).map(getActiveQuestId).filter(Boolean));
 
-const buildActiveZoneEliteMemberMap = (activeMissions) => {
-  const memberMap = new Map();
+const buildActiveZoneEliteMemberMap = (activeMissions: Mission[]) => {
+  const memberMap = new Map<string, ActiveZoneElite>();
   (Array.isArray(activeMissions) ? activeMissions : []).forEach((mission) => {
     if (mission?.isZoneElite !== true) return;
     const zoneId = String(mission?.zoneId || "").trim();
@@ -68,8 +111,8 @@ const buildActiveZoneEliteMemberMap = (activeMissions) => {
   return memberMap;
 };
 
-const buildZoneMissionMap = (missionList) => {
-  const missionMap = new Map();
+const buildZoneMissionMap = (missionList: Mission[]) => {
+  const missionMap = new Map<string, Mission>();
   (missionList ?? []).forEach((mission) => {
     if (mission?.type === "zone" && mission.zoneId && !missionMap.has(mission.zoneId)) {
       missionMap.set(mission.zoneId, mission);
@@ -78,7 +121,11 @@ const buildZoneMissionMap = (missionList) => {
   return missionMap;
 };
 
-const buildProgressRows = (roster, zoneId, activeZoneEliteByMemberId) =>
+const buildProgressRows = (
+  roster: Character[],
+  zoneId: string,
+  activeZoneEliteByMemberId: Map<string, ActiveZoneElite>,
+): ZoneProgressRow[] =>
   (roster ?? [])
     .map((member) => {
       const memberId = getMemberId(member);
@@ -120,7 +167,12 @@ export const buildWorldMapZoneSummaries = ({
   missionList = [],
   activeMissions = [],
   guildFaction = GUILD_FACTION.ALLIANCE,
-} = {}) => {
+}: {
+  roster?: Character[];
+  missionList?: Mission[];
+  activeMissions?: Mission[];
+  guildFaction?: string;
+} = {}): WorldMapZoneSummary[] => {
   const activeMissionIds = buildActiveMissionSet(activeMissions);
   const activeZoneEliteByMemberId = buildActiveZoneEliteMemberMap(activeMissions);
   const zoneMissionById = buildZoneMissionMap(missionList);
@@ -143,10 +195,12 @@ export const buildWorldMapZoneSummaries = ({
               heroesInZone.length,
           )
         : 0;
-    const eliteQuests = getZoneEliteQuestTemplates(zone.id).map((quest) => ({
-      ...quest,
-      isActive: activeMissionIds.has(String(quest.id)),
-    }));
+    const eliteQuests = (getZoneEliteQuestTemplates(zone.id) as Mission[]).map(
+      (quest) => ({
+        ...quest,
+        isActive: activeMissionIds.has(String(quest.id)),
+      }),
+    );
 
     return {
       zone,
@@ -165,8 +219,8 @@ export const buildWorldMapZoneSummaries = ({
 };
 
 export const filterWorldMapZoneSummaries = (
-  summaries,
-  filter = WORLD_MAP_FILTERS.ACTIVE,
+  summaries: WorldMapZoneSummary[],
+  filter: WorldMapFilter = WORLD_MAP_FILTERS.ACTIVE,
 ) => {
   switch (filter) {
     case WORLD_MAP_FILTERS.ACTIVE:

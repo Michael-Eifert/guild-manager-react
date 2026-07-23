@@ -41,4 +41,9 @@ export interface Character {
   personalityTrait?: string | { id?: string };
   personalityTraits?: Array<string | { id?: string }>;
   faction?: string;
+  currentZoneId?: string;
+  currentZoneProgress?: number;
+  zoneProgressById?: Record<string, number>;
+  zonesCleared?: string[];
+  keys?: string[];
 }

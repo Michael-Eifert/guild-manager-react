@@ -1,4 +1,5 @@
 import type { ChangeEvent, RefObject } from "react";
+import type { MissionInput } from "../types/missionTypes";
 
 import {
   buildSessionPayload,
@@ -45,7 +46,7 @@ type HydrateOptions = {
   defaultGameSpeed: number;
   defaultGuildSetup: unknown;
   createId: () => string;
-  resolveDungeonBossCount: (mission: unknown) => number;
+  resolveDungeonBossCount: (mission: MissionInput) => number;
 };
 type HydratedSession = ReturnType<typeof hydrateSessionData>;
 

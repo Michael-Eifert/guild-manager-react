@@ -1,6 +1,6 @@
 import { DEFAULT_DUNGEON_LOOT_TABLE } from "../constants";
 import { getDungeonBossCount } from "../missions/missionHelpers";
-import type { Mission } from "../types/missionTypes";
+import type { MissionInput } from "../types/missionTypes";
 
 type LootWeightInput = { quality?: unknown; chance?: unknown };
 type DungeonStepLootConfig = {
@@ -82,7 +82,7 @@ const resolveDungeonDropSource = (
 };
 
 export const getDungeonStepLootConfig = (
-  mission: Mission,
+  mission: MissionInput,
   stepIndex: number,
 ) => {
   const table: DungeonLootTable =
@@ -159,7 +159,7 @@ const rollQualityFromWeights = (
 };
 
 export const getDungeonStepQualityPriority = (
-  mission: Mission,
+  mission: MissionInput,
   stepIndex: number,
   random: () => number = Math.random,
 ) => {

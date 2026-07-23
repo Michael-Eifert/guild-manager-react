@@ -5,6 +5,10 @@ import { normalizeGuildSetup } from "../guild/guildSetup";
 import { clampGameSpeed, DEFAULT_GAME_SPEED, normalizeProgressionState } from "../progression";
 import { getDungeonBossCount } from "../missions/missionHelpers";
 import { applyLoadedSessionToApp } from "../session/applyLoadedSession";
+import type {
+  SessionRefs,
+  SessionSetters,
+} from "../session/applyLoadedSession";
 import {
   loadSessionFile,
   openSessionFilePicker,
@@ -25,8 +29,8 @@ export const createSessionActions = ({
   pushNotification,
 }: {
   state: SessionState;
-  refs: AnyRecord;
-  setters: AnyRecord;
+  refs: SessionRefs;
+  setters: SessionSetters;
   closeOverlays: () => void;
   normalizeRosterZones: (roster: AnyRecord[], faction?: string) => AnyRecord[];
   createId: () => string;
@@ -57,7 +61,7 @@ export const createSessionActions = ({
         resolveDungeonBossCount: getDungeonBossCount,
         defaultGuildSetup: DEFAULT_GUILD_SETUP,
       },
-      onLoaded: (loadedSession: AnyRecord) => {
+      onLoaded: (loadedSession) => {
         applyLoadedSessionToApp({
           loadedSession,
           factionFallback: GUILD_FACTION.ALLIANCE,

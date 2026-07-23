@@ -1,3 +1,6 @@
+import type { Character } from "../types/characterTypes";
+import type { MissionId, MissionInput } from "../types/missionTypes";
+
 export const DEFAULT_DUNGEON_BOSS_NAMES = Object.freeze([
   "Boss 1",
   "Boss 2",
@@ -7,7 +10,7 @@ export const DEFAULT_DUNGEON_BOSS_NAMES = Object.freeze([
 export const DEFAULT_DUNGEON_MAX_ATTEMPTS = 4;
 export const DEFAULT_RAID_MAX_ATTEMPTS = 10;
 
-export const resolveMissionRewardQualities = (mission) => {
+export const resolveMissionRewardQualities = (mission: MissionInput): number[] => {
   if (Array.isArray(mission?.rewardQualities) && mission.rewardQualities.length) {
     return mission.rewardQualities;
   }
@@ -16,10 +19,10 @@ export const resolveMissionRewardQualities = (mission) => {
   return [1];
 };
 
-export const getMissionGoldReward = (mission) =>
+export const getMissionGoldReward = (mission: MissionInput) =>
   typeof mission?.gold === "number" ? Math.max(0, mission.gold) : 0;
 
-export const getMissionWipeCost = (mission) => {
+export const getMissionWipeCost = (mission: MissionInput) => {
   if (mission?.type !== "dungeon") return 0;
   const baseGold =
     typeof mission?.payoutGold === "number"
@@ -28,7 +31,7 @@ export const getMissionWipeCost = (mission) => {
   return Math.max(0, Math.ceil(baseGold * 0.1));
 };
 
-export const getMissionTypeLabel = (mission) =>
+export const getMissionTypeLabel = (mission: MissionInput) =>
   mission?.typeLabel ||
   (mission?.isRaid
     ? "Raid"
@@ -38,10 +41,10 @@ export const getMissionTypeLabel = (mission) =>
         ? "Elite Quest"
         : "Quest");
 
-export const getMissionMetaText = (mission) =>
+export const getMissionMetaText = (mission: MissionInput) =>
   `${getMissionTypeLabel(mission)} • Lvl ${mission?.recommended || mission?.level} • ${mission?.duration}s`;
 
-export const getMissionMaxAttempts = (mission) => {
+export const getMissionMaxAttempts = (mission: MissionInput) => {
   if (mission?.type !== "dungeon") return 0;
 
   const explicitMaxAttempts = Number(mission?.maxAttempts);
@@ -60,7 +63,7 @@ export const getMissionMaxAttempts = (mission) => {
   return DEFAULT_DUNGEON_MAX_ATTEMPTS;
 };
 
-export const getMissionRecommendedRange = (mission) => {
+export const getMissionRecommendedRange = (mission: MissionInput) => {
   if (typeof mission?.recommended !== "string") return null;
   const rangeValues = mission.recommended.match(/\d+/g);
   if (!rangeValues || rangeValues.length < 2) return null;
@@ -72,7 +75,7 @@ export const getMissionRecommendedRange = (mission) => {
   return { minLevel, maxLevel };
 };
 
-export const getMissionLootLevelRange = (mission) => {
+export const getMissionLootLevelRange = (mission: MissionInput) => {
   if (mission?.type === "dungeon") {
     const recommendedRange = getMissionRecommendedRange(mission);
     const recommendedMax = recommendedRange ? recommendedRange.maxLevel : null;
@@ -81,7 +84,9 @@ export const getMissionLootLevelRange = (mission) => {
       ? Math.max(1, Number(mission.minLevel))
       : Math.max(1, fallbackMissionLevel - 6);
     const maxLevel =
-      Number.isFinite(recommendedMax) && recommendedMax > 0
+      recommendedMax !== null &&
+      Number.isFinite(recommendedMax) &&
+      recommendedMax > 0
         ? recommendedMax
         : fallbackMissionLevel;
     return { minLevel, maxLevel };
@@ -94,7 +99,10 @@ export const getMissionLootLevelRange = (mission) => {
   };
 };
 
-export const getDungeonOverlevelExpMultiplier = (characterLevel, mission) => {
+export const getDungeonOverlevelExpMultiplier = (
+  characterLevel: number,
+  mission: MissionInput,
+) => {
   if (mission?.type !== "dungeon") return 1;
 
   const range = getMissionRecommendedRange(mission);
@@ -107,7 +115,10 @@ export const getDungeonOverlevelExpMultiplier = (characterLevel, mission) => {
   return 0.75;
 };
 
-export const getMissionLevelExpMultiplier = (characterLevel, mission) => {
+export const getMissionLevelExpMultiplier = (
+  characterLevel: number,
+  mission: MissionInput,
+) => {
   const missionType = String(mission?.type || "").toLowerCase();
   if (missionType !== "quest" && missionType !== "dungeon") return 1;
 
@@ -145,35 +156,48 @@ export const getMissionLevelExpMultiplier = (characterLevel, mission) => {
   return dungeonMultiplierPoints[dungeonMultiplierPoints.length - 1].multiplier;
 };
 
-export const getMissionRewardQualities = (mission) =>
+export const getMissionRewardQualities = (mission: MissionInput) =>
   resolveMissionRewardQualities(mission);
 
-export const getMissionRewardKeys = (mission) =>
+export const getMissionRewardKeys = (mission: MissionInput): string[] =>
   Array.isArray(mission?.rewardKeys)
     ? mission.rewardKeys
         .map((keyId) => String(keyId || "").trim())
         .filter(Boolean)
     : [];
 
-export const getMissionRequiredKeys = (mission) => {
+export const getMissionRequiredKeys = (mission: MissionInput): string[] => {
   if (!mission?.requiresKey) return [];
   const keyId = String(mission?.keyId || "").trim();
   return keyId ? [keyId] : [];
 };
 
-export const getCharacterOwnedKeys = (character) =>
+export const getCharacterOwnedKeys = (character: Character): string[] =>
   Array.isArray(character?.keys)
     ? character.keys
         .map((keyId) => String(keyId || "").trim())
         .filter(Boolean)
     : [];
 
-export const evaluateMissionKeyAccess = ({ missions, partyMembers }) => {
+type MissingKeyRequirement = {
+  missionId: MissionId | null;
+  missionName: string;
+  keyIds: string[];
+  requiresAllMembers: boolean;
+};
+
+export const evaluateMissionKeyAccess = ({
+  missions,
+  partyMembers,
+}: {
+  missions: MissionInput[];
+  partyMembers: Character[];
+}) => {
   const missionSequence = (Array.isArray(missions) ? missions : []).filter(Boolean);
   const selectedPartyMembers = Array.isArray(partyMembers) ? partyMembers : [];
 
-  const initialKeySet = new Set();
-  const partyKeyMap = new Map();
+  const initialKeySet = new Set<string>();
+  const partyKeyMap = new Map<string, Set<string>>();
   selectedPartyMembers.forEach((member) => {
     const keySet = new Set(getCharacterOwnedKeys(member));
     partyKeyMap.set(member?.id, keySet);
@@ -181,9 +205,9 @@ export const evaluateMissionKeyAccess = ({ missions, partyMembers }) => {
   });
 
   const activeKeySet = new Set(initialKeySet);
-  const requiredKeySet = new Set();
-  const unlockedDuringSequenceSet = new Set();
-  const missingRequirements = [];
+  const requiredKeySet = new Set<string>();
+  const unlockedDuringSequenceSet = new Set<string>();
+  const missingRequirements: MissingKeyRequirement[] = [];
   let requiresAllMembers = false;
 
   for (const mission of missionSequence) {
@@ -222,7 +246,7 @@ export const evaluateMissionKeyAccess = ({ missions, partyMembers }) => {
     });
   }
 
-  const missingKeySet = new Set();
+  const missingKeySet = new Set<string>();
   missingRequirements.forEach((entry) => {
     entry.keyIds.forEach((keyId) => missingKeySet.add(keyId));
   });
@@ -257,7 +281,10 @@ export const evaluateMissionKeyAccess = ({ missions, partyMembers }) => {
   };
 };
 
-export const getDungeonQuarterExpMultiplier = (clearedBosses, totalBosses) => {
+export const getDungeonQuarterExpMultiplier = (
+  clearedBosses: number,
+  totalBosses: number,
+) => {
   const safeTotalBosses = Math.max(1, Number(totalBosses) || 0);
   const safeClearedBosses = Math.max(
     0,
@@ -268,7 +295,7 @@ export const getDungeonQuarterExpMultiplier = (clearedBosses, totalBosses) => {
   return Math.max(0, Math.min(1, unlockedQuarterSteps / 4));
 };
 
-export const getDungeonBossNames = (mission) => {
+export const getDungeonBossNames = (mission: MissionInput): string[] => {
   const configuredBosses = Array.isArray(mission?.dungeonBosses)
     ? mission.dungeonBosses
         .map((bossName) => String(bossName || "").trim())
@@ -308,4 +335,5 @@ export const getDungeonBossNames = (mission) => {
   );
 };
 
-export const getDungeonBossCount = (mission) => getDungeonBossNames(mission).length;
+export const getDungeonBossCount = (mission: MissionInput) =>
+  getDungeonBossNames(mission).length;

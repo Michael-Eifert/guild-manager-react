@@ -48,4 +48,21 @@ export interface Mission {
     currentPosition?: number;
     setName?: string;
   };
+  missionId?: MissionId;
+  quest?: { id?: MissionId };
+  zoneId?: string;
+  isZoneElite?: boolean;
+  elite?: boolean;
+  gold?: number;
+  payoutGold?: number;
+  typeLabel?: string;
+  duration?: number;
+  maxAttempts?: number;
+  raidMaxAttempts?: number;
+  requiresKey?: boolean;
+  keyId?: string;
+  requiresKeyForAllMembers?: boolean;
+  dungeonBossCount?: number;
 }
+
+export type MissionInput = Partial<Mission>;
