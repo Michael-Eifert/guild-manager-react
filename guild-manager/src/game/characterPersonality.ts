@@ -1,0 +1,158 @@
+export const PERSONALITY_TRAIT_ID = Object.freeze({
+  CASUAL_GAMER: "casual_gamer",
+  DUNGEON_EXPERT: "dungeon_expert",
+  POWER_LEVELER: "power_leveler",
+  RAIDER: "raider",
+});
+
+export type PersonalityTraitId =
+  typeof PERSONALITY_TRAIT_ID[keyof typeof PERSONALITY_TRAIT_ID];
+
+type PersonalityEffects = {
+  levelingExpMultiplier?: number;
+  zoneProgressMultiplier?: number;
+  dungeonSuccessBonus?: number;
+  raidSuccessBonus?: number;
+};
+
+type PersonalityTrait = {
+  id: PersonalityTraitId;
+  name: string;
+  rarity: string;
+  description: string;
+  effects: Readonly<PersonalityEffects>;
+};
+
+export const PERSONALITY_TRAIT_DEFINITIONS = Object.freeze({
+  [PERSONALITY_TRAIT_ID.CASUAL_GAMER]: Object.freeze({
+    id: PERSONALITY_TRAIT_ID.CASUAL_GAMER,
+    name: "Casual Gamer",
+    rarity: "Common",
+    description: "Plays at a steady pace without any special modifier.",
+    effects: Object.freeze({}),
+  }),
+  [PERSONALITY_TRAIT_ID.POWER_LEVELER]: Object.freeze({
+    id: PERSONALITY_TRAIT_ID.POWER_LEVELER,
+    name: "Power Leveler",
+    rarity: "Rare",
+    description: "Clears zones and gains leveling XP 50% faster.",
+    effects: Object.freeze({
+      levelingExpMultiplier: 1.5,
+      zoneProgressMultiplier: 1.5,
+    }),
+  }),
+  [PERSONALITY_TRAIT_ID.DUNGEON_EXPERT]: Object.freeze({
+    id: PERSONALITY_TRAIT_ID.DUNGEON_EXPERT,
+    name: "Dungeon Expert",
+    rarity: "Uncommon",
+    description:
+      "Finds dungeon paths earlier, clears zones 20% faster, and adds +5% dungeon success chance.",
+    effects: Object.freeze({
+      zoneProgressMultiplier: 1.2,
+      dungeonSuccessBonus: 5,
+    }),
+  }),
+  [PERSONALITY_TRAIT_ID.RAIDER]: Object.freeze({
+    id: PERSONALITY_TRAIT_ID.RAIDER,
+    name: "Raider",
+    rarity: "Uncommon",
+    description:
+      "Levels 25% faster while preparing for raids and adds +1% raid success chance.",
+    effects: Object.freeze({
+      levelingExpMultiplier: 1.25,
+      raidSuccessBonus: 1,
+    }),
+  }),
+});
+
+const PERSONALITY_TRAITS_BY_ID = PERSONALITY_TRAIT_DEFINITIONS as Readonly<
+  Record<PersonalityTraitId, PersonalityTrait>
+>;
+
+const TRAIT_ROLL_TABLE = Object.freeze([
+  Object.freeze({ id: PERSONALITY_TRAIT_ID.POWER_LEVELER, chance: 0.05 }),
+  Object.freeze({ id: PERSONALITY_TRAIT_ID.DUNGEON_EXPERT, chance: 0.15 }),
+  Object.freeze({ id: PERSONALITY_TRAIT_ID.RAIDER, chance: 0.1 }),
+  Object.freeze({ id: PERSONALITY_TRAIT_ID.CASUAL_GAMER, chance: 0.45 }),
+]);
+
+export const normalizeCharacterPersonalityTraits = (traits: unknown): PersonalityTraitId[] => {
+  const source = Array.isArray(traits)
+    ? traits
+    : traits
+      ? [traits]
+      : [];
+  return [
+    ...new Set(
+      source
+        .map((trait) =>
+          typeof trait === "string"
+            ? trait
+            : String((trait as { id?: unknown } | null)?.id || "").trim(),
+        )
+        .filter((traitId) =>
+          Object.prototype.hasOwnProperty.call(
+            PERSONALITY_TRAIT_DEFINITIONS,
+            traitId,
+          ),
+        ),
+    ),
+  ] as PersonalityTraitId[];
+};
+
+export const rollCharacterPersonalityTraits = ({ random = Math.random } = {}) => {
+  const roll = (typeof random === "function" ? random : Math.random)();
+  let cumulativeChance = 0;
+  for (const entry of TRAIT_ROLL_TABLE) {
+    cumulativeChance += entry.chance;
+    if (roll < cumulativeChance) return [entry.id];
+  }
+  return [];
+};
+
+export const getCharacterPersonalityTraits = (character: {
+  personalityTraits?: unknown;
+  personalityTrait?: unknown;
+} | null | undefined) =>
+  normalizeCharacterPersonalityTraits(
+    character?.personalityTraits || character?.personalityTrait,
+  ).map((traitId) => PERSONALITY_TRAITS_BY_ID[traitId]);
+
+export const getCharacterPersonalityEffects = (character: {
+  personalityTraits?: unknown;
+  personalityTrait?: unknown;
+} | null | undefined) =>
+  getCharacterPersonalityTraits(character).reduce(
+    (effects, trait) => ({
+      levelingExpMultiplier:
+        effects.levelingExpMultiplier *
+        (Number(trait.effects?.levelingExpMultiplier) || 1),
+      zoneProgressMultiplier:
+        effects.zoneProgressMultiplier *
+        (Number(trait.effects?.zoneProgressMultiplier) || 1),
+      dungeonSuccessBonus:
+        effects.dungeonSuccessBonus +
+        (Number(trait.effects?.dungeonSuccessBonus) || 0),
+      raidSuccessBonus:
+        effects.raidSuccessBonus +
+        (Number(trait.effects?.raidSuccessBonus) || 0),
+    }),
+    {
+      levelingExpMultiplier: 1,
+      zoneProgressMultiplier: 1,
+      dungeonSuccessBonus: 0,
+      raidSuccessBonus: 0,
+    },
+  );
+
+export const getCharacterLevelingExpMultiplier = (character: Parameters<typeof getCharacterPersonalityEffects>[0]) =>
+  getCharacterPersonalityEffects(character).levelingExpMultiplier;
+
+export const getCharacterZoneProgressMultiplier = (character: Parameters<typeof getCharacterPersonalityEffects>[0]) =>
+  getCharacterPersonalityEffects(character).zoneProgressMultiplier;
+
+export const getCharacterDungeonSuccessBonus = (character: Parameters<typeof getCharacterPersonalityEffects>[0]) =>
+  getCharacterPersonalityEffects(character).dungeonSuccessBonus;
+
+export const getCharacterRaidSuccessBonus = (character: Parameters<typeof getCharacterPersonalityEffects>[0]) =>
+  getCharacterPersonalityEffects(character).raidSuccessBonus;

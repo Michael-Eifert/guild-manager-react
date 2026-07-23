@@ -5,14 +5,19 @@ import { normalizeGuildSetup } from "../guild/guildSetup";
 import { clampGameSpeed, DEFAULT_GAME_SPEED, normalizeProgressionState } from "../progression";
 import { getDungeonBossCount } from "../missions/missionHelpers";
 import { applyLoadedSessionToApp } from "../session/applyLoadedSession";
+import type {
+  SessionRefs,
+  SessionSetters,
+} from "../session/applyLoadedSession";
 import {
   loadSessionFile,
   openSessionFilePicker,
   saveSessionFile,
 } from "../session/sessionFileActions";
+import type { SessionState } from "../session/sessionFileActions";
 import type { NotificationInput } from "./gameTypes";
 
-type AnyRecord = Record<string, any>;
+type SessionCharacter = Record<string, unknown>;
 
 export const createSessionActions = ({
   state,
@@ -23,11 +28,14 @@ export const createSessionActions = ({
   createId,
   pushNotification,
 }: {
-  state: AnyRecord;
-  refs: AnyRecord;
-  setters: AnyRecord;
+  state: SessionState;
+  refs: SessionRefs;
+  setters: SessionSetters;
   closeOverlays: () => void;
-  normalizeRosterZones: (roster: AnyRecord[], faction?: string) => AnyRecord[];
+  normalizeRosterZones: (
+    roster: SessionCharacter[],
+    faction?: string,
+  ) => SessionCharacter[];
   createId: () => string;
   pushNotification: (notification: NotificationInput) => unknown;
 }) => {
@@ -42,7 +50,7 @@ export const createSessionActions = ({
 
   const openSession = () => openSessionFilePicker(refs.sessionFileInput);
 
-  const loadSession = (event: Event) => {
+  const loadSession = (event: ChangeEvent<HTMLInputElement>) => {
     loadSessionFile({
       event,
       hydrateOptions: {
@@ -56,7 +64,7 @@ export const createSessionActions = ({
         resolveDungeonBossCount: getDungeonBossCount,
         defaultGuildSetup: DEFAULT_GUILD_SETUP,
       },
-      onLoaded: (loadedSession: AnyRecord) => {
+      onLoaded: (loadedSession) => {
         applyLoadedSessionToApp({
           loadedSession,
           factionFallback: GUILD_FACTION.ALLIANCE,
@@ -69,12 +77,14 @@ export const createSessionActions = ({
         });
         pushNotification({ type: "success", title: "Session Loaded", message: "The guild session was loaded successfully." });
       },
-      onInvalidSession: (error: Error) => {
+      onInvalidSession: (error: unknown) => {
         console.error("Failed to load session:", error);
         pushNotification({
           type: "error",
           title: "Invalid Session",
-          message: error?.message || "The selected session file is invalid.",
+          message:
+            (error instanceof Error ? error.message : "") ||
+            "The selected session file is invalid.",
           durationMs: 6500,
         });
       },
@@ -88,3 +98,4 @@ export const createSessionActions = ({
 
   return { saveSession, openSession, loadSession };
 };
+import type { ChangeEvent } from "react";
