@@ -1,4 +1,5 @@
 import React from "react";
+import type { FormEvent } from "react";
 import {
   DEFAULT_GUILD_SETUP,
   GUILD_FACTION,
@@ -9,6 +10,7 @@ import {
   normalizeRealmDifficulty,
 } from "../constants";
 import { PVP_ACTIVITY_FOCUS_OPTIONS } from "../pvp/battlefields/battlefieldDefinitions";
+import type { GuildSetupState } from "../app/gameTypes";
 
 const GUILD_FOCUS_COPY = {
   Leveling: "Leveling (+5% Guild XP)",
@@ -16,12 +18,22 @@ const GUILD_FOCUS_COPY = {
   Social: "Social (+5% mission gold with full squad)",
 };
 
-const getPopulationClassName = (population) =>
+const getPopulationClassName = (population: string) =>
   population === GUILD_SERVER_POPULATION.HIGH
     ? "text-red-400"
     : "text-yellow-300";
 
-const GuildSetupScreen = ({ guildSetup, onChange, onStart, onLoadSession }) => {
+const GuildSetupScreen = ({
+  guildSetup,
+  onChange,
+  onStart,
+  onLoadSession,
+}: {
+  guildSetup: GuildSetupState;
+  onChange: (field: string, value: unknown) => void;
+  onStart: () => void;
+  onLoadSession: () => void;
+}) => {
   const guildName = String(guildSetup?.name || "");
   const canStart = guildName.trim().length > 0;
   const selectedRealm =
@@ -34,7 +46,7 @@ const GuildSetupScreen = ({ guildSetup, onChange, onStart, onLoadSession }) => {
   const selectedRealmDifficulty = normalizeRealmDifficulty(
     guildSetup?.realmDifficulty,
   );
-  const handleSubmit = (event) => {
+  const handleSubmit = (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
     if (canStart) onStart();
   };
