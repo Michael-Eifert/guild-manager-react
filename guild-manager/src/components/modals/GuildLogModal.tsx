@@ -1,8 +1,51 @@
 import { useMemo, useState } from "react";
 import { getQualityClass } from "../../utils";
 import BaseModal from "./BaseModal";
+import type { Mission } from "../../types/missionTypes";
 
-const LOG_FILTERS = Object.freeze([
+type LogScenario = "world" | "dungeon" | "raid" | "pvp";
+type LogFilter = "all" | LogScenario;
+type GuildLogEntry = {
+  time?: string;
+  type?: string;
+  outcome?: string;
+  missionName?: string;
+  bossName?: string;
+  bossesCleared?: number;
+  totalBosses?: number;
+  successChance?: number;
+  failChance?: number;
+  attemptsUsed?: number;
+  maxAttempts?: number;
+  attemptsRemaining?: number;
+  amount?: number;
+  wipeCount?: number;
+  wipeCost?: number;
+  unpaidAmount?: number;
+  chainName?: string;
+  position?: number;
+  total?: number;
+  message?: string;
+  characterName?: string;
+  quantity?: number;
+  itemId?: string;
+  summary?: string;
+  honor?: number;
+  pvpReputation?: number;
+  label?: string;
+  reward?: number;
+  context?: string;
+  checkpoint?: number;
+  keyLabel?: string;
+  keyId?: string;
+  count?: number;
+  itemQuality?: number;
+  itemName?: string;
+  equipped?: boolean;
+};
+type FilterCounts = Record<LogFilter, number>;
+
+const LOG_FILTERS: ReadonlyArray<{ id: LogFilter; label: string }> = Object.freeze([
   { id: "all", label: "All" },
   { id: "world", label: "World" },
   { id: "dungeon", label: "Dungeon" },
@@ -10,13 +53,13 @@ const LOG_FILTERS = Object.freeze([
   { id: "pvp", label: "PvP" },
 ]);
 
-const normalizeLogSourceName = (value) =>
+const normalizeLogSourceName = (value: unknown) =>
   String(value || "")
     .trim()
     .replace(/^zone:\s*/i, "")
     .toLowerCase();
 
-const getMissionScenario = (mission) => {
+const getMissionScenario = (mission: Mission): LogScenario | null => {
   if (!mission) return null;
   if (mission.isRaid === true) return "raid";
   if (mission.type === "dungeon") return "dungeon";
@@ -24,8 +67,8 @@ const getMissionScenario = (mission) => {
   return null;
 };
 
-const buildMissionScenarioLookup = (missionList) =>
-  (Array.isArray(missionList) ? missionList : []).reduce((lookup, mission) => {
+const buildMissionScenarioLookup = (missionList: Mission[]) =>
+  (Array.isArray(missionList) ? missionList : []).reduce<Map<string, LogScenario>>((lookup, mission) => {
     const scenario = getMissionScenario(mission);
     if (!scenario) return lookup;
 
@@ -42,7 +85,10 @@ const buildMissionScenarioLookup = (missionList) =>
     return lookup;
   }, new Map());
 
-const getLogScenario = (log, missionScenarioLookup) => {
+const getLogScenario = (
+  log: GuildLogEntry,
+  missionScenarioLookup: Map<string, LogScenario>,
+): LogScenario | null => {
   if (log?.type === "calendar") return "raid";
   if (log?.type === "pvp") return "pvp";
   if (log?.type === "zone-clear" || log?.type === "zone-gold") return "world";
@@ -52,8 +98,18 @@ const getLogScenario = (log, missionScenarioLookup) => {
   return missionKey ? missionScenarioLookup.get(missionKey) || null : null;
 };
 
-const GuildLogModal = ({ isOpen, onClose, logs, missionList = [] }) => {
-  const [activeFilter, setActiveFilter] = useState("all");
+const GuildLogModal = ({
+  isOpen,
+  onClose,
+  logs,
+  missionList = [],
+}: {
+  isOpen: boolean;
+  onClose: () => void;
+  logs: GuildLogEntry[];
+  missionList?: Mission[];
+}) => {
+  const [activeFilter, setActiveFilter] = useState<LogFilter>("all");
   const missionScenarioLookup = useMemo(
     () => buildMissionScenarioLookup(missionList),
     [missionList],
@@ -68,7 +124,7 @@ const GuildLogModal = ({ isOpen, onClose, logs, missionList = [] }) => {
   );
   const filterCounts = useMemo(
     () =>
-      logsWithScenario.reduce(
+      logsWithScenario.reduce<FilterCounts>(
         (counts, entry) => {
           counts.all += 1;
           if (entry.scenario) counts[entry.scenario] += 1;
@@ -164,7 +220,9 @@ const GuildLogModal = ({ isOpen, onClose, logs, missionList = [] }) => {
                   <span className="text-rose-300">
                     {log.missionName}: wipe cost {log.amount}g paid ({log.wipeCount} wipe
                     {log.wipeCount === 1 ? "" : "s"} @ {log.wipeCost}g).
-                    {log.unpaidAmount > 0 ? ` Missing ${log.unpaidAmount}g.` : ""}
+                    {Number(log.unpaidAmount) > 0
+                      ? ` Missing ${log.unpaidAmount}g.`
+                      : ""}
                   </span>
                 ) : log.type === "dungeon-chain" ? (
                   <span
@@ -195,8 +253,8 @@ const GuildLogModal = ({ isOpen, onClose, logs, missionList = [] }) => {
                 ) : log.type === "pvp" ? (
                   <span className="text-orange-200">
                     {log.summary}
-                    {log.honor > 0 ? ` +${log.honor} Honor` : ""}
-                    {log.pvpReputation > 0
+                    {Number(log.honor) > 0 ? ` +${log.honor} Honor` : ""}
+                    {Number(log.pvpReputation) > 0
                       ? `, +${log.pvpReputation} PvP Reputation`
                       : ""}
                     .

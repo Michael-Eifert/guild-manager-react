@@ -37,6 +37,17 @@ const DebugModal = ({
   onPrepareBlackwingLairTestGuild,
   onPrepareNaxxramasTestGuild,
   onReloadDatabase,
+}: {
+  isOpen: boolean;
+  onClose: () => void;
+  onBulkLevel: (levels: number) => void;
+  onAddGold: (amount: number) => void;
+  onAddRenown: (amount: number) => void;
+  onAddPresetParty: (presetId: string) => void;
+  onPrepareMoltenCoreTestGuild?: () => void;
+  onPrepareBlackwingLairTestGuild?: () => void;
+  onPrepareNaxxramasTestGuild?: () => void;
+  onReloadDatabase: () => void;
 }) => {
   const [selectedPreset, setSelectedPreset] = useState(
     DEBUG_PRESET_OPTIONS[0].value,
