@@ -3,16 +3,27 @@ import {
   getDungeonBossNames,
   getMissionMaxAttempts,
 } from "../missions/missionHelpers";
+import type {
+  DungeonProgress,
+  MissionInput,
+} from "../types/missionTypes";
 
 const MIN_DUNGEON_TOTAL_DURATION_MS = 4000;
 const MIN_DUNGEON_STEP_DURATION_MS = 1000;
 
-export const getDungeonBossLabel = (mission, stepIndex) => {
+export const getDungeonBossLabel = (
+  mission: MissionInput,
+  stepIndex: number,
+) => {
   const bossNames = getDungeonBossNames(mission);
   return bossNames[stepIndex] || `Boss ${stepIndex + 1}`;
 };
 
-export const getDefaultDungeonProgress = (mission, startTime, totalDuration) => {
+export const getDefaultDungeonProgress = (
+  mission: MissionInput,
+  startTime: number,
+  totalDuration: number | undefined,
+): Required<DungeonProgress> => {
   const dungeonBossCount = getDungeonBossCount(mission);
   const safeDuration = Math.max(
     MIN_DUNGEON_TOTAL_DURATION_MS,
@@ -36,12 +47,12 @@ export const getDefaultDungeonProgress = (mission, startTime, totalDuration) => 
   };
 };
 
-export const advanceDungeonMission = (
-  mission,
-  now,
+export const advanceDungeonMission = <T extends MissionInput>(
+  mission: T,
+  now: number,
   instant = false,
-  random = Math.random,
-) => {
+  random: () => number = Math.random,
+): { mission: T; stepLogs: Array<Record<string, unknown>> } => {
   if (mission.type !== "dungeon") {
     return { mission, stepLogs: [] };
   }
@@ -64,8 +75,8 @@ export const advanceDungeonMission = (
         Math.floor(Number(baseProgress.attemptsUsed) || 0),
       ),
     ),
-  };
-  const stepLogs = [];
+  } as Required<DungeonProgress>;
+  const stepLogs: Array<Record<string, unknown>> = [];
   let adjustedTotalDuration = Number(mission.totalDuration);
   if (!Number.isFinite(adjustedTotalDuration) || adjustedTotalDuration <= 0) {
     adjustedTotalDuration = Math.max(
@@ -163,7 +174,12 @@ export const advanceDungeonMission = (
     progress.nextStepAt += progress.stepDuration;
   }
 
-  const resolvedMission = {
+  const resolvedMission: T & {
+    totalDuration: number;
+    finishTime: number;
+    dungeonProgress: Required<DungeonProgress>;
+    missionSuccess?: boolean;
+  } = {
     ...mission,
     totalDuration: adjustedTotalDuration,
     finishTime: adjustedFinishTime,

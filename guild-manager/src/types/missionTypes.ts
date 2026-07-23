@@ -3,6 +3,25 @@ import type { CharacterId } from "./characterTypes";
 export type MissionId = string | number;
 export type MissionType = "quest" | "elite" | "dungeon" | "raid" | "zone" | string;
 
+export interface DungeonStepResult {
+  step?: number;
+  bossName?: string;
+  attempt?: number;
+  outcome?: string;
+}
+
+export interface DungeonProgress {
+  stepResults?: DungeonStepResult[];
+  currentStep?: number;
+  clearedSteps?: number;
+  failedAtStep?: number | null;
+  stepDuration?: number;
+  nextStepAt?: number;
+  attemptsUsed?: number;
+  maxAttempts?: number;
+  finished?: boolean;
+}
+
 export interface Mission {
   id: MissionId;
   questId?: MissionId;
@@ -35,14 +54,7 @@ export interface Mission {
   };
   totalDuration?: number;
   successChance?: number;
-  dungeonProgress?: {
-    stepResults?: Array<{ step?: number; outcome?: string }>;
-    currentStep?: number;
-    clearedSteps?: number;
-    attemptsUsed?: number;
-    maxAttempts?: number;
-    finished?: boolean;
-  };
+  dungeonProgress?: DungeonProgress;
   chainContext?: {
     totalMissions?: number;
     currentPosition?: number;
@@ -63,6 +75,7 @@ export interface Mission {
   keyId?: string;
   requiresKeyForAllMembers?: boolean;
   dungeonBossCount?: number;
+  missionSuccess?: boolean;
 }
 
 export type MissionInput = Partial<Mission>;
