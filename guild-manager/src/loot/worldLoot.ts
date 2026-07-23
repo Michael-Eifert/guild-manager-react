@@ -4,6 +4,26 @@ import {
   getItemEffectiveLevel,
   isItemUsableByClass,
 } from "../utils";
+import type { Character } from "../types/characterTypes";
+import type { ItemDefinition } from "../types/itemTypes";
+
+type WorldLootItem = ItemDefinition & {
+  slot: string;
+  quality: number;
+  minLevel: number;
+  type: string;
+};
+type LootCharacter = Character & { charClass: string; level: number };
+
+export type WorldLootLogEntry = {
+  type: "loot";
+  characterName?: string;
+  itemName: string;
+  itemQuality: number;
+  missionName: string;
+  bossName: string | null;
+  equipped: boolean;
+};
 
 const generateWorldLootForCharacter = ({
   char,
@@ -11,11 +31,20 @@ const generateWorldLootForCharacter = ({
   minLevel,
   maxLevel,
   itemDatabase,
-}) => {
-  const classInfo = DB_CLASSES[char.charClass];
+}: {
+  char: LootCharacter;
+  quality: number;
+  minLevel: number;
+  maxLevel: number;
+  itemDatabase: WorldLootItem[];
+}): WorldLootItem | null => {
+  const classInfo = (DB_CLASSES as Record<string, unknown>)[char.charClass || ""];
   if (!classInfo) return null;
 
-  const allowedTypes = getClassArmorTypes(char.charClass, char.level);
+  const allowedTypes = getClassArmorTypes(
+    char.charClass,
+    char.level,
+  ) as string[];
   const safeMinLevel = Math.max(1, Number(minLevel) || 1);
   const safeMaxLevel = Math.max(safeMinLevel, Number(maxLevel) || safeMinLevel);
 
@@ -39,7 +68,11 @@ const generateWorldLootForCharacter = ({
   return possibleItems[Math.floor(Math.random() * possibleItems.length)];
 };
 
-export const generateWorldTickLoot = (char, quality, itemDatabase) =>
+export const generateWorldTickLoot = (
+  char: LootCharacter,
+  quality: number,
+  itemDatabase: WorldLootItem[],
+) =>
   generateWorldLootForCharacter({
     char,
     quality,
@@ -48,7 +81,12 @@ export const generateWorldTickLoot = (char, quality, itemDatabase) =>
     itemDatabase,
   });
 
-export const generateZoneCheckpointLoot = (char, zone, quality, itemDatabase) => {
+export const generateZoneCheckpointLoot = (
+  char: LootCharacter,
+  zone: { minLevel?: number; maxLevel?: number } | null | undefined,
+  quality: number,
+  itemDatabase: WorldLootItem[],
+) => {
   if (!zone) return null;
   return generateWorldLootForCharacter({
     char,
@@ -67,7 +105,15 @@ export const applyLootRewardToCharacter = ({
   bossName = null,
   updateStatusText = false,
   logDiscarded = false,
-}) => {
+}: {
+  char: Character;
+  lootItem: WorldLootItem | null | undefined;
+  logCollector: WorldLootLogEntry[];
+  missionName: string;
+  bossName?: string | null;
+  updateStatusText?: boolean;
+  logDiscarded?: boolean;
+}): Character => {
   if (!lootItem) return char;
 
   const currentItem = char.equipment?.[lootItem.slot];

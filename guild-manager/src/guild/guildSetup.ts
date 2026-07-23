@@ -1,7 +1,6 @@
 import {
   DEFAULT_GUILD_SETUP,
   AUTO_GROUP_SUCCESS_RATE,
-  GUILD_DUNGEON_ACTIVITY,
   GUILD_DUNGEON_ACTIVITY_OPTIONS,
   GUILD_FACTION,
   GUILD_FACTION_OPTIONS,
@@ -12,24 +11,36 @@ import {
 } from "../constants";
 import { normalizePvpActivityFocus } from "../pvp/battlefields/battlefieldUtils";
 
-export const getFactionDefaultGuildName = (faction) =>
+type GuildSetupInput = Record<string, unknown>;
+type SessionSetupPayload = {
+  roster?: unknown[];
+  activeMissions?: unknown[];
+  guildGold?: unknown;
+};
+const includesString = (values: readonly string[], value: string) =>
+  values.includes(value);
+
+export const getFactionDefaultGuildName = (faction: string) =>
   faction === GUILD_FACTION.HORDE ? "Horde Vanguard" : "Alliance Vanguard";
 
-export const getFactionFallbackManagerName = (faction) =>
+export const getFactionFallbackManagerName = (faction: string) =>
   faction === GUILD_FACTION.HORDE ? "Horde Manager" : "Alliance Manager";
 
-const getServerOptionByValue = (serverValue) =>
+const getServerOptionByValue = (serverValue: string) =>
   GUILD_SERVER_OPTIONS.find((option) => option.value === serverValue) ||
   GUILD_SERVER_OPTIONS[0];
 
-export const getGuildServerStyle = (serverValue) =>
+export const getGuildServerStyle = (serverValue: string) =>
   getServerOptionByValue(serverValue)?.style || DEFAULT_GUILD_SETUP.serverStyle;
 
-export const getGuildServerPopulation = (serverValue) =>
+export const getGuildServerPopulation = (serverValue: string) =>
   getServerOptionByValue(serverValue)?.population ||
   DEFAULT_GUILD_SETUP.serverPopulation;
 
-export const getGuildServerLabel = (serverValue, serverStyle) => {
+export const getGuildServerLabel = (
+  serverValue: string,
+  serverStyle?: string,
+) => {
   const option = getServerOptionByValue(serverValue);
   const resolvedStyle =
     serverStyle || option?.style || DEFAULT_GUILD_SETUP.serverStyle;
@@ -38,7 +49,7 @@ export const getGuildServerLabel = (serverValue, serverStyle) => {
   return `${resolvedServer} (${resolvedStyle})`;
 };
 
-export const normalizeAutoGroupSuccessRate = (value) => {
+export const normalizeAutoGroupSuccessRate = (value: unknown) => {
   const numeric = Number(value);
   if (!Number.isFinite(numeric)) return AUTO_GROUP_SUCCESS_RATE.DEFAULT;
   return Math.max(
@@ -47,8 +58,12 @@ export const normalizeAutoGroupSuccessRate = (value) => {
   );
 };
 
-export const normalizeGuildSetup = (value, payloadData = {}) => {
-  const safe = value && typeof value === "object" ? value : {};
+export const normalizeGuildSetup = (
+  value: unknown,
+  payloadData: SessionSetupPayload = {},
+) => {
+  const safe: GuildSetupInput =
+    value && typeof value === "object" ? (value as GuildSetupInput) : {};
   const hasLegacyGameData =
     (Array.isArray(payloadData?.roster) && payloadData.roster.length > 0) ||
     (Array.isArray(payloadData?.activeMissions) &&
@@ -56,21 +71,26 @@ export const normalizeGuildSetup = (value, payloadData = {}) => {
     Number(payloadData?.guildGold) > 0;
 
   const normalizedName = String(safe.name || "").trim();
-  const normalizedFaction = GUILD_FACTION_OPTIONS.includes(safe.faction)
-    ? safe.faction
+  const faction = String(safe.faction || "");
+  const focus = String(safe.focus || "");
+  const dungeonActivity = String(safe.dungeonActivity || "");
+  const server = String(safe.server || "");
+  const normalizedFaction = includesString(GUILD_FACTION_OPTIONS, faction)
+    ? faction
     : GUILD_FACTION.ALLIANCE;
-  const normalizedFocus = GUILD_FOCUS_OPTIONS.includes(safe.focus)
-    ? safe.focus
+  const normalizedFocus = includesString(GUILD_FOCUS_OPTIONS, focus)
+    ? focus
     : GUILD_FOCUS.LEVELING;
-  const normalizedDungeonActivity = GUILD_DUNGEON_ACTIVITY_OPTIONS.includes(
-    safe.dungeonActivity,
+  const normalizedDungeonActivity = includesString(
+    GUILD_DUNGEON_ACTIVITY_OPTIONS,
+    dungeonActivity,
   )
-    ? safe.dungeonActivity
+    ? dungeonActivity
     : DEFAULT_GUILD_SETUP.dungeonActivity;
   const normalizedServer = GUILD_SERVER_OPTIONS.some(
-    (option) => option.value === safe.server,
+    (option) => option.value === server,
   )
-    ? safe.server
+    ? server
     : DEFAULT_GUILD_SETUP.server;
   const normalizedServerStyle = getGuildServerStyle(normalizedServer);
   const normalizedServerPopulation = getGuildServerPopulation(normalizedServer);
@@ -109,7 +129,7 @@ export const normalizeGuildSetup = (value, payloadData = {}) => {
   };
 };
 
-export const getGuildFocusBonuses = (focus) => {
+export const getGuildFocusBonuses = (focus: unknown) => {
   if (focus === GUILD_FOCUS.LEVELING) {
     return {
       expMultiplier: 1.05,

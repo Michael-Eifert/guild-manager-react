@@ -10,6 +10,7 @@ import {
   openSessionFilePicker,
   saveSessionFile,
 } from "../session/sessionFileActions";
+import type { SessionState } from "../session/sessionFileActions";
 import type { NotificationInput } from "./gameTypes";
 
 type AnyRecord = Record<string, any>;
@@ -23,7 +24,7 @@ export const createSessionActions = ({
   createId,
   pushNotification,
 }: {
-  state: AnyRecord;
+  state: SessionState;
   refs: AnyRecord;
   setters: AnyRecord;
   closeOverlays: () => void;
@@ -42,7 +43,7 @@ export const createSessionActions = ({
 
   const openSession = () => openSessionFilePicker(refs.sessionFileInput);
 
-  const loadSession = (event: Event) => {
+  const loadSession = (event: ChangeEvent<HTMLInputElement>) => {
     loadSessionFile({
       event,
       hydrateOptions: {
@@ -69,12 +70,14 @@ export const createSessionActions = ({
         });
         pushNotification({ type: "success", title: "Session Loaded", message: "The guild session was loaded successfully." });
       },
-      onInvalidSession: (error: Error) => {
+      onInvalidSession: (error: unknown) => {
         console.error("Failed to load session:", error);
         pushNotification({
           type: "error",
           title: "Invalid Session",
-          message: error?.message || "The selected session file is invalid.",
+          message:
+            (error instanceof Error ? error.message : "") ||
+            "The selected session file is invalid.",
           durationMs: 6500,
         });
       },
@@ -88,3 +91,4 @@ export const createSessionActions = ({
 
   return { saveSession, openSession, loadSession };
 };
+import type { ChangeEvent } from "react";
