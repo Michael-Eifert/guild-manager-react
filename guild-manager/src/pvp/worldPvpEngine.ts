@@ -19,35 +19,75 @@ import {
   getWorldPvpProfile,
   getWorldPvpRiskChance,
 } from "./worldPvpUtils";
+import type { WorldPvpProfile, WorldPvpState } from "./worldPvpUtils";
+import type { WorldPvpOutcome } from "./worldPvpDefinitions";
+import type { Character } from "../types/characterTypes";
+import type { Mission } from "../types/missionTypes";
 
-const clampDay = (value) => Math.max(0, Math.floor(Number(value) || 0));
-
-const pick = (items, random) => {
-  const pool = Array.isArray(items) && items.length > 0 ? items : ["Skirmish"];
-  return pool[Math.floor(random() * pool.length) % pool.length];
+type ZoneDefinition = (typeof ZONE_DEFINITIONS)[number];
+type RealmPlayer = {
+  name: string;
+  faction?: string;
+  level?: number;
+  sourceGuildName?: string;
+};
+type WorldPvpRewardBundle = ReturnType<typeof getWorldPvpRewards>;
+export type WorldPvpEvent = {
+  id: string;
+  day: number;
+  zoneId: string;
+  zoneName: string;
+  type: string;
+  participantIds: string[];
+  participantNames: string[];
+  enemyName: string;
+  enemyFaction: string;
+  outcome: WorldPvpOutcome;
+  summary: string;
+  rewards: WorldPvpRewardBundle["rewards"];
+  penalties: WorldPvpRewardBundle["penalties"];
+  zoneProgressDelta: number;
+  moraleDelta: number;
+  partyPower: number;
+  enemyPower: number;
 };
 
-const getCharacterId = (character) => String(character?.id || character?.name || "");
+const findRealmPlayersInZone = getRealmPlayersInZone as unknown as (options: {
+  realmState: unknown;
+  zoneId: string;
+  limit?: number;
+}) => RealmPlayer[];
 
-const isTankLike = (character) =>
+const clampDay = (value: unknown) => Math.max(0, Math.floor(Number(value) || 0));
+
+const pick = <T>(items: readonly T[], random: () => number): T => {
+  const pool = Array.isArray(items) && items.length > 0 ? items : ["Skirmish"];
+  return pool[Math.floor(random() * pool.length) % pool.length] as T;
+};
+
+const getCharacterId = (character: Character) =>
+  String(character.id || character.name || "");
+
+const isTankLike = (character: Character) =>
   character?.role === "Tank" || character?.charClass === "Warrior" || character?.charClass === "Druid";
 
-const isHealerLike = (character) =>
+const isHealerLike = (character: Character) =>
   character?.role === "Healer" ||
   character?.charClass === "Priest" ||
   character?.charClass === "Druid" ||
   character?.charClass === "Paladin" ||
   character?.charClass === "Shaman";
 
-const isDpsLike = (character) => character?.role === "DPS" || !isTankLike(character);
+const isDpsLike = (character: Character) =>
+  character.role === "DPS" || !isTankLike(character);
 
-const average = (values, fallback = 0) => {
+const average = (values: number[], fallback = 0) => {
   const safeValues = values.filter((value) => Number.isFinite(value));
   if (safeValues.length === 0) return fallback;
   return safeValues.reduce((sum, value) => sum + value, 0) / safeValues.length;
 };
 
-const getRoleBalanceBonus = (characters) => {
+const getRoleBalanceBonus = (characters: Character[]) => {
   let bonus = 0;
   if (characters.some(isTankLike)) bonus += 10;
   if (characters.some(isHealerLike)) bonus += 10;
@@ -55,7 +95,10 @@ const getRoleBalanceBonus = (characters) => {
   return bonus;
 };
 
-const getOutcome = (partyPower, enemyPower) => {
+const getOutcome = (
+  partyPower: number,
+  enemyPower: number,
+): WorldPvpOutcome => {
   const diff = partyPower - enemyPower;
   if (diff >= 45) return WORLD_PVP_OUTCOME.VICTORY;
   if (diff >= 15) return WORLD_PVP_OUTCOME.CLOSE_VICTORY;
@@ -64,8 +107,18 @@ const getOutcome = (partyPower, enemyPower) => {
   return WORLD_PVP_OUTCOME.DEFEAT;
 };
 
-const getEnemyFlavor = ({ realmState, zoneId, fallbackFaction, random }) => {
-  const realmPlayers = getRealmPlayersInZone({ realmState, zoneId, limit: 24 }).filter(
+const getEnemyFlavor = ({
+  realmState,
+  zoneId,
+  fallbackFaction,
+  random,
+}: {
+  realmState: unknown;
+  zoneId: string;
+  fallbackFaction: string;
+  random: () => number;
+}) => {
+  const realmPlayers = findRealmPlayersInZone({ realmState, zoneId, limit: 24 }).filter(
     (player) => player?.faction !== fallbackFaction,
   );
   const realmPlayer = realmPlayers.length > 0 ? pick(realmPlayers, random) : null;
@@ -100,7 +153,15 @@ export const resolveWorldPvpEvent = ({
   guildFaction = GUILD_FACTION.ALLIANCE,
   currentDayIndex = 0,
   random = Math.random,
-} = {}) => {
+}: {
+  charactersInZone?: Character[];
+  zone?: ZoneDefinition | null;
+  pvpProfile?: WorldPvpProfile | null;
+  realmState?: unknown;
+  guildFaction?: string;
+  currentDayIndex?: number;
+  random?: () => number;
+} = {}): WorldPvpEvent | null => {
   const participants = (Array.isArray(charactersInZone) ? charactersInZone : []).filter(Boolean);
   if (!zone || participants.length === 0 || !pvpProfile?.active) return null;
 
@@ -172,7 +233,13 @@ export const resolveWorldPvpEvent = ({
   };
 };
 
-const recordEvent = ({ state, event }) => {
+const recordEvent = ({
+  state,
+  event,
+}: {
+  state: WorldPvpState;
+  event: WorldPvpEvent;
+}): WorldPvpState => {
   const currentStats = state.zoneStats[event.zoneId] || {};
   const victoryCount =
     event.outcome === WORLD_PVP_OUTCOME.VICTORY ||
@@ -203,7 +270,7 @@ const recordEvent = ({ state, event }) => {
   };
 };
 
-const eventToLog = (event) => ({
+const eventToLog = (event: WorldPvpEvent) => ({
   type: "pvp",
   dayIndex: event.day,
   zoneId: event.zoneId,
@@ -221,7 +288,7 @@ const eventToLog = (event) => ({
   pvpReputation: event.rewards.pvpReputation,
 });
 
-const getEventHonorableKills = (event) =>
+const getEventHonorableKills = (event: WorldPvpEvent) =>
   event?.outcome === WORLD_PVP_OUTCOME.VICTORY ||
   event?.outcome === WORLD_PVP_OUTCOME.CLOSE_VICTORY
     ? 1
@@ -236,6 +303,15 @@ export const resolveWorldPvpForDay = ({
   worldPvpState = null,
   currentDayIndex = 0,
   random = Math.random,
+}: {
+  roster?: Character[];
+  activeMissions?: Mission[];
+  realmState?: unknown;
+  guildFaction?: string;
+  realmType?: string;
+  worldPvpState?: unknown;
+  currentDayIndex?: number;
+  random?: () => number;
 } = {}) => {
   const safeDay = clampDay(currentDayIndex);
   const originalState = worldPvpState;
@@ -269,18 +345,19 @@ export const resolveWorldPvpForDay = ({
       !busyMemberIds.has(memberId)
     );
   });
-  const charactersByZone = eligibleCharacters.reduce((groups, character) => {
+  const charactersByZone = eligibleCharacters.reduce<Map<string, Character[]>>((groups, character) => {
     const zoneId = String(character.currentZoneId || "");
     if (!zoneId) return groups;
-    if (!groups.has(zoneId)) groups.set(zoneId, []);
-    groups.get(zoneId).push(character);
+    const group = groups.get(zoneId);
+    if (group) group.push(character);
+    else groups.set(zoneId, [character]);
     return groups;
   }, new Map());
 
-  const events = [];
-  const logs = [];
+  const events: WorldPvpEvent[] = [];
+  const logs: ReturnType<typeof eventToLog>[] = [];
   let nextRoster = roster;
-  const touchedZones = new Set();
+  const touchedZones = new Set<string>();
   const zoneOrder = ZONE_DEFINITIONS.map((zone) => zone.id).filter((zoneId) =>
     charactersByZone.has(zoneId),
   );

@@ -9,6 +9,7 @@ import {
 import {
   getWorldPvpProfile,
 } from "./worldPvpUtils";
+import type { Character } from "../types/characterTypes";
 
 export const WORLD_PVP_ROAMING_MIN_LEVEL = 50;
 
@@ -25,9 +26,11 @@ const WORLD_PVP_ROAMING_ZONE_IDS = Object.freeze([
   "silithus",
 ]);
 
-const clampLevel = (level) => Math.max(1, Number(level) || 1);
+type ZoneDefinition = (typeof ZONE_DEFINITIONS)[number];
 
-const getStableCharacterRoamingHash = (character) => {
+const clampLevel = (level: unknown) => Math.max(1, Number(level) || 1);
+
+const getStableCharacterRoamingHash = (character: Character | null | undefined) => {
   const source = String(
     character?.id ||
       character?.name ||
@@ -44,13 +47,24 @@ const getStableCharacterRoamingHash = (character) => {
 export const isWorldPvpRoamingEligible = ({
   character,
   realmType = GUILD_SERVER_STYLE.PVE,
+}: {
+  character?: Character | null;
+  realmType?: string;
 } = {}) => {
   if (realmType !== GUILD_SERVER_STYLE.PVP) return false;
   if (!character || character.status === "Questing") return false;
   return clampLevel(character.level) >= WORLD_PVP_ROAMING_MIN_LEVEL;
 };
 
-const isZoneActiveForWorldPvp = ({ zone, faction, realmType }) => {
+const isZoneActiveForWorldPvp = ({
+  zone,
+  faction,
+  realmType,
+}: {
+  zone: ZoneDefinition;
+  faction?: string;
+  realmType: string;
+}) => {
   const profile = getWorldPvpProfile({
     zone,
     characterFaction: faction,
@@ -63,6 +77,10 @@ export const getWorldPvpRoamingZoneCandidates = ({
   level = 1,
   faction,
   realmType = GUILD_SERVER_STYLE.PVE,
+}: {
+  level?: number;
+  faction?: string;
+  realmType?: string;
 } = {}) => {
   const safeLevel = clampLevel(level);
   const minimumMaxLevel = safeLevel >= 60 ? 55 : Math.max(45, safeLevel - 5);
@@ -85,6 +103,10 @@ export const pickWorldPvpRoamingZone = ({
   character,
   faction,
   realmType = GUILD_SERVER_STYLE.PVE,
+}: {
+  character?: Character | null;
+  faction?: string;
+  realmType?: string;
 } = {}) => {
   const candidates = getWorldPvpRoamingZoneCandidates({
     level: character?.level,
@@ -102,8 +124,14 @@ export const resolveWorldPvpRoamingAssignment = ({
   character,
   faction,
   realmType = GUILD_SERVER_STYLE.PVE,
-} = {}) => {
-  if (!isWorldPvpRoamingEligible({ character, realmType })) return character;
+}: {
+  character?: Character | null;
+  faction?: string;
+  realmType?: string;
+} = {}): Character | null | undefined => {
+  if (!character || !isWorldPvpRoamingEligible({ character, realmType })) {
+    return character;
+  }
   if (character?.zoneManualOverride) return character;
 
   const currentZone = getZoneById(character.currentZoneId);

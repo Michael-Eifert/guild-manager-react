@@ -9,42 +9,91 @@ import {
   WORLD_PVP_STATE_DEFAULTS,
   WORLD_PVP_TUNING,
 } from "./worldPvpDefinitions";
+import type { Character } from "../types/characterTypes";
 
-const clampNumber = (value, min = 0, max = Number.MAX_SAFE_INTEGER) => {
+type ZoneDefinition = (typeof import("../zones/zoneDefinitions").ZONE_DEFINITIONS)[number];
+export type WorldPvpProfileType =
+  typeof WORLD_PVP_PROFILE_TYPE[keyof typeof WORLD_PVP_PROFILE_TYPE];
+export type WorldPvpZoneStats = {
+  eventsTriggered: number;
+  victories: number;
+  defeats: number;
+  honorEarned: number;
+  lastEventDay: number | null;
+};
+export type WorldPvpState = {
+  totalHonor: number;
+  weeklyHonor: number;
+  pvpReputation: number;
+  zoneStats: Record<string, WorldPvpZoneStats>;
+  lastProcessedDayIndex: number;
+  lastWeeklyRolloverDayIndex: number;
+};
+export type WorldPvpProfile = {
+  zoneId: string | null;
+  key: WorldPvpProfileType;
+  pvpType: WorldPvpProfileType;
+  label: string;
+  description: string;
+  controllingFaction: string;
+  recommendedLevelMin: number;
+  recommendedLevelMax: number;
+  hostileDisadvantage: number;
+  active: boolean;
+  realmType: string;
+};
+
+const clampNumber = (
+  value: unknown,
+  min = 0,
+  max = Number.MAX_SAFE_INTEGER,
+) => {
   const numeric = Number(value);
   if (!Number.isFinite(numeric)) return min;
   return Math.max(min, Math.min(max, numeric));
 };
 
-const clampProgress = (value) => Math.round(clampNumber(value, 0, 100));
+const clampProgress = (value: unknown) => Math.round(clampNumber(value, 0, 100));
 
-const normalizeDayIndex = (value, fallback = 0) => {
+const normalizeDayIndex = (value: unknown, fallback = 0) => {
   const numeric = Number(value);
   if (!Number.isFinite(numeric)) return fallback;
   return Math.max(0, Math.floor(numeric));
 };
 
-export const getOpposingFaction = (faction) =>
+export const getOpposingFaction = (faction: unknown) =>
   faction === GUILD_FACTION.HORDE ? GUILD_FACTION.ALLIANCE : GUILD_FACTION.HORDE;
 
-const normalizeFaction = (faction, fallback = GUILD_FACTION.ALLIANCE) =>
+const normalizeFaction = (
+  faction: unknown,
+  fallback: string = GUILD_FACTION.ALLIANCE,
+) =>
   faction === GUILD_FACTION.HORDE || faction === GUILD_FACTION.ALLIANCE
     ? faction
     : fallback;
 
-export const ensureWorldPvpState = (state, currentDayIndex = null) => {
-  const safe = state && typeof state === "object" ? state : {};
+export const ensureWorldPvpState = (
+  state: unknown,
+  currentDayIndex: number | null = null,
+): WorldPvpState => {
+  const safe =
+    state && typeof state === "object"
+      ? state as Record<string, unknown>
+      : {};
   const zoneStatsSource =
-    safe.zoneStats && typeof safe.zoneStats === "object" ? safe.zoneStats : {};
-  const zoneStats = Object.entries(zoneStatsSource).reduce((next, [zoneId, stats]) => {
+    safe.zoneStats && typeof safe.zoneStats === "object"
+      ? safe.zoneStats as Record<string, unknown>
+      : {};
+  const zoneStats = Object.entries(zoneStatsSource).reduce<Record<string, WorldPvpZoneStats>>((next, [zoneId, stats]) => {
     if (!zoneId || !stats || typeof stats !== "object") return next;
+    const record = stats as Record<string, unknown>;
     next[zoneId] = {
-      eventsTriggered: Math.max(0, Math.floor(Number(stats.eventsTriggered) || 0)),
-      victories: Math.max(0, Math.floor(Number(stats.victories) || 0)),
-      defeats: Math.max(0, Math.floor(Number(stats.defeats) || 0)),
-      honorEarned: Math.max(0, Math.floor(Number(stats.honorEarned) || 0)),
-      lastEventDay: Number.isFinite(Number(stats.lastEventDay))
-        ? Math.max(0, Math.floor(Number(stats.lastEventDay)))
+      eventsTriggered: Math.max(0, Math.floor(Number(record.eventsTriggered) || 0)),
+      victories: Math.max(0, Math.floor(Number(record.victories) || 0)),
+      defeats: Math.max(0, Math.floor(Number(record.defeats) || 0)),
+      honorEarned: Math.max(0, Math.floor(Number(record.honorEarned) || 0)),
+      lastEventDay: Number.isFinite(Number(record.lastEventDay))
+        ? Math.max(0, Math.floor(Number(record.lastEventDay)))
         : null,
     };
     return next;
@@ -72,7 +121,11 @@ export const getWorldPvpProfile = ({
   zone,
   characterFaction = GUILD_FACTION.ALLIANCE,
   realmType = GUILD_SERVER_STYLE.PVE,
-} = {}) => {
+}: {
+  zone?: ZoneDefinition | null;
+  characterFaction?: string;
+  realmType?: string;
+} = {}): WorldPvpProfile => {
   const faction = normalizeFaction(characterFaction);
   const zoneFaction = zone?.faction || ZONE_FACTION.NEUTRAL;
   const isPvpRealm = realmType === GUILD_SERVER_STYLE.PVP;
@@ -83,8 +136,8 @@ export const getWorldPvpProfile = ({
     Number(zone?.maxLevel) || recommendedLevelMin,
   );
 
-  let pvpType = WORLD_PVP_PROFILE_TYPE.CONTESTED;
-  let controllingFaction = zoneFaction;
+  let pvpType: WorldPvpProfileType = WORLD_PVP_PROFILE_TYPE.CONTESTED;
+  let controllingFaction: string = zoneFaction;
   let description = "Contested territory. Characters are PvP flagged on PvP realms.";
   let hostileDisadvantage = 0;
 
@@ -118,7 +171,11 @@ export const getWorldPvpProfile = ({
   };
 };
 
-export const applyWorldPvpZoneProgressDelta = (character, zoneId, delta) => {
+export const applyWorldPvpZoneProgressDelta = (
+  character: Character,
+  zoneId: string,
+  delta: number,
+): Character => {
   if (!character || !zoneId || !delta) return character;
   const currentZoneId = String(character.currentZoneId || "");
   const zoneProgressById = {
@@ -143,7 +200,13 @@ export const applyWorldPvpZoneProgressDelta = (character, zoneId, delta) => {
   };
 };
 
-export const getWorldPvpRiskChance = ({ profile, characters = [] } = {}) => {
+export const getWorldPvpRiskChance = ({
+  profile,
+  characters = [],
+}: {
+  profile?: WorldPvpProfile | null;
+  characters?: Character[];
+} = {}) => {
   if (!profile?.active) return 0;
   const partySize = Array.isArray(characters) ? characters.length : 0;
   const underleveled = (Array.isArray(characters) ? characters : []).some(
@@ -151,7 +214,9 @@ export const getWorldPvpRiskChance = ({ profile, characters = [] } = {}) => {
       Math.max(1, Number(character?.level) || 1) <
       Math.max(1, Number(profile.recommendedLevelMin) || 1),
   );
-  let chance = WORLD_PVP_TUNING.BASE_CHANCE[profile.pvpType] || 0;
+  let chance = (
+    WORLD_PVP_TUNING.BASE_CHANCE as Record<WorldPvpProfileType, number>
+  )[profile.pvpType] || 0;
   if (partySize === 1) chance += WORLD_PVP_TUNING.SOLO_RISK_BONUS;
   if (partySize >= 3) chance -= WORLD_PVP_TUNING.GROUP_RISK_REDUCTION;
   if (underleveled) chance += WORLD_PVP_TUNING.UNDERLEVEL_RISK_BONUS;

@@ -46,4 +46,6 @@ export interface Character {
   zoneProgressById?: Record<string, number>;
   zonesCleared?: string[];
   keys?: string[];
+  zoneManualOverride?: boolean;
+  zoneProgress?: number;
 }
