@@ -10,6 +10,18 @@ import {
   getGuildTalentTreeNodeStatus,
 } from "../../guildProgression";
 import { GUILD_FOCUS, GUILD_FOCUS_OPTIONS } from "../../constants";
+import type { GuildSetupState } from "../../app/gameTypes";
+
+type GuildProgress = {
+  renownPoints: number;
+  totalRenown: number;
+  talents?: Record<string, number>;
+  milestones?: Record<string, unknown>;
+};
+type GuildDerivedStats = {
+  maxRoster: number;
+  goldCap: number;
+};
 
 const GUILD_FOCUS_DESCRIPTIONS = Object.freeze({
   [GUILD_FOCUS.LEVELING]: "Members gain +5% XP from passive and mission rewards.",
@@ -31,6 +43,18 @@ const GuildTalentsModal = ({
   focusChangeCostGold = 10,
   onChangeGuildFocus,
   onUpgradeTalent,
+}: {
+  isOpen: boolean;
+  onClose?: () => void;
+  variant?: "modal" | "page";
+  guildProgress: GuildProgress;
+  guildGold: number;
+  guildDerivedStats: GuildDerivedStats;
+  guildSetup: GuildSetupState;
+  currentDayIndex: number;
+  focusChangeCostGold?: number;
+  onChangeGuildFocus: (focus: string) => void;
+  onUpgradeTalent: (talentKey: string) => void;
 }) => {
   const [activeTab, setActiveTab] = useState("achievements");
   const isPage = variant === "page";
@@ -129,11 +153,14 @@ const GuildTalentsModal = ({
                   >
                     <div className="flex flex-col min-w-0">
                       <span>{achievement.label}</span>
-                      {achievement.progress && (
-                        <span className="text-[11px] opacity-80">
-                          Progress: {achievement.progress}
-                        </span>
-                      )}
+                      {"progress" in achievement &&
+                        (typeof achievement.progress === "string" ||
+                          typeof achievement.progress === "number") &&
+                        achievement.progress && (
+                          <span className="text-[11px] opacity-80">
+                            Progress: {achievement.progress}
+                          </span>
+                        )}
                     </div>
                     <span className="font-bold whitespace-nowrap">{achievement.reward}</span>
                   </div>
@@ -197,7 +224,10 @@ const GuildTalentsModal = ({
                         const canUnlockWithGold =
                           nodeStatus.canUnlockNow && missingGold <= 0;
                         const targetRankData = talent?.ranks?.[node.targetRank - 1];
-                        const targetValue = targetRankData?.displayValue ?? targetRankData?.value ?? 0;
+                        const targetValue =
+                          targetRankData && "displayValue" in targetRankData
+                            ? targetRankData.displayValue
+                            : targetRankData?.value ?? 0;
 
                         const cardClass = nodeStatus.unlocked
                           ? "border-emerald-700 bg-emerald-950/35"

@@ -120,6 +120,7 @@ export type GuildSetupState = {
   server?: string;
   serverStyle?: string;
   serverPopulation?: string;
+  lastFocusChangeDayIndex?: number | null;
 };
 
 export interface GameActions {
