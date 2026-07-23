@@ -1,18 +1,29 @@
 import { REALM_NEWS_LIMIT } from "./realmDefinitions";
+import type {
+  RealmGuildSummary,
+  RealmNewsInput,
+  RealmNewsItem,
+  RealmSimulationEvent,
+} from "../types/realmTypes";
 
 export const createRealmNewsItem = ({
   id,
   dayIndex = 0,
   type = "realm",
   message,
-}) => ({
+}: {
+  id: string;
+  dayIndex?: number;
+  type?: string;
+  message: string;
+}): RealmNewsItem => ({
   id,
   dayIndex: Math.max(0, Math.floor(Number(dayIndex) || 0)),
   type,
   message: String(message || "").trim(),
 });
 
-const getRealmNewsExactKey = (entry) =>
+const getRealmNewsExactKey = (entry: RealmNewsInput) =>
   [
     String(entry?.id || "").trim(),
     Math.max(0, Math.floor(Number(entry?.dayIndex) || 0)),
@@ -20,7 +31,10 @@ const getRealmNewsExactKey = (entry) =>
     String(entry?.message || "").trim(),
   ].join("|");
 
-export const getRealmNewsRenderKey = (entry, index = 0) => {
+export const getRealmNewsRenderKey = (
+  entry: RealmNewsInput,
+  index = 0,
+) => {
   const id = String(entry?.id || "").trim();
   if (id) return `${id}:${index}`;
   return `realm-news:${Math.max(0, Math.floor(Number(entry?.dayIndex) || 0))}:${
@@ -28,11 +42,11 @@ export const getRealmNewsRenderKey = (entry, index = 0) => {
   }:${index}`;
 };
 
-export const capRealmNews = (news) => {
+export const capRealmNews = (news: RealmNewsInput[]): RealmNewsInput[] => {
   const exactEntries = new Set();
-  const usedIds = new Map();
-  const usedFinalIds = new Set();
-  const capped = [];
+  const usedIds = new Map<string, number>();
+  const usedFinalIds = new Set<string>();
+  const capped: RealmNewsInput[] = [];
 
   for (const entry of Array.isArray(news) ? news : []) {
     const message = String(entry?.message || "").trim();
@@ -74,13 +88,20 @@ export const buildRealmNewsForDay = ({
   rankings = [],
   playerGuildSnapshot,
   realmEvents = [],
-}) => {
-  const news = [];
+}: {
+  random?: () => number;
+  dayIndex: number;
+  npcGuilds: RealmGuildSummary[];
+  rankings?: RealmGuildSummary[];
+  playerGuildSnapshot?: RealmGuildSummary | null;
+  realmEvents?: RealmSimulationEvent[];
+}): RealmNewsItem[] => {
+  const news: RealmNewsItem[] = [];
   const safeRandom = typeof random === "function" ? random : Math.random;
   const guilds = Array.isArray(npcGuilds) ? npcGuilds : [];
   const pickGuild = () =>
     guilds[Math.floor(safeRandom() * guilds.length)] || guilds[0];
-  const addNews = (type, message) => {
+  const addNews = (type: string, message?: string) => {
     if (!message) return;
     news.push(
       createRealmNewsItem({

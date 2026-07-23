@@ -1727,20 +1727,40 @@ const DUNGEON_MISSION_DEFINITIONS = [
   },
 ];
 
-const cloneDungeonLootTable = (lootTable) =>
+const cloneDungeonLootTable = <T>(lootTable: T): T =>
   lootTable ? JSON.parse(JSON.stringify(lootTable)) : lootTable;
-const cloneBonusDrops = (bonusDrops) =>
+const cloneBonusDrops = <T>(bonusDrops: T): T =>
   Array.isArray(bonusDrops) ? JSON.parse(JSON.stringify(bonusDrops)) : bonusDrops;
+
+const toPositiveInteger = (value: unknown) =>
+  typeof value === "number" && Number.isFinite(value)
+    ? Math.max(1, Math.floor(value))
+    : undefined;
 
 export const buildDungeonMissions = ({
   getDungeonDurationFromReference,
   getDungeonMissionExp,
+}: {
+  getDungeonDurationFromReference: (
+    durationText: unknown,
+    fallbackSeconds?: number,
+  ) => number;
+  getDungeonMissionExp: (
+    recommended: unknown,
+    fallbackLevel: unknown,
+    durationSeconds?: number,
+  ) => number;
 }) =>
   DUNGEON_MISSION_DEFINITIONS.map((mission) => {
+    const durationOverrideSeconds =
+      "durationOverrideSeconds" in mission
+        ? mission.durationOverrideSeconds
+        : undefined;
     const duration =
-      Number.isFinite(mission.durationOverrideSeconds) &&
-      mission.durationOverrideSeconds > 0
-        ? Math.floor(mission.durationOverrideSeconds)
+      typeof durationOverrideSeconds === "number" &&
+      Number.isFinite(durationOverrideSeconds) &&
+      durationOverrideSeconds > 0
+        ? Math.floor(durationOverrideSeconds)
         : getDungeonDurationFromReference(
             mission.durationReference,
             mission.durationFallback,
@@ -1761,9 +1781,7 @@ export const buildDungeonMissions = ({
       rewardQualities: Array.isArray(mission.rewardQualities)
         ? [...mission.rewardQualities]
         : [],
-      maxAttempts: Number.isFinite(mission.maxAttempts)
-        ? Math.max(1, Math.floor(mission.maxAttempts))
-        : undefined,
+      maxAttempts: toPositiveInteger(mission.maxAttempts),
       rewardKeys: Array.isArray(mission.rewardKeys) ? [...mission.rewardKeys] : [],
       dungeonLootTable: cloneDungeonLootTable(mission.dungeonLootTable),
       bonusDrops: cloneBonusDrops(mission.bonusDrops),
@@ -1792,15 +1810,9 @@ export const buildDungeonMissions = ({
       requiresKey: mission.requiresKey,
       requiresKeyForAllMembers: mission.requiresKeyForAllMembers === true,
       isRaid: mission.isRaid === true,
-      requiredPartySize: Number.isFinite(mission.requiredPartySize)
-        ? Math.max(1, Math.floor(mission.requiredPartySize))
-        : undefined,
-      minPartySize: Number.isFinite(mission.minPartySize)
-        ? Math.max(1, Math.floor(mission.minPartySize))
-        : undefined,
-      raidMaxAttempts: Number.isFinite(mission.raidMaxAttempts)
-        ? Math.max(1, Math.floor(mission.raidMaxAttempts))
-        : undefined,
+      requiredPartySize: toPositiveInteger(mission.requiredPartySize),
+      minPartySize: toPositiveInteger(mission.minPartySize),
+      raidMaxAttempts: toPositiveInteger(mission.raidMaxAttempts),
       raidRoleRequirement:
         mission.raidRoleRequirement &&
         typeof mission.raidRoleRequirement === "object"

@@ -39,7 +39,7 @@ export const REALM_HIGH_POPULATION_SOFT_CAP = 1500;
 export const REALM_POPULATION_SOFT_CAP_VARIANCE = 100;
 export const REALM_DAILY_ARRIVAL_RANGE = Object.freeze([50, 100]);
 
-export const getRealmPopulationProfile = (serverPopulation) => {
+export const getRealmPopulationProfile = (serverPopulation: string) => {
   const isHighPopulation = serverPopulation === GUILD_SERVER_POPULATION.HIGH;
   return {
     populationLabel: isHighPopulation

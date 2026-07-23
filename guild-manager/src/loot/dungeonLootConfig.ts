@@ -1,28 +1,49 @@
 import { DEFAULT_DUNGEON_LOOT_TABLE } from "../constants";
 import { getDungeonBossCount } from "../missions/missionHelpers";
+import type { Mission } from "../types/missionTypes";
 
-const parseDungeonStepLootConfig = (entry) => {
+type LootWeightInput = { quality?: unknown; chance?: unknown };
+type DungeonStepLootConfig = {
+  weights?: LootWeightInput[];
+  source?: string;
+  includeWorldDrops?: boolean;
+  dungeonOnly?: boolean;
+  worldOnly?: boolean;
+};
+type DungeonLootTable = {
+  steps?: unknown[];
+  boss?: unknown;
+  endboss?: unknown;
+};
+
+const parseDungeonStepLootConfig = (
+  entry: unknown,
+): DungeonStepLootConfig => {
   if (Array.isArray(entry)) {
     return { weights: entry };
   }
   if (!entry || typeof entry !== "object") {
     return {};
   }
+  const record = entry as Record<string, unknown>;
   return {
-    weights: Array.isArray(entry.weights) ? entry.weights : [],
-    source: typeof entry.source === "string" ? entry.source : undefined,
+    weights: Array.isArray(record.weights) ? record.weights : [],
+    source: typeof record.source === "string" ? record.source : undefined,
     includeWorldDrops:
-      typeof entry.includeWorldDrops === "boolean"
-        ? entry.includeWorldDrops
+      typeof record.includeWorldDrops === "boolean"
+        ? record.includeWorldDrops
         : undefined,
     dungeonOnly:
-      typeof entry.dungeonOnly === "boolean" ? entry.dungeonOnly : undefined,
+      typeof record.dungeonOnly === "boolean" ? record.dungeonOnly : undefined,
     worldOnly:
-      typeof entry.worldOnly === "boolean" ? entry.worldOnly : undefined,
+      typeof record.worldOnly === "boolean" ? record.worldOnly : undefined,
   };
 };
 
-const resolveDungeonDropSource = (stepConfig, isEndboss) => {
+const resolveDungeonDropSource = (
+  stepConfig: DungeonStepLootConfig,
+  isEndboss: boolean,
+) => {
   const defaultSource = isEndboss ? "dungeon" : "mixed";
   const source = String(stepConfig.source || defaultSource).toLowerCase();
 
@@ -60,10 +81,13 @@ const resolveDungeonDropSource = (stepConfig, isEndboss) => {
   return sourceOptions;
 };
 
-export const getDungeonStepLootConfig = (mission, stepIndex) => {
-  const table =
+export const getDungeonStepLootConfig = (
+  mission: Mission,
+  stepIndex: number,
+) => {
+  const table: DungeonLootTable =
     mission && typeof mission.dungeonLootTable === "object"
-      ? mission.dungeonLootTable
+      ? mission.dungeonLootTable as DungeonLootTable
       : {};
   const bossCount = getDungeonBossCount(mission);
   const isEndboss = stepIndex === bossCount - 1;
@@ -100,7 +124,7 @@ export const getDungeonStepLootConfig = (mission, stepIndex) => {
   };
 };
 
-const normalizeLootWeights = (weights) =>
+const normalizeLootWeights = (weights: unknown) =>
   (Array.isArray(weights) ? weights : [])
     .map((entry) => ({
       quality: Number(entry?.quality),
@@ -114,14 +138,18 @@ const normalizeLootWeights = (weights) =>
         entry.chance > 0,
     );
 
-const rollQualityFromWeights = (weights, fallbackQuality = 2) => {
+const rollQualityFromWeights = (
+  weights: unknown,
+  fallbackQuality = 2,
+  random: () => number = Math.random,
+) => {
   const normalized = normalizeLootWeights(weights);
   if (normalized.length === 0) return fallbackQuality;
 
   const totalChance = normalized.reduce((sum, entry) => sum + entry.chance, 0);
   if (totalChance <= 0) return fallbackQuality;
 
-  let roll = Math.random() * totalChance;
+  let roll = random() * totalChance;
   for (const entry of normalized) {
     roll -= entry.chance;
     if (roll <= 0) return entry.quality;
@@ -130,11 +158,15 @@ const rollQualityFromWeights = (weights, fallbackQuality = 2) => {
   return normalized[normalized.length - 1]?.quality || fallbackQuality;
 };
 
-export const getDungeonStepQualityPriority = (mission, stepIndex) => {
+export const getDungeonStepQualityPriority = (
+  mission: Mission,
+  stepIndex: number,
+  random: () => number = Math.random,
+) => {
   const stepConfig = getDungeonStepLootConfig(mission, stepIndex);
   const stepWeights = stepConfig.weights;
   const normalized = normalizeLootWeights(stepWeights);
-  const rolledQuality = rollQualityFromWeights(stepWeights, 2);
+  const rolledQuality = rollQualityFromWeights(stepWeights, 2, random);
   const fallbackOrder = [5, 4, 3, 2, 1];
   const configuredFallbacks = normalized
     .filter((entry) => entry.quality !== rolledQuality)

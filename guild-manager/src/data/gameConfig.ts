@@ -2,10 +2,15 @@ import { buildDungeonMissions } from "../missions/dungeonDefinitions";
 
 const GAME_MAX_SUPPORTED_LEVEL = 60;
 
-const roundDownToHundred = (value) => Math.floor(value / 100) * 100;
-const roundUpToHundred = (value) => Math.ceil(value / 100) * 100;
+type LevelDurationPoint = { level: number; seconds: number };
 
-const interpolateSecondsByLevel = (level, points) => {
+const roundDownToHundred = (value: number) => Math.floor(value / 100) * 100;
+const roundUpToHundred = (value: number) => Math.ceil(value / 100) * 100;
+
+const interpolateSecondsByLevel = (
+  level: number,
+  points: LevelDurationPoint[],
+) => {
   const safeLevel = Math.max(1, Math.min(GAME_MAX_SUPPORTED_LEVEL, Number(level) || 1));
   const safePoints = Array.isArray(points) ? points : [];
   if (safePoints.length === 0) return 60;
@@ -45,7 +50,7 @@ const ELITE_TARGET_SECONDS_POINTS = [
   { level: 60, seconds: 220 },
 ];
 
-const getXpToNextLevel = (level) => {
+const getXpToNextLevel = (level: number) => {
   const cl = Math.max(
     1,
     Math.min(GAME_MAX_SUPPORTED_LEVEL, Number(level) || 1),
@@ -65,7 +70,7 @@ const getXpToNextLevel = (level) => {
   return roundDownToHundred((8 * cl + diff) * mxp * rf);
 };
 
-const buildXpTable = (maxLevel) => {
+const buildXpTable = (maxLevel: number) => {
   const table = [0];
   for (let level = 1; level <= maxLevel; level++) {
     table.push(getXpToNextLevel(level));
@@ -73,7 +78,7 @@ const buildXpTable = (maxLevel) => {
   return table;
 };
 
-const getQuestDurationForLevel = (level, elite = false) => {
+const getQuestDurationForLevel = (level: number, elite = false) => {
   let baseDuration;
   if (level < 10) {
     // Early leveling stays fast: 8s - 15s
@@ -88,7 +93,7 @@ const getQuestDurationForLevel = (level, elite = false) => {
   return elite ? baseDuration * 2 : baseDuration;
 };
 
-const getQuestMissionExp = (level, elite = false) => {
+const getQuestMissionExp = (level: number, elite = false) => {
   const minExp = elite ? 300 : 200;
   const targetSeconds = interpolateSecondsByLevel(
     level,
@@ -104,7 +109,11 @@ const DUNGEON_EXP_BASELINE_LEVEL = 59;
 const DUNGEON_SECONDS_PER_LEVEL_TARGET = 150;
 const DUNGEON_BASELINE_LEVEL_EXP = getXpToNextLevel(DUNGEON_EXP_BASELINE_LEVEL);
 
-const getDungeonMissionExp = (_recommended, _fallbackLevel, durationSeconds = 100) => {
+const getDungeonMissionExp = (
+  _recommended: unknown,
+  _fallbackLevel: unknown,
+  durationSeconds = 100,
+) => {
   // Global dungeon scaling: 150 seconds ~= one level worth of XP,
   // where "one level" uses the XP needed from level 59 -> 60.
   const safeDuration = Math.max(1, Number(durationSeconds) || 100);
@@ -117,7 +126,10 @@ const getDungeonMissionExp = (_recommended, _fallbackLevel, durationSeconds = 10
 
 // Dungeon duration normalization from community reference:
 // "1h30" => 90s, "0h50" => 50s
-const getDungeonDurationFromReference = (durationText, fallbackSeconds = 120) => {
+const getDungeonDurationFromReference = (
+  durationText: unknown,
+  fallbackSeconds = 120,
+) => {
   const match = String(durationText || "").match(/^(\d+)h(\d{1,2})$/i);
   if (!match) return fallbackSeconds;
   const hours = Number(match[1]);
@@ -237,12 +249,15 @@ const REALM_DIFFICULTY_PROFILES = Object.freeze({
   }),
 });
 
-export const normalizeRealmDifficulty = (value) =>
-  Object.values(REALM_DIFFICULTY).includes(value)
-    ? value
+type RealmDifficulty =
+  typeof REALM_DIFFICULTY[keyof typeof REALM_DIFFICULTY];
+
+export const normalizeRealmDifficulty = (value: unknown): RealmDifficulty =>
+  Object.values(REALM_DIFFICULTY).includes(value as RealmDifficulty)
+    ? value as RealmDifficulty
     : REALM_DIFFICULTY.NORMAL;
 
-export const getRealmDifficultyProfile = (value) =>
+export const getRealmDifficultyProfile = (value: unknown) =>
   REALM_DIFFICULTY_PROFILES[normalizeRealmDifficulty(value)];
 
 export const GAMEPLAY_TUNING = Object.freeze({
@@ -382,10 +397,10 @@ export const FACTION_RACES = Object.freeze({
   ]),
 });
 
-const getQuestDuration = (level, elite = false) =>
+const getQuestDuration = (level: number, elite = false) =>
   getQuestDurationForLevel(level, elite);
 
-const getQuestRewardQualities = (level, elite = false) => {
+const getQuestRewardQualities = (level: number, elite = false) => {
   if (elite) return level >= 18 ? [3] : [2];
   return level >= 12 ? [2] : [1];
 };
