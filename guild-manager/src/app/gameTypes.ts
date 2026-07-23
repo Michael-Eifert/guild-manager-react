@@ -1,6 +1,16 @@
-export type CharacterId = string;
-export type MissionId = string | number;
-export type UnknownRecord = Record<string, unknown>;
+import type { ChangeEvent, RefObject } from "react";
+import type {
+  Character,
+  CharacterId,
+} from "../types/characterTypes";
+import type {
+  Mission,
+  MissionId,
+} from "../types/missionTypes";
+import type { GuildInventory } from "../types/itemTypes";
+import type { WorldPvpState } from "../pvp/worldPvpUtils";
+
+export type { Character, CharacterId, Mission, MissionId };
 
 export type GameServices = {
   now: () => number;
@@ -23,7 +33,7 @@ export type GameNotification = Required<Pick<NotificationInput, "message">> & {
   type: NotificationType;
 };
 
-export type GuildLogEntry = UnknownRecord & {
+export type GuildLogEntry = Record<string, unknown> & {
   time?: string;
   type?: string;
   message?: string;
@@ -34,36 +44,6 @@ export type ClockState = {
   gameSpeed: number;
   isPaused: boolean;
   lastRealTimeMs?: number;
-};
-
-export type Character = {
-  id: CharacterId;
-  name?: string;
-  level?: number;
-  charClass?: string;
-  role?: string;
-  status?: string;
-  statusText?: string;
-  activityMode?: string;
-  [key: string]: unknown;
-};
-
-export type Mission = UnknownRecord & {
-  id: MissionId;
-  questId?: MissionId;
-  instanceId?: string;
-  name?: string;
-  type?: string;
-  memberIds?: CharacterId[];
-  startTime?: number;
-  finishTime?: number;
-  level?: number;
-  recommended?: number;
-  minLevel?: number;
-  entryLevel?: number;
-  isRaid?: boolean;
-  dungeonWing?: string;
-  dungeonSetName?: string;
 };
 
 export type GameState = {
@@ -118,15 +98,15 @@ export type GameRuntimeSnapshot = {
   activeMissions: Mission[];
   guildGold: number;
   gameTimeMs: number;
-  guildSetup: UnknownRecord;
-  guildProgress: UnknownRecord;
-  guildRelationships: UnknownRecord;
-  calendarState: UnknownRecord;
-  raidLockouts: UnknownRecord;
-  realmState: UnknownRecord;
-  worldPvpState: UnknownRecord;
-  battlefieldState: UnknownRecord;
-  guildInventory: UnknownRecord;
+  guildSetup: GuildSetupState;
+  guildProgress: Record<string, unknown>;
+  guildRelationships: Record<string, unknown>;
+  calendarState: Record<string, unknown>;
+  raidLockouts: Record<string, unknown>;
+  realmState: Record<string, unknown>;
+  worldPvpState: WorldPvpState;
+  battlefieldState: Record<string, unknown>;
+  guildInventory: GuildInventory;
 };
 
 export type GuildSetupState = {
@@ -151,7 +131,7 @@ export interface GameActions {
 }
 
 /** Public provider value. Domain modules refine individual fields as they migrate. */
-export type GameProviderSnapshot = UnknownRecord & {
+export type GameProviderSnapshot = {
   actions: GameActions;
   guildSetup: GuildSetupState;
   roster: Character[];
@@ -167,4 +147,3 @@ export type TransitionResult = {
   state: GameState;
   events: GameEvent[];
 };
-import type { ChangeEvent, RefObject } from "react";

@@ -17,7 +17,7 @@ import {
 import type { SessionState } from "../session/sessionFileActions";
 import type { NotificationInput } from "./gameTypes";
 
-type AnyRecord = Record<string, any>;
+type SessionCharacter = Record<string, unknown>;
 
 export const createSessionActions = ({
   state,
@@ -32,7 +32,10 @@ export const createSessionActions = ({
   refs: SessionRefs;
   setters: SessionSetters;
   closeOverlays: () => void;
-  normalizeRosterZones: (roster: AnyRecord[], faction?: string) => AnyRecord[];
+  normalizeRosterZones: (
+    roster: SessionCharacter[],
+    faction?: string,
+  ) => SessionCharacter[];
   createId: () => string;
   pushNotification: (notification: NotificationInput) => unknown;
 }) => {

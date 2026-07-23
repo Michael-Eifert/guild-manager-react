@@ -11,7 +11,7 @@ export type MissionAchievement = {
   name?: string;
   label?: string;
   isRaid: boolean;
-  recommended?: number;
+  recommended?: number | string;
   minLevel?: number;
   entryLevel?: number;
 };
