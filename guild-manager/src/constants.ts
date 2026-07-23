@@ -72,7 +72,7 @@ export const PROF_ACTIONS = {
   [PROFESSIONS.ALCHEMY]: "⚗️ Brewing...",
 };
 
-const wowItemIcon = (iconCode) =>
+const wowItemIcon = (iconCode: string) =>
   `https://wow.zamimg.com/images/wow/icons/large/${iconCode.toLowerCase()}.jpg`;
 
 export const KEY_DEFINITIONS = Object.freeze({

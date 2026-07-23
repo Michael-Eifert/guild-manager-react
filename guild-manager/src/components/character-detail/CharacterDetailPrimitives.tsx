@@ -5,6 +5,7 @@ import {
   getQualityColor,
   getWowIconUrl,
 } from "../../utils";
+import type { ItemDefinition } from "../../types/itemTypes";
 
 export const ARMORY_LEFT_SLOTS = Object.freeze([
   "head", "neck", "shoulder", "back", "chest", "wrist",
@@ -14,14 +15,20 @@ export const ARMORY_RIGHT_SLOTS = Object.freeze([
 ]);
 export const ARMORY_BOTTOM_SLOTS = Object.freeze(["mainHand"]);
 
-const formatPreferenceTag = (tag) =>
+const formatPreferenceTag = (tag: string) =>
   String(tag || "")
     .split("_")
     .filter(Boolean)
     .map((part) => part.charAt(0).toUpperCase() + part.slice(1))
     .join(" ");
 
-export const PreferencePills = ({ values, tone = "emerald" }) => {
+export const PreferencePills = ({
+  values,
+  tone = "emerald",
+}: {
+  values?: string[];
+  tone?: "emerald" | "red";
+}) => {
   const entries = (Array.isArray(values) ? values : []).filter(Boolean);
   if (entries.length === 0) {
     return <span className="text-xs text-gray-500 italic">None</span>;
@@ -40,13 +47,21 @@ export const PreferencePills = ({ values, tone = "emerald" }) => {
   );
 };
 
-const formatEquipmentSlotLabel = (slotName) =>
+const formatEquipmentSlotLabel = (slotName: string) =>
   String(slotName || "")
     .replace(/([A-Z])/g, " $1")
     .trim()
     .replace(/\b\w/g, (char) => char.toUpperCase());
 
-export const ArmoryItemSlot = ({ slotName, item, align = "left" }) => {
+export const ArmoryItemSlot = ({
+  slotName,
+  item,
+  align = "left",
+}: {
+  slotName: string;
+  item?: ItemDefinition | null;
+  align?: "left" | "right";
+}) => {
   const borderColor = item ? getQualityColor(item.quality) : "#444";
   const itemStats = formatItemStats(item?.stats);
   const itemLevel = getItemEffectiveLevel(item);
