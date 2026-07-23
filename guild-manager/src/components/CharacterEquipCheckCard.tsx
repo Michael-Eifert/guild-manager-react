@@ -8,6 +8,11 @@ import {
   getWowIconUrl,
   normalizeEquipmentSlots,
 } from "../utils";
+import type { Character } from "../types/characterTypes";
+import type { ItemDefinition } from "../types/itemTypes";
+
+type ClassPresentation = { color: string; icon?: string };
+const CLASS_PRESENTATIONS = DB_CLASSES as Record<string, ClassPresentation>;
 
 const ARMORY_LEFT_SLOTS = Object.freeze([
   "head",
@@ -26,13 +31,21 @@ const ARMORY_RIGHT_SLOTS = Object.freeze([
   "trinket",
 ]);
 
-const formatSlotLabel = (slot) =>
+const formatSlotLabel = (slot: string) =>
   String(slot || "")
     .replace(/([A-Z])/g, " $1")
     .trim()
     .replace(/\b\w/g, (char) => char.toUpperCase());
 
-function EquipSlotIcon({ charId, slot, item }) {
+function EquipSlotIcon({
+  charId,
+  slot,
+  item,
+}: {
+  charId: string;
+  slot: string;
+  item?: ItemDefinition | null;
+}) {
   const borderColor = item ? getQualityColor(item.quality) : "var(--q-poor)";
   const itemLevel = item ? getItemEffectiveLevel(item) : 0;
 
@@ -58,13 +71,22 @@ function EquipSlotIcon({ charId, slot, item }) {
   );
 }
 
-const CharacterEquipCheckCard = ({ char, onClick }) => {
-  const classData = DB_CLASSES[char.charClass];
+const CharacterEquipCheckCard = ({
+  char,
+  onClick,
+}: {
+  char: Character;
+  onClick: (character: Character) => void;
+}) => {
+  const classData = CLASS_PRESENTATIONS[char.charClass || ""];
   if (!classData) return null;
 
   const avgItemLevel = getCharacterAverageItemLevel(char);
-  const isMax = char.level >= CONFIG.LEVEL_CAP;
-  const equipment = normalizeEquipmentSlots(char.equipment);
+  const isMax = Number(char.level) >= CONFIG.LEVEL_CAP;
+  const equipment = normalizeEquipmentSlots(char.equipment) as Record<
+    string,
+    ItemDefinition | null | undefined
+  >;
   const centerIcon = classData.icon || getRacePortraitUrl(char.race, char.gender);
 
   return (

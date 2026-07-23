@@ -28,6 +28,8 @@ export interface Character {
   charClass?: string;
   class?: string;
   className?: string;
+  race?: string;
+  gender?: string;
   role?: CharacterRole | string;
   status?: string;
   statusText?: string;

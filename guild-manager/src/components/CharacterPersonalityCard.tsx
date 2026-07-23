@@ -10,29 +10,41 @@ import {
   getCharacterZonePreference,
 } from "../zones/zoneDefinitions";
 import { getRacePortraitUrl, getRoleIcon, getWowIconUrl } from "../utils";
+import type { Character } from "../types/characterTypes";
 
-const ZONE_ARCHETYPE_LABEL = Object.freeze({
+type ClassPresentation = { color: string };
+const CLASS_PRESENTATIONS = DB_CLASSES as Record<string, ClassPresentation>;
+
+const ZONE_ARCHETYPE_LABEL: Readonly<Record<string, string>> = Object.freeze({
   [ZONE_COMPLETION_ARCHETYPE.GEAR_SEEKER]: "Gear Seeker",
   [ZONE_COMPLETION_ARCHETYPE.COMPLETIONIST]: "Completionist",
   [ZONE_COMPLETION_ARCHETYPE.WANDERER]: "Wanderer",
   [ZONE_COMPLETION_ARCHETYPE.AVOIDANT]: "Cautious Pathfinder",
 });
 
-const ZONE_ARCHETYPE_BLURB = Object.freeze({
+const ZONE_ARCHETYPE_BLURB: Readonly<Record<string, string>> = Object.freeze({
   [ZONE_COMPLETION_ARCHETYPE.GEAR_SEEKER]: "Chases high-end zones first.",
   [ZONE_COMPLETION_ARCHETYPE.COMPLETIONIST]: "Clears from low zones upward.",
   [ZONE_COMPLETION_ARCHETYPE.WANDERER]: "Follows favorite places and foes.",
   [ZONE_COMPLETION_ARCHETYPE.AVOIDANT]: "Avoids disliked regions when possible.",
 });
 
-const formatPreferenceTag = (tag) =>
+const formatPreferenceTag = (tag: string) =>
   String(tag || "")
     .split("_")
     .filter(Boolean)
     .map((part) => part.charAt(0).toUpperCase() + part.slice(1))
     .join(" ");
 
-const PreferencePreview = ({ label, values, tone }) => {
+const PreferencePreview = ({
+  label,
+  values,
+  tone = "emerald",
+}: {
+  label: string;
+  values?: string[];
+  tone?: "emerald" | "red";
+}) => {
   const entries = (Array.isArray(values) ? values : []).filter(Boolean).slice(0, 2);
   const toneClass =
     tone === "red"
@@ -62,11 +74,21 @@ const PreferencePreview = ({ label, values, tone }) => {
   );
 };
 
-const CharacterPersonalityCard = ({ char, onClick }) => {
-  const classData = DB_CLASSES[char.charClass];
+const CharacterPersonalityCard = ({
+  char,
+  onClick,
+}: {
+  char: Character;
+  onClick: (character: Character) => void;
+}) => {
+  const classData = CLASS_PRESENTATIONS[char.charClass || ""];
   if (!classData) return null;
 
-  const zonePreference = getCharacterZonePreference(char);
+  const zonePreference = getCharacterZonePreference(char) as {
+    archetype: string;
+    likedBiomes: string[];
+    dislikedBiomes: string[];
+  };
   const archetypeLabel =
     ZONE_ARCHETYPE_LABEL[zonePreference.archetype] || "Adventurer";
   const archetypeBlurb =

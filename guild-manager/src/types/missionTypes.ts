@@ -33,4 +33,19 @@ export interface Mission {
     anchorDayIndex?: number;
     weekday?: number;
   };
+  totalDuration?: number;
+  successChance?: number;
+  dungeonProgress?: {
+    stepResults?: Array<{ step?: number; outcome?: string }>;
+    currentStep?: number;
+    clearedSteps?: number;
+    attemptsUsed?: number;
+    maxAttempts?: number;
+    finished?: boolean;
+  };
+  chainContext?: {
+    totalMissions?: number;
+    currentPosition?: number;
+    setName?: string;
+  };
 }

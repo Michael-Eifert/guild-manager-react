@@ -4,6 +4,16 @@ import {
   getMissionWipeCost,
 } from "../missions/missionHelpers";
 import { getRacePortraitUrl, getRoleIcon, getWowIconUrl } from "../utils";
+import type { Character } from "../types/characterTypes";
+import type { Mission } from "../types/missionTypes";
+
+type DungeonStepResult = { step?: number; outcome?: string };
+type ActiveMission = Mission & {
+  finishTime: number;
+  totalDuration: number;
+};
+type ClassPresentation = { color?: string; icon?: string };
+const CLASS_PRESENTATIONS = DB_CLASSES as Record<string, ClassPresentation>;
 
 const ActiveMissionCard = ({
   mission,
@@ -12,6 +22,13 @@ const ActiveMissionCard = ({
   roster,
   showFinishAction = true,
   variant = "default",
+}: {
+  mission: ActiveMission;
+  onFinish?: (mission: ActiveMission) => void;
+  gameTimeMs: number;
+  roster: Character[];
+  showFinishAction?: boolean;
+  variant?: "default" | "compact";
 }) => {
   const compact = variant === "compact";
   const now = Number.isFinite(gameTimeMs) ? gameTimeMs : mission.startTime || 0;
@@ -27,15 +44,19 @@ const ActiveMissionCard = ({
     typeof dungeonProgress?.currentStep === "number"
       ? dungeonProgress.currentStep
       : 0;
-  const dungeonBossNames = getDungeonBossNames(mission);
+  const dungeonBossNames = getDungeonBossNames(mission) as string[];
   const dungeonBossCount = dungeonBossNames.length;
-  const stepResultsByStep = stepResults.reduce((acc, result) => {
-    const step = Number(result?.step);
-    if (!Number.isFinite(step) || step <= 0) return acc;
-    if (!acc.has(step)) acc.set(step, []);
-    acc.get(step).push(result);
-    return acc;
-  }, new Map());
+  const stepResultsByStep = stepResults.reduce<Map<number, DungeonStepResult[]>>(
+    (acc, result) => {
+      const step = Number(result?.step);
+      if (!Number.isFinite(step) || step <= 0) return acc;
+      const existingResults = acc.get(step);
+      if (existingResults) existingResults.push(result);
+      else acc.set(step, [result]);
+      return acc;
+    },
+    new Map(),
+  );
   const chainContext = mission.chainContext;
   const chainTotal = Number(chainContext?.totalMissions) || 0;
   const chainPosition = Number(chainContext?.currentPosition) || 0;
@@ -56,7 +77,7 @@ const ActiveMissionCard = ({
               (member) => String(member?.id) === String(memberId),
             ),
           )
-          .filter(Boolean)
+          .filter((member): member is Character => Boolean(member))
       : [];
   return (
     <div
@@ -99,7 +120,8 @@ const ActiveMissionCard = ({
               </div>
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
                 {partyMembers.map((member) => {
-                  const classData = DB_CLASSES[member.charClass] || {};
+                  const classData =
+                    CLASS_PRESENTATIONS[member.charClass || ""] || {};
                   return (
                     <div
                       key={`${mission.instanceId || mission.id}-${member.id}`}
