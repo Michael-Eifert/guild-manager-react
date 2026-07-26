@@ -265,6 +265,7 @@ export default function HomeRoot() {
                 onToggleDashboardSection={toggleDashboardSection}
                 onGuildModeChange={handleGuildModeChange}
                 guildSetup={guildSetup}
+                guildRelationships={guildRelationships}
                 roster={roster}
                 onGuildSuccessRateChange={handleGuildSuccessRateChange}
                 dungeonActivityInfoText={dungeonActivityInfoText}

@@ -5,6 +5,7 @@ import CharacterCard from "../../components/CharacterCard";
 import CharacterEquipCheckCard from "../../components/CharacterEquipCheckCard";
 import CharacterPersonalityCard from "../../components/CharacterPersonalityCard";
 import DashboardAccordionSection from "../../components/DashboardAccordionSection";
+import GuildStatistics from "../../components/dashboard/GuildStatistics";
 import GameButton from "../../components/ui/GameButton";
 import SegmentedControl from "../../components/ui/SegmentedControl";
 import {
@@ -57,6 +58,7 @@ export default function DashboardPage({
   onToggleDashboardSection,
   onGuildModeChange,
   guildSetup,
+  guildRelationships,
   roster,
   onGuildSuccessRateChange,
   dungeonActivityInfoText,
@@ -100,6 +102,12 @@ export default function DashboardPage({
           roster.
         </p>
       </div>
+
+      <GuildStatistics
+        roster={roster}
+        relationships={guildRelationships}
+        onSelectCharacter={onSelectCharacter}
+      />
 
       {chatPreview}
 
