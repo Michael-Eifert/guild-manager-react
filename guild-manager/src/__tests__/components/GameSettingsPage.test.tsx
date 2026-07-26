@@ -21,6 +21,8 @@ const debugActions = {
 describe("GameSettingsPage", () => {
   it("updates gameplay settings and exposes chat and debug as page tabs", () => {
     const onGameSettingsChange = vi.fn();
+    const onLoadBrowserSave = vi.fn();
+    const onStartNewBrowserGame = vi.fn();
     render(
       <GameSettingsPage
         gameSettings={{ offlineSimulationEnabled: true }}
@@ -29,6 +31,34 @@ describe("GameSettingsPage", () => {
         onChatAiSettingsChange={vi.fn()}
         onTestChatProvider={vi.fn()}
         debugActions={debugActions}
+        browserSaveSlots={[
+          {
+            id: 1,
+            active: true,
+            hasSave: true,
+            guildName: "Current Guild",
+            savedAt: "2026-07-26T12:00:00.000Z",
+            gameDay: 12,
+          },
+          {
+            id: 2,
+            active: false,
+            hasSave: true,
+            guildName: "Other Guild",
+            savedAt: "2026-07-25T12:00:00.000Z",
+            gameDay: 4,
+          },
+          {
+            id: 3,
+            active: false,
+            hasSave: false,
+            guildName: null,
+            savedAt: null,
+            gameDay: null,
+          },
+        ]}
+        onLoadBrowserSave={onLoadBrowserSave}
+        onStartNewBrowserGame={onStartNewBrowserGame}
       />,
     );
 
@@ -38,6 +68,18 @@ describe("GameSettingsPage", () => {
     expect(onGameSettingsChange).toHaveBeenCalledWith({
       offlineSimulationEnabled: false,
     });
+
+    expect(screen.getByText("Current Guild")).toBeTruthy();
+    expect(screen.getByText("Other Guild")).toBeTruthy();
+    fireEvent.click(screen.getByRole("button", { name: "Load Save" }));
+    expect(onLoadBrowserSave).toHaveBeenCalledWith(2);
+
+    fireEvent.click(screen.getByRole("button", { name: "Start New Game" }));
+    expect(
+      screen.getByText("Start a new game in Save Slot 3?"),
+    ).toBeTruthy();
+    fireEvent.click(screen.getByRole("button", { name: "Confirm New Game" }));
+    expect(onStartNewBrowserGame).toHaveBeenCalledWith(3);
 
     fireEvent.click(screen.getByRole("button", { name: "Chat & AI" }));
     expect(

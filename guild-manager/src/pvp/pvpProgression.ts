@@ -1,5 +1,5 @@
 import { GUILD_FACTION } from "../constants";
-import { getItemEffectiveLevel, normalizeEquipmentSlots } from "../utils";
+import { normalizeEquipmentSlots } from "../utils";
 import { ensureCharacterPvpData } from "./pvpCharacterUtils";
 import {
   getNewPvpRewardTiers,
@@ -12,6 +12,7 @@ import {
 } from "./pvpRanks";
 import type { Character, CharacterPvpState } from "../types/characterTypes";
 import type { ItemDefinition } from "../types/itemTypes";
+import { optimizeCharacterEquipment } from "../equipment/equipmentLoadouts";
 
 export const PVP_PROGRESS_PER_HONOR = 0.25;
 export const PVP_WEEKLY_PROGRESS_CAP = 1200;
@@ -104,28 +105,27 @@ const applyPvpAutoEquip = ({ character, unlockedItems }: {
   character: Character & { pvp: CharacterPvpState };
   unlockedItems: readonly ItemDefinition[];
 }) => {
-  const equipment = normalizeEquipmentSlots(character?.equipment) as Record<
-    string,
-    ItemDefinition | null | undefined
-  >;
   const equippedItems: ItemDefinition[] = [];
-  const nextEquipment = { ...equipment };
+  let soldGold = 0;
+  let nextCharacter = {
+    ...character,
+    equipment: normalizeEquipmentSlots(character?.equipment),
+  };
 
   (Array.isArray(unlockedItems) ? unlockedItems : []).forEach((item) => {
-    const slot = String(item?.slot || "").trim();
-    if (!slot) return;
-    const currentItem = nextEquipment[slot];
-    if (getItemEffectiveLevel(item) <= getItemEffectiveLevel(currentItem)) return;
-    nextEquipment[slot] = item;
-    equippedItems.push(item);
+    const optimized = optimizeCharacterEquipment({
+      character: nextCharacter,
+      incomingItem: item,
+    });
+    nextCharacter = optimized.character as typeof nextCharacter;
+    soldGold += optimized.soldGold;
+    if (optimized.outcome === "equipped") equippedItems.push(item);
   });
 
   return {
-    character: {
-      ...character,
-      equipment: nextEquipment,
-    },
+    character: nextCharacter,
     equippedItems,
+    soldGold,
   };
 };
 
@@ -156,6 +156,7 @@ export const applyWeeklyPvpRollover = ({
     title: string;
     message: string;
   }> = [];
+  let soldGold = 0;
 
   if (!didRollover) {
     return {
@@ -165,6 +166,7 @@ export const applyWeeklyPvpRollover = ({
         ensureCharacterPvpData(character, safeFaction),
       ),
       logs,
+      soldGold: 0,
     };
   }
 
@@ -208,10 +210,15 @@ export const applyWeeklyPvpRollover = ({
         unlockedPvpGearIds,
       },
     };
-    const { character: nextCharacter, equippedItems } = applyPvpAutoEquip({
+    const {
+      character: nextCharacter,
+      equippedItems,
+      soldGold: characterSoldGold,
+    } = applyPvpAutoEquip({
       character: nextCharacterWithUnlocks,
       unlockedItems: unlockedPvpGear,
     });
+    soldGold += characterSoldGold;
     const newRewardTiers = getNewPvpRewardTiers(oldHighestRank, highestRank);
     const log = buildUnlockLog({
       character: normalized,
@@ -229,5 +236,6 @@ export const applyWeeklyPvpRollover = ({
     currentDayIndex: safeDay,
     characters: nextCharacters,
     logs,
+    soldGold,
   };
 };

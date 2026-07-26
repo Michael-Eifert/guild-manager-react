@@ -6,10 +6,11 @@ type BundleMetrics = {
 };
 
 type BundleBaseline = BundleMetrics & { allowedIncreasePercent: number };
+type DataAssetBaseline = { maxDataAssetBytes?: number };
 
 const baseline = JSON.parse(
   await readFile(new URL("./bundle-size-baseline.json", import.meta.url), "utf8"),
-) as BundleBaseline;
+) as BundleBaseline & DataAssetBaseline;
 const assetsDirectory = new URL("../dist/assets/", import.meta.url);
 const files = (await readdir(assetsDirectory)).filter((file) => file.endsWith(".js"));
 const sizes = await Promise.all(
@@ -33,5 +34,21 @@ if (failures.length > 0) {
     const allowed = Math.ceil(baseline[key] * (1 + baseline.allowedIncreasePercent / 100));
     console.error(`${key} is ${value} bytes; allowed maximum is ${allowed} bytes.`);
   });
+  process.exitCode = 1;
+}
+
+const itemCatalogFile = new URL(
+  "../dist/generated/item-catalog-v15.json",
+  import.meta.url,
+);
+const itemCatalogBytes = (await stat(itemCatalogFile)).size;
+console.log(JSON.stringify({ itemCatalogBytes }, null, 2));
+if (
+  Number.isFinite(baseline.maxDataAssetBytes) &&
+  itemCatalogBytes > Number(baseline.maxDataAssetBytes)
+) {
+  console.error(
+    `itemCatalogBytes is ${itemCatalogBytes} bytes; allowed maximum is ${baseline.maxDataAssetBytes} bytes.`,
+  );
   process.exitCode = 1;
 }

@@ -57,6 +57,11 @@ import {
   ArmoryItemSlot,
   PreferencePills,
 } from "../character-detail/CharacterDetailPrimitives";
+import {
+  getThirdWeaponSlotLabel,
+  inferEquipmentKind,
+  isTwoHandedItem,
+} from "../../equipment/weaponRules";
 
 const ZONE_ARCHETYPE_LABEL = Object.freeze({
   [ZONE_COMPLETION_ARCHETYPE.GEAR_SEEKER]: "Gear Seeker",
@@ -146,6 +151,21 @@ const DetailModal = ({
     pvpCharacter.pvp.highestRank,
   );
   const displayEquipment = normalizeEquipmentSlots(char?.equipment);
+  const storedEquipment = Array.isArray(char?.personalInventory)
+    ? char.personalInventory
+    : [];
+  const storedGearGroups = storedEquipment.reduce((groups, item) => {
+    const kind = inferEquipmentKind(item);
+    const label = item.setId
+      ? "Set Pieces"
+      : ["weapon", "shield", "offHandFrill"].includes(kind)
+        ? "Waiting Weapon Combinations"
+        : "Alternative Loadouts";
+    groups[label] = [...(groups[label] || []), item];
+    return groups;
+  }, {});
+  const thirdWeaponSlotLabel = getThirdWeaponSlotLabel(char);
+  const hasTwoHandedWeapon = isTwoHandedItem(displayEquipment.mainHand);
   const unlockedEquippedPvpGear = unlockedPvpGear.filter(
     (item) => displayEquipment[item.slot]?.id === item.id,
   );
@@ -503,17 +523,59 @@ const DetailModal = ({
                     ))}
                   </div>
                 </div>
-                <div className="mt-3 grid grid-cols-1 gap-3 lg:grid-cols-[1fr_1.4fr_1fr]">
-                  <div className="hidden lg:block"></div>
+                <div className="mt-3 grid grid-cols-1 gap-3 md:grid-cols-3">
                   {ARMORY_BOTTOM_SLOTS.map((slot) => (
                     <ArmoryItemSlot
                       key={`${char.id}-armory-bottom-${slot}`}
                       slotName={slot}
                       item={displayEquipment[slot]}
+                      label={slot === "ranged" ? thirdWeaponSlotLabel : undefined}
+                      occupiedBy={
+                        slot === "offHand" && hasTwoHandedWeapon
+                          ? displayEquipment.mainHand
+                          : null
+                      }
                     />
                   ))}
-                  <div className="hidden lg:block"></div>
                 </div>
+              </div>
+
+              <div className="rounded-lg border border-slate-700 bg-slate-950/35 p-3 md:p-4">
+                <h3 className="text-[10px] font-bold uppercase tracking-widest text-slate-300">
+                  Stored Gear
+                </h3>
+                <p className="mt-1 text-xs text-slate-500">
+                  Alternate-role gear and incomplete weapon combinations are managed automatically.
+                </p>
+                {storedEquipment.length === 0 ? (
+                  <div className="mt-3 rounded border border-dashed border-slate-700 px-3 py-4 text-center text-xs italic text-slate-500">
+                    No useful reserve equipment.
+                  </div>
+                ) : (
+                  <div className="mt-3 space-y-3">
+                    {Object.entries(storedGearGroups).map(([group, items]) => (
+                      <div key={`${char.id}-${group}`}>
+                        <div className="mb-1.5 text-[10px] font-bold uppercase tracking-wider text-amber-300/80">
+                          {group}
+                        </div>
+                        <div className="grid grid-cols-1 gap-2 sm:grid-cols-2">
+                          {items.map((item, index) => (
+                            <ArmoryItemSlot
+                              key={`${char.id}-stored-${item.id || item.name}-${index}`}
+                              slotName={item.slot || "equipment"}
+                              item={item}
+                              label={
+                                item.slot === "ranged"
+                                  ? thirdWeaponSlotLabel
+                                  : `Stored ${String(item.slot || "Gear")}`
+                              }
+                            />
+                          ))}
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                )}
               </div>
 
               <div className="mt-4 bg-gray-800/50 p-3 rounded border border-amber-900/50">

@@ -6,6 +6,8 @@ import {
   isCharacterInMissionLevelRange,
 } from "../game/characterMorale";
 import { clearCompletedAdventureGoals } from "../automation/adventureGoals";
+import { optimizeCharacterEquipment } from "../equipment/equipmentLoadouts";
+import { canCharacterEquipItem } from "../equipment/weaponRules";
 
 const DUNGEON_BONUS_UNCOMMON_DROP_CHANCE = 0.1;
 const DEFAULT_DUNGEON_BONUS_DROPS = Object.freeze([
@@ -25,7 +27,6 @@ export const createMissionRewardProcessor = ({
   getClassArmorTypes,
   isItemUsableByClass,
   getKeyLabel,
-  getItemEffectiveLevel,
   getMissionLootLevelRange,
   resolveMissionRewardQualities,
   getDungeonStepLootConfig,
@@ -127,13 +128,19 @@ export const createMissionRewardProcessor = ({
   const canCharacterUseItem = (char, item) => {
     if (!char || !item) return false;
     if (!isItemUsableByClass(item, char.charClass)) return false;
+    if (!canCharacterEquipItem(char, item)) return false;
     const allowedTypes = getClassArmorTypes(char.charClass, char.level);
     return item.type === "Generic" || allowedTypes.includes(item.type);
   };
 
   const getItemUpgradeGainForCharacter = (char, item) => {
-    const currentItemLevel = getItemEffectiveLevel(char?.equipment?.[item.slot]);
-    return getItemEffectiveLevel(item) - currentItemLevel;
+    const optimized = optimizeCharacterEquipment({
+      character: char,
+      incomingItem: item,
+    });
+    return optimized.outcome === "stored"
+      ? Math.max(0.01, optimized.loadoutGain)
+      : optimized.loadoutGain;
   };
 
   const pickDungeonDropForParty = (mission, partyMembers, qualityPriority, options = {}) => {
@@ -417,11 +424,12 @@ export const createMissionRewardProcessor = ({
     missionName,
   }) => {
     const missionLogs = [];
+    let soldGold = 0;
     const updatedRoster = currentRoster.map((char) => {
       const awardedLootItems = lootMap.get(char.id) || [];
       if (awardedLootItems.length === 0) return char;
 
-      const newEquipment = { ...char.equipment };
+      let nextCharacter = char;
       awardedLootItems.forEach((lootEntry) => {
         const lootItem = lootEntry?.item || lootEntry;
         if (!lootItem) return;
@@ -432,12 +440,13 @@ export const createMissionRewardProcessor = ({
         const sourceBossStep = Number.isFinite(lootEntry?.sourceBossStep)
           ? Number(lootEntry.sourceBossStep)
           : null;
-        const currentItem = newEquipment[lootItem.slot];
-        const currentItemLevel = getItemEffectiveLevel(currentItem);
-        const newItemLevel = getItemEffectiveLevel(lootItem);
-        const willEquip = !currentItem || newItemLevel > currentItemLevel;
-
-        if (willEquip) newEquipment[lootItem.slot] = lootItem;
+        const optimized = optimizeCharacterEquipment({
+          character: nextCharacter,
+          incomingItem: lootItem,
+        });
+        nextCharacter = optimized.character;
+        soldGold += optimized.soldGold;
+        const willEquip = optimized.outcome === "equipped";
 
         missionLogs.push({
           type: "loot",
@@ -448,16 +457,15 @@ export const createMissionRewardProcessor = ({
           bossName: sourceBossName,
           bossStep: sourceBossStep,
           equipped: willEquip,
+          disposition: optimized.outcome,
+          soldGold: optimized.outcome === "sold" ? optimized.soldGold : 0,
         });
       });
 
-      return {
-        ...char,
-        equipment: newEquipment,
-      };
+      return nextCharacter;
     });
 
-    return { updatedRoster, missionLogs };
+    return { updatedRoster, missionLogs, soldGold };
   };
 
   const processMissionRewards = ({
@@ -574,6 +582,7 @@ export const createMissionRewardProcessor = ({
       });
     }
 
+    let lootSaleGold = 0;
     const updatedRoster = currentRoster.map((char) => {
       if (!memberIds.includes(char.id)) return char;
 
@@ -618,7 +627,7 @@ export const createMissionRewardProcessor = ({
         newExp = maxExp;
       }
 
-      const newEquipment = { ...char.equipment };
+      let equipmentAdjustedChar = char;
       const existingClearedMissionIds = Array.isArray(char?.clearedMissionIds)
         ? [...char.clearedMissionIds]
         : [];
@@ -680,12 +689,13 @@ export const createMissionRewardProcessor = ({
         const sourceBossStep = Number.isFinite(lootEntry?.sourceBossStep)
           ? Number(lootEntry.sourceBossStep)
           : null;
-        const currentItem = newEquipment[lootItem.slot];
-        const currentItemLevel = getItemEffectiveLevel(currentItem);
-        const newItemLevel = getItemEffectiveLevel(lootItem);
-        const willEquip = !currentItem || newItemLevel > currentItemLevel;
-
-        if (willEquip) newEquipment[lootItem.slot] = lootItem;
+        const optimized = optimizeCharacterEquipment({
+          character: equipmentAdjustedChar,
+          incomingItem: lootItem,
+        });
+        equipmentAdjustedChar = optimized.character;
+        lootSaleGold += optimized.soldGold;
+        const willEquip = optimized.outcome === "equipped";
         if (index === 0) historyEntry.loot = lootItem;
 
         missionLogs.push({
@@ -697,6 +707,8 @@ export const createMissionRewardProcessor = ({
           bossName: sourceBossName,
           bossStep: sourceBossStep,
           equipped: willEquip,
+          disposition: optimized.outcome,
+          soldGold: optimized.outcome === "sold" ? optimized.soldGold : 0,
         });
       });
 
@@ -721,6 +733,14 @@ export const createMissionRewardProcessor = ({
               awardedKeyIds: newlyAwardedKeys,
             })
           : moraleAdjustedChar;
+      const leveledEquipment = optimizeCharacterEquipment({
+        character: {
+          ...equipmentAdjustedChar,
+          level: newLevel,
+        },
+      });
+      equipmentAdjustedChar = leveledEquipment.character;
+      lootSaleGold += leveledEquipment.soldGold;
 
       return {
         ...goalAdjustedChar,
@@ -735,11 +755,17 @@ export const createMissionRewardProcessor = ({
         history: [historyEntry, ...getCharacterHistoryEntries(char)],
         keys: updatedKeys,
         clearedMissionIds: updatedClearedMissionIds,
-        equipment: newEquipment,
+        equipment: equipmentAdjustedChar.equipment,
+        personalInventory: equipmentAdjustedChar.personalInventory,
       };
     });
 
-    return { updatedRoster, missionLogs, missionGold, missionSucceeded };
+    return {
+      updatedRoster,
+      missionLogs,
+      missionGold: missionGold + lootSaleGold,
+      missionSucceeded,
+    };
   };
 
   processMissionRewards.awardDungeonStepLoot = ({
@@ -788,7 +814,7 @@ export const createMissionRewardProcessor = ({
         skipAwardedSteps: false,
       },
     );
-    const { updatedRoster, missionLogs } = createLootLogsAndRosterUpdate({
+    const { updatedRoster, missionLogs, soldGold } = createLootLogsAndRosterUpdate({
       currentRoster,
       lootMap,
       missionName: mission.name,
@@ -820,6 +846,7 @@ export const createMissionRewardProcessor = ({
       mission: updatedMission,
       updatedRoster,
       missionLogs: [...discardLogs, ...missionLogs],
+      soldGold,
     };
   };
 

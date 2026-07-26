@@ -1,5 +1,6 @@
 {
   "totalJsBytes": 1286336,
   "largestJsBytes": 680000,
+  "maxDataAssetBytes": 2500000,
   "allowedIncreasePercent": 15
 }

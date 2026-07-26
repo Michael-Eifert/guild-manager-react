@@ -13,7 +13,7 @@ export const ARMORY_LEFT_SLOTS = Object.freeze([
 export const ARMORY_RIGHT_SLOTS = Object.freeze([
   "hands", "belt", "legs", "feet", "ring", "trinket",
 ]);
-export const ARMORY_BOTTOM_SLOTS = Object.freeze(["mainHand"]);
+export const ARMORY_BOTTOM_SLOTS = Object.freeze(["mainHand", "offHand", "ranged"]);
 
 const formatPreferenceTag = (tag: string) =>
   String(tag || "")
@@ -57,12 +57,17 @@ export const ArmoryItemSlot = ({
   slotName,
   item,
   align = "left",
+  label,
+  occupiedBy,
 }: {
   slotName: string;
   item?: ItemDefinition | null;
   align?: "left" | "right";
+  label?: string;
+  occupiedBy?: ItemDefinition | null;
 }) => {
-  const borderColor = item ? getQualityColor(item.quality) : "#444";
+  const displayItem = item || occupiedBy;
+  const borderColor = displayItem ? getQualityColor(displayItem.quality) : "#444";
   const itemStats = formatItemStats(item?.stats);
   const itemLevel = getItemEffectiveLevel(item);
   const setName = String(item?.setName || "").trim();
@@ -70,8 +75,8 @@ export const ArmoryItemSlot = ({
     <div className="h-12 w-12 flex-none rounded-md border bg-black/50 p-0.5 shadow-inner" style={{ borderColor }}>
       <img
         src={getItemIconUrl(item, slotName)}
-        alt={item ? item.name : slotName}
-        className="h-full w-full rounded object-cover"
+        alt={displayItem ? displayItem.name : slotName}
+        className={`h-full w-full rounded object-cover ${occupiedBy && !item ? "opacity-45" : ""}`}
         onError={(event) => { event.currentTarget.src = getWowIconUrl("inv_misc_questionmark"); }}
       />
     </div>
@@ -81,11 +86,11 @@ export const ArmoryItemSlot = ({
     <div className="flex min-h-[72px] items-center gap-3 rounded-md border border-gray-800 bg-gray-950/35 px-3 py-2 shadow-sm transition-colors hover:border-amber-900/70 hover:bg-gray-900/70">
       {align !== "right" && icon}
       <div className={`flex min-w-0 flex-1 flex-col ${textAlignClass}`}>
-        <div className="text-[10px] text-gray-500 uppercase tracking-wide">{formatEquipmentSlotLabel(slotName)}</div>
+        <div className="text-[10px] text-gray-500 uppercase tracking-wide">{label || formatEquipmentSlotLabel(slotName)}</div>
         <div className={`max-w-full truncate text-sm font-bold ${!item ? "text-gray-600 italic" : ""}`} style={{ color: item ? borderColor : undefined }}>
-          {item ? item.name : "Empty"}
+          {item ? item.name : occupiedBy ? `Occupied by ${occupiedBy.name}` : "Empty"}
         </div>
-        <div className="text-[10px] text-amber-200/70">iLvl {itemLevel}</div>
+        {item && <div className="text-[10px] text-amber-200/70">iLvl {itemLevel}</div>}
         {setName && <div className="mt-0.5 inline-flex max-w-full items-center rounded border border-emerald-800 bg-emerald-950/30 px-1.5 py-0.5 text-[10px] font-semibold text-emerald-200"><span className="truncate">Set: {setName}</span></div>}
         {itemStats && <div className="max-w-full truncate text-[10px] text-emerald-300">{itemStats}</div>}
       </div>

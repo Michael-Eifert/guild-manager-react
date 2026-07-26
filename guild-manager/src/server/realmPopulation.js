@@ -1858,6 +1858,51 @@ export const markRealmPlayersRecruited = ({ realmState, playerIds = [] } = {}) =
   };
 };
 
+export const releasePlayerGuildMemberToRealm = ({
+  realmState,
+  character,
+  dayIndex = 0,
+} = {}) => {
+  if (!realmState || !character?.id) return realmState;
+  const population = normalizeRealmPopulation({
+    population: realmState?.population,
+    realmId: realmState?.id,
+    npcGuilds: realmState?.npcGuilds,
+  });
+  const characterId = String(character.id);
+  const releasedPlayer = {
+    ...character,
+    id: characterId,
+    guildId: null,
+    sourceGuildName: null,
+    marketStatus: "free_agent",
+    loyalty: 50,
+    arrivalDayIndex: Math.max(0, Math.floor(Number(dayIndex) || 0)),
+  };
+  const players = [
+    ...population.players.filter((player) => String(player?.id) !== characterId),
+    releasedPlayer,
+  ];
+  return {
+    ...realmState,
+    npcGuilds: syncGuildRostersFromPopulation(realmState?.npcGuilds || [], players),
+    population: {
+      ...population,
+      players,
+      applications: normalizeRealmApplications(population.applications, players),
+    },
+    news: capRealmNews([
+      {
+        id: `realm-news:guild-release:${characterId}:${dayIndex}`,
+        dayIndex: Math.max(0, Math.floor(Number(dayIndex) || 0)),
+        type: "guild-departure",
+        message: `${character.name} left your guild and became a Free Agent.`,
+      },
+      ...(Array.isArray(realmState?.news) ? realmState.news : []),
+    ]),
+  };
+};
+
 export const declineRealmGuildApplications = ({
   realmState,
   applicationIds = [],

@@ -154,9 +154,26 @@ export const createItemCatalog = (
 
 export const loadItemCatalog = () => {
   if (!itemCatalogPromise) {
-    itemCatalogPromise = import("./items").then(({ DB_ITEMS }) =>
-      createItemCatalog(DB_ITEMS),
-    );
+    const loadItems =
+      import.meta.env.MODE === "test"
+        ? import("./items").then(({ DB_ITEMS }) => DB_ITEMS)
+        : fetch(
+            `${import.meta.env.BASE_URL}generated/item-catalog-v15.json`,
+            { cache: "force-cache" },
+          ).then(async (response) => {
+            if (!response.ok) {
+              throw new Error(
+                `Item catalog request failed (${response.status}).`,
+              );
+            }
+            return (await response.json()) as ItemDefinition[];
+          });
+    itemCatalogPromise = loadItems
+      .then((items) => createItemCatalog(items))
+      .catch((error) => {
+        itemCatalogPromise = null;
+        throw error;
+      });
   }
   return itemCatalogPromise;
 };

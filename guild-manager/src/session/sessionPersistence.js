@@ -21,6 +21,7 @@ import {
 } from "../pvp/battlefields/battlefieldDefinitions";
 import { ensureBattlefieldState } from "../pvp/battlefields/battlefieldUtils";
 import { normalizeEquipmentSlots } from "../utils";
+import { canCharacterEquipItem } from "../equipment/weaponRules";
 import { ensureGuildInventory } from "../inventory/guildInventoryUtils";
 import {
   DEFAULT_STASH_POLICY,
@@ -375,6 +376,7 @@ export const hydrateSessionData = ({
   defaultGuildSetup,
   createId,
   resolveDungeonBossCount,
+  itemCatalog = /** @type {any} */ (null),
 }) => {
   const safePayload = toObject(payloadData);
 
@@ -536,11 +538,41 @@ export const hydrateSessionData = ({
     const normalizedPersonalityTraits = normalizeCharacterPersonalityTraits(
       baseCharacter?.personalityTraits || baseCharacter?.personalityTrait,
     );
-    const normalizedEquipment = normalizeEquipmentSlots(baseCharacter?.equipment);
+    const enrichItem = (item) => {
+      if (!item || typeof item !== "object") return item;
+      const catalogItem = itemCatalog?.byId?.(item.id ?? item.wowheadId);
+      return catalogItem ? { ...item, ...catalogItem } : item;
+    };
+    const equipmentWithCatalog = Object.fromEntries(
+      Object.entries(baseCharacter?.equipment || {}).map(([slot, item]) => [
+        slot,
+        enrichItem(item),
+      ]),
+    );
+    let normalizedEquipment = normalizeEquipmentSlots(equipmentWithCatalog);
+    normalizedEquipment = Object.fromEntries(
+      Object.entries(normalizedEquipment).map(([slot, item]) => {
+        if (
+          item &&
+          ["mainHand", "offHand", "ranged"].includes(slot) &&
+          !canCharacterEquipItem(baseCharacter, item, slot)
+        ) {
+          return [slot, { ...item, legacyCompatibility: true }];
+        }
+        return [slot, item];
+      }),
+    );
+    const normalizedPersonalInventory = Array.isArray(baseCharacter?.personalInventory)
+      ? baseCharacter.personalInventory
+          .filter((item) => item && typeof item === "object")
+          .map(enrichItem)
+          .slice(0, 48)
+      : [];
     if (activeMemberIds.has(baseCharacter.id)) {
       return {
         ...baseCharacter,
         equipment: normalizedEquipment,
+        personalInventory: normalizedPersonalInventory,
         keys: normalizedKeys,
         adventureGoalQueue: normalizedAdventureGoalQueue,
         clearedMissionIds: normalizedClearedMissionIds,
@@ -553,6 +585,7 @@ export const hydrateSessionData = ({
       return {
         ...baseCharacter,
         equipment: normalizedEquipment,
+        personalInventory: normalizedPersonalInventory,
         keys: normalizedKeys,
         adventureGoalQueue: normalizedAdventureGoalQueue,
         clearedMissionIds: normalizedClearedMissionIds,
@@ -565,6 +598,7 @@ export const hydrateSessionData = ({
       return {
         ...baseCharacter,
         equipment: normalizedEquipment,
+        personalInventory: normalizedPersonalInventory,
         keys: normalizedKeys,
         adventureGoalQueue: normalizedAdventureGoalQueue,
         clearedMissionIds: normalizedClearedMissionIds,
@@ -576,6 +610,7 @@ export const hydrateSessionData = ({
     return {
       ...baseCharacter,
       equipment: normalizedEquipment,
+      personalInventory: normalizedPersonalInventory,
       keys: normalizedKeys,
       adventureGoalQueue: normalizedAdventureGoalQueue,
       clearedMissionIds: normalizedClearedMissionIds,

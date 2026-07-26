@@ -61,6 +61,32 @@ describe("session migrations", () => {
     });
   });
 
+  it("adds the version 15 weapon slots and personal equipment inventory", () => {
+    const migrated = parseSessionPayload(
+      JSON.stringify({
+        format: "guild-manager-session",
+        version: 14,
+        data: {
+          roster: [
+            {
+              id: "legacy-warrior",
+              equipment: {
+                mainHand: { id: 1, name: "Old Sword", slot: "mainHand" },
+              },
+            },
+          ],
+        },
+      }),
+    );
+
+    expect(migrated.roster[0].equipment).toMatchObject({
+      mainHand: { id: 1 },
+      offHand: null,
+      ranged: null,
+    });
+    expect(migrated.roster[0].personalInventory).toEqual([]);
+  });
+
   it("rejects malformed and future envelopes", () => {
     expect(() => parseSessionPayload("{}")).toThrow(/valid guild session/);
     expect(() => parseSessionPayload(JSON.stringify(malformedFixture))).toThrow(SessionValidationError);

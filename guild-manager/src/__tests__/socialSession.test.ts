@@ -11,7 +11,7 @@ describe("social session persistence", () => {
       version: 8,
       data: { roster: [] },
     });
-    expect(migrated.version).toBe(14);
+    expect(migrated.version).toBe(15);
     expect(migrated.data).toHaveProperty("guildActivityStats", null);
     expect(migrated.data.socialState).toMatchObject({
       rpScenes: [],

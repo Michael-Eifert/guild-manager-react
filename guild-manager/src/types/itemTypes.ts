@@ -1,4 +1,53 @@
 export type ItemId = string | number;
+export type EquipmentSlot =
+  | "head"
+  | "neck"
+  | "shoulder"
+  | "back"
+  | "chest"
+  | "wrist"
+  | "belt"
+  | "hands"
+  | "legs"
+  | "feet"
+  | "trinket"
+  | "ring"
+  | "mainHand"
+  | "offHand"
+  | "ranged";
+export type EquipmentKind =
+  | "armor"
+  | "weapon"
+  | "shield"
+  | "offHandFrill"
+  | "rangedWeapon"
+  | "wand"
+  | "relic";
+export type WeaponHandedness =
+  | "oneHand"
+  | "mainHand"
+  | "offHand"
+  | "twoHand"
+  | "ranged";
+export type WeaponType =
+  | "dagger"
+  | "fist"
+  | "axe1h"
+  | "axe2h"
+  | "mace1h"
+  | "mace2h"
+  | "sword1h"
+  | "sword2h"
+  | "polearm"
+  | "staff"
+  | "bow"
+  | "crossbow"
+  | "gun"
+  | "thrown"
+  | "wand"
+  | "idol"
+  | "libram"
+  | "totem";
 
 export interface ItemDefinition {
   id: ItemId;
@@ -26,6 +75,11 @@ export interface ItemDefinition {
   crafted?: boolean;
   sellValue?: number;
   allowedClasses?: readonly string[];
+  equipmentKind?: EquipmentKind;
+  weaponType?: WeaponType;
+  handedness?: WeaponHandedness;
+  roleTags?: readonly string[];
+  legacyCompatibility?: boolean;
   sourceBosses?: readonly string[];
   dungeonWing?: string;
   setName?: string;

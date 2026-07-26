@@ -36,6 +36,7 @@ export interface Character {
   activityMode?: string;
   professions?: CharacterProfession[];
   equipment?: Record<string, ItemDefinition | null | undefined>;
+  personalInventory?: ItemDefinition[];
   pvp?: Partial<CharacterPvpState>;
   morale?: number;
   personalityTrait?: string | { id?: string };

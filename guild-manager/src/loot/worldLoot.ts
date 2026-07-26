@@ -1,9 +1,9 @@
 import { DB_CLASSES } from "../constants";
 import {
   getClassArmorTypes,
-  getItemEffectiveLevel,
   isItemUsableByClass,
 } from "../utils";
+import { optimizeCharacterEquipment } from "../equipment/equipmentLoadouts";
 import type { Character } from "../types/characterTypes";
 import type { ItemDefinition } from "../types/itemTypes";
 
@@ -23,6 +23,8 @@ export type WorldLootLogEntry = {
   missionName: string;
   bossName: string | null;
   equipped: boolean;
+  disposition?: "equipped" | "stored" | "sold";
+  soldGold?: number;
 };
 
 const generateWorldLootForCharacter = ({
@@ -105,6 +107,7 @@ export const applyLootRewardToCharacter = ({
   bossName = null,
   updateStatusText = false,
   logDiscarded = false,
+  onSoldGold,
 }: {
   char: Character;
   lootItem: WorldLootItem | null | undefined;
@@ -113,15 +116,24 @@ export const applyLootRewardToCharacter = ({
   bossName?: string | null;
   updateStatusText?: boolean;
   logDiscarded?: boolean;
+  onSoldGold?: (amount: number) => void;
 }): Character => {
   if (!lootItem) return char;
 
-  const currentItem = char.equipment?.[lootItem.slot];
-  const currentItemLevel = getItemEffectiveLevel(currentItem);
-  const newItemLevel = getItemEffectiveLevel(lootItem);
-  const willEquip = !currentItem || newItemLevel > currentItemLevel;
+  const result = optimizeCharacterEquipment({
+    character: char,
+    incomingItem: lootItem,
+  });
+  const disposition =
+    result.outcome === "equipped"
+      ? "equipped"
+      : result.outcome === "stored"
+        ? "stored"
+        : "sold";
+  const willEquip = disposition === "equipped";
+  if (result.soldGold > 0) onSoldGold?.(result.soldGold);
 
-  if (willEquip || logDiscarded) {
+  if (willEquip || disposition === "stored" || disposition === "sold" || logDiscarded) {
     logCollector.push({
       type: "loot",
       characterName: char.name,
@@ -130,14 +142,13 @@ export const applyLootRewardToCharacter = ({
       missionName,
       bossName,
       equipped: willEquip,
+      disposition,
+      soldGold: result.soldGold,
     });
   }
 
-  if (!willEquip) return char;
-  const nextEquipment = { ...char.equipment, [lootItem.slot]: lootItem };
   return {
-    ...char,
-    equipment: nextEquipment,
+    ...result.character,
     statusText: updateStatusText
       ? `Found [${lootItem.name}] while adventuring.`
       : char.statusText,

@@ -28,4 +28,36 @@ describe("GuildLogModal", () => {
     expect(html).toContain("Dungeon");
     expect(html).not.toContain('role="dialog"');
   });
+
+  it("distinguishes equipped, stored, and sold loot", () => {
+    const html = render(
+      <GuildLogModal
+        isOpen
+        variant="page"
+        onClose={noop}
+        missionList={missionList}
+        logs={[
+          {
+            time: "Day 1",
+            type: "loot",
+            missionName: "The Deadmines",
+            characterName: "Aela",
+            itemName: "Patient Sword",
+            disposition: "stored",
+          },
+          {
+            time: "Day 1",
+            type: "loot",
+            missionName: "World Drop",
+            characterName: "Aela",
+            itemName: "Bent Sword",
+            disposition: "sold",
+            soldGold: 3,
+          },
+        ]}
+      />,
+    );
+    expect(html).toContain("Stored for another loadout");
+    expect(html).toContain("Sold for 3g");
+  });
 });

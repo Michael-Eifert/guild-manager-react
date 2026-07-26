@@ -42,6 +42,8 @@ type GuildLogEntry = {
   itemQuality?: number;
   itemName?: string;
   equipped?: boolean;
+  disposition?: "equipped" | "stored" | "sold";
+  soldGold?: number;
 };
 type FilterCounts = Record<LogFilter, number>;
 
@@ -52,6 +54,26 @@ const LOG_FILTERS: ReadonlyArray<{ id: LogFilter; label: string }> = Object.free
   { id: "raid", label: "Raid" },
   { id: "pvp", label: "PvP" },
 ]);
+
+const getLootDispositionText = (log: GuildLogEntry, parenthesized = false) => {
+  const disposition =
+    log.disposition ||
+    (typeof log.equipped === "boolean"
+      ? log.equipped
+        ? "equipped"
+        : "sold"
+      : null);
+  const text =
+    disposition === "equipped"
+      ? "Equipped"
+      : disposition === "stored"
+        ? "Stored for another loadout"
+        : disposition === "sold"
+          ? `Sold${log.soldGold ? ` for ${log.soldGold}g` : ""}`
+          : "";
+  if (!text) return ".";
+  return parenthesized ? ` (${text}).` : ` — ${text}.`;
+};
 
 const normalizeLogSourceName = (value: unknown) =>
   String(value || "")
@@ -302,11 +324,7 @@ const GuildLogModal = ({
                     </span>
                     {" - "}
                     <strong>{log.characterName}</strong> received it
-                    {typeof log.equipped === "boolean"
-                      ? log.equipped
-                        ? " and equipped it."
-                        : " but kept their current item."
-                      : "."}
+                    {getLootDispositionText(log)}
                   </span>
                 ) : (
                   <span>
@@ -316,11 +334,7 @@ const GuildLogModal = ({
                     </span>{" "}
                     from {log.missionName}
                     {log.bossName ? ` (${log.bossName})` : ""}
-                    {typeof log.equipped === "boolean"
-                      ? log.equipped
-                        ? " (equipped)."
-                        : " (discarded)."
-                      : "."}
+                    {getLootDispositionText(log, true)}
                   </span>
                 )}
               </div>

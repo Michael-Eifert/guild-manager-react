@@ -5,6 +5,8 @@ import {
   isItemUsableByClass,
 } from "../utils";
 import { getCharacterMorale } from "../game/characterMorale";
+import { canCharacterEquipItem } from "../equipment/weaponRules";
+import { optimizeCharacterEquipment } from "../equipment/equipmentLoadouts";
 
 const RECRUITMENT_GEAR_SLOTS = EQUIPMENT_SLOT_ORDER;
 
@@ -32,6 +34,29 @@ const SLOT_LABELS = Object.freeze({
   trinket: "Charm",
   ring: "Ring",
   mainHand: "Weapon",
+  offHand: "Off Hand",
+  ranged: "Ranged",
+});
+
+const FALLBACK_MAIN_WEAPONS = Object.freeze({
+  Warrior: { weaponType: "sword1h", handedness: "oneHand" },
+  Paladin: { weaponType: "mace1h", handedness: "oneHand" },
+  Hunter: { weaponType: "axe1h", handedness: "oneHand" },
+  Rogue: { weaponType: "dagger", handedness: "oneHand" },
+  Shaman: { weaponType: "mace1h", handedness: "oneHand" },
+  Priest: { weaponType: "mace1h", handedness: "oneHand" },
+  Mage: { weaponType: "dagger", handedness: "oneHand" },
+  Warlock: { weaponType: "dagger", handedness: "oneHand" },
+  Druid: { weaponType: "mace1h", handedness: "oneHand" },
+});
+
+const FALLBACK_RANGED_WEAPONS = Object.freeze({
+  Warrior: { weaponType: "thrown", equipmentKind: "rangedWeapon" },
+  Hunter: { weaponType: "bow", equipmentKind: "rangedWeapon" },
+  Rogue: { weaponType: "thrown", equipmentKind: "rangedWeapon" },
+  Priest: { weaponType: "wand", equipmentKind: "wand" },
+  Mage: { weaponType: "wand", equipmentKind: "wand" },
+  Warlock: { weaponType: "wand", equipmentKind: "wand" },
 });
 
 const getRecruitmentGearBand = (level) => {
@@ -107,6 +132,7 @@ const createFallbackRecruitmentItem = ({
   quality,
   itemLevel,
   level,
+  character,
 }) => ({
   id: `recruit_${slot}_${level}_${quality}_${Math.floor(Math.random() * 100000)}`,
   name: `Recruit's ${SLOT_LABELS[slot] || "Gear"}`,
@@ -116,6 +142,19 @@ const createFallbackRecruitmentItem = ({
   minLevel: Math.max(1, Math.min(level, itemLevel - (quality >= 3 ? 7 : quality >= 2 ? 5 : 0))),
   itemLevel,
   stats: {},
+  allowedClasses: [character?.charClass].filter(Boolean),
+  ...(slot === "mainHand"
+    ? {
+        equipmentKind: "weapon",
+        ...FALLBACK_MAIN_WEAPONS[character?.charClass],
+      }
+    : {}),
+  ...(slot === "ranged"
+    ? {
+        handedness: "ranged",
+        ...FALLBACK_RANGED_WEAPONS[character?.charClass],
+      }
+    : {}),
 });
 
 const getRecruitmentItemCandidates = ({
@@ -136,8 +175,9 @@ const getRecruitmentItemCandidates = ({
     if (Number(item.quality) !== quality) return false;
     if ((Number(item.minLevel) || 1) > safeLevel) return false;
     if (!isItemUsableByClass(item, character?.charClass)) return false;
+    if (!canCharacterEquipItem(character, item, slot)) return false;
     if (
-      slot !== "mainHand" &&
+      !["mainHand", "offHand", "ranged"].includes(slot) &&
       item.type !== "Generic" &&
       !allowedArmorTypes.includes(item.type)
     ) {
@@ -190,6 +230,15 @@ const chooseRecruitmentItemForSlot = ({
       : getClassArmorTypes(character?.charClass, safeLevel)[0] || "Cloth";
   const fallbackItemLevel =
     band.min + Math.floor(Math.random() * Math.max(1, band.max - band.min + 1));
+  if (slot === "offHand") {
+    return { item: null, usedEpic: false };
+  }
+  if (
+    slot === "ranged" &&
+    !FALLBACK_RANGED_WEAPONS[character?.charClass]
+  ) {
+    return { item: null, usedEpic: false };
+  }
   return {
     item: createFallbackRecruitmentItem({
       slot,
@@ -197,6 +246,7 @@ const chooseRecruitmentItemForSlot = ({
       quality: fallbackQuality,
       itemLevel: fallbackItemLevel,
       level: safeLevel,
+      character,
     }),
     usedEpic: false,
   };
@@ -210,7 +260,7 @@ export const buildRecruitmentEquipment = ({ character, itemDatabase }) => {
     ? 1 + Math.floor(Math.random() * 2)
     : 0;
 
-  return RECRUITMENT_GEAR_SLOTS.reduce((equipment, slot) => {
+  const generatedEquipment = RECRUITMENT_GEAR_SLOTS.reduce((equipment, slot) => {
     const result = chooseRecruitmentItemForSlot({
       itemDatabase,
       character: safeCharacter,
@@ -218,12 +268,21 @@ export const buildRecruitmentEquipment = ({ character, itemDatabase }) => {
       band,
       epicBudget,
     });
-    equipment[slot] = result.item;
+    if (result.item) {
+      equipment[slot] = result.item;
+    }
     if (result.usedEpic) {
       epicBudget = Math.max(0, epicBudget - 1);
     }
     return equipment;
   }, {});
+  return optimizeCharacterEquipment({
+    character: {
+      ...safeCharacter,
+      equipment: generatedEquipment,
+      personalInventory: [],
+    },
+  }).character.equipment;
 };
 
 export const RECRUITMENT_TIERS = Object.freeze([

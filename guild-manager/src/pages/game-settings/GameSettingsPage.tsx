@@ -1,9 +1,21 @@
-import { Gamepad2, Settings2 } from "lucide-react";
+import {
+  FolderOpen,
+  Gamepad2,
+  HardDrive,
+  Plus,
+  Settings2,
+  Trash2,
+} from "lucide-react";
 import { useState } from "react";
 
 import ChatAiSettingsPanel from "../../components/settings/ChatAiSettingsPanel";
 import DebugSettingsPanel from "../../components/settings/DebugSettingsPanel";
+import GameButton from "../../components/ui/GameButton";
 import SegmentedControl from "../../components/ui/SegmentedControl";
+import type {
+  BrowserSaveSlotId,
+  BrowserSaveSlotSummary,
+} from "../../session/browserSessionPersistence";
 import type { GameSettingsState } from "../../settings/gameSettings";
 import type { ChatAiSettings } from "../../social/chatProviders";
 
@@ -29,6 +41,9 @@ type Props = {
     settings: ChatAiSettings,
   ) => Promise<{ ok: boolean; message: string }>;
   debugActions: DebugActions;
+  browserSaveSlots: BrowserSaveSlotSummary[];
+  onLoadBrowserSave: (slotId: BrowserSaveSlotId) => void;
+  onStartNewBrowserGame: (slotId: BrowserSaveSlotId) => void;
 };
 
 const tabs = [
@@ -44,8 +59,13 @@ export default function GameSettingsPage({
   onChatAiSettingsChange,
   onTestChatProvider,
   debugActions,
+  browserSaveSlots,
+  onLoadBrowserSave,
+  onStartNewBrowserGame,
 }: Props) {
   const [activeTab, setActiveTab] = useState<SettingsTab>("gameplay");
+  const [pendingNewSlot, setPendingNewSlot] =
+    useState<BrowserSaveSlotSummary | null>(null);
 
   return (
     <div className="space-y-4">
@@ -74,6 +94,7 @@ export default function GameSettingsPage({
       </header>
 
       {activeTab === "gameplay" ? (
+        <div className="space-y-4">
         <section className="rounded-xl border border-slate-700 bg-slate-900/70 p-4 shadow-lg md:p-5">
           <div className="flex items-start gap-3">
             <span className="rounded-lg border border-cyan-900 bg-cyan-950/35 p-2 text-cyan-300">
@@ -125,6 +146,131 @@ export default function GameSettingsPage({
             />
           </label>
         </section>
+
+        <section className="rounded-xl border border-slate-700 bg-slate-900/70 p-4 shadow-lg md:p-5">
+          <div className="flex items-start gap-3">
+            <span className="rounded-lg border border-amber-900 bg-amber-950/35 p-2 text-amber-300">
+              <HardDrive size={20} aria-hidden="true" />
+            </span>
+            <div>
+              <h2 className="fantasy-font text-lg font-bold text-amber-100">
+                Browser Saves
+              </h2>
+              <p className="mt-1 max-w-3xl text-xs leading-relaxed text-slate-400">
+                Three independent games can be stored in this browser.
+                Autosave always updates the active slot.
+              </p>
+            </div>
+          </div>
+
+          <div className="mt-4 grid gap-3 lg:grid-cols-3">
+            {browserSaveSlots.map((slot) => (
+              <article
+                key={slot.id}
+                className={`rounded-lg border p-4 ${
+                  slot.active
+                    ? "border-amber-600 bg-amber-950/20"
+                    : "border-slate-700 bg-slate-950/55"
+                }`}
+              >
+                <div className="flex items-start justify-between gap-3">
+                  <div className="min-w-0">
+                    <p className="text-[10px] font-bold uppercase tracking-[0.18em] text-slate-500">
+                      Save Slot {slot.id}
+                    </p>
+                    <h3 className="mt-1 truncate font-bold text-slate-100">
+                      {slot.guildName || "Empty Slot"}
+                    </h3>
+                  </div>
+                  {slot.active ? (
+                    <span className="shrink-0 rounded-full border border-amber-700 bg-amber-950/55 px-2 py-1 text-[10px] font-bold uppercase tracking-wide text-amber-200">
+                      Active
+                    </span>
+                  ) : null}
+                </div>
+
+                <div className="mt-3 min-h-10 text-xs text-slate-400">
+                  {slot.hasSave ? (
+                    <>
+                      {slot.gameDay ? <p>Game Day {slot.gameDay}</p> : null}
+                      <p>
+                        {slot.savedAt
+                          ? `Saved ${new Date(slot.savedAt).toLocaleString()}`
+                          : "Save date unavailable"}
+                      </p>
+                    </>
+                  ) : (
+                    <p>Ready for a new guild.</p>
+                  )}
+                </div>
+
+                <div className="mt-4 grid gap-2">
+                  {slot.hasSave && !slot.active ? (
+                    <GameButton
+                      size="sm"
+                      tone="quest"
+                      fullWidth
+                      icon={<FolderOpen size={16} aria-hidden="true" />}
+                      onClick={() => onLoadBrowserSave(slot.id)}
+                    >
+                      Load Save
+                    </GameButton>
+                  ) : null}
+                  <GameButton
+                    size="sm"
+                    tone={slot.hasSave ? "danger" : "success"}
+                    fullWidth
+                    icon={
+                      slot.hasSave ? (
+                        <Trash2 size={16} aria-hidden="true" />
+                      ) : (
+                        <Plus size={16} aria-hidden="true" />
+                      )
+                    }
+                    onClick={() => setPendingNewSlot(slot)}
+                  >
+                    {slot.hasSave ? "Restart Slot" : "Start New Game"}
+                  </GameButton>
+                </div>
+              </article>
+            ))}
+          </div>
+
+          {pendingNewSlot ? (
+            <div
+              role="alert"
+              className="mt-4 rounded-lg border border-red-800 bg-red-950/35 p-4"
+            >
+              <p className="font-bold text-red-100">
+                Start a new game in Save Slot {pendingNewSlot.id}?
+              </p>
+              <p className="mt-1 text-xs leading-relaxed text-red-200/75">
+                {pendingNewSlot.hasSave
+                  ? `${pendingNewSlot.guildName} will be permanently replaced. Export it first if you want to keep a backup.`
+                  : "You will return to guild creation and this slot will become the active autosave."}
+              </p>
+              <div className="mt-3 flex flex-wrap gap-2">
+                <GameButton
+                  size="sm"
+                  tone="danger"
+                  onClick={() =>
+                    onStartNewBrowserGame(pendingNewSlot.id)
+                  }
+                >
+                  Confirm New Game
+                </GameButton>
+                <GameButton
+                  size="sm"
+                  tone="neutral"
+                  onClick={() => setPendingNewSlot(null)}
+                >
+                  Cancel
+                </GameButton>
+              </div>
+            </div>
+          ) : null}
+        </section>
+        </div>
       ) : null}
 
       {activeTab === "chat" ? (

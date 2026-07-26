@@ -69,6 +69,7 @@ export default function HomeRoot() {
     activeMissions,
     battlefieldState,
     bestGuildMemberSearchMatchId,
+    browserSaveSlots,
     calendarState,
     chatAiSettings,
     currentCalendarDate,
@@ -557,6 +558,9 @@ export default function HomeRoot() {
                 onChatAiSettingsChange={handleChatAiSettingsChange}
                 onTestChatProvider={handleTestChatProvider}
                 debugActions={debugActions}
+                browserSaveSlots={browserSaveSlots}
+                onLoadBrowserSave={actions.loadBrowserSave}
+                onStartNewBrowserGame={actions.startNewBrowserGame}
               />
             }
           />

@@ -15,13 +15,18 @@ import { useGameRuntime } from "./useGameRuntime";
 import { useHomeUiState } from "./useHomeUiState";
 import { useNotifications } from "./useNotifications";
 import { createSessionActions } from "./sessionActions";
-import { clearBrowserSession } from "../session/browserSessionPersistence";
+import {
+  clearBrowserSession,
+  listBrowserSaveSlots,
+  prepareNewBrowserSession,
+} from "../session/browserSessionPersistence";
 import {
   autoEquipGuildStashItem,
   cleanGuildStash,
   craftInventoryRecipe,
   sellGuildStashItem,
 } from "../inventory/providerInventoryTransitions";
+import { optimizeCharacterEquipment } from "../equipment/equipmentLoadouts";
 import {
   buildMissionAchievementCatalog,
   getDungeonActivityInfoText,
@@ -269,6 +274,7 @@ import {
   getRealmGuildApplications,
   getRealmRecruitmentMarketStats,
   markRealmPlayersRecruited,
+  releasePlayerGuildMemberToRealm,
   resolvePlayerGuildDeparturesForDay,
   selectRealmRecruitmentCandidates,
 } from "../server/realmPopulation";
@@ -465,15 +471,21 @@ export const useGameProviderController = () => {
 
   useEffect(() => {
     let isMounted = true;
-    loadItemCatalog()
-      .then((loadedCatalog) => {
-        if (isMounted) setItemCatalog(loadedCatalog);
-      })
-      .catch((error) => {
-        console.error("Failed to load item catalog:", error);
-      });
+    let retryTimer = null;
+    const attemptLoad = () => {
+      loadItemCatalog()
+        .then((loadedCatalog) => {
+          if (isMounted) setItemCatalog(loadedCatalog);
+        })
+        .catch((error) => {
+          console.error("Failed to load item catalog; retrying:", error);
+          if (isMounted) retryTimer = setTimeout(attemptLoad, 2000);
+        });
+    };
+    attemptLoad();
     return () => {
       isMounted = false;
+      if (retryTimer) clearTimeout(retryTimer);
     };
   }, []);
 
@@ -850,7 +862,7 @@ export const useGameProviderController = () => {
   }, [appendAchievementLog, pushNotification, roster]);
 
   const tryApplyWorldTickLoot = useCallback(
-    (char, logCollector) => {
+    (char, logCollector, onSoldGold) => {
       const roll = services.random();
       const epicEligible =
         (Number(char?.level) || 1) >= WORLD_TICK_EPIC_MIN_LEVEL;
@@ -875,6 +887,7 @@ export const useGameProviderController = () => {
         missionName: "World Drop",
         updateStatusText: true,
         logDiscarded: false,
+        onSoldGold,
       });
     },
     [itemDatabase],
@@ -1134,6 +1147,7 @@ export const useGameProviderController = () => {
       let finishedMissions = [];
       let newLogs = [];
       let newGold = currentGold;
+      let worldLootSaleGold = 0;
       let currentBattlefieldState = ensureBattlefieldState(
         battlefieldStateRef.current,
       );
@@ -1344,6 +1358,7 @@ export const useGameProviderController = () => {
       finishedMissions = stepLootAwards.finishedMissions;
       newRoster = stepLootAwards.roster;
       newLogs = [...newLogs, ...stepLootAwards.logs];
+      newGold += Math.max(0, Number(stepLootAwards.soldGold) || 0);
 
       // 2. Process Finished Missions (Fixes "Stuck" Issue)
       finishedMissions.forEach((m) => {
@@ -2133,9 +2148,14 @@ export const useGameProviderController = () => {
               bossName: `${entry.checkpoint}% checkpoint`,
               updateStatusText: false,
               logDiscarded: true,
+              onSoldGold: (amount) => {
+                worldLootSaleGold += amount;
+              },
             });
           });
-          return tryApplyWorldTickLoot(zoneRewardedChar, newLogs);
+          return tryApplyWorldTickLoot(zoneRewardedChar, newLogs, (amount) => {
+            worldLootSaleGold += amount;
+          });
         }
 
         const transitionedZoneState = resolveZoneAutoTransition({
@@ -2238,6 +2258,12 @@ export const useGameProviderController = () => {
         lastRolloverDayIndex: nextWorldPvpState.lastWeeklyRolloverDayIndex,
       });
       newRoster = pvpRollover.characters;
+      if (pvpRollover.soldGold > 0) {
+        newGold = Math.min(
+          currentGuildStats.goldCap,
+          newGold + pvpRollover.soldGold,
+        );
+      }
       if (pvpRollover.didRollover) {
         nextWorldPvpState = {
           ...nextWorldPvpState,
@@ -2248,6 +2274,12 @@ export const useGameProviderController = () => {
       }
       worldPvpStateRef.current = nextWorldPvpState;
       battlefieldStateRef.current = currentBattlefieldState;
+      if (worldLootSaleGold > 0) {
+        newGold = Math.min(
+          currentGuildStats.goldCap,
+          newGold + worldLootSaleGold,
+        );
+      }
 
       if (!currentGuildRelationsState.election) {
         const expiredRelations = resolveExpiredGuildIncidents({
@@ -2471,6 +2503,7 @@ export const useGameProviderController = () => {
         Math.min(CONFIG.LEVEL_CAP, Number(player?.level) || 1),
       );
       const candidate = {
+        ...player,
         id: player.id,
         realmPlayerId: player.id,
         realmApplicationId: application?.id || null,
@@ -2487,7 +2520,7 @@ export const useGameProviderController = () => {
         personalityTraits: player.personalityTraits,
         activityLevel: player.activityLevel,
         level,
-        exp: 0,
+        exp: Math.max(0, Number(player.exp) || 0),
         maxExp: CONFIG.XP_TABLE[level] || CONFIG.XP_TABLE[1],
       };
       const candidateOnline = buildOnlineSnapshot({
@@ -2510,10 +2543,16 @@ export const useGameProviderController = () => {
         onlineProfile: candidateOnline?.profileLabel || "Regular",
         nextLoginDayIndex: candidateOnline?.nextLoginDayIndex,
         nextLoginHour: candidateOnline?.nextLoginHour,
-        equipment: buildRecruitmentEquipment({
-          character: candidate,
-          itemDatabase,
-        }),
+        equipment:
+          player?.equipment && Object.keys(player.equipment).length > 0
+            ? player.equipment
+            : buildRecruitmentEquipment({
+                character: candidate,
+                itemDatabase,
+              }),
+        personalInventory: Array.isArray(player?.personalInventory)
+          ? player.personalInventory
+          : [],
       };
     },
     [itemDatabase],
@@ -2777,11 +2816,21 @@ export const useGameProviderController = () => {
   );
 
   const handleDismiss = (id) => {
+    const dismissedCharacter = rosterRef.current.find((c) => c.id === id);
     const dismissedRank =
       guildRelationsStateRef.current?.assignments?.[String(id)];
     const nextRoster = rosterRef.current.filter((c) => c.id !== id);
     rosterRef.current = nextRoster;
     setRoster(nextRoster);
+    if (dismissedCharacter) {
+      const nextRealmState = releasePlayerGuildMemberToRealm({
+        realmState: realmStateRef.current,
+        character: dismissedCharacter,
+        dayIndex: getCurrentCalendarDayIndex(),
+      });
+      realmStateRef.current = nextRealmState;
+      setRealmState(nextRealmState);
+    }
     const nextRelationships = removeMemberRelationships(
       guildRelationshipsRef.current,
       id,
@@ -4100,6 +4149,10 @@ export const useGameProviderController = () => {
     });
     const missionWithStepLoot =
       stepLootAwards.finishedMissions[0] || missionToResolve;
+    currentGoldAfterWipes += Math.max(
+      0,
+      Number(stepLootAwards.soldGold) || 0,
+    );
     const result = processMissionRewards(
       missionWithStepLoot,
       stepLootAwards.roster,
@@ -4355,6 +4408,14 @@ export const useGameProviderController = () => {
       guildInventoryRef.current = equipResult.guildInventory;
       setRoster(equipResult.roster);
       setGuildInventory(equipResult.guildInventory);
+      if (equipResult.soldGold > 0) {
+        const nextGold = Math.min(
+          getGuildDerivedStats(guildProgressRef.current).goldCap,
+          (Number(goldRef.current) || 0) + equipResult.soldGold,
+        );
+        goldRef.current = nextGold;
+        setGuildGold(nextGold);
+      }
       appendProfessionLogs([equipResult.log]);
       return true;
     },
@@ -4430,6 +4491,7 @@ export const useGameProviderController = () => {
     persistBrowserSession,
     restoreBrowserSession,
   } = createSessionActions({
+    itemCatalog,
     state: {
       roster, activeMissions, missionList, guildLog, guildGold, guildProgress,
       guildSetup, guildRelationships, realmState, worldPvpState, battlefieldState,
@@ -4561,6 +4623,54 @@ export const useGameProviderController = () => {
       document.removeEventListener("visibilitychange", saveWhenHidden);
     };
   }, [runBrowserAutosave]);
+
+  const browserSaveSlots = listBrowserSaveSlots();
+  const handleLoadBrowserSave = (slotId) => {
+    runBrowserAutosave();
+    try {
+      if (!restoreBrowserSession(slotId)) {
+        throw new Error("This browser save slot is empty.");
+      }
+      pushNotification({
+        type: "success",
+        title: "Browser Save Loaded",
+        message: `Save Slot ${slotId} is now active and will receive autosaves.`,
+      });
+    } catch (error) {
+      console.error("Failed to load browser save:", error);
+      pushNotification({
+        type: "error",
+        title: "Browser Save Could Not Be Loaded",
+        message:
+          (error instanceof Error ? error.message : "") ||
+          "The selected browser save is invalid.",
+        durationMs: 6500,
+      });
+    }
+  };
+  const handleStartNewBrowserGame = (slotId) => {
+    runBrowserAutosave();
+    browserSessionReadyRef.current = false;
+    try {
+      if (!prepareNewBrowserSession(slotId)) {
+        throw new Error("Browser storage is unavailable.");
+      }
+      const basePath = import.meta.env.BASE_URL.endsWith("/")
+        ? import.meta.env.BASE_URL
+        : `${import.meta.env.BASE_URL}/`;
+      window.location.assign(`${basePath}start`);
+    } catch (error) {
+      browserSessionReadyRef.current = true;
+      console.error("Failed to prepare a new browser game:", error);
+      pushNotification({
+        type: "error",
+        title: "New Game Could Not Be Started",
+        message:
+          (error instanceof Error ? error.message : "") ||
+          "The selected browser slot could not be prepared.",
+      });
+    }
+  };
 
   const guildActivityModeSummary = getGuildActivityModeSummary(roster);
   const dungeonActivityInfoText = getDungeonActivityInfoText(
@@ -4863,6 +4973,8 @@ export const useGameProviderController = () => {
     castGuildElectionVote: handleCastGuildElectionVote,
     finishGuildElection: handleFinishGuildElection,
     updateGameSettings: handleGameSettingsChange,
+    loadBrowserSave: handleLoadBrowserSave,
+    startNewBrowserGame: handleStartNewBrowserGame,
     selectCharacter: setDetailCharId,
     closeCharacterDetail: () => setDetailCharId(null),
     togglePause: () => setIsPaused((current) => !current),
@@ -4875,11 +4987,38 @@ export const useGameProviderController = () => {
     updateMemberMaxLevel: setGuildMemberMaxLevelFilter,
     updateMemberSortMode: setGuildMemberSortMode,
     updateMemberRole: (id, role) =>
-      setRoster((currentRoster) =>
-        currentRoster.map((character) =>
-          character.id === id ? { ...character, role } : character,
-        ),
-      ),
+      setRoster((currentRoster) => {
+        let soldGold = 0;
+        const updated = currentRoster.map((character) => {
+          if (character.id !== id) return character;
+          const optimized = optimizeCharacterEquipment({
+            character: { ...character, role },
+          });
+          soldGold += optimized.soldGold;
+          return optimized.character;
+        });
+        if (soldGold > 0) {
+          const nextGold = Math.min(
+            getGuildDerivedStats(guildProgressRef.current).goldCap,
+            (Number(goldRef.current) || 0) + soldGold,
+          );
+          goldRef.current = nextGold;
+          setGuildGold(nextGold);
+          const time = new Date().toLocaleTimeString();
+          setGuildLog((previous) =>
+            [
+              {
+                time,
+                type: "loot",
+                message: `Obsolete stored gear was sold for ${soldGold}g after a loadout change.`,
+                soldGold,
+              },
+              ...previous,
+            ].slice(0, 50),
+          );
+        }
+        return updated;
+      }),
     openGuildLog: () => setShowGuildLog(true),
     closeGuildLog: () => setShowGuildLog(false),
     openLootTable: () => setShowLootTable(true),
@@ -4897,6 +5036,7 @@ export const useGameProviderController = () => {
     activeMissions,
     battlefieldState,
     bestGuildMemberSearchMatchId,
+    browserSaveSlots,
     calendarState,
     currentCalendarDate,
     currentCalendarDayIndex,

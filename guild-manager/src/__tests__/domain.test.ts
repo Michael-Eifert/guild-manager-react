@@ -330,7 +330,7 @@ describe("Dire Maul integration", () => {
   it("registers wing-specific, boss-sourced Dire Maul equipment", () => {
     expect(DIRE_MAUL_ACTIVE_LOOT_MANIFEST.length).toBeGreaterThan(35);
     expect(DIRE_MAUL_ITEMS).toHaveLength(DIRE_MAUL_ACTIVE_LOOT_MANIFEST.length);
-    expect(direMaulItems).toHaveLength(DIRE_MAUL_ITEMS.length);
+    expect(direMaulItems.length).toBeGreaterThanOrEqual(DIRE_MAUL_ITEMS.length);
     expect(new Set(direMaulItems.map((item) => item.dungeonWing))).toEqual(
       new Set(["East", "West", "North"]),
     );
@@ -389,6 +389,12 @@ const getRosterEquipmentSources = (roster) =>
 const expectRosterHasExpandedEquipment = (roster) => {
   roster.forEach((member) => {
     EQUIPMENT_SLOT_ORDER.forEach((slot) => {
+      if (
+        ["offHand", "ranged"].includes(slot) &&
+        !member.equipment?.[slot]
+      ) {
+        return;
+      }
       expect(member.equipment?.[slot], `${member.name} missing ${slot}`).toBeTruthy();
       expect(member.equipment[slot].slot || slot).toBe(slot);
     });
@@ -852,9 +858,10 @@ describe("recruitment", () => {
       character: { level: 40, charClass: "Warrior" },
       itemDatabase,
     });
-    const itemLevels = Object.values(equipment).map(getItemEffectiveLevel);
+    const equippedItems = Object.values(equipment).filter(Boolean);
+    const itemLevels = equippedItems.map(getItemEffectiveLevel);
 
-    expect(Object.values(equipment).every((item) => item.quality >= 2)).toBe(true);
+    expect(equippedItems.every((item) => item.quality >= 2)).toBe(true);
     expect(Math.min(...itemLevels)).toBeGreaterThanOrEqual(35);
     expect(Math.max(...itemLevels)).toBeLessThanOrEqual(42);
   });
@@ -2588,7 +2595,7 @@ describe("mission rewards", () => {
     });
 
     expect(result.missionSucceeded).toBe(true);
-    expect(result.missionGold).toBe(4);
+    expect(result.missionGold).toBe(5);
     expect(result.updatedRoster[0].equipment.chest.name).toBe("Better Robe");
     expect(result.updatedRoster[0].keys).toEqual(["road_key"]);
     expect(result.missionLogs.some((log) => log.type === "loot")).toBe(true);
@@ -3039,11 +3046,12 @@ describe("Molten Core loot manifest", () => {
     });
   });
 
-  it("keeps unsupported Molten Core drops out of active reward items", () => {
+  it("activates supported weapon slots while keeping other unsupported drops out", () => {
     const activeWowheadIds = new Set(moltenCoreItems.map((item) => item.wowheadId));
     expect(unsupportedMoltenCoreDrops.length).toBeGreaterThan(0);
     unsupportedMoltenCoreDrops.forEach((item) => {
-      expect(activeWowheadIds.has(item.wowheadId)).toBe(false);
+      const weaponSlot = ["ranged", "offHand", "shield"].includes(item.unsupportedSlot);
+      expect(activeWowheadIds.has(item.wowheadId)).toBe(weaponSlot);
     });
   });
 });
@@ -3085,11 +3093,12 @@ describe("Zul'Gurub raid integration", () => {
     });
   });
 
-  it("keeps unsupported Zul'Gurub drops out of active reward items", () => {
+  it("activates supported weapon slots while keeping quest rewards out", () => {
     const activeWowheadIds = new Set(zulGurubItems.map((item) => item.wowheadId));
     expect(unsupportedZulGurubDrops.length).toBeGreaterThan(0);
     unsupportedZulGurubDrops.forEach((item) => {
-      expect(activeWowheadIds.has(item.wowheadId)).toBe(false);
+      const weaponSlot = ["ranged", "offHand", "shield"].includes(item.unsupportedSlot);
+      expect(activeWowheadIds.has(item.wowheadId)).toBe(weaponSlot);
     });
   });
 });
@@ -3475,7 +3484,7 @@ describe("Classic Era loot data regressions", () => {
     });
   });
 
-  it("does not disguise off-hand, ranged, or quest rewards as supported slots", () => {
+  it("activates weapon slots without disguising quest rewards", () => {
     const unsupportedDrops = [
       ...unsupportedZulGurubDrops,
       ...unsupportedAhnQirajRuinsDrops,
@@ -3505,7 +3514,14 @@ describe("Classic Era loot data regressions", () => {
         unsupportedDrops.find((item) => item.name === name),
         name,
       ).toMatchObject({ unsupportedSlot });
-      expect(findItem(name), name).toBeUndefined();
+      const item = findItem(name);
+      if (["quest", "questReward"].includes(unsupportedSlot)) {
+        expect(item, name).toBeUndefined();
+      } else {
+        expect(item, name).toMatchObject({
+          slot: unsupportedSlot === "shield" ? "offHand" : unsupportedSlot,
+        });
+      }
     });
   });
 
@@ -3522,7 +3538,10 @@ describe("Classic Era loot data regressions", () => {
     });
     expect(findItem("Wraith Blade")?.sourceBosses).toEqual(["Maexxna"]);
     expect(findItem("Might of Menethil")?.sourceBosses).toEqual(["Kel'Thuzad"]);
-    expect(findItem("Death's Bargain")).toBeUndefined();
+    expect(findItem("Death's Bargain")).toMatchObject({
+      slot: "offHand",
+      equipmentKind: "shield",
+    });
     expect(findItem("Mark of the Dragon Lord")).toMatchObject({
       wowheadId: 13143,
       slot: "ring",
@@ -3536,12 +3555,25 @@ describe("Classic Era loot data regressions", () => {
       slot: "belt",
       type: "Cloth",
     });
-    [
-      "Mordresh's Lifeless Skull",
-      "Plaguerot Sprig",
-      "Thaurissan's Royal Scepter",
-    ].forEach((name) => {
-      expect(findItem(name), name).toBeUndefined();
+    ["Mordresh's Lifeless Skull", "Thaurissan's Royal Scepter"].forEach((name) => {
+      expect(findItem(name), name).toMatchObject({
+        slot: "offHand",
+        equipmentKind: "offHandFrill",
+      });
+    });
+    expect(findItem("Plaguerot Sprig")).toMatchObject({
+      wowheadId: 10766,
+      slot: "ranged",
+      equipmentKind: "wand",
+      weaponType: "wand",
+    });
+    expect(findItem("Anastari Heirloom")).toMatchObject({
+      wowheadId: 18728,
+      slot: "neck",
+    });
+    expect(findItem("Ramstein's Lightning Bolts")).toMatchObject({
+      wowheadId: 13515,
+      slot: "trinket",
     });
   });
 

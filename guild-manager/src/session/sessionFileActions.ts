@@ -55,6 +55,9 @@ type HydrateOptions = {
   defaultGuildSetup: unknown;
   createId: () => string;
   resolveDungeonBossCount: (mission: MissionInput) => number;
+  itemCatalog?: {
+    byId?: (id: unknown) => Record<string, unknown> | null;
+  } | null;
 };
 type HydratedSession = ReturnType<typeof hydrateSessionData>;
 

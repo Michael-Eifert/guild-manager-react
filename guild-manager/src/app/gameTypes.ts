@@ -14,6 +14,10 @@ import type {
   RelationsManagementMode,
 } from "../guildRelations/guildRelations";
 import type { GameSettingsState } from "../settings/gameSettings";
+import type {
+  BrowserSaveSlotId,
+  BrowserSaveSlotSummary,
+} from "../session/browserSessionPersistence";
 
 export type { Character, CharacterId, Mission, MissionId };
 
@@ -143,6 +147,8 @@ export interface GameActions {
   loadSession: () => void;
   loadSessionFile: (event: ChangeEvent<HTMLInputElement>) => void;
   startGuild: () => void;
+  loadBrowserSave: (slotId: BrowserSaveSlotId) => void;
+  startNewBrowserGame: (slotId: BrowserSaveSlotId) => void;
   updateGameSettings: (
     settings: Partial<GameSettingsState>,
   ) => GameSettingsState;
@@ -161,6 +167,7 @@ export type GameProviderSnapshot = {
   actions: GameActions;
   guildSetup: GuildSetupState;
   gameSettings: GameSettingsState;
+  browserSaveSlots: BrowserSaveSlotSummary[];
   roster: Character[];
   activeMissions: Mission[];
   notifications: GameNotification[];

@@ -7,6 +7,7 @@ import {
   getReqExp,
   isItemUsableByClass,
 } from "../utils";
+import { canCharacterEquipItem } from "../equipment/weaponRules";
 
 const DEBUG_PARTY_ROLE_ORDER = ["Tank", "Healer", "DPS", "DPS", "DPS"];
 const DEBUG_PARTY_SIZE = 5;
@@ -172,7 +173,9 @@ const getProfileSetScore = (item, gearProfile) => {
 };
 
 const getDebugFallbackItemType = (charClass, level, slot) => {
-  if (DEBUG_GENERIC_SLOTS.has(slot)) return "Generic";
+  if (DEBUG_GENERIC_SLOTS.has(slot) || ["offHand", "ranged"].includes(slot)) {
+    return "Generic";
+  }
   return getClassArmorTypes(charClass, level)[0] || "Cloth";
 };
 
@@ -194,7 +197,20 @@ const createDebugFallbackItem = ({
       itemLevel >= 60 ? 3 : 2,
     ),
   );
-  return {
+  const mainWeaponType = {
+    Warrior: "sword1h", Paladin: "mace1h", Hunter: "axe1h",
+    Rogue: "dagger", Shaman: "mace1h", Priest: "mace1h",
+    Mage: "dagger", Warlock: "dagger", Druid: "mace1h",
+  }[charClass];
+  const thirdWeaponType = {
+    Warrior: "thrown", Hunter: "bow", Rogue: "thrown",
+    Mage: "wand", Priest: "wand", Warlock: "wand",
+  }[charClass];
+  if (slot === "offHand" && !["Warrior", "Paladin", "Shaman", "Druid", "Priest", "Mage", "Warlock"].includes(charClass)) {
+    return null;
+  }
+  if (slot === "ranged" && !thirdWeaponType) return null;
+  const item = {
     id: `debug_${gearProfile?.id || "preset"}_${charClass}_${slot}_${safeLevel}`,
     name: `Debug ${slot} (${charClass})`,
     slot,
@@ -203,7 +219,27 @@ const createDebugFallbackItem = ({
     minLevel: Math.min(safeLevel, Math.max(1, itemLevel - 7)),
     itemLevel,
     source: "Debug Preset",
+    allowedClasses: [charClass],
+    ...(slot === "mainHand"
+      ? { equipmentKind: "weapon", weaponType: mainWeaponType, handedness: "oneHand" }
+      : {}),
+    ...(slot === "offHand"
+      ? {
+          equipmentKind: ["Warrior", "Paladin", "Shaman"].includes(charClass)
+            ? "shield"
+            : "offHandFrill",
+          handedness: "offHand",
+        }
+      : {}),
+    ...(slot === "ranged"
+      ? {
+          equipmentKind: thirdWeaponType === "wand" ? "wand" : "rangedWeapon",
+          weaponType: thirdWeaponType,
+          handedness: "ranged",
+        }
+      : {}),
   };
+  return item;
 };
 
 const getDebugGearItemForSlot = (
@@ -228,6 +264,13 @@ const getDebugGearItemForSlot = (
     if (!item || item.slot !== slot) return false;
     if (gearProfile?.worldOnly && !isWorldDropItem(item)) return false;
     if (!isItemUsableByClass(item, charClass)) return false;
+    if (
+      !canCharacterEquipItem(
+        { charClass, level, role: "DPS" },
+        item,
+        slot,
+      )
+    ) return false;
     const quality = Number(item.quality) || 0;
     if (quality > maxQuality) return false;
     if ((Number(item.minLevel) || 0) > levelCap) return false;
@@ -280,7 +323,10 @@ const getDebugGearItemForSlot = (
   );
   if (candidates.length === 0) {
     candidates = allItems.filter(
-      (item) => canUseItem(item) && matchesProfileItemLevel(item),
+      (item) =>
+        canUseItem(item) &&
+        matchesProfileSource(item) &&
+        matchesProfileItemLevel(item),
     );
   }
   if (candidates.length === 0) {
@@ -288,11 +334,16 @@ const getDebugGearItemForSlot = (
   }
   if (candidates.length === 0) {
     candidates = allItems.filter(
-      (item) => canUseItem(item) && (Number(item.minLevel) || 0) >= minTargetLevel,
+      (item) =>
+        canUseItem(item) &&
+        matchesProfileSource(item) &&
+        (Number(item.minLevel) || 0) >= minTargetLevel,
     );
   }
   if (candidates.length === 0) {
-    candidates = allItems.filter(canUseItem);
+    candidates = allItems.filter(
+      (item) => canUseItem(item) && matchesProfileSource(item),
+    );
   }
   if (candidates.length === 0) {
     return createDebugFallbackItem({

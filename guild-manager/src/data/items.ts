@@ -19,6 +19,104 @@ type ItemLevelBand = { min: number; max: number };
 const wowItemIcon = (iconCode: string) =>
   `https://wow.zamimg.com/images/wow/icons/large/${iconCode.toLowerCase()}.jpg`;
 
+const RANGED_WEAPON_NAMES = new Map<string, NonNullable<ItemDefinition["weaponType"]>>([
+  ["Venomstrike", "bow"],
+  ["Naga Heartpiercer", "bow"],
+  ["Glass Shooter", "gun"],
+  ["Houndmaster's Rifle", "gun"],
+  ["Baelog's Shortbow", "bow"],
+  ["Galgann's Fireblaster", "gun"],
+  ["Noxious Shooter", "wand"],
+  ["Plaguerot Sprig", "wand"],
+  ["Bonecreeper Stylus", "wand"],
+  ["Willey's Portable Howitzer", "gun"],
+]);
+
+const OFF_HAND_NAMES = new Set([
+  "Mordresh's Lifeless Skull",
+  "Thaurissan's Royal Scepter",
+]);
+
+const CLASSIC_WEAPON_WOWHEAD_IDS = new Map<string, number>([
+  ["Venomstrike", 6469],
+  ["Naga Heartpiercer", 3078],
+  ["Glass Shooter", 9456],
+  ["Houndmaster's Rifle", 11629],
+  ["Baelog's Shortbow", 9400],
+  ["Galgann's Fireblaster", 9412],
+  ["Noxious Shooter", 17745],
+  ["Plaguerot Sprig", 10766],
+  ["Bonecreeper Stylus", 13938],
+  ["Willey's Portable Howitzer", 13380],
+  ["Mordresh's Lifeless Skull", 10770],
+  ["Thaurissan's Royal Scepter", 11928],
+]);
+
+const inferClassicWeaponType = (item: ItemDefinition) => {
+  if (item.weaponType) return item.weaponType;
+  const descriptor = `${item.name || ""} ${item.icon || ""}`.toLowerCase();
+  if (descriptor.includes("wand")) return "wand";
+  if (descriptor.includes("bow")) return "bow";
+  if (descriptor.includes("rifle") || descriptor.includes("gun")) return "gun";
+  if (descriptor.includes("staff")) return "staff";
+  if (descriptor.includes("dagger") || descriptor.includes("shortblade")) return "dagger";
+  if (descriptor.includes("fist") || descriptor.includes("claw")) return "fist";
+  if (descriptor.includes("axe")) return descriptor.includes("greataxe") ? "axe2h" : "axe1h";
+  if (descriptor.includes("mace") || descriptor.includes("hammer") || descriptor.includes("maul")) {
+    return descriptor.includes("maul") || descriptor.includes("two-hand")
+      ? "mace2h"
+      : "mace1h";
+  }
+  if (descriptor.includes("sword") || descriptor.includes("blade")) {
+    return descriptor.includes("greatsword") || descriptor.includes("two-hand")
+      ? "sword2h"
+      : "sword1h";
+  }
+  return undefined;
+};
+
+const applyClassicWeaponMetadata = (item: ItemDefinition): ItemDefinition => {
+  const rangedType = RANGED_WEAPON_NAMES.get(item.name);
+  if (rangedType) {
+    return {
+      ...item,
+      icon: item.icon || wowItemIcon("inv_misc_questionmark"),
+      slot: "ranged",
+      equipmentKind: rangedType === "wand" ? "wand" : "rangedWeapon",
+      weaponType: rangedType,
+      handedness: "ranged",
+      wowheadId: item.wowheadId ?? CLASSIC_WEAPON_WOWHEAD_IDS.get(item.name),
+    };
+  }
+  if (OFF_HAND_NAMES.has(item.name)) {
+    return {
+      ...item,
+      icon: item.icon || wowItemIcon("inv_misc_questionmark"),
+      slot: "offHand",
+      equipmentKind: "offHandFrill",
+      handedness: "offHand",
+      wowheadId: item.wowheadId ?? CLASSIC_WEAPON_WOWHEAD_IDS.get(item.name),
+    };
+  }
+  if (item.slot !== "mainHand" || item.equipmentKind) {
+    return item.icon || !["mainHand", "offHand", "ranged"].includes(String(item.slot))
+      ? item
+      : { ...item, icon: wowItemIcon("inv_misc_questionmark") };
+  }
+  const weaponType = inferClassicWeaponType(item);
+  if (!weaponType) return item;
+  const twoHanded = ["axe2h", "mace2h", "sword2h", "polearm", "staff"].includes(
+    weaponType,
+  );
+  return {
+    ...item,
+    icon: item.icon || wowItemIcon("inv_misc_questionmark"),
+    equipmentKind: "weapon",
+    weaponType,
+    handedness: twoHanded ? "twoHand" : "oneHand",
+  };
+};
+
 const ITEM_LEVEL_BANDS_BY_SOURCE = Object.freeze({
   blackrock_depths: { min: 52, max: 58 },
   stratholme: { min: 56, max: 60 },
@@ -980,7 +1078,314 @@ const buildTierZeroCompletionItems = () =>
     },
   );
 
+const CLASSIC_WEAPON_SLOT_PROGRESSION: ItemDefinition[] = [
+  {
+    id: 11287, wowheadId: 11287, name: "Lesser Magic Wand", slot: "ranged",
+    quality: 2, type: "Generic", minLevel: 5, itemLevel: 10,
+    equipmentKind: "wand", weaponType: "wand", handedness: "ranged",
+    allowedClasses: ["Mage", "Priest", "Warlock"],
+    stats: { intellect: 2 },
+  },
+  {
+    id: 11288, wowheadId: 11288, name: "Greater Magic Wand", slot: "ranged",
+    quality: 2, type: "Generic", minLevel: 13, itemLevel: 18,
+    equipmentKind: "wand", weaponType: "wand", handedness: "ranged",
+    allowedClasses: ["Mage", "Priest", "Warlock"],
+    stats: { intellect: 4 },
+  },
+  {
+    id: 2506, wowheadId: 2506, name: "Hornwood Recurve Bow", slot: "ranged",
+    quality: 1, type: "Generic", minLevel: 3, itemLevel: 8,
+    equipmentKind: "rangedWeapon", weaponType: "bow", handedness: "ranged",
+    allowedClasses: ["Warrior", "Hunter", "Rogue"],
+    stats: { agility: 1 },
+  },
+  {
+    id: 18323, wowheadId: 18323, name: "Satyr's Bow", slot: "ranged",
+    quality: 3, type: "Generic", minLevel: 58, itemLevel: 61,
+    equipmentKind: "rangedWeapon", weaponType: "bow", handedness: "ranged",
+    allowedClasses: ["Warrior", "Hunter", "Rogue"], dungeonSetId: "dire_maul",
+    dungeonSetName: "Dire Maul", dungeonWing: "East", sourceBosses: ["Zevrim Thornhoof"],
+    stats: { agility: 12, stamina: 7 },
+  },
+  {
+    id: 18523, wowheadId: 18523, name: "Brightly Glowing Stone", slot: "offHand",
+    quality: 3, type: "Generic", minLevel: 58, itemLevel: 62,
+    equipmentKind: "offHandFrill", handedness: "offHand",
+    allowedClasses: ["Druid", "Paladin", "Shaman", "Priest", "Mage", "Warlock"],
+    dungeonSetId: "dire_maul", dungeonSetName: "Dire Maul", dungeonWing: "North",
+    sourceBosses: ["King Gordok"], stats: { intellect: 12, spirit: 8 },
+  },
+  {
+    id: 18499, wowheadId: 18499, name: "Barrier Shield", slot: "offHand",
+    quality: 3, type: "Generic", minLevel: 58, itemLevel: 62,
+    equipmentKind: "shield", handedness: "offHand",
+    allowedClasses: ["Warrior", "Paladin", "Shaman"], dungeonSetId: "dire_maul",
+    dungeonSetName: "Dire Maul", dungeonWing: "North", sourceBosses: ["King Gordok"],
+    stats: { stamina: 16, defense: 8 },
+  },
+  {
+    id: 12651, wowheadId: 12651, name: "Blackcrow", slot: "ranged",
+    quality: 3, type: "Generic", minLevel: 54, itemLevel: 59,
+    equipmentKind: "rangedWeapon", weaponType: "crossbow", handedness: "ranged",
+    allowedClasses: ["Warrior", "Hunter", "Rogue"],
+    dungeonSetId: "blackrock_spire", dungeonSetName: "Blackrock Spire", dungeonWing: "Lower",
+    sourceBosses: ["Shadow Hunter Vosh'gajin"], stats: { agility: 8 },
+  },
+  {
+    id: 12653, wowheadId: 12653, name: "Riphook", slot: "ranged",
+    quality: 3, type: "Generic", minLevel: 54, itemLevel: 59,
+    equipmentKind: "rangedWeapon", weaponType: "crossbow", handedness: "ranged",
+    allowedClasses: ["Warrior", "Hunter", "Rogue"],
+    dungeonSetId: "blackrock_spire", dungeonSetName: "Blackrock Spire", dungeonWing: "Lower",
+    sourceBosses: ["Shadow Hunter Vosh'gajin"], stats: { agility: 9 },
+  },
+  {
+    id: 13175, wowheadId: 13175, name: "Voone's Twitchbow", slot: "ranged",
+    quality: 3, type: "Generic", minLevel: 54, itemLevel: 60,
+    equipmentKind: "rangedWeapon", weaponType: "bow", handedness: "ranged",
+    allowedClasses: ["Warrior", "Hunter", "Rogue"],
+    dungeonSetId: "blackrock_spire", dungeonSetName: "Blackrock Spire", dungeonWing: "Lower",
+    sourceBosses: ["War Master Voone"], stats: { agility: 10 },
+  },
+  {
+    id: 12939, wowheadId: 12939, name: "Dal'Rend's Tribal Guardian", slot: "offHand",
+    quality: 3, type: "Generic", minLevel: 58, itemLevel: 63,
+    equipmentKind: "weapon", weaponType: "sword1h", handedness: "offHand",
+    allowedClasses: ["Warrior", "Hunter", "Rogue"],
+    dungeonSetId: "blackrock_spire", dungeonSetName: "Blackrock Spire", dungeonWing: "Upper",
+    sourceBosses: ["Warchief Rend Blackhand"], setId: "dalrends_arms",
+    setName: "Dal'Rend's Arms", stats: { agility: 10, stamina: 6 },
+  },
+  {
+    id: 12602, wowheadId: 12602, name: "Draconian Deflector", slot: "offHand",
+    quality: 3, type: "Generic", minLevel: 58, itemLevel: 63,
+    equipmentKind: "shield", handedness: "offHand",
+    allowedClasses: ["Warrior", "Paladin", "Shaman"],
+    dungeonSetId: "blackrock_spire", dungeonSetName: "Blackrock Spire", dungeonWing: "Upper",
+    sourceBosses: ["General Drakkisath"], stats: { stamina: 15, defense: 10 },
+  },
+  {
+    id: 17069, wowheadId: 17069, name: "Striker's Mark", slot: "ranged",
+    quality: 4, type: "Generic", minLevel: 60, itemLevel: 70,
+    equipmentKind: "rangedWeapon", weaponType: "bow", handedness: "ranged",
+    allowedClasses: ["Warrior", "Hunter", "Rogue"], dungeonSetId: "molten_core",
+    dungeonSetName: "Molten Core", sourceBosses: ["Magmadar"],
+    stats: { agility: 14, stamina: 9 },
+  },
+  {
+    id: 17072, wowheadId: 17072, name: "Blastershot Launcher", slot: "ranged",
+    quality: 4, type: "Generic", minLevel: 60, itemLevel: 70,
+    equipmentKind: "rangedWeapon", weaponType: "gun", handedness: "ranged",
+    allowedClasses: ["Warrior", "Hunter", "Rogue"], dungeonSetId: "molten_core",
+    dungeonSetName: "Molten Core", sourceBosses: ["Golemagg the Incinerator"],
+    stats: { agility: 12, strength: 6 },
+  },
+  {
+    id: 17077, wowheadId: 17077, name: "Crimson Shocker", slot: "ranged",
+    quality: 4, type: "Generic", minLevel: 60, itemLevel: 70,
+    equipmentKind: "wand", weaponType: "wand", handedness: "ranged",
+    allowedClasses: ["Mage", "Priest", "Warlock"], dungeonSetId: "molten_core",
+    dungeonSetName: "Molten Core", sourceBosses: ["Sulfuron Harbinger"],
+    stats: { intellect: 14, spirit: 8 },
+  },
+  {
+    id: 17106, wowheadId: 17106, name: "Malistar's Defender", slot: "offHand",
+    quality: 4, type: "Generic", minLevel: 60, itemLevel: 70,
+    equipmentKind: "shield", handedness: "offHand",
+    allowedClasses: ["Warrior", "Paladin", "Shaman"], dungeonSetId: "molten_core",
+    dungeonSetName: "Molten Core", sourceBosses: ["Ragnaros"],
+    stats: { stamina: 22, defense: 12 },
+  },
+  {
+    id: 19142, wowheadId: 19142, name: "Fire Runed Grimoire", slot: "offHand",
+    quality: 4, type: "Generic", minLevel: 60, itemLevel: 70,
+    equipmentKind: "offHandFrill", handedness: "offHand",
+    allowedClasses: ["Druid", "Paladin", "Shaman", "Priest", "Mage", "Warlock"],
+    dungeonSetId: "molten_core", dungeonSetName: "Molten Core",
+    sourceBosses: ["Lucifron", "Gehennas", "Shazzrah", "Sulfuron Harbinger"],
+    stats: { intellect: 21, spirit: 12 },
+  },
+  {
+    id: 17067, wowheadId: 17067, name: "Ancient Cornerstone Grimoire", slot: "offHand",
+    quality: 4, type: "Generic", minLevel: 60, itemLevel: 76,
+    equipmentKind: "offHandFrill", handedness: "offHand",
+    allowedClasses: ["Druid", "Paladin", "Shaman", "Priest", "Mage", "Warlock"],
+    dungeonSetId: "onyxias_lair", dungeonSetName: "Onyxia's Lair",
+    sourceBosses: ["Onyxia"], stats: { intellect: 24, stamina: 12 },
+  },
+  {
+    id: 19927, wowheadId: 19927, name: "Mar'li's Touch", slot: "ranged",
+    quality: 4, type: "Generic", minLevel: 58, itemLevel: 68,
+    equipmentKind: "wand", weaponType: "wand", handedness: "ranged",
+    allowedClasses: ["Mage", "Priest", "Warlock"], dungeonSetId: "zul_gurub",
+    dungeonSetName: "Zul'Gurub", sourceBosses: ["High Priestess Mar'li"],
+    stats: { intellect: 17, spirit: 10 },
+  },
+  {
+    id: 19910, wowheadId: 19910, name: "Arlokk's Grasp", slot: "offHand",
+    quality: 4, type: "Generic", minLevel: 58, itemLevel: 68,
+    equipmentKind: "weapon", weaponType: "fist", handedness: "offHand",
+    allowedClasses: ["Warrior", "Hunter", "Rogue"],
+    dungeonSetId: "zul_gurub", dungeonSetName: "Zul'Gurub",
+    sourceBosses: ["High Priestess Arlokk"], stats: { agility: 18, stamina: 10 },
+  },
+  {
+    id: 21471, wowheadId: 21471, name: "Talon of Furious Concentration", slot: "offHand",
+    quality: 4, type: "Generic", minLevel: 58, itemLevel: 68,
+    equipmentKind: "offHandFrill", handedness: "offHand",
+    allowedClasses: ["Druid", "Paladin", "Shaman", "Priest", "Mage", "Warlock"],
+    dungeonSetId: "ahn_qiraj_ruins", dungeonSetName: "Ruins of Ahn'Qiraj",
+    sourceBosses: ["Moam"], stats: { intellect: 20, spirit: 14 },
+  },
+  {
+    id: 21466, wowheadId: 21466, name: "Stinger of Ayamiss", slot: "ranged",
+    quality: 4, type: "Generic", minLevel: 58, itemLevel: 68,
+    equipmentKind: "rangedWeapon", weaponType: "crossbow", handedness: "ranged",
+    allowedClasses: ["Warrior", "Hunter", "Rogue"],
+    dungeonSetId: "ahn_qiraj_ruins", dungeonSetName: "Ruins of Ahn'Qiraj",
+    sourceBosses: ["Ayamiss the Hunter"], stats: { agility: 19, stamina: 9 },
+  },
+  {
+    id: 21485, wowheadId: 21485, name: "Buru's Skull Fragment", slot: "offHand",
+    quality: 4, type: "Generic", minLevel: 58, itemLevel: 68,
+    equipmentKind: "shield", handedness: "offHand",
+    allowedClasses: ["Warrior", "Paladin", "Shaman"],
+    dungeonSetId: "ahn_qiraj_ruins", dungeonSetName: "Ruins of Ahn'Qiraj",
+    sourceBosses: ["Buru the Gorger"], stats: { stamina: 20, defense: 10 },
+  },
+  {
+    id: 21478, wowheadId: 21478, name: "Bow of Taut Sinew", slot: "ranged",
+    quality: 4, type: "Generic", minLevel: 58, itemLevel: 68,
+    equipmentKind: "rangedWeapon", weaponType: "bow", handedness: "ranged",
+    allowedClasses: ["Warrior", "Hunter", "Rogue"],
+    dungeonSetId: "ahn_qiraj_ruins", dungeonSetName: "Ruins of Ahn'Qiraj",
+    sourceBosses: ["Ayamiss the Hunter"], stats: { agility: 20 },
+  },
+  {
+    id: 21616, wowheadId: 21616, name: "Huhuran's Stinger", slot: "ranged",
+    quality: 4, type: "Generic", minLevel: 60, itemLevel: 78,
+    equipmentKind: "rangedWeapon", weaponType: "bow", handedness: "ranged",
+    allowedClasses: ["Warrior", "Hunter", "Rogue"],
+    dungeonSetId: "ahn_qiraj_temple", dungeonSetName: "Temple of Ahn'Qiraj",
+    sourceBosses: ["Princess Huhuran"], stats: { agility: 24, stamina: 10 },
+  },
+  {
+    id: 21597, wowheadId: 21597, name: "Royal Scepter of Vek'lor", slot: "offHand",
+    quality: 4, type: "Generic", minLevel: 60, itemLevel: 88,
+    equipmentKind: "offHandFrill", handedness: "offHand",
+    allowedClasses: ["Druid", "Paladin", "Shaman", "Priest", "Mage", "Warlock"],
+    dungeonSetId: "ahn_qiraj_temple", dungeonSetName: "Temple of Ahn'Qiraj",
+    sourceBosses: ["Emperor Vek'lor"], stats: { intellect: 28, spirit: 18 },
+  },
+  {
+    id: 19891, wowheadId: 19891, name: "Jin'do's Bag of Whammies", slot: "offHand",
+    quality: 4, type: "Generic", minLevel: 58, itemLevel: 70,
+    equipmentKind: "offHandFrill", handedness: "offHand",
+    allowedClasses: ["Druid", "Paladin", "Shaman", "Priest", "Mage", "Warlock"],
+    dungeonSetId: "zul_gurub", dungeonSetName: "Zul'Gurub",
+    sourceBosses: ["Jin'do the Hexxer"], stats: { intellect: 20, spirit: 14 },
+  },
+  {
+    id: 12605, wowheadId: 12605, name: "Serpentine Skuller", slot: "ranged",
+    quality: 3, type: "Generic", minLevel: 57, itemLevel: 63,
+    equipmentKind: "wand", weaponType: "wand", handedness: "ranged",
+    allowedClasses: ["Mage", "Priest", "Warlock"],
+    dungeonSetId: "blackrock_spire", dungeonSetName: "Blackrock Spire", dungeonWing: "Upper",
+    sourceBosses: ["Jed Runewatcher"], stats: { intellect: 10, spirit: 8 },
+  },
+  {
+    id: 23557, wowheadId: 23557, name: "Larvae of the Great Worm", slot: "ranged",
+    quality: 4, type: "Generic", minLevel: 60, itemLevel: 84,
+    equipmentKind: "rangedWeapon", weaponType: "gun", handedness: "ranged",
+    allowedClasses: ["Warrior", "Hunter", "Rogue"],
+    dungeonSetId: "ahn_qiraj_temple", dungeonSetName: "Temple of Ahn'Qiraj",
+    sourceBosses: ["Ouro"], stats: { agility: 24, stamina: 14 },
+  },
+  {
+    id: 22812, wowheadId: 22812, name: "Nerubian Slavemaker", slot: "ranged",
+    quality: 4, type: "Generic", minLevel: 60, itemLevel: 92,
+    equipmentKind: "rangedWeapon", weaponType: "crossbow", handedness: "ranged",
+    allowedClasses: ["Warrior", "Hunter", "Rogue"],
+    dungeonSetId: "naxxramas", dungeonSetName: "Naxxramas",
+    sourceBosses: ["Kel'Thuzad"], stats: { agility: 28, stamina: 18 },
+  },
+  {
+    id: 23075, wowheadId: 23075, name: "Death's Bargain", slot: "offHand",
+    quality: 4, type: "Generic", minLevel: 60, itemLevel: 88,
+    equipmentKind: "shield", handedness: "offHand",
+    allowedClasses: ["Warrior", "Paladin", "Shaman"],
+    dungeonSetId: "naxxramas", dungeonSetName: "Naxxramas",
+    sourceBosses: ["Gluth"], stats: { stamina: 28, defense: 15 },
+  },
+  {
+    id: 23049, wowheadId: 23049, name: "Sapphiron's Left Eye", slot: "offHand",
+    quality: 4, type: "Generic", minLevel: 60, itemLevel: 91,
+    equipmentKind: "offHandFrill", handedness: "offHand",
+    allowedClasses: ["Druid", "Paladin", "Shaman", "Priest", "Mage", "Warlock"],
+    dungeonSetId: "naxxramas", dungeonSetName: "Naxxramas",
+    sourceBosses: ["Sapphiron"], stats: { intellect: 30, spirit: 20 },
+  },
+  {
+    id: 22994, wowheadId: 22994, name: "Digested Hand of Power", slot: "offHand",
+    quality: 4, type: "Generic", minLevel: 60, itemLevel: 88,
+    equipmentKind: "offHandFrill", handedness: "offHand",
+    allowedClasses: ["Druid", "Paladin", "Shaman", "Priest", "Mage", "Warlock"],
+    dungeonSetId: "naxxramas", dungeonSetName: "Naxxramas",
+    sourceBosses: ["Gluth"], stats: { intellect: 28, spirit: 18 },
+  },
+  {
+    id: 22398, wowheadId: 22398, name: "Idol of Rejuvenation", slot: "ranged",
+    quality: 3, type: "Generic", minLevel: 57, itemLevel: 62,
+    equipmentKind: "relic", weaponType: "idol", handedness: "ranged",
+    allowedClasses: ["Druid"], dungeonSetId: "blackrock_spire",
+    dungeonSetName: "Blackrock Spire", dungeonWing: "Lower", sourceBosses: ["Mor Grayhoof"],
+    roleTags: ["Healer"], stats: { spirit: 18 },
+  },
+  {
+    id: 22395, wowheadId: 22395, name: "Totem of Rage", slot: "ranged",
+    quality: 3, type: "Generic", minLevel: 52, itemLevel: 57,
+    equipmentKind: "relic", weaponType: "totem", handedness: "ranged",
+    allowedClasses: ["Shaman"], dungeonSetId: "blackrock_depths",
+    dungeonSetName: "Blackrock Depths", sourceBosses: ["Magmus"],
+    roleTags: ["Caster DPS"], stats: { intellect: 16 },
+  },
+  {
+    id: 23201, wowheadId: 23201, name: "Libram of Divinity", slot: "ranged",
+    quality: 3, type: "Generic", minLevel: 60, itemLevel: 65,
+    equipmentKind: "relic", weaponType: "libram", handedness: "ranged",
+    allowedClasses: ["Paladin"], dungeonSetId: "scholomance",
+    dungeonSetName: "Scholomance", sourceBosses: ["Scholomance minibosses"],
+    roleTags: ["Healer"], stats: { intellect: 18 },
+  },
+  {
+    id: 23004, wowheadId: 23004, name: "Idol of Longevity", slot: "ranged",
+    quality: 4, type: "Generic", minLevel: 60, itemLevel: 88,
+    equipmentKind: "relic", weaponType: "idol", handedness: "ranged",
+    allowedClasses: ["Druid"], dungeonSetId: "naxxramas",
+    dungeonSetName: "Naxxramas", sourceBosses: ["Instructor Razuvious"],
+    roleTags: ["Healer"], stats: { spirit: 28 },
+  },
+  {
+    id: 23006, wowheadId: 23006, name: "Libram of Light", slot: "ranged",
+    quality: 4, type: "Generic", minLevel: 60, itemLevel: 88,
+    equipmentKind: "relic", weaponType: "libram", handedness: "ranged",
+    allowedClasses: ["Paladin"], dungeonSetId: "naxxramas",
+    dungeonSetName: "Naxxramas", sourceBosses: ["Noth the Plaguebringer"],
+    roleTags: ["Healer"], stats: { intellect: 28 },
+  },
+  {
+    id: 23005, wowheadId: 23005, name: "Totem of Flowing Water", slot: "ranged",
+    quality: 4, type: "Generic", minLevel: 60, itemLevel: 88,
+    equipmentKind: "relic", weaponType: "totem", handedness: "ranged",
+    allowedClasses: ["Shaman"], dungeonSetId: "naxxramas",
+    dungeonSetName: "Naxxramas", sourceBosses: ["Noth the Plaguebringer"],
+    roleTags: ["Healer"], stats: { intellect: 20, spirit: 20 },
+  },
+];
+
 const RAW_DB_ITEMS = [
+  ...CLASSIC_WEAPON_SLOT_PROGRESSION,
   ...buildExpandedWorldSlotDrops(),
   ...CLASSIC_DUNGEON_EXPANDED_SLOT_DROPS,
   ...buildTierZeroCompletionItems(),
@@ -2860,12 +3265,15 @@ const RAW_DB_ITEMS = [
     id: 541,
     name: "Houndmaster's Rifle",
     slot: "mainHand",
-    quality: 2,
+    quality: 3,
     type: "Generic",
-    minLevel: 31,
-    dungeonSetId: "scarlet_monastery",
-    dungeonSetName: "Scarlet Monastery",
+    minLevel: 48,
+    dungeonSetId: "blackrock_depths",
+    dungeonSetName: "Blackrock Depths",
+    sourceBosses: ["Houndmaster Grebmar"],
+    wowheadId: 11629,
     icon: wowItemIcon("INV_Weapon_Rifle_01"),
+    stats: { agility: 3 },
   },
   {
     id: 542,
@@ -6825,13 +7233,15 @@ const RAW_DB_ITEMS = [
   {
     id: 780,
     name: "Anastari Heirloom",
-    slot: "mainHand",
-    quality: 2,
+    slot: "neck",
+    quality: 3,
     type: "Generic",
-    minLevel: 57,
+    minLevel: 55,
     dungeonSetId: "stratholme",
     dungeonSetName: "Stratholme",
-    icon: wowItemIcon("INV_Wand_07"),
+    sourceBosses: ["Baroness Anastari"],
+    wowheadId: 18728,
+    icon: wowItemIcon("INV_Jewelry_Necklace_11"),
     stats: { intellect: 12, spirit: 9, stamina: 7 },
   },
   {
@@ -6873,14 +7283,16 @@ const RAW_DB_ITEMS = [
   {
     id: 784,
     name: "Ramstein's Lightning Bolts",
-    slot: "mainHand",
+    slot: "trinket",
     quality: 3,
     type: "Generic",
-    minLevel: 58,
+    minLevel: 55,
     dungeonSetId: "stratholme",
     dungeonSetName: "Stratholme",
-    icon: wowItemIcon("INV_Weapon_Rifle_08"),
-    stats: { agility: 14, stamina: 10 },
+    sourceBosses: ["Ramstein the Gorger"],
+    wowheadId: 13515,
+    icon: wowItemIcon("INV_Misc_MonsterScales_15"),
+    stats: { stamina: 10 },
   },
   {
     id: 785,
@@ -7301,25 +7713,8 @@ const RAW_DB_ITEMS = [
   ...PVP_HONOR_SET_ITEMS,
 ];
 
-const UNSUPPORTED_CLASSIC_EQUIPMENT_NAMES = new Set([
-  "Venomstrike",
-  "Naga Heartpiercer",
-  "Glass Shooter",
-  "Houndmaster's Rifle",
-  "Baelog's Shortbow",
-  "Galgann's Fireblaster",
-  "Noxious Shooter",
-  "Bonecreeper Stylus",
-  "Willey's Portable Howitzer",
-  "Anastari Heirloom",
-  "Ramstein's Lightning Bolts",
-  "Mordresh's Lifeless Skull",
-  "Plaguerot Sprig",
-  "Thaurissan's Royal Scepter",
-]);
-
 export const DB_ITEMS = Object.freeze(
   RAW_DB_ITEMS
-    .filter((item) => !UNSUPPORTED_CLASSIC_EQUIPMENT_NAMES.has(item.name))
+    .map(applyClassicWeaponMetadata)
     .map(applyItemLevelTuning),
 );

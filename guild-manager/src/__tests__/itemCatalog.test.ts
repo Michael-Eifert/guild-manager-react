@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 
 import { createItemCatalog } from "../data/itemCatalog";
+import { DB_ITEMS } from "../data/items";
 
 describe("item catalog", () => {
   const items = Object.freeze([
@@ -56,5 +57,40 @@ describe("item catalog", () => {
 
     expect(ranges.get("World")).toEqual({ min: 18, max: 18 });
     expect(ranges.get("Molten Core")).toEqual({ min: 70, max: 70 });
+  });
+
+  it("keeps generated catalog ids unique and covers every class-specific third slot", () => {
+    expect(new Set(DB_ITEMS.map((item) => String(item.id))).size).toBe(
+      DB_ITEMS.length,
+    );
+    DB_ITEMS.filter(
+      (item) =>
+        ["offHand", "ranged"].includes(String(item.slot)) &&
+        item.wowheadId !== undefined,
+    ).forEach((item) => {
+      expect(Number(item.wowheadId), item.name).toBeGreaterThan(0);
+    });
+    const expectedTypes = {
+      Warrior: ["bow", "crossbow", "gun", "thrown"],
+      Hunter: ["bow", "crossbow", "gun", "thrown"],
+      Rogue: ["bow", "crossbow", "gun", "thrown"],
+      Mage: ["wand"],
+      Priest: ["wand"],
+      Warlock: ["wand"],
+      Druid: ["idol"],
+      Paladin: ["libram"],
+      Shaman: ["totem"],
+    };
+    Object.entries(expectedTypes).forEach(([charClass, weaponTypes]) => {
+      expect(
+        DB_ITEMS.some(
+          (item) =>
+            item.slot === "ranged" &&
+            weaponTypes.includes(String(item.weaponType)) &&
+            item.allowedClasses?.includes(charClass),
+        ),
+        charClass,
+      ).toBe(true);
+    });
   });
 });

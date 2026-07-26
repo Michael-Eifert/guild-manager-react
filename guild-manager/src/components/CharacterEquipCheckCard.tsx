@@ -10,6 +10,10 @@ import {
 } from "../utils";
 import type { Character } from "../types/characterTypes";
 import type { ItemDefinition } from "../types/itemTypes";
+import {
+  getThirdWeaponSlotLabel,
+  isTwoHandedItem,
+} from "../equipment/weaponRules";
 
 type ClassPresentation = { color: string; icon?: string };
 const CLASS_PRESENTATIONS = DB_CLASSES as Record<string, ClassPresentation>;
@@ -200,11 +204,21 @@ const CharacterEquipCheckCard = ({
           </div>
         </div>
 
-        <div className="mt-3 flex justify-center">
+        <div className="mt-3 flex justify-center gap-2">
+          <EquipSlotIcon charId={char.id} slot="mainHand" item={equipment.mainHand} />
           <EquipSlotIcon
             charId={char.id}
-            slot="mainHand"
-            item={equipment.mainHand}
+            slot="offHand"
+            item={
+              isTwoHandedItem(equipment.mainHand)
+                ? equipment.mainHand
+                : equipment.offHand
+            }
+          />
+          <EquipSlotIcon
+            charId={char.id}
+            slot={getThirdWeaponSlotLabel(char)}
+            item={equipment.ranged}
           />
         </div>
       </div>

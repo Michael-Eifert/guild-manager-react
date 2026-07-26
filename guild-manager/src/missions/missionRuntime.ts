@@ -391,7 +391,7 @@ export const applyDungeonStepLootAwards = ({
   awardDungeonStepLoot?: (input: AnyRecord) => AnyRecord | null;
 }) => {
   if (typeof awardDungeonStepLoot !== "function") {
-    return { activeMissions, finishedMissions, roster, logs: stepLogs };
+    return { activeMissions, finishedMissions, roster, logs: stepLogs, soldGold: 0 };
   }
   let nextRoster = roster;
   const nextActive = [...activeMissions];
@@ -401,6 +401,7 @@ export const applyDungeonStepLootAwards = ({
     ...nextFinished.map((mission, index) => ({ mission, index, bucket: "finished" })),
   ];
   const logs: AnyRecord[] = [];
+  let soldGold = 0;
 
   for (const log of Array.isArray(stepLogs) ? stepLogs : []) {
     logs.push(log);
@@ -431,9 +432,16 @@ export const applyDungeonStepLootAwards = ({
     if (matching.bucket === "active") nextActive[matching.index] = award.mission;
     else nextFinished[matching.index] = award.mission;
     nextRoster = award.updatedRoster || nextRoster;
+    soldGold += Math.max(0, Number(award.soldGold) || 0);
     if (Array.isArray(award.missionLogs)) logs.push(...award.missionLogs);
   }
-  return { activeMissions: nextActive, finishedMissions: nextFinished, roster: nextRoster, logs };
+  return {
+    activeMissions: nextActive,
+    finishedMissions: nextFinished,
+    roster: nextRoster,
+    logs,
+    soldGold,
+  };
 };
 
 export type { Mission };

@@ -18,6 +18,7 @@ import {
   rollCharacterPersonalityTraits,
 } from "./game/characterPersonality";
 import { createDefaultPvpData } from "./pvp/pvpCharacterUtils";
+import { canCharacterEquipItem } from "./equipment/weaponRules";
 
 const ARMOR_HIERARCHY = ["Plate", "Mail", "Leather", "Cloth"];
 const WOW_ICON_BASE_URL = "https://wow.zamimg.com/images/wow/icons/large";
@@ -35,6 +36,8 @@ const SLOT_FALLBACK_ICONS = {
   trinket: "inv_jewelry_talisman_01",
   ring: "inv_jewelry_ring_03",
   mainHand: "inv_sword_04",
+  offHand: "inv_misc_book_09",
+  ranged: "inv_weapon_bow_07",
 };
 const SLOT_TYPE_FALLBACK_ICONS = {
   head: {
@@ -108,6 +111,12 @@ const SLOT_TYPE_FALLBACK_ICONS = {
   mainHand: {
     Generic: "inv_sword_04",
   },
+  offHand: {
+    Generic: "inv_misc_book_09",
+  },
+  ranged: {
+    Generic: "inv_weapon_bow_07",
+  },
 };
 export const EQUIPMENT_SLOT_ORDER = Object.freeze([
   "head",
@@ -123,6 +132,8 @@ export const EQUIPMENT_SLOT_ORDER = Object.freeze([
   "trinket",
   "ring",
   "mainHand",
+  "offHand",
+  "ranged",
 ]);
 const ITEM_QUALITY_LEVEL_BONUS = {
   0: 0, // Poor (gray)
@@ -377,15 +388,31 @@ export const getItemAllowedClasses = (item) => {
 
 export const isItemUsableByClass = (item, charClass) => {
   const allowedClasses = getItemAllowedClasses(item);
-  if (allowedClasses.length === 0) return true;
   const normalizedClass = String(charClass || "").trim();
   if (!normalizedClass) return false;
-  return allowedClasses.includes(normalizedClass);
+  if (allowedClasses.length > 0 && !allowedClasses.includes(normalizedClass)) {
+    return false;
+  }
+  return canCharacterEquipItem(
+    { charClass: normalizedClass, level: 60 },
+    item,
+  );
 };
+
+export const isItemUsableByCharacter = (item, character, targetSlot) =>
+  canCharacterEquipItem(character, item, targetSlot);
 
 const getEquipmentBaseAverageItemLevel = (equipment) => {
   if (!equipment || typeof equipment !== "object") return 0;
-  const slots = Object.values(equipment).filter(Boolean);
+  const slots = Object.entries(equipment)
+    .filter(([, item]) => Boolean(item))
+    .flatMap(([slotName, item]) =>
+      slotName === "mainHand" &&
+      (item?.handedness === "twoHand" ||
+        ["axe2h", "mace2h", "sword2h", "polearm", "staff"].includes(item?.weaponType))
+        ? [item, item]
+        : [item],
+    );
   if (slots.length === 0) return 0;
   const totalItemLevel = slots.reduce(
     (sum, item) => sum + getItemEffectiveLevel(item),
@@ -783,7 +810,47 @@ export const getStarterGear = (charClass) => {
   const armor = armorTypes[0] || "Cloth";
   const gear = normalizeEquipmentSlots();
   gear.feet = { name: "Worn Boots", quality: 0, type: armor, minLevel: 1 };
-  gear.mainHand = { name: "Dull Blade", quality: 0, type: "Generic", minLevel: 1 };
+  const starterWeapons = {
+    Warrior: ["Worn Shortsword", "sword1h", "oneHand"],
+    Paladin: ["Worn Warhammer", "mace1h", "oneHand"],
+    Hunter: ["Worn Hand Axe", "axe1h", "oneHand"],
+    Rogue: ["Worn Dagger", "dagger", "oneHand"],
+    Shaman: ["Worn Mace", "mace1h", "oneHand"],
+    Priest: ["Worn Mace", "mace1h", "oneHand"],
+    Mage: ["Worn Dagger", "dagger", "oneHand"],
+    Warlock: ["Worn Dagger", "dagger", "oneHand"],
+    Druid: ["Worn Mace", "mace1h", "oneHand"],
+  };
+  const [weaponName, weaponType, handedness] =
+    starterWeapons[charClass] || starterWeapons.Warrior;
+  gear.mainHand = {
+    id: `starter_${String(charClass || "warrior").toLowerCase()}_main`,
+    name: weaponName,
+    slot: "mainHand",
+    quality: 0,
+    type: "Generic",
+    minLevel: 1,
+    itemLevel: 1,
+    equipmentKind: "weapon",
+    weaponType,
+    handedness,
+    allowedClasses: [charClass],
+  };
+  if (charClass === "Hunter") {
+    gear.ranged = {
+      id: "starter_hunter_bow",
+      name: "Worn Shortbow",
+      slot: "ranged",
+      quality: 0,
+      type: "Generic",
+      minLevel: 1,
+      itemLevel: 1,
+      equipmentKind: "rangedWeapon",
+      weaponType: "bow",
+      handedness: "ranged",
+      allowedClasses: ["Hunter"],
+    };
+  }
   if (armor === "Cloth") {
     gear.chest = { name: "Apprentice Robe", quality: 1, type: "Cloth", minLevel: 1 };
     gear.legs = { name: "Apprentice Pants", quality: 0, type: "Cloth", minLevel: 1 };

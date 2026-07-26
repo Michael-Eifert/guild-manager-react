@@ -16,7 +16,17 @@ describe("DetailModal", () => {
     const html = render(
       <DetailModal
         isOpen
-        char={hero}
+        char={{
+          ...hero,
+          personalInventory: [
+            {
+              id: "stored-shield",
+              name: "Stored Shield",
+              slot: "offHand",
+              equipmentKind: "shield",
+            },
+          ],
+        }}
         missionAchievementCatalog={missionList}
         missionList={missionList}
         itemDatabase={[]}
@@ -39,6 +49,8 @@ describe("DetailModal", () => {
     expect(html).toContain("Professions");
     expect(html).toContain(">Guild<");
     expect(html).toContain("Kick Player");
+    expect(html).toContain("Stored Gear");
+    expect(html).toContain("Stored Shield");
     expect(html).not.toContain("Dismiss Hero");
   });
 });

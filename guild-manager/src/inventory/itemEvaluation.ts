@@ -1,10 +1,8 @@
 import {
   getClassArmorTypes,
-  getItemEffectiveLevel,
   isItemUsableByClass,
 } from "../utils";
 import {
-  addItemToGuildInventory,
   ensureGuildInventory,
   getItemQuantity,
   removeItemFromGuildInventory,
@@ -19,6 +17,7 @@ import type {
   GuildInventory,
   InventoryItemDefinition,
 } from "../types/itemTypes";
+import { optimizeCharacterEquipment } from "../equipment/equipmentLoadouts";
 
 export interface StashPolicy {
   keepPotentialUpgrades: boolean;
@@ -76,13 +75,23 @@ export const getBestUpgradeCandidate = ({ itemId, roster }: {
     .filter((character) => canCharacterUseInventoryEquipment(character, definition))
     .map((character) => {
       const currentItem = character?.equipment?.[equipmentSlot];
-      const currentItemLevel = getItemEffectiveLevel(currentItem);
-      const newItemLevel = getItemEffectiveLevel(equipmentItem);
+      const optimized = optimizeCharacterEquipment({
+        character,
+        incomingItem: equipmentItem,
+      });
       return {
         character,
         currentItem,
         item: equipmentItem,
-        gain: newItemLevel - currentItemLevel,
+        optimizedCharacter: optimized.character,
+        outcome: optimized.outcome,
+        soldGold: optimized.soldGold,
+        gain:
+          optimized.outcome === "equipped"
+            ? Math.max(0.01, optimized.loadoutGain)
+            : optimized.outcome === "stored"
+              ? 0.01
+              : 0,
       };
     })
     .filter((candidate) => candidate.gain > 0)
@@ -116,30 +125,23 @@ export const tryAutoEquipItemFromGuildStash = ({
     return { roster, guildInventory: safeInventory, equipped: false, log: null };
   }
 
-  let nextInventory = removeItemFromGuildInventory(safeInventory, itemId, 1);
-  const replacedItemId = getStableInventoryItemId(candidate.currentItem);
-  if (replacedItemId && getInventoryItemDefinition(replacedItemId)) {
-    nextInventory = addItemToGuildInventory(nextInventory, replacedItemId, 1);
-  }
+  const nextInventory = removeItemFromGuildInventory(safeInventory, itemId, 1);
 
   const nextRoster = roster.map((character) => {
     if (character.id !== candidate.character.id) return character;
-    return {
-      ...character,
-      equipment: {
-        ...(character.equipment || {}),
-        [candidate.item.slot as string]: candidate.item,
-      },
-    };
+    return candidate.optimizedCharacter;
   });
 
   return {
     roster: nextRoster,
     guildInventory: nextInventory,
     equipped: true,
+    soldGold: candidate.soldGold,
     log: {
       type: "profession",
-      message: `${candidate.character.name} equipped ${candidate.item.name} from the Guild Stash.`,
+      message: `${candidate.character.name} ${
+        candidate.outcome === "stored" ? "stored" : "equipped"
+      } ${candidate.item.name} from the Guild Stash.`,
     },
   };
 };

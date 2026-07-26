@@ -4,7 +4,10 @@
   "version": "0.0.0",
   "type": "module",
   "scripts": {
+    "generate:items": "tsx scripts/generate-item-catalog.ts",
+    "predev": "npm run generate:items",
     "dev": "vite",
+    "prebuild": "npm run generate:items",
     "build": "vite build && tsx scripts/create-spa-404.ts",
     "lint": "eslint .",
     "typecheck": "npm run typecheck:app && npm run typecheck:test && npm run typecheck:node",

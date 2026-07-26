@@ -24,8 +24,10 @@ import {
 } from "../session/sessionPersistence";
 import {
   readBrowserSession,
+  setActiveBrowserSaveSlot,
   writeBrowserSession,
 } from "../session/browserSessionPersistence";
+import type { BrowserSaveSlotId } from "../session/browserSessionPersistence";
 import type { NotificationInput } from "./gameTypes";
 
 type SessionCharacter = Record<string, unknown>;
@@ -38,6 +40,7 @@ export const createSessionActions = ({
   normalizeRosterZones,
   createId,
   pushNotification,
+  itemCatalog = null,
 }: {
   state: SessionState;
   refs: SessionRefs;
@@ -49,6 +52,9 @@ export const createSessionActions = ({
   ) => SessionCharacter[];
   createId: () => string;
   pushNotification: (notification: NotificationInput) => unknown;
+  itemCatalog?: {
+    byId?: (id: unknown) => Record<string, unknown> | null;
+  } | null;
 }) => {
   const hydrateOptions = {
     initialMissions: getMissionListWithZones(INITIAL_MISSIONS),
@@ -60,6 +66,7 @@ export const createSessionActions = ({
     createId,
     resolveDungeonBossCount: getDungeonBossCount,
     defaultGuildSetup: DEFAULT_GUILD_SETUP,
+    itemCatalog,
   };
 
   const applySession = (
@@ -91,8 +98,8 @@ export const createSessionActions = ({
     return saved;
   };
 
-  const restoreBrowserSession = () => {
-    const rawSession = readBrowserSession();
+  const restoreBrowserSession = (slotId?: BrowserSaveSlotId) => {
+    const rawSession = readBrowserSession(slotId);
     if (!rawSession) return false;
 
     const payloadData = parseSessionPayload(rawSession);
@@ -101,6 +108,7 @@ export const createSessionActions = ({
       ...hydrateOptions,
     });
     applySession(loadedSession);
+    if (slotId) setActiveBrowserSaveSlot(slotId);
     return true;
   };
 

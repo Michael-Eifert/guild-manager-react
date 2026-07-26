@@ -1,7 +1,7 @@
 import { z } from "zod";
 
 export const SESSION_FORMAT_VALUE = "guild-manager-session" as const;
-export const CURRENT_SESSION_VERSION = 14;
+export const CURRENT_SESSION_VERSION = 15;
 
 const dataSchema = z.record(z.string(), z.unknown());
 const recognizedKeys = new Set([
@@ -122,6 +122,32 @@ export const SESSION_MIGRATIONS: ReadonlyArray<Migration> = [
               .offlineSimulationEnabled
           : true,
     },
+  }),
+  (data) => ({
+    ...data,
+    roster: Array.isArray(data.roster)
+      ? data.roster.map((entry) => {
+          const character =
+            entry && typeof entry === "object"
+              ? (entry as Record<string, unknown>)
+              : {};
+          const equipment =
+            character.equipment && typeof character.equipment === "object"
+              ? (character.equipment as Record<string, unknown>)
+              : {};
+          return {
+            ...character,
+            equipment: {
+              ...equipment,
+              offHand: equipment.offHand || null,
+              ranged: equipment.ranged || null,
+            },
+            personalInventory: Array.isArray(character.personalInventory)
+              ? character.personalInventory
+              : [],
+          };
+        })
+      : [],
   }),
 ];
 
