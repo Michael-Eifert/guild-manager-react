@@ -20,7 +20,6 @@
     "test:e2e:ui": "playwright test --ui",
     "test:soak": "vitest run --config vitest.soak.config.ts",
     "test:extended": "npm run typecheck:extended && npm run test:soak && npm run test:e2e",
-    "proxy:gemini": "tsx server/gemini-proxy.ts",
     "proxy:ai": "tsx server/ai-proxy.ts",
     "preview": "vite preview"
   },

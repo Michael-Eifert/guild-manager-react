@@ -116,7 +116,6 @@ export default function HomeRoot() {
     handleDeclineApplications,
     handleDeploy,
     handleDismiss,
-    handleGenerateBackstory,
     handleGuildDungeonActivityChange,
     handleGuildModeChange,
     handleGuildSuccessRateChange,
@@ -138,7 +137,6 @@ export default function HomeRoot() {
     handleStartCalendarEvent,
     handleTryAutoEquipFromGuildStash,
     handleTestChatProvider,
-    handleUpdateBackstory,
     handleUpdateCalendarEventRoster,
     handleUpgradeGuildTalent,
     hasAnyGuildMemberLevelFilter,
@@ -211,7 +209,10 @@ export default function HomeRoot() {
   });
   const guildName =
     guildSetup.name || getFactionFallbackManagerName(guildSetup.faction);
+  const showOnlineStatus =
+    gameSettings?.offlineSimulationEnabled !== false;
   const displayRoster = roster.map((character) => {
+    if (!showOnlineStatus) return character;
     const online = guildOnlineSnapshot.byId[String(character.id)];
     if (!online) return character;
     return {
@@ -408,6 +409,7 @@ export default function HomeRoot() {
                 guildProgress={guildProgress}
                 raidUnlocked={guildDerivedStats.raidUnlocked}
                 onScoutTier={handleScoutRecruitmentTier}
+                online={showOnlineStatus}
               />
             }
           />
@@ -606,6 +608,7 @@ export default function HomeRoot() {
             guildProgress={guildProgress}
             raidUnlocked={guildDerivedStats.raidUnlocked}
             onScoutTier={handleScoutRecruitmentTier}
+            online={showOnlineStatus}
           />
         )}
         {showLootTable && (
@@ -655,8 +658,6 @@ export default function HomeRoot() {
             onDismiss={handleDismiss}
             onModeChange={handleModeChange}
             onProfChange={handleProfChange}
-            onGenerateBackstory={handleGenerateBackstory}
-            onUpdateBackstory={handleUpdateBackstory}
             onLevelChange={debugActions.changeLevel}
             onRoleChange={updateMemberRole}
             onSetGuildRank={actions.setGuildRank}

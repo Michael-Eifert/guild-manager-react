@@ -24,6 +24,25 @@ describe("CharacterCard", () => {
     expect(html).toContain('data-online-status="Offline"');
   });
 
+  it("shows the readable profile without exposing the internal day fraction", () => {
+    const html = render(
+      <CharacterCard
+        char={{ ...hero, onlineStatus: "Online", onlineProfile: "Regular" }}
+        onClick={noop}
+      />,
+    );
+
+    expect(html).toContain("Online · Regular");
+    expect(html).not.toContain("2/4");
+  });
+
+  it("hides online presentation when no simulation status is supplied", () => {
+    const html = render(<CharacterCard char={hero} onClick={noop} />);
+
+    expect(html).not.toContain("Online ·");
+    expect(html).not.toContain("Regular");
+  });
+
   it("also recognizes the persisted offline status before the live snapshot arrives", () => {
     const html = render(
       <CharacterCard char={{ ...hero, status: "Offline" }} onClick={noop} />,

@@ -43,4 +43,38 @@ describe("RecruitModal", () => {
     expect(html).toContain("Cora");
     expect(html).not.toContain('role="dialog"');
   });
+
+  it("hides candidate online details when offline simulation is disabled", () => {
+    const applicant = makeHero({
+      id: "applicant-online",
+      name: "Rhea",
+      level: 12,
+      onlineStatus: "Online",
+      onlineProfile: "Regular",
+    });
+    const html = render(
+      <RecruitModal
+        isOpen
+        variant="page"
+        onClose={noop}
+        onRecruit={noop}
+        openSlots={3}
+        guildGold={50}
+        maxRoster={10}
+        rosterSize={roster.length}
+        guildProgress={guildProgress}
+        raidUnlocked={false}
+        onScoutTier={() => []}
+        applications={[applicant]}
+        onRecruitApplications={noop}
+        onDeclineApplications={noop}
+        marketStats={{ availableCount: 8, minLevel: 1, maxLevel: 20 }}
+        online={false}
+      />,
+    );
+
+    expect(html).toContain("Rhea");
+    expect(html).not.toContain("Online");
+    expect(html).not.toContain("Regular");
+  });
 });

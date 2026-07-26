@@ -6,7 +6,7 @@ professions, send parties into zones, dungeons, raids, and PvP, then grow the
 guild through loot, renown, talents, calendar planning, and realm simulation.
 
 The app is intentionally static-first: the main game runs fully in the browser,
-with optional server-side support only for Oracle/Gemini text generation.
+with optional server-side support for character-chat text generation.
 
 ## Quick Start
 
@@ -55,7 +55,6 @@ npm run test
 - Realm simulation for population, rival NPC guilds, rankings, news, and
   recruitment market behavior.
 - Session import/export so browser-only saves can be backed up as JSON files.
-- Optional Oracle/Gemini backstory generation through a proxy.
 
 ## Project Structure
 
@@ -136,26 +135,6 @@ The catalog provides:
 This keeps the app static-hosting friendly while leaving a clean path to a JSON
 asset or API later if item data outgrows the bundled source.
 
-## Optional Gemini API Integration
-
-The browser app does not accept a Gemini API key directly. To enable Oracle
-actions, run the server-side proxy and expose only the proxy URL to Vite.
-
-Terminal 1:
-
-```bash
-GEMINI_API_KEY=your_key_here npm run proxy:gemini
-```
-
-Terminal 2:
-
-```bash
-VITE_GEMINI_PROXY_URL=http://localhost:8787/api/gemini npm run dev
-```
-
-Without `VITE_GEMINI_PROXY_URL`, the game still runs. Oracle actions will show
-an error message instead of generating text.
-
 ## Testing
 
 The test suite uses Vitest and covers:
@@ -219,9 +198,6 @@ To publish:
 1. Push the repo to GitHub.
 2. In GitHub, go to Settings > Pages and set Source to GitHub Actions.
 3. Push to `main` or `master`, or run the workflow manually.
-
-Optional production Oracle support requires deploying the Gemini proxy
-separately and setting the `VITE_GEMINI_PROXY_URL` secret for the workflow.
 
 ## Development Notes
 

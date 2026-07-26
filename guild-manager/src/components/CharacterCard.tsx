@@ -136,11 +136,7 @@ const CharacterCard = ({ char, onClick }: CharacterCardProps) => {
               }`}
             >
               {onlineStatus}
-            </span>
-          ) : null}
-          {char.onlineProfile ? (
-            <span className="text-[10px] text-slate-500">
-              {char.onlineProfile}
+              {char.onlineProfile ? ` · ${char.onlineProfile}` : ""}
             </span>
           ) : null}
         </div>

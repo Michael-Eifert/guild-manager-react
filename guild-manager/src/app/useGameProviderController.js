@@ -142,7 +142,6 @@ import {
   generateZoneCheckpointLoot,
 } from "../loot/worldLoot";
 import {
-  getFactionDefaultGuildName,
   getGuildFocusBonuses,
   getGuildServerPopulation,
   getGuildServerStyle,
@@ -310,28 +309,6 @@ const DEFAULT_DASHBOARD_SECTIONS = Object.freeze({
   pvpActivity: true,
   guildComposition: true,
 });
-
-const geminiProxyUrl = import.meta.env.VITE_GEMINI_PROXY_URL || "";
-const callGemini = async (prompt, isJson = false) => {
-  try {
-    if (!geminiProxyUrl) {
-      throw new Error("Missing VITE_GEMINI_PROXY_URL");
-    }
-    const response = await fetch(geminiProxyUrl, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ prompt, isJson }),
-    });
-    if (!response.ok) throw new Error(`Gemini proxy error: ${response.status}`);
-    const data = await response.json();
-    const text = typeof data.text === "string" ? data.text : "";
-    if (!text) throw new Error("No text returned");
-    return isJson ? JSON.parse(text) : text;
-  } catch (error) {
-    console.error("Gemini proxy call failed:", error);
-    throw error;
-  }
-};
 
 const {
   FAILED_MISSION_EXP_FACTOR,
@@ -2529,7 +2506,7 @@ export const useGameProviderController = () => {
       return {
         ...candidate,
         onlineStatus: candidateOnline?.status || "Offline",
-        onlineProfile: candidateOnline?.profileLabel || "Regular (2/4)",
+        onlineProfile: candidateOnline?.profileLabel || "Regular",
         nextLoginDayIndex: candidateOnline?.nextLoginDayIndex,
         nextLoginHour: candidateOnline?.nextLoginHour,
         equipment: buildRecruitmentEquipment({
@@ -2572,7 +2549,7 @@ export const useGameProviderController = () => {
       return {
         ...candidate,
         onlineStatus: online?.status || "Offline",
-        onlineProfile: online?.profileLabel || "Regular (2/4)",
+        onlineProfile: online?.profileLabel || "Regular",
         nextLoginDayIndex: online?.nextLoginDayIndex,
         nextLoginHour: online?.nextLoginHour,
       };
@@ -3012,11 +2989,6 @@ export const useGameProviderController = () => {
       }),
     );
   };
-  const handleUpdateBackstory = (charId, story) => {
-    setRoster((p) =>
-      p.map((c) => (c.id !== charId ? c : { ...c, backstory: story })),
-    );
-  };
   const handleGuildSetupChange = (field, value) => {
     setGuildSetup((prev) => {
       if (field === "name") return { ...prev, name: String(value || "") };
@@ -3158,21 +3130,6 @@ export const useGameProviderController = () => {
     });
   };
 
-  const handleGenerateBackstory = async (char) => {
-    try {
-      const fallbackGuildName = getFactionDefaultGuildName(
-        guildSetupRef.current?.faction,
-      );
-      const guildName = guildSetupRef.current?.name || fallbackGuildName;
-      const prompt = `Write a short, engaging 2-sentence fantasy backstory for a level ${char.level} ${char.race} ${char.charClass} named ${char.name}. They are a member of the '${guildName}' guild.`;
-      return await callGemini(prompt, false);
-    } catch {
-      alert(
-        "Oracle is meditating. Configure VITE_GEMINI_PROXY_URL and try again.",
-      );
-      return null;
-    }
-  };
   const preemptDungeonMissionsForRaid = useCallback(
     ({ raidMemberIds, raidName }) => {
       const preemption = getDungeonMissionPreemption({
@@ -4983,7 +4940,6 @@ export const useGameProviderController = () => {
     handleDeclineApplications,
     handleDeploy,
     handleDismiss,
-    handleGenerateBackstory,
     handleGuildDungeonActivityChange,
     handleGuildModeChange,
     handleGuildSetupChange,
@@ -5006,7 +4962,6 @@ export const useGameProviderController = () => {
     handleStartCalendarEvent,
     handleStartGuild,
     handleTryAutoEquipFromGuildStash,
-    handleUpdateBackstory,
     handleUpdateCalendarEventRoster,
     handleUpgradeGuildTalent,
     hasAnyGuildMemberLevelFilter,

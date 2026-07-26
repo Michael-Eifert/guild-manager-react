@@ -43,6 +43,7 @@ const RecruitModal = ({
   onRecruitApplications,
   onDeclineApplications,
   marketStats,
+  online = true,
 }) => {
   const [candidates, setCandidates] = useState([]);
   const [isLoading, setIsLoading] = useState(false);
@@ -448,7 +449,7 @@ const RecruitModal = ({
                   <div className="text-[11px] text-amber-200 font-bold mb-3">
                     iLvl {getCharacterAverageItemLevel(char).toFixed(1)}
                   </div>
-                  {char.onlineStatus && (
+                  {online && char.onlineStatus && (
                     <div
                       className={`mb-3 text-[10px] font-bold ${
                         char.onlineStatus === "Offline"
@@ -596,7 +597,7 @@ const RecruitModal = ({
                     <div className="mb-2 text-[11px] font-bold text-amber-200">
                       iLvl {getCharacterAverageItemLevel(char).toFixed(1)}
                     </div>
-                    {char.onlineStatus && (
+                    {online && char.onlineStatus && (
                       <div
                         className={`mb-2 text-[10px] font-bold ${
                           char.onlineStatus === "Offline"

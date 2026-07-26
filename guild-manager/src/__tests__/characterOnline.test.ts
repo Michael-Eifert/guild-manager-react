@@ -41,9 +41,9 @@ describe("character online schedules", () => {
       6, 12, 18,
     ]);
     expect(schedules.map((schedule) => schedule.profileLabel)).toEqual([
-      "Casual (1/4)",
-      "Regular (2/4)",
-      "Hardcore (3/4)",
+      "Casual",
+      "Regular",
+      "Hardcore",
     ]);
   });
 

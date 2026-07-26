@@ -6,8 +6,7 @@ professions, send parties into zones, dungeons, raids, and PvP, then grow the
 guild through loot, renown, talents, calendar planning, and realm simulation.
 
 The app is intentionally static-first: the main game runs fully in the browser,
-with optional server-side support for Oracle/Gemini and character-chat text
-generation.
+with optional server-side support for character-chat text generation.
 
 ## Quick Start
 
@@ -76,7 +75,6 @@ longer required.
 - Realm simulation for population, rival NPC guilds, rankings, news, and
   recruitment market behavior.
 - Session import/export so browser-only saves can be backed up as JSON files.
-- Optional Oracle/Gemini backstory generation through a proxy.
 - Simulated Guild/General character chat with automatic same-faction LFG groups.
 
 ## Project Structure
@@ -163,45 +161,6 @@ The catalog provides:
 This keeps the app static-hosting friendly while leaving a clean path to a JSON
 asset or API later if item data outgrows the bundled source.
 
-## Optional Gemini API Integration
-
-The browser app does not accept a Gemini API key directly. To enable Oracle
-actions, run the server-side proxy and expose only the proxy URL to Vite.
-
-The proxy is optional and is only needed for Oracle/Gemini-generated text. The
-game itself still starts with just `npm run dev`.
-
-Create a local environment file once:
-
-```powershell
-Copy-Item .env.example .env
-```
-
-Fill `GEMINI_API_KEY` in `.env`, then start the proxy and app in separate
-terminals:
-
-```powershell
-npm run proxy:gemini
-```
-
-```powershell
-npm run dev
-```
-
-The proxy listens on port `8787` by default and exposes a health endpoint at
-`http://localhost:8787/health`. Set `GEMINI_PROXY_PORT` to use a different port
-and update `VITE_GEMINI_PROXY_URL` accordingly.
-
-For a hosted proxy, set `NODE_ENV=production` and an explicit comma-separated
-`ALLOWED_ORIGINS` list. Optional controls include `MAX_CONCURRENT_REQUESTS`,
-`RATE_LIMIT_CAPACITY`, `RATE_LIMIT_REFILL_PER_MINUTE`, and `TRUST_PROXY=true`
-when the service is behind a trusted reverse proxy. The built-in limits reduce
-accidental abuse, but a public production deployment should still be protected
-by authenticated access or an API gateway.
-
-Without `VITE_GEMINI_PROXY_URL`, the game still runs. Oracle actions will show
-an error message instead of generating text.
-
 ## Optional Character Chat AI
 
 Character chat uses deterministic templates by default. Settings can switch
@@ -223,7 +182,7 @@ explicit comma-separated `ALLOWED_ORIGINS` value. A GitHub Pages deployment
 needs this proxy hosted separately.
 
 Only variables prefixed with `VITE_` are exposed to the browser bundle. Keep
-API keys in the unprefixed `AI_API_KEY` and `GEMINI_API_KEY` variables. Local
+API keys in the unprefixed `AI_API_KEY` variable. Local
 `.env` files are ignored by Git; `.env.example` intentionally contains no
 credentials and documents the supported configuration.
 
@@ -296,9 +255,6 @@ To publish:
 1. Push the repo to GitHub.
 2. In GitHub, go to Settings > Pages and set Source to GitHub Actions.
 3. Push to `main` or `master`, or run the workflow manually.
-
-Optional production Oracle support requires deploying the Gemini proxy
-separately and setting the `VITE_GEMINI_PROXY_URL` secret for the workflow.
 
 ## Development Notes
 

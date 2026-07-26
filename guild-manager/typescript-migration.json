@@ -2,7 +2,6 @@
   "legacyJavaScriptFiles": [
     "scripts/check-bundle-size.mjs",
     "scripts/create-spa-404.mjs",
-    "server/gemini-proxy.mjs",
     "src/__tests__/battlefields.test.js",
     "src/__tests__/components/ActiveMissionCard.test.jsx",
     "src/__tests__/components/CharacterCard.test.jsx",
@@ -29,7 +28,6 @@
     "src/__tests__/domain.test.js",
     "src/__tests__/gameProvider.integration.test.jsx",
     "src/__tests__/gameSelector.test.jsx",
-    "src/__tests__/geminiProxy.test.js",
     "src/__tests__/guildSetupDefaults.test.js",
     "src/__tests__/itemCatalog.test.js",
     "src/__tests__/professionsMvp.test.js",

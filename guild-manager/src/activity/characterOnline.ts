@@ -40,9 +40,9 @@ const PROFILE_HOURS: Record<OnlineProfileId, 6 | 12 | 18> = {
 };
 
 const PROFILE_LABELS: Record<OnlineProfileId, string> = {
-  quarter: "Casual (1/4)",
-  half: "Regular (2/4)",
-  three_quarters: "Hardcore (3/4)",
+  quarter: "Casual",
+  half: "Regular",
+  three_quarters: "Hardcore",
 };
 
 const stableHash = (value: unknown) => {
