@@ -14,7 +14,8 @@ type NavigationItemBase = {
   group: NavigationGroup;
   badge?: number;
   badgeTone?: "neutral" | "amber" | "cyan" | "red" | "emerald";
-  mobilePrimary?: boolean;
+  mobileFixed?: boolean;
+  mobileDefault?: boolean;
   mobileOrder?: number;
   sidebarHidden?: boolean;
   tone?: "neutral" | "primary" | "quest" | "success" | "danger";

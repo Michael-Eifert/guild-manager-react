@@ -38,7 +38,10 @@ import {
 } from "../session/sessionPersistence";
 import { ensureRealmState, generateNpcGuilds } from "../server/realmGeneration";
 import { capRealmNews, getRealmNewsRenderKey } from "../server/realmNews";
-import { advanceRealmSimulation } from "../server/realmSimulation";
+import {
+  advanceRealmSimulation,
+  getDesiredRealmNpcGuildCount,
+} from "../server/realmSimulation";
 import {
   buildPlayerGuildSnapshot,
   buildRealmRankings,
@@ -5314,27 +5317,23 @@ describe("realm overview domain", () => {
     );
   });
 
-  it("grows fresh medium-pop NPC guild count into the mature guild band", () => {
+  it("calculates the mature medium-pop NPC guild band at population capacity", () => {
     const realm = ensureRealmState(
       null,
       { server: "Lordaeron", serverStyle: GUILD_SERVER_STYLE.PVE },
       0,
     );
-    const advanced = advanceRealmSimulation({
-      realmState: realm,
-      currentDayIndex: 45,
-      playerGuildSnapshot: null,
-      guildSetup: {
-        faction: GUILD_FACTION.ALLIANCE,
-        server: "Lordaeron",
-        serverStyle: GUILD_SERVER_STYLE.PVE,
-      },
+    const desiredGuildCount = getDesiredRealmNpcGuildCount({
+      realmId: realm.id,
+      serverPopulation: realm.populationLabel,
+      currentGuildCount: realm.npcGuilds.length,
+      totalPopulation: 1000,
     });
 
-    expect(advanced.npcGuilds.length).toBeGreaterThan(realm.npcGuilds.length);
-    expect(advanced.npcGuilds.length).toBeGreaterThanOrEqual(10);
-    expect(advanced.npcGuilds.length).toBeLessThanOrEqual(15);
-  }, 10000);
+    expect(desiredGuildCount).toBeGreaterThan(realm.npcGuilds.length);
+    expect(desiredGuildCount).toBeGreaterThanOrEqual(10);
+    expect(desiredGuildCount).toBeLessThanOrEqual(15);
+  });
 
   it("seeds newly founded NPC guilds with existing realm players", () => {
     let realm = ensureRealmState(
@@ -5377,27 +5376,23 @@ describe("realm overview domain", () => {
     expect(foundedGuild.roster.some((member) => member.level > 1)).toBe(true);
   });
 
-  it("grows fresh high-pop NPC guild count into the crowded guild band", () => {
+  it("calculates the crowded high-pop NPC guild band at population capacity", () => {
     const realm = ensureRealmState(
       null,
       { server: "Everlook", serverStyle: GUILD_SERVER_STYLE.PVE },
       0,
     );
-    const advanced = advanceRealmSimulation({
-      realmState: realm,
-      currentDayIndex: 60,
-      playerGuildSnapshot: null,
-      guildSetup: {
-        faction: GUILD_FACTION.ALLIANCE,
-        server: "Everlook",
-        serverStyle: GUILD_SERVER_STYLE.PVE,
-      },
+    const desiredGuildCount = getDesiredRealmNpcGuildCount({
+      realmId: realm.id,
+      serverPopulation: realm.populationLabel,
+      currentGuildCount: realm.npcGuilds.length,
+      totalPopulation: 1500,
     });
 
-    expect(advanced.npcGuilds.length).toBeGreaterThan(realm.npcGuilds.length);
-    expect(advanced.npcGuilds.length).toBeGreaterThanOrEqual(15);
-    expect(advanced.npcGuilds.length).toBeLessThanOrEqual(20);
-  }, 10000);
+    expect(desiredGuildCount).toBeGreaterThan(realm.npcGuilds.length);
+    expect(desiredGuildCount).toBeGreaterThanOrEqual(15);
+    expect(desiredGuildCount).toBeLessThanOrEqual(20);
+  });
 
   it("keeps realm guild leveling near the player guild pace", () => {
     const realm = ensureRealmState(

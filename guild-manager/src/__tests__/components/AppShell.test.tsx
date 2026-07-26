@@ -1,15 +1,28 @@
 // @vitest-environment jsdom
 
-import { BookOpen, Home, Map, ScrollText, Shield, UserPlus } from "lucide-react";
+import {
+  BookOpen,
+  Castle,
+  Home,
+  Map,
+  ScrollText,
+  Shield,
+  UserPlus,
+} from "lucide-react";
 import { cleanup, render, screen, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { MemoryRouter } from "react-router-dom";
 import { afterEach, describe, expect, it } from "vitest";
 
-import AppShell from "../../components/shell/AppShell";
+import AppShell, {
+  MOBILE_QUICK_NAVIGATION_STORAGE_KEY,
+} from "../../components/shell/AppShell";
 import type { NavigationItem } from "../../components/shell/navigationTypes";
 
-afterEach(cleanup);
+afterEach(() => {
+  cleanup();
+  window.localStorage.clear();
+});
 
 const createNavigationItems = (): NavigationItem[] => [
   {
@@ -19,7 +32,7 @@ const createNavigationItems = (): NavigationItem[] => [
     group: "overview",
     kind: "route",
     to: "/home",
-    mobilePrimary: true,
+    mobileFixed: true,
     mobileOrder: 1,
   },
   {
@@ -29,6 +42,8 @@ const createNavigationItems = (): NavigationItem[] => [
     group: "overview",
     kind: "route",
     to: "/home/guild",
+    mobileDefault: true,
+    mobileOrder: 2,
   },
   {
     id: "missions",
@@ -37,8 +52,6 @@ const createNavigationItems = (): NavigationItem[] => [
     group: "activities",
     kind: "route",
     to: "/home/mission-board",
-    mobilePrimary: true,
-    mobileOrder: 2,
   },
   {
     id: "adventure",
@@ -48,8 +61,6 @@ const createNavigationItems = (): NavigationItem[] => [
     group: "activities",
     kind: "route",
     to: "/home/adventure-board",
-    mobilePrimary: true,
-    mobileOrder: 3,
   },
   {
     id: "recruit",
@@ -60,8 +71,18 @@ const createNavigationItems = (): NavigationItem[] => [
     to: "/home/recruit",
     badge: 2,
     badgeTone: "amber",
-    mobilePrimary: true,
+    mobileDefault: true,
     mobileOrder: 4,
+  },
+  {
+    id: "realm",
+    label: "Realm",
+    icon: Castle,
+    group: "world",
+    kind: "route",
+    to: "/home/realm",
+    mobileDefault: true,
+    mobileOrder: 3,
   },
   {
     id: "database",
@@ -99,15 +120,17 @@ describe("AppShell", () => {
     expect(within(desktopNavigation).getByText("2")).toBeTruthy();
   });
 
-  it("keeps four core actions plus More in the mobile navigation", () => {
+  it("uses Home, Guild, Realm and Recruit as the default mobile navigation", () => {
     renderShell(createNavigationItems());
 
     const mobileNavigation = screen.getByTestId("mobile-navigation");
     expect(within(mobileNavigation).getAllByRole("link")).toHaveLength(4);
     expect(within(mobileNavigation).getAllByRole("button")).toHaveLength(1);
     expect(
-      within(mobileNavigation).getByRole("link", { name: "Recruit" }),
-    ).toBeTruthy();
+      within(mobileNavigation)
+        .getAllByRole("link")
+        .map((link) => link.getAttribute("aria-label")),
+    ).toEqual(["Home", "Guild", "Realm", "Recruit"]);
     expect(
       within(mobileNavigation)
         .getByRole("button", { name: "More navigation" })
@@ -127,12 +150,67 @@ describe("AppShell", () => {
 
     const dialog = screen.getByRole("dialog", { name: "More navigation" });
     expect(
-      within(dialog).getByRole("link", { name: "Guild" }),
+      within(dialog).getByRole("link", { name: "Missions" }),
     ).toBeTruthy();
 
     expect(within(dialog).queryByText("Settings")).toBeNull();
     await user.click(within(dialog).getByRole("link", { name: "Database" }));
 
     expect(screen.queryByRole("dialog", { name: "More navigation" })).toBeNull();
+  });
+
+  it("lets the player choose and save three mobile shortcuts", async () => {
+    const user = userEvent.setup();
+    renderShell(createNavigationItems());
+
+    await user.click(
+      within(screen.getByTestId("mobile-navigation")).getByRole("button", {
+        name: "More navigation",
+      }),
+    );
+    const dialog = screen.getByRole("dialog", { name: "More navigation" });
+    await user.click(
+      within(dialog).getByRole("button", {
+        name: "Customize quick access",
+      }),
+    );
+
+    expect(
+      within(dialog).getByRole("button", { name: "Guild" }).getAttribute(
+        "aria-pressed",
+      ),
+    ).toBe("true");
+    await user.click(within(dialog).getByRole("button", { name: "Guild" }));
+    await user.click(within(dialog).getByRole("button", { name: "Database" }));
+    await user.click(within(dialog).getByRole("button", { name: "Save" }));
+
+    expect(screen.queryByRole("dialog", { name: "More navigation" })).toBeNull();
+    expect(
+      within(screen.getByTestId("mobile-navigation"))
+        .getAllByRole("link")
+        .map((link) => link.getAttribute("aria-label")),
+    ).toEqual(["Home", "Realm", "Recruit", "Database"]);
+    expect(
+      JSON.parse(
+        window.localStorage.getItem(
+          MOBILE_QUICK_NAVIGATION_STORAGE_KEY,
+        ) || "[]",
+      ),
+    ).toEqual(["realm", "recruit", "database"]);
+  });
+
+  it("restores the saved shortcut order from local storage", () => {
+    window.localStorage.setItem(
+      MOBILE_QUICK_NAVIGATION_STORAGE_KEY,
+      JSON.stringify(["database", "missions", "realm"]),
+    );
+
+    renderShell(createNavigationItems());
+
+    expect(
+      within(screen.getByTestId("mobile-navigation"))
+        .getAllByRole("link")
+        .map((link) => link.getAttribute("aria-label")),
+    ).toEqual(["Home", "Database", "Missions", "Realm"]);
   });
 });

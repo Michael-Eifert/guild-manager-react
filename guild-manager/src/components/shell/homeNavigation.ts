@@ -34,7 +34,7 @@ export const buildHomeNavigation = ({
     group: "overview",
     kind: "route",
     to: ROUTES.DASHBOARD,
-    mobilePrimary: true,
+    mobileFixed: true,
     mobileOrder: 1,
   },
   {
@@ -42,6 +42,8 @@ export const buildHomeNavigation = ({
     label: "Guild",
     icon: Shield,
     group: "overview",
+    mobileDefault: true,
+    mobileOrder: 2,
     kind: "route",
     to: ROUTES.GUILD,
   },
@@ -55,7 +57,7 @@ export const buildHomeNavigation = ({
     badge: applicationCount,
     badgeTone: "amber",
     tone: "primary",
-    mobilePrimary: true,
+    mobileDefault: true,
     mobileOrder: 4,
   },
   {
@@ -66,8 +68,6 @@ export const buildHomeNavigation = ({
     kind: "route",
     to: ROUTES.MISSION_BOARD,
     tone: "quest",
-    mobilePrimary: true,
-    mobileOrder: 2,
   },
   {
     id: "adventure",
@@ -78,8 +78,6 @@ export const buildHomeNavigation = ({
     kind: "route",
     to: ROUTES.ADVENTURE_BOARD,
     tone: "success",
-    mobilePrimary: true,
-    mobileOrder: 3,
   },
   {
     id: "dungeons",
@@ -116,6 +114,8 @@ export const buildHomeNavigation = ({
     label: "Realm",
     icon: Castle,
     group: "world",
+    mobileDefault: true,
+    mobileOrder: 3,
     kind: "route",
     to: ROUTES.REALM,
   },

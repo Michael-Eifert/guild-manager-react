@@ -39,6 +39,44 @@ const getRealmPopulationTotal = (realmState, playerGuildSnapshot) =>
   Math.max(0, Number(realmState?.population?.players?.length) || 0) +
   Math.max(0, Number(playerGuildSnapshot?.rosterSize) || 0);
 
+export const getDesiredRealmNpcGuildCount = ({
+  realmId,
+  serverPopulation,
+  currentGuildCount,
+  totalPopulation,
+} = {}) => {
+  const populationProfile = getRealmPopulationProfile(serverPopulation);
+  const targetGuildCount = pickRealmGuildTarget(
+    realmId,
+    populationProfile.populationLabel,
+  );
+  const growthSpan = Math.max(
+    1,
+    populationProfile.softCap - REALM_POPULATION_START,
+  );
+  const populationProgress = clampNumber(
+    (Math.max(0, Number(totalPopulation) || 0) - REALM_POPULATION_START) /
+      growthSpan,
+    0,
+    1,
+  );
+  const initialGuildCount = Math.max(
+    REALM_NPC_GUILD_INITIAL_RANGE[0],
+    Math.min(
+      Math.max(0, Math.floor(Number(currentGuildCount) || 0)),
+      REALM_NPC_GUILD_INITIAL_RANGE[1],
+    ),
+  );
+
+  return Math.min(
+    targetGuildCount,
+    initialGuildCount +
+      Math.floor(
+        (targetGuildCount - initialGuildCount) * populationProgress,
+      ),
+  );
+};
+
 const pickFoundedGuildRosterSize = ({ realmId, guildId, random }) => {
   const [min, max] = REALM_NPC_GUILD_FOUNDED_ROSTER_RANGE;
   const span = Math.max(0, max - min);
@@ -109,21 +147,12 @@ const maybeFormNpcGuildForDay = ({
   if (currentGuilds.length >= targetGuildCount) return currentGuilds;
 
   const totalPopulation = getRealmPopulationTotal(realmState, playerGuildSnapshot);
-  const growthSpan = Math.max(1, populationProfile.softCap - REALM_POPULATION_START);
-  const populationProgress = clampNumber(
-    (totalPopulation - REALM_POPULATION_START) / growthSpan,
-    0,
-    1,
-  );
-  const initialGuildCount = Math.max(
-    REALM_NPC_GUILD_INITIAL_RANGE[0],
-    Math.min(currentGuilds.length, REALM_NPC_GUILD_INITIAL_RANGE[1]),
-  );
-  const desiredGuildCount = Math.min(
-    targetGuildCount,
-    initialGuildCount +
-      Math.floor((targetGuildCount - initialGuildCount) * populationProgress),
-  );
+  const desiredGuildCount = getDesiredRealmNpcGuildCount({
+    realmId: realmState?.id,
+    serverPopulation: populationProfile.populationLabel,
+    currentGuildCount: currentGuilds.length,
+    totalPopulation,
+  });
 
   if (currentGuilds.length >= desiredGuildCount || random() > 0.65) {
     return currentGuilds;
