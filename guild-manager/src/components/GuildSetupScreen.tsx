@@ -1,6 +1,6 @@
 import React from "react";
 import type { FormEvent } from "react";
-import { Dices } from "lucide-react";
+import { Dices, Mars, Venus } from "lucide-react";
 import {
   DEFAULT_GUILD_SETUP,
   DB_CLASSES,
@@ -35,7 +35,7 @@ import {
   generateRandomCharacterName,
   generateRandomGuildName,
 } from "../guild/nameGenerators";
-import { getWowIconUrl } from "../utils";
+import { getRacePortraitUrl, getRoleIcon, getWowIconUrl } from "../utils";
 
 const GUILD_FOCUS_COPY = {
   Leveling: "Leveling (+5% Guild XP)",
@@ -47,6 +47,16 @@ const getPopulationClassName = (population: string) =>
   population === GUILD_SERVER_POPULATION.HIGH
     ? "text-red-400"
     : "text-yellow-300";
+
+const choiceButtonClass = (selected: boolean) =>
+  `group flex min-w-0 flex-col items-center justify-center gap-2 rounded-lg border p-2.5 text-center transition-all focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-amber-300 focus-visible:ring-offset-2 focus-visible:ring-offset-gray-900 ${
+    selected
+      ? "border-amber-400 bg-amber-950/55 text-amber-100 shadow-[0_0_18px_rgba(251,191,36,0.14)]"
+      : "border-gray-700 bg-gray-900/75 text-gray-300 hover:-translate-y-0.5 hover:border-amber-700 hover:bg-gray-800"
+  }`;
+
+const choiceIconClass =
+  "h-16 w-16 rounded-md border border-black/60 object-cover shadow-lg transition-transform group-hover:scale-105";
 
 const GuildSetupScreen = ({
   guildSetup,
@@ -99,7 +109,7 @@ const GuildSetupScreen = ({
 
   return (
     <div className="wow-shell min-h-screen w-full">
-      <div className="w-full max-w-3xl mx-auto p-4 md:p-8">
+      <div className="mx-auto w-full max-w-5xl p-4 md:p-8">
         <form
           onSubmit={handleSubmit}
           className="wow-modal-panel bg-gray-900/95 border border-amber-800 rounded-lg shadow-2xl"
@@ -219,7 +229,7 @@ const GuildSetupScreen = ({
               </p>
             </fieldset>
 
-            <section className="space-y-4 rounded-lg border border-amber-800/60 bg-amber-950/15 p-4">
+            <section className="space-y-5 rounded-lg border border-amber-800/60 bg-amber-950/15 p-4 md:p-6">
               <div>
                 <div className="text-xs font-bold uppercase tracking-wider text-amber-200">
                   Founding Guild Master
@@ -269,77 +279,163 @@ const GuildSetupScreen = ({
                 </span>
               </div>
 
-              <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
-                <label className="block space-y-2">
-                  <span className="text-xs font-bold uppercase tracking-wider text-gray-400">
-                    Race
-                  </span>
-                  <select
-                    value={founder.race}
-                    onChange={(event) =>
-                      updateFounder({ race: event.target.value, charClass: "" })
-                    }
-                    className="w-full rounded border border-gray-600 bg-gray-900 px-3 py-2 text-gray-100 focus:border-amber-500 focus:outline-none"
-                  >
-                    {founderOptions.map((entry) => (
-                      <option key={entry.race} value={entry.race}>
-                        {entry.race}
-                      </option>
-                    ))}
-                  </select>
-                </label>
-                <label className="block space-y-2">
-                  <span className="text-xs font-bold uppercase tracking-wider text-gray-400">
-                    Gender
-                  </span>
-                  <select
-                    value={founder.gender}
-                    onChange={(event) =>
-                      updateFounder({ gender: event.target.value })
-                    }
-                    className="w-full rounded border border-gray-600 bg-gray-900 px-3 py-2 text-gray-100 focus:border-amber-500 focus:outline-none"
-                  >
-                    <option value="Male">Male</option>
-                    <option value="Female">Female</option>
-                  </select>
-                </label>
-                <label className="block space-y-2">
-                  <span className="text-xs font-bold uppercase tracking-wider text-gray-400">
-                    Class
-                  </span>
-                  <select
-                    value={founder.charClass}
-                    onChange={(event) =>
-                      updateFounder({ charClass: event.target.value, role: "" })
-                    }
-                    className="w-full rounded border border-gray-600 bg-gray-900 px-3 py-2 text-gray-100 focus:border-amber-500 focus:outline-none"
-                  >
-                    {founderClasses.map((charClass) => (
-                      <option key={charClass} value={charClass}>
-                        {charClass}
-                      </option>
-                    ))}
-                  </select>
-                </label>
-                <label className="block space-y-2">
-                  <span className="text-xs font-bold uppercase tracking-wider text-gray-400">
-                    Role
-                  </span>
-                  <select
-                    value={founder.role}
-                    onChange={(event) =>
-                      updateFounder({ role: event.target.value })
-                    }
-                    className="w-full rounded border border-gray-600 bg-gray-900 px-3 py-2 text-gray-100 focus:border-amber-500 focus:outline-none"
-                  >
-                    {founderRoles.map((role) => (
-                      <option key={role} value={role}>
-                        {role}
-                      </option>
-                    ))}
-                  </select>
-                </label>
-              </div>
+              <fieldset className="space-y-2">
+                <legend className="w-full text-center text-xs font-bold uppercase tracking-wider text-gray-400">
+                  Race
+                </legend>
+                <div
+                  className="flex flex-wrap justify-center gap-3"
+                  role="radiogroup"
+                  aria-label="Guild master race"
+                >
+                  {founderOptions.map((entry) => {
+                    const selected = founder.race === entry.race;
+                    return (
+                      <button
+                        key={entry.race}
+                        type="button"
+                        role="radio"
+                        aria-checked={selected}
+                        onClick={() =>
+                          updateFounder({ race: entry.race, charClass: "" })
+                        }
+                        className={`${choiceButtonClass(selected)} w-[calc(50%-0.375rem)] sm:w-44`}
+                      >
+                        <img
+                          src={getRacePortraitUrl(entry.race, founder.gender)}
+                          alt=""
+                          className={choiceIconClass}
+                          onError={(event) => {
+                            event.currentTarget.src = getWowIconUrl(
+                              "inv_misc_questionmark",
+                            );
+                          }}
+                        />
+                        <span className="truncate text-xs font-bold">
+                          {entry.race}
+                        </span>
+                      </button>
+                    );
+                  })}
+                </div>
+              </fieldset>
+
+              <fieldset className="space-y-2">
+                <legend className="w-full text-center text-xs font-bold uppercase tracking-wider text-gray-400">
+                  Gender
+                </legend>
+                <div
+                  className="mx-auto grid max-w-sm grid-cols-2 gap-3"
+                  role="radiogroup"
+                  aria-label="Guild master gender"
+                >
+                  {(["Male", "Female"] as const).map((gender) => {
+                    const selected = founder.gender === gender;
+                    const GenderIcon = gender === "Male" ? Mars : Venus;
+                    return (
+                      <button
+                        key={gender}
+                        type="button"
+                        role="radio"
+                        aria-checked={selected}
+                        onClick={() => updateFounder({ gender })}
+                        className={choiceButtonClass(selected)}
+                      >
+                        <GenderIcon
+                          size={31}
+                          strokeWidth={2.25}
+                          className={
+                            gender === "Male"
+                              ? "text-sky-300"
+                              : "text-pink-300"
+                          }
+                          aria-hidden="true"
+                        />
+                        <span className="text-xs font-bold">{gender}</span>
+                      </button>
+                    );
+                  })}
+                </div>
+              </fieldset>
+
+              <fieldset className="space-y-2">
+                <legend className="w-full text-center text-xs font-bold uppercase tracking-wider text-gray-400">
+                  Class
+                </legend>
+                <div
+                  className="flex flex-wrap justify-center gap-3"
+                  role="radiogroup"
+                  aria-label="Guild master class"
+                >
+                  {founderClasses.map((charClass) => {
+                    const classData =
+                      DB_CLASSES[charClass as keyof typeof DB_CLASSES];
+                    const selected = founder.charClass === charClass;
+                    return (
+                      <button
+                        key={charClass}
+                        type="button"
+                        role="radio"
+                        aria-checked={selected}
+                        onClick={() =>
+                          updateFounder({ charClass, role: "" })
+                        }
+                        className={`${choiceButtonClass(selected)} w-[calc(50%-0.375rem)] sm:w-32`}
+                      >
+                        <img
+                          src={classData?.icon}
+                          alt=""
+                          className={choiceIconClass}
+                          onError={(event) => {
+                            event.currentTarget.src = getWowIconUrl(
+                              "inv_misc_questionmark",
+                            );
+                          }}
+                        />
+                        <span
+                          className="truncate text-xs font-bold"
+                          style={{ color: classData?.color }}
+                        >
+                          {charClass}
+                        </span>
+                      </button>
+                    );
+                  })}
+                </div>
+              </fieldset>
+
+              <fieldset className="space-y-2">
+                <legend className="w-full text-center text-xs font-bold uppercase tracking-wider text-gray-400">
+                  Role
+                </legend>
+                <div
+                  className="mx-auto flex max-w-xl flex-wrap justify-center gap-3"
+                  role="radiogroup"
+                  aria-label="Guild master role"
+                >
+                  {founderRoles.map((role) => {
+                    const selected = founder.role === role;
+                    return (
+                      <button
+                        key={role}
+                        type="button"
+                        role="radio"
+                        aria-checked={selected}
+                        onClick={() => updateFounder({ role })}
+                        className={`${choiceButtonClass(selected)} w-[calc(50%-0.375rem)] sm:w-44`}
+                      >
+                        <span
+                          className="flex h-16 w-16 items-center justify-center text-4xl drop-shadow-lg transition-transform group-hover:scale-110"
+                          aria-hidden="true"
+                        >
+                          {getRoleIcon(role)}
+                        </span>
+                        <span className="text-xs font-bold">{role}</span>
+                      </button>
+                    );
+                  })}
+                </div>
+              </fieldset>
 
               <div className="grid gap-3 sm:grid-cols-2">
                 <label className="block space-y-2">

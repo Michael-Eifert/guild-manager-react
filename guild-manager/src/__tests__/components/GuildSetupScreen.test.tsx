@@ -1,12 +1,26 @@
+// @vitest-environment jsdom
 import React from "react";
-import { describe, expect, it } from "vitest";
+import {
+  cleanup,
+  fireEvent,
+  render as renderScreen,
+  screen,
+} from "@testing-library/react";
+import { afterEach, describe, expect, it } from "vitest";
 
 import GuildSetupScreen from "../../components/GuildSetupScreen";
-import { guildSetup, noop, render } from "./componentTestUtils";
+import { getRoleIcon } from "../../utils";
+import {
+  guildSetup,
+  noop,
+  render as renderHtml,
+} from "./componentTestUtils";
+
+afterEach(cleanup);
 
 describe("GuildSetupScreen", () => {
   it("renders defaults and start gating", () => {
-    const html = render(
+    const html = renderHtml(
       <GuildSetupScreen
         guildSetup={guildSetup}
         onChange={noop}
@@ -36,5 +50,68 @@ describe("GuildSetupScreen", () => {
     expect(html).toContain("Normal");
     expect(html).toContain("Hard");
     expect(html).toContain("Start Game");
+  });
+
+  it("uses visual founder choices and updates race portraits with gender", () => {
+    const Harness = () => {
+      const [setup, setSetup] = React.useState(guildSetup);
+      return (
+        <GuildSetupScreen
+          guildSetup={setup}
+          onChange={(field, value) =>
+            setSetup((current) => ({ ...current, [field]: value }))
+          }
+          onStart={noop}
+          onLoadSession={noop}
+        />
+      );
+    };
+
+    renderScreen(<Harness />);
+
+    const raceGroup = screen.getByRole("radiogroup", {
+      name: "Guild master race",
+    });
+    const humanButton = screen.getByRole("radio", { name: "Human" });
+    expect(raceGroup.contains(humanButton)).toBe(true);
+    expect(humanButton.querySelector("img")?.getAttribute("src")).toContain(
+      "achievement_character_human_male",
+    );
+
+    const femaleButton = screen.getByRole("radio", { name: "Female" });
+    expect(femaleButton.querySelector("svg")).toBeTruthy();
+    fireEvent.click(femaleButton);
+    expect(humanButton.querySelector("img")?.getAttribute("src")).toContain(
+      "achievement_character_human_female",
+    );
+
+    fireEvent.click(screen.getByRole("radio", { name: "Night Elf" }));
+    expect(
+      screen
+        .getByRole("radio", { name: "Night Elf" })
+        .querySelector("img")
+        ?.getAttribute("src"),
+    ).toContain("achievement_character_nightelf_female");
+
+    const classGroup = screen.getByRole("radiogroup", {
+      name: "Guild master class",
+    });
+    expect(classGroup).toBeTruthy();
+    expect(screen.getByRole("radio", { name: "Druid" })).toBeTruthy();
+    expect(screen.queryByRole("radio", { name: "Paladin" })).toBeNull();
+    expect(
+      screen
+        .getByRole("radio", { name: "Warrior" })
+        .querySelector("img")
+        ?.getAttribute("src"),
+    ).toContain("classicon_warrior");
+
+    const roleGroup = screen.getByRole("radiogroup", {
+      name: "Guild master role",
+    });
+    expect(roleGroup).toBeTruthy();
+    expect(
+      screen.getByRole("radio", { name: "Tank" }).textContent,
+    ).toContain(getRoleIcon("Tank"));
   });
 });
