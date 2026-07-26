@@ -838,6 +838,44 @@ export const completeMissionSocialActivity = ({
   });
 };
 
+export const appendGuildElectionMessage = ({
+  socialState,
+  winner,
+  guildName,
+  now,
+}: {
+  socialState: unknown;
+  winner: Character;
+  guildName: string;
+  now: number;
+}) => {
+  const state = ensureSocialState(socialState);
+  const sequence = state.nextSequence;
+  const text = `${winner.name || "A guild member"} has been elected Guild Master of ${guildName || "the guild"}.`;
+  return ensureSocialState({
+    ...state,
+    nextSequence: sequence + 1,
+    messages: [
+      ...state.messages,
+      {
+        id: `chat:${sequence}`,
+        sequence,
+        channel: "guild",
+        intent: "guild-election",
+        text,
+        fallbackText: text,
+        textSource: "template",
+        generationStatus: "ready",
+        gameTimeMs: Math.max(0, Number(now) || 0),
+        speaker: toParticipant(
+          winner as unknown as Record<string, unknown>,
+          "guild",
+        ),
+      },
+    ],
+  });
+};
+
 export const markChatChannelRead = (
   socialState: unknown,
   channel: ChatChannel,

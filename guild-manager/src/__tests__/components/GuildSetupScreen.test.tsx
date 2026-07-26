@@ -17,6 +17,15 @@ describe("GuildSetupScreen", () => {
 
     expect(html).toContain("Found Your Guild");
     expect(html).toContain("Test Guild");
+    expect(html).toContain('role="radiogroup"');
+    expect(html).toContain('role="radio"');
+    expect(html).toContain("Alliance");
+    expect(html).toContain("Horde");
+    expect(html).toContain('aria-label="Randomize guild name"');
+    expect(html).toContain('aria-label="Randomize character name"');
+    expect(html.indexOf("Faction")).toBeLessThan(
+      html.indexOf("Founding Guild Master"),
+    );
     expect(html).toContain("Starting Activity");
     expect(html).toContain("Dungeon Groups");
     expect(html).toContain("PvP Activity");

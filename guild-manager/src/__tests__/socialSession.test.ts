@@ -11,8 +11,9 @@ describe("social session persistence", () => {
       version: 8,
       data: { roster: [] },
     });
-    expect(migrated.version).toBe(9);
+    expect(migrated.version).toBe(11);
     expect(migrated.data).toHaveProperty("socialState", null);
+    expect(migrated.data).toHaveProperty("guildRelationsState", null);
   });
 
   it("persists mixed searches but replaces pending AI requests with fallback text", () => {

@@ -61,7 +61,6 @@ import {
 } from "../constants";
 import {
   getReqExp,
-  generateCharacters,
   getItemEffectiveLevel,
   getCharacterAverageItemLevel,
   createId,
@@ -70,6 +69,24 @@ import {
   getKeyLabel,
   getWowIconUrl,
 } from "../utils";
+import {
+  buildFounderRoster,
+  normalizeFounderConfig,
+} from "../guildRelations/founderCreation";
+import {
+  GUILD_RANK,
+  assignGuildRank,
+  buildGuildRelationInsights,
+  castGuildElectionVote,
+  createGuildElection,
+  createGuildIncident,
+  createInitialGuildRelationsState,
+  getLeadershipTraitForCharacter,
+  normalizeGuildRelationsState,
+  resolveExpiredGuildIncidents,
+  resolveGuildIncident,
+  validateGuildRankLabels,
+} from "../guildRelations/guildRelations";
 import {
   GUILD_POINT_LABEL,
   createInitialGuildProgress,
@@ -133,6 +150,7 @@ import {
 } from "../social/relationshipSystem";
 import {
   advanceSocialSimulation,
+  appendGuildElectionMessage,
   completeMissionSocialActivity,
   createInitialSocialState,
   ensureSocialState,
@@ -303,7 +321,6 @@ const {
 } = GAMEPLAY_TUNING;
 const {
   MEMBER_COUNT: STARTING_GUILD_MEMBERS,
-  ROLE_PLAN: STARTING_GUILD_ROLE_PLAN,
   GOLD: STARTING_GUILD_GOLD,
 } = GUILD_STARTING_CONFIG;
 const {
@@ -357,6 +374,8 @@ export const useGameProviderController = () => {
   const [socialState, setSocialState, socialStateRef] = useSynchronizedState(() =>
     createInitialSocialState(),
   );
+  const [guildRelationsState, setGuildRelationsState, guildRelationsStateRef] =
+    useSynchronizedState(() => createInitialGuildRelationsState());
   const [chatAiSettings, setChatAiSettings] = useState(loadChatAiSettings);
   const chatAiSettingsRef = useRef(chatAiSettings);
   const chatGenerationBusyRef = useRef(false);
@@ -1051,6 +1070,11 @@ export const useGameProviderController = () => {
         battlefieldStateRef.current,
       );
       let currentSocialState = ensureSocialState(socialStateRef.current);
+      let currentGuildRelationsState = normalizeGuildRelationsState(
+        guildRelationsStateRef.current,
+        currentRoster,
+      );
+      let relationsMissionCandidate = null;
       let nextGuildInventory = ensureGuildInventory(guildInventoryRef.current);
 
       const playerMarket = resolvePlayerGuildDeparturesForDay({
@@ -1061,6 +1085,24 @@ export const useGameProviderController = () => {
         guildFaction: currentFaction,
       });
       if (playerMarket.events.length > 0) {
+        const previousRosterIds = new Set(
+          currentRoster.map((member) => String(member.id)),
+        );
+        const remainingRosterIds = new Set(
+          playerMarket.roster.map((member) => String(member.id)),
+        );
+        const departedMemberId = [...previousRosterIds].find(
+          (memberId) => !remainingRosterIds.has(memberId),
+        );
+        const departedRank = departedMemberId
+          ? currentGuildRelationsState.assignments[departedMemberId]
+          : null;
+        if (departedMemberId) {
+          guildRelationshipsRef.current = removeMemberRelationships(
+            guildRelationshipsRef.current,
+            departedMemberId,
+          );
+        }
         currentRoster = playerMarket.roster;
         newRoster = [...playerMarket.roster];
         rosterRef.current = playerMarket.roster;
@@ -1085,6 +1127,25 @@ export const useGameProviderController = () => {
             durationMs: 6500,
           });
         });
+        if (
+          departedMemberId &&
+          departedRank === GUILD_RANK.GUILD_MASTER
+        ) {
+          currentGuildRelationsState = createGuildElection({
+            state: currentGuildRelationsState,
+            roster: currentRoster,
+            relationships: guildRelationshipsRef.current,
+            departedGuildMasterId: departedMemberId,
+            dayIndex: calendarDayIndex,
+            previousGameSpeed: gameSpeed,
+          });
+          if (currentGuildRelationsState.election) setIsPaused(true);
+        } else {
+          currentGuildRelationsState = normalizeGuildRelationsState(
+            currentGuildRelationsState,
+            currentRoster,
+          );
+        }
       }
 
       const refreshedCalendar = refreshCalendarState({
@@ -1219,6 +1280,12 @@ export const useGameProviderController = () => {
         rewardedMissionIdsRef.current.add(missionInstanceId);
 
         const result = processMissionRewards(m, newRoster);
+        if (!relationsMissionCandidate && Array.isArray(m.memberIds)) {
+          relationsMissionCandidate = {
+            missionSucceeded: result.missionSucceeded,
+            missionMemberIds: m.memberIds,
+          };
+        }
         currentSocialState = completeMissionSocialActivity({
           socialState: currentSocialState,
           mission: m,
@@ -2064,12 +2131,55 @@ export const useGameProviderController = () => {
       worldPvpStateRef.current = nextWorldPvpState;
       battlefieldStateRef.current = currentBattlefieldState;
 
+      if (!currentGuildRelationsState.election) {
+        const expiredRelations = resolveExpiredGuildIncidents({
+          state: currentGuildRelationsState,
+          roster: newRoster,
+          relationships: guildRelationshipsRef.current,
+          currentDayIndex: calendarDayIndex,
+        });
+        currentGuildRelationsState = expiredRelations.state;
+        newRoster = expiredRelations.roster;
+        guildRelationshipsRef.current = expiredRelations.relationships;
+
+        const shouldCreateAmbientIncident =
+          !relationsMissionCandidate && calendarDayProgress >= 0.75;
+        if (relationsMissionCandidate || shouldCreateAmbientIncident) {
+          const created = createGuildIncident({
+            state: currentGuildRelationsState,
+            roster: newRoster,
+            relationships: guildRelationshipsRef.current,
+            dayIndex: calendarDayIndex,
+            ...relationsMissionCandidate,
+          });
+          currentGuildRelationsState = created.state;
+          if (
+            created.incident &&
+            currentGuildRelationsState.managementMode === "automatic"
+          ) {
+            const resolved = resolveGuildIncident({
+              state: currentGuildRelationsState,
+              roster: newRoster,
+              relationships: guildRelationshipsRef.current,
+              incidentId: created.incident.id,
+              resolvedBy: "guild_master",
+            });
+            currentGuildRelationsState = resolved.state;
+            newRoster = resolved.roster;
+            guildRelationshipsRef.current = resolved.relationships;
+          }
+        }
+      }
+
       rosterRef.current = newRoster;
       missionsRef.current = newMissions;
       socialStateRef.current = currentSocialState;
+      guildRelationsStateRef.current = currentGuildRelationsState;
       setRoster(newRoster);
       setActiveMissions(newMissions);
       setSocialState(currentSocialState);
+      setGuildRelationsState(currentGuildRelationsState);
+      setGuildRelationships(guildRelationshipsRef.current);
       setWorldPvpState(nextWorldPvpState);
       setBattlefieldState(currentBattlefieldState);
       if (
@@ -2291,10 +2401,24 @@ export const useGameProviderController = () => {
       setRealmState(nextRealmState);
     }
 
-    const zoneReadyRoster = normalizeRosterZones(updatedRoster);
+    const recruitedIdSet = new Set(recruits.map((member) => String(member.id)));
+    const zoneReadyRoster = normalizeRosterZones(updatedRoster).map((member) => ({
+      ...member,
+      leadershipTrait:
+        member.leadershipTrait || getLeadershipTraitForCharacter(member.id),
+    }));
+    const nextGuildRelationsState = normalizeGuildRelationsState(
+      guildRelationsStateRef.current,
+      zoneReadyRoster,
+    );
+    recruitedIdSet.forEach((memberId) => {
+      nextGuildRelationsState.assignments[memberId] = GUILD_RANK.RECRUIT;
+    });
     rosterRef.current = zoneReadyRoster;
+    guildRelationsStateRef.current = nextGuildRelationsState;
     goldRef.current = updatedGold;
     setRoster(zoneReadyRoster);
+    setGuildRelationsState(nextGuildRelationsState);
     setGuildGold(updatedGold);
     pushNotification({
       type: "info",
@@ -2348,12 +2472,26 @@ export const useGameProviderController = () => {
       setRealmState(nextRealmState);
     }
 
+    const recruitedIdSet = new Set(recruits.map((member) => String(member.id)));
     const zoneReadyRoster = normalizeRosterZones([
       ...rosterRef.current,
       ...recruits,
-    ]);
+    ]).map((member) => ({
+      ...member,
+      leadershipTrait:
+        member.leadershipTrait || getLeadershipTraitForCharacter(member.id),
+    }));
+    const nextGuildRelationsState = normalizeGuildRelationsState(
+      guildRelationsStateRef.current,
+      zoneReadyRoster,
+    );
+    recruitedIdSet.forEach((memberId) => {
+      nextGuildRelationsState.assignments[memberId] = GUILD_RANK.RECRUIT;
+    });
     rosterRef.current = zoneReadyRoster;
+    guildRelationsStateRef.current = nextGuildRelationsState;
     setRoster(zoneReadyRoster);
+    setGuildRelationsState(nextGuildRelationsState);
     pushNotification({
       type: "info",
       title: "Applications Accepted",
@@ -2383,14 +2521,62 @@ export const useGameProviderController = () => {
     });
   };
 
+  const beginGuildMasterElection = useCallback(
+    ({ departedGuildMasterId, nextRoster, dayIndex }) => {
+      const nextState = createGuildElection({
+        state: guildRelationsStateRef.current,
+        roster: nextRoster,
+        relationships: guildRelationshipsRef.current,
+        departedGuildMasterId,
+        dayIndex,
+        previousGameSpeed: gameSpeed,
+      });
+      guildRelationsStateRef.current = nextState;
+      setGuildRelationsState(nextState);
+      if (nextState.election) {
+        setIsPaused(true);
+        setGuildLog((current) =>
+          [
+            {
+              time: new Date().toLocaleTimeString(),
+              type: "relations",
+              message:
+                "The guild has called an election for a new Guild Master.",
+            },
+            ...current,
+          ].slice(0, 50),
+        );
+      }
+    },
+    [gameSpeed],
+  );
+
   const handleDismiss = (id) => {
-    setRoster((p) => p.filter((c) => c.id !== id));
+    const dismissedRank =
+      guildRelationsStateRef.current?.assignments?.[String(id)];
+    const nextRoster = rosterRef.current.filter((c) => c.id !== id);
+    rosterRef.current = nextRoster;
+    setRoster(nextRoster);
     const nextRelationships = removeMemberRelationships(
       guildRelationshipsRef.current,
       id,
     );
     guildRelationshipsRef.current = nextRelationships;
     setGuildRelationships(nextRelationships);
+    if (dismissedRank === GUILD_RANK.GUILD_MASTER) {
+      beginGuildMasterElection({
+        departedGuildMasterId: String(id),
+        nextRoster,
+        dayIndex: getCurrentCalendarDayIndex(),
+      });
+    } else {
+      const nextState = normalizeGuildRelationsState(
+        guildRelationsStateRef.current,
+        nextRoster,
+      );
+      guildRelationsStateRef.current = nextState;
+      setGuildRelationsState(nextState);
+    }
     setDetailCharId(null);
   };
   const handleModeChange = (id, mode) => {
@@ -2573,11 +2759,19 @@ export const useGameProviderController = () => {
     setGuildSetup((prev) => {
       if (field === "name") return { ...prev, name: String(value || "") };
       if (field === "faction") {
+        const faction = GUILD_FACTION_OPTIONS.includes(value)
+          ? value
+          : GUILD_FACTION.ALLIANCE;
         return {
           ...prev,
-          faction: GUILD_FACTION_OPTIONS.includes(value)
-            ? value
-            : GUILD_FACTION.ALLIANCE,
+          faction,
+          founder: normalizeFounderConfig(prev.founder, faction),
+        };
+      }
+      if (field === "founder" && !prev.hasStarted) {
+        return {
+          ...prev,
+          founder: normalizeFounderConfig(value, prev.faction),
         };
       }
       if (field === "focus") {
@@ -2638,18 +2832,27 @@ export const useGameProviderController = () => {
 
   const handleStartGuild = () => {
     const normalizedName = String(guildSetup.name || "").trim();
+    const normalizedFounder = normalizeFounderConfig(
+      guildSetup.founder,
+      guildSetup.faction,
+    );
     if (!normalizedName) return;
+    const founderForStart = {
+      ...normalizedFounder,
+      name: normalizedFounder.name || `${normalizedName} Founder`.slice(0, 24),
+    };
     const starterRoster = normalizeRosterZones(
-      generateCharacters(
-        STARTING_GUILD_MEMBERS,
-        guildSetup.faction,
-        STARTING_GUILD_ROLE_PLAN,
-      ),
+      buildFounderRoster({
+        founder: founderForStart,
+        faction: guildSetup.faction,
+      }),
       guildSetup.faction,
     );
     const starterGold = STARTING_GUILD_GOLD;
     const calendarStart = createInitialCalendarState(gameTimeRef.current);
     const starterSocialState = createInitialSocialState();
+    const starterGuildRelationsState =
+      createInitialGuildRelationsState(starterRoster);
 
     rewardedMissionIdsRef.current = new Set();
     autoDungeonStateRef.current = { nextAttemptAt: 0 };
@@ -2660,6 +2863,7 @@ export const useGameProviderController = () => {
     calendarStateRef.current = calendarStart;
     raidLockoutsRef.current = {};
     socialStateRef.current = starterSocialState;
+    guildRelationsStateRef.current = starterGuildRelationsState;
     const starterRealmState = ensureRealmState(null, guildSetup, 0);
     realmStateRef.current = starterRealmState;
     setRoster(starterRoster);
@@ -2668,6 +2872,7 @@ export const useGameProviderController = () => {
     setRaidLockouts({});
     setRealmState(starterRealmState);
     setSocialState(starterSocialState);
+    setGuildRelationsState(starterGuildRelationsState);
     setMissionList(
       getMissionListWithZones(INITIAL_MISSIONS.map(cloneMissionTemplate)),
     );
@@ -2677,6 +2882,7 @@ export const useGameProviderController = () => {
     setGuildSetup((prev) => ({
       ...prev,
       name: normalizedName,
+      founder: founderForStart,
       hasStarted: true,
     }));
     navigate(ROUTES.DASHBOARD);
@@ -3910,6 +4116,7 @@ export const useGameProviderController = () => {
       guildSetup, guildRelationships, realmState, worldPvpState, battlefieldState,
       guildInventory, stashPolicy, calendarState, raidLockouts, missionBoardState,
       socialState, gameSpeed, isPaused,
+      guildRelationsState,
     },
     refs: {
       rewardedMissionIds: rewardedMissionIdsRef, roster: rosterRef,
@@ -3920,6 +4127,7 @@ export const useGameProviderController = () => {
       stashPolicy: stashPolicyRef, calendarState: calendarStateRef,
       raidLockouts: raidLockoutsRef, gameTime: gameTimeRef,
       socialState: socialStateRef,
+      guildRelationsState: guildRelationsStateRef,
       lastRealTime: lastRealTimeRef, sessionFileInput: sessionFileInputRef,
     },
     setters: {
@@ -3928,6 +4136,7 @@ export const useGameProviderController = () => {
       setWorldPvpState, setBattlefieldState, setGuildInventory, setStashPolicy,
       setMissionBoardState, setCalendarState, setRaidLockouts, setIsPaused,
       setSocialState, setGameSpeed, setGameTimeMs, setDetailCharId,
+      setGuildRelationsState,
     },
     closeOverlays: () => {
       setShowRecruit(false);
@@ -4005,6 +4214,168 @@ export const useGameProviderController = () => {
     socialStateRef.current = nextSocialState;
     setSocialState(nextSocialState);
   }, []);
+  const guildRelationInsights = useMemo(
+    () =>
+      buildGuildRelationInsights({
+        roster,
+        relationships: guildRelationships,
+        relationsState: guildRelationsState,
+        currentDayIndex: currentCalendarDayIndex,
+      }),
+    [
+      currentCalendarDayIndex,
+      guildRelationships,
+      guildRelationsState,
+      roster,
+    ],
+  );
+  const handleSetGuildRank = useCallback((memberId, rank) => {
+    const nextState = assignGuildRank({
+      state: guildRelationsStateRef.current,
+      roster: rosterRef.current,
+      memberId: String(memberId),
+      rank,
+    });
+    guildRelationsStateRef.current = nextState;
+    setGuildRelationsState(nextState);
+  }, []);
+  const handleSetGuildRankLabels = useCallback((labels) => {
+    const error = validateGuildRankLabels(labels);
+    if (error) {
+      pushNotification({
+        type: "error",
+        title: "Invalid Rank Names",
+        message: error,
+      });
+      return false;
+    }
+    const nextState = {
+      ...guildRelationsStateRef.current,
+      rankLabels: { ...labels },
+    };
+    guildRelationsStateRef.current = nextState;
+    setGuildRelationsState(nextState);
+    return true;
+  }, []);
+  const handleSetRelationsManagementMode = useCallback((managementMode) => {
+    let nextState = {
+      ...normalizeGuildRelationsState(
+        guildRelationsStateRef.current,
+        rosterRef.current,
+      ),
+      managementMode: managementMode === "manual" ? "manual" : "automatic",
+    };
+    let nextRoster = rosterRef.current;
+    let nextRelationships = guildRelationshipsRef.current;
+    if (nextState.managementMode === "automatic") {
+      nextState.incidents
+        .filter((incident) => incident.status === "pending")
+        .forEach((incident) => {
+          const result = resolveGuildIncident({
+            state: nextState,
+            roster: nextRoster,
+            relationships: nextRelationships,
+            incidentId: incident.id,
+            resolvedBy: "guild_master",
+          });
+          nextState = result.state;
+          nextRoster = result.roster;
+          nextRelationships = result.relationships;
+        });
+    }
+    guildRelationsStateRef.current = nextState;
+    rosterRef.current = nextRoster;
+    guildRelationshipsRef.current = nextRelationships;
+    setGuildRelationsState(nextState);
+    setRoster(nextRoster);
+    setGuildRelationships(nextRelationships);
+  }, []);
+  const handleResolveGuildIncident = useCallback((incidentId, choiceId) => {
+    const result = resolveGuildIncident({
+      state: guildRelationsStateRef.current,
+      roster: rosterRef.current,
+      relationships: guildRelationshipsRef.current,
+      incidentId,
+      choiceId,
+      resolvedBy: "player",
+    });
+    guildRelationsStateRef.current = result.state;
+    rosterRef.current = result.roster;
+    guildRelationshipsRef.current = result.relationships;
+    setGuildRelationsState(result.state);
+    setRoster(result.roster);
+    setGuildRelationships(result.relationships);
+    if (result.incident) {
+      setGuildLog((current) =>
+        [
+          {
+            time: new Date().toLocaleTimeString(),
+            type: "relations",
+            message: `${result.incident.title} was resolved by guild management.`,
+          },
+          ...current,
+        ].slice(0, 50),
+      );
+    }
+  }, []);
+  const handleCastGuildElectionVote = useCallback((candidateId) => {
+    const result = castGuildElectionVote({
+      state: guildRelationsStateRef.current,
+      roster: rosterRef.current,
+      candidateId: String(candidateId),
+      insights: buildGuildRelationInsights({
+        roster: rosterRef.current,
+        relationships: guildRelationshipsRef.current,
+        relationsState: guildRelationsStateRef.current,
+        currentDayIndex: getCurrentCalendarDayIndex(),
+      }),
+    });
+    guildRelationsStateRef.current = result.state;
+    rosterRef.current = result.roster;
+    setGuildRelationsState(result.state);
+    setRoster(result.roster);
+  }, []);
+  const handleFinishGuildElection = useCallback(() => {
+    const currentState = guildRelationsStateRef.current;
+    const election = currentState?.election;
+    if (!election || election.status !== "complete" || !election.winnerId) {
+      return;
+    }
+    const winner = rosterRef.current.find(
+      (member) => String(member.id) === election.winnerId,
+    );
+    const nextState = { ...currentState, election: null };
+    guildRelationsStateRef.current = nextState;
+    setGuildRelationsState(nextState);
+    if (winner) {
+      const message = `${winner.name} won the guild election and is now Guild Master.`;
+      setGuildLog((current) =>
+        [
+          {
+            time: new Date().toLocaleTimeString(),
+            type: "relations",
+            message,
+          },
+          ...current,
+        ].slice(0, 50),
+      );
+      const nextSocialState = appendGuildElectionMessage({
+        socialState: socialStateRef.current,
+        winner,
+        guildName: guildSetupRef.current?.name,
+        now: gameTimeRef.current,
+      });
+      socialStateRef.current = nextSocialState;
+      setSocialState(nextSocialState);
+      pushNotification({
+        type: "success",
+        title: "Guild Master Elected",
+        message,
+      });
+    }
+    setGameSpeed(election.previousGameSpeed || DEFAULT_GAME_SPEED);
+    setIsPaused(false);
+  }, []);
 
   const actionsRef = useRef({});
   Object.assign(actionsRef.current, {
@@ -4013,6 +4384,12 @@ export const useGameProviderController = () => {
     loadSession: handleLoadButtonClick,
     loadSessionFile: handleLoadSessionFile,
     startGuild: handleStartGuild,
+    setGuildRank: handleSetGuildRank,
+    setGuildRankLabels: handleSetGuildRankLabels,
+    setRelationsManagementMode: handleSetRelationsManagementMode,
+    resolveGuildIncident: handleResolveGuildIncident,
+    castGuildElectionVote: handleCastGuildElectionVote,
+    finishGuildElection: handleFinishGuildElection,
     selectCharacter: setDetailCharId,
     closeCharacterDetail: () => setDetailCharId(null),
     togglePause: () => setIsPaused((current) => !current),
@@ -4076,6 +4453,8 @@ export const useGameProviderController = () => {
     guildMemberSortMode,
     guildProgress,
     guildRelationships,
+    guildRelationsState,
+    guildRelationInsights,
     guildRoleSummary,
     guildSetup,
     handleCleanupGuildStash,

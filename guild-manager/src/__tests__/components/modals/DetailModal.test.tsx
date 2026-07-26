@@ -37,5 +37,6 @@ describe("DetailModal", () => {
     expect(html).toContain("Aela");
     expect(html).toContain("Stats &amp; Gear");
     expect(html).toContain("Professions");
+    expect(html).toContain(">Guild<");
   });
 });

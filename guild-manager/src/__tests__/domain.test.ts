@@ -5230,9 +5230,14 @@ describe("realm overview domain", () => {
       getRealmPopulationStats(advanced, []).totalPopulation -
       getRealmPopulationStats(realm, []).totalPopulation;
 
-    expect(growth).toBeGreaterThanOrEqual(50);
-    expect(growth).toBeLessThanOrEqual(100);
-    expect(advanced.population.dailyStats.arrivals).toBe(growth);
+    expect(advanced.population.dailyStats.arrivals).toBeGreaterThanOrEqual(50);
+    expect(advanced.population.dailyStats.arrivals).toBeLessThanOrEqual(100);
+    expect(growth).toBe(
+      advanced.population.dailyStats.arrivals +
+        (advanced.population.dailyStats.returners || 0) -
+        (advanced.population.dailyStats.realmDepartures || 0) -
+        (advanced.population.dailyStats.retirements || 0),
+    );
   });
 
   it("accumulates daily realm stats across quarter-day steps", () => {
@@ -5271,7 +5276,12 @@ describe("realm overview domain", () => {
       getRealmPopulationStats(realm, []).totalPopulation;
 
     expect(stepped.population.dailyStats.dayIndex).toBe(1);
-    expect(stepped.population.dailyStats.arrivals).toBe(growth);
+    expect(growth).toBe(
+      stepped.population.dailyStats.arrivals +
+        (stepped.population.dailyStats.returners || 0) -
+        (stepped.population.dailyStats.realmDepartures || 0) -
+        (stepped.population.dailyStats.retirements || 0),
+    );
     expect(stepped.population.dailyStats.guildDungeonRuns).toBeGreaterThanOrEqual(
       stepped.population.dailyStats.guildDungeonClears,
     );

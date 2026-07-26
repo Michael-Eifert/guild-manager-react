@@ -57,6 +57,31 @@ function EmptyText({ children }) {
   return <div className="text-sm text-slate-400">{children}</div>;
 }
 
+const REALM_NEWS_CATEGORY = Object.freeze({
+  "population-arrivals": ["Arrivals", "border-cyan-800/70 bg-cyan-950/40 text-cyan-200"],
+  "realm-return": ["Return", "border-emerald-800/70 bg-emerald-950/40 text-emerald-200"],
+  "npc-guild-exit": ["Free Agent", "border-amber-800/70 bg-amber-950/40 text-amber-200"],
+  poaching: ["Transfer", "border-violet-800/70 bg-violet-950/40 text-violet-200"],
+  "realm-departure": ["Break", "border-slate-700 bg-slate-900 text-slate-300"],
+  "realm-retirement": ["Retirement", "border-slate-700 bg-slate-900 text-slate-300"],
+  "guild-applications": ["Application", "border-blue-800/70 bg-blue-950/40 text-blue-200"],
+  "applications-expired": ["Expired", "border-rose-900/70 bg-rose-950/30 text-rose-200"],
+});
+
+function RealmNewsCategory({ type }) {
+  const [label, className] = REALM_NEWS_CATEGORY[type] || [
+    "Realm",
+    "border-slate-700 bg-slate-900 text-slate-300",
+  ];
+  return (
+    <span
+      className={`inline-flex rounded border px-1.5 py-0.5 text-[9px] font-bold uppercase tracking-wide ${className}`}
+    >
+      {label}
+    </span>
+  );
+}
+
 function FactionBadge({ faction }) {
   const iconCode =
     FACTION_EMBLEM_ICON[faction] || FACTION_EMBLEM_ICON[GUILD_FACTION.ALLIANCE];
@@ -376,6 +401,34 @@ export default function RealmOverviewModal({
                 value={dailyStats.arrivals || 0}
               />
             </div>
+            <div className="mt-2 grid grid-cols-2 md:grid-cols-4 gap-2">
+              <RealmStat
+                label="Open to Offers"
+                value={populationStats.openToOffers || 0}
+              />
+              <RealmStat
+                label="Returned Today"
+                value={dailyStats.returners || 0}
+              />
+              <RealmStat
+                label="Away from Realm"
+                value={populationStats.departedPlayers || 0}
+              />
+              <RealmStat
+                label="Departed Today"
+                value={
+                  (dailyStats.realmDepartures || 0) +
+                  (dailyStats.retirements || 0)
+                }
+              />
+            </div>
+
+            <div className="mt-3 rounded border border-cyan-900/50 bg-cyan-950/15 px-3 py-2 text-xs leading-relaxed text-cyan-100/75">
+              Recruitment reflects the living realm. Faction, level, and role
+              filters can make a crowded realm feel quiet. New adventurers
+              arrive at level 1, while experienced candidates enter the market
+              by leaving NPC guilds or returning from a break.
+            </div>
 
             <div className="mt-4 rounded border border-amber-800/50 bg-amber-950/15 p-3">
               <h3 className="text-xs font-bold uppercase tracking-wide text-amber-200">
@@ -620,8 +673,13 @@ export default function RealmOverviewModal({
                 </h3>
                 <div className="mt-2 grid grid-cols-2 gap-2 text-xs">
                   <MiniRealmActivity label="NPC Recruits" value={dailyStats.npcRecruits || 0} />
+                  <MiniRealmActivity label="Guild Exits" value={dailyStats.npcGuildExits || 0} />
                   <MiniRealmActivity label="Applications" value={dailyStats.applications || 0} />
+                  <MiniRealmActivity label="Expired Apps" value={dailyStats.expiredApplications || 0} />
                   <MiniRealmActivity label="Poached" value={dailyStats.poached || 0} />
+                  <MiniRealmActivity label="Returns" value={dailyStats.returners || 0} />
+                  <MiniRealmActivity label="Breaks" value={dailyStats.realmDepartures || 0} />
+                  <MiniRealmActivity label="Retirements" value={dailyStats.retirements || 0} />
                   <MiniRealmActivity label="Guild Runs" value={dailyStats.guildDungeonRuns || 0} />
                   <MiniRealmActivity label="Guild Clears" value={dailyStats.guildDungeonClears || 0} />
                   <MiniRealmActivity label="Pug Runs" value={dailyStats.pugDungeonRuns || 0} />
@@ -646,8 +704,11 @@ export default function RealmOverviewModal({
                       key={getRealmNewsRenderKey(entry, index)}
                       className="rounded border border-slate-800 bg-slate-950/60 p-2"
                     >
-                      <div className="text-[10px] uppercase tracking-wide text-amber-200/70">
-                        Day {Math.max(1, (Number(entry.dayIndex) || 0) + 1)}
+                      <div className="flex items-center justify-between gap-2">
+                        <div className="text-[10px] uppercase tracking-wide text-amber-200/70">
+                          Day {Math.max(1, (Number(entry.dayIndex) || 0) + 1)}
+                        </div>
+                        <RealmNewsCategory type={entry.type} />
                       </div>
                       <div className="mt-1 text-sm text-slate-200">
                         {entry.message}

@@ -1,7 +1,10 @@
 import React from "react";
 import type { FormEvent } from "react";
+import { Dices } from "lucide-react";
 import {
   DEFAULT_GUILD_SETUP,
+  DB_CLASSES,
+  FACTION_EMBLEM_ICON,
   GUILD_FACTION,
   GUILD_DUNGEON_ACTIVITY_OPTIONS,
   GUILD_SERVER_POPULATION,
@@ -11,6 +14,23 @@ import {
 } from "../constants";
 import { PVP_ACTIVITY_FOCUS_OPTIONS } from "../pvp/battlefields/battlefieldDefinitions";
 import type { GuildSetupState } from "../app/gameTypes";
+import {
+  PERSONALITY_TRAIT_DEFINITIONS,
+  type PersonalityTraitId,
+} from "../game/characterPersonality";
+import {
+  getFounderOptionsForFaction,
+  normalizeFounderConfig,
+} from "../guildRelations/founderCreation";
+import {
+  LEADERSHIP_TRAIT_DEFINITIONS,
+  type LeadershipTraitId,
+} from "../guildRelations/guildRelations";
+import {
+  generateRandomCharacterName,
+  generateRandomGuildName,
+} from "../guild/nameGenerators";
+import { getWowIconUrl } from "../utils";
 
 const GUILD_FOCUS_COPY = {
   Leveling: "Leveling (+5% Guild XP)",
@@ -35,7 +55,21 @@ const GuildSetupScreen = ({
   onLoadSession: () => void;
 }) => {
   const guildName = String(guildSetup?.name || "");
-  const canStart = guildName.trim().length > 0;
+  const faction = guildSetup?.faction || GUILD_FACTION.ALLIANCE;
+  const founder = normalizeFounderConfig(guildSetup?.founder, faction);
+  const founderOptions = getFounderOptionsForFaction(faction);
+  const founderClasses =
+    founderOptions.find((entry) => entry.race === founder.race)?.classes || [];
+  const founderRoles =
+    DB_CLASSES[founder.charClass as keyof typeof DB_CLASSES]?.allowedRoles ||
+    ["DPS"];
+  const canStart =
+    guildName.trim().length > 0 && founder.name.trim().length > 0;
+  const updateFounder = (changes: Record<string, unknown>) =>
+    onChange(
+      "founder",
+      normalizeFounderConfig({ ...founder, ...changes }, faction),
+    );
   const selectedRealm =
     GUILD_SERVER_OPTIONS.find((option) => option.value === guildSetup?.server) ||
     GUILD_SERVER_OPTIONS[0];
@@ -68,20 +102,286 @@ const GuildSetupScreen = ({
           </div>
 
           <div className="p-5 md:p-8 space-y-5">
-            <label className="block space-y-2">
-              <span className="text-xs uppercase tracking-wider text-gray-300 font-bold">
+            <div className="block space-y-2">
+              <label
+                htmlFor="guild-name"
+                className="block text-xs font-bold uppercase tracking-wider text-gray-300"
+              >
                 Name of Guild
+              </label>
+              <span className="relative block">
+                <input
+                  id="guild-name"
+                  autoFocus
+                  type="text"
+                  value={guildName}
+                  onChange={(event) => onChange("name", event.target.value)}
+                  className="w-full rounded border border-gray-600 bg-gray-800 py-2 pl-3 pr-14 text-gray-100 focus:border-amber-500 focus:outline-none"
+                  placeholder="Enter guild name"
+                  maxLength={40}
+                />
+                <button
+                  type="button"
+                  aria-label="Randomize guild name"
+                  title="Randomize guild name"
+                  onClick={() =>
+                    onChange(
+                      "name",
+                      generateRandomGuildName(faction, guildName),
+                    )
+                  }
+                  className="absolute inset-y-0 right-0 flex min-w-11 items-center justify-center rounded-r border-l border-gray-600 text-amber-200 transition-colors hover:bg-amber-950/45 hover:text-amber-100 focus-visible:z-10 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-amber-400"
+                >
+                  <Dices size={19} aria-hidden="true" />
+                </button>
               </span>
-              <input
-                autoFocus
-                type="text"
-                value={guildName}
-                onChange={(event) => onChange("name", event.target.value)}
-                className="w-full rounded border border-gray-600 bg-gray-800 px-3 py-2 text-gray-100 focus:outline-none focus:border-amber-500"
-                placeholder="Enter guild name"
-                maxLength={40}
-              />
-            </label>
+            </div>
+
+            <fieldset className="space-y-3">
+              <legend className="text-xs font-bold uppercase tracking-wider text-gray-300">
+                Faction
+              </legend>
+              <div className="grid grid-cols-2 gap-3" role="radiogroup">
+                {[
+                  {
+                    value: GUILD_FACTION.ALLIANCE,
+                    banner: FACTION_EMBLEM_ICON[GUILD_FACTION.ALLIANCE],
+                    accent:
+                      "border-blue-400 bg-blue-950/45 text-blue-100 shadow-[0_0_24px_rgba(59,130,246,0.18)]",
+                    hover:
+                      "hover:border-blue-700 hover:bg-blue-950/25 hover:text-blue-100",
+                  },
+                  {
+                    value: GUILD_FACTION.HORDE,
+                    banner: FACTION_EMBLEM_ICON[GUILD_FACTION.HORDE],
+                    accent:
+                      "border-red-400 bg-red-950/45 text-red-100 shadow-[0_0_24px_rgba(239,68,68,0.18)]",
+                    hover:
+                      "hover:border-red-700 hover:bg-red-950/25 hover:text-red-100",
+                  },
+                ].map((option) => {
+                  const selected = faction === option.value;
+                  return (
+                    <button
+                      key={option.value}
+                      type="button"
+                      role="radio"
+                      aria-checked={selected}
+                      onClick={() => onChange("faction", option.value)}
+                      className={`group relative min-h-[136px] overflow-hidden rounded-lg border p-4 text-center transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-amber-300 focus-visible:ring-offset-2 focus-visible:ring-offset-gray-900 ${
+                        selected
+                          ? option.accent
+                          : `border-gray-700 bg-gray-800/65 text-gray-300 ${option.hover}`
+                      }`}
+                    >
+                      <span
+                        aria-hidden="true"
+                        className={`absolute inset-x-0 top-0 h-12 opacity-30 ${
+                          option.value === GUILD_FACTION.ALLIANCE
+                            ? "bg-gradient-to-b from-blue-500/50 to-transparent"
+                            : "bg-gradient-to-b from-red-500/50 to-transparent"
+                        }`}
+                      />
+                      <img
+                        src={getWowIconUrl(option.banner)}
+                        alt=""
+                        className="relative mx-auto h-20 w-16 object-contain drop-shadow-[0_5px_8px_rgba(0,0,0,0.7)] transition-transform group-hover:-translate-y-0.5"
+                        onError={(event) => {
+                          event.currentTarget.src = getWowIconUrl(
+                            "inv_misc_questionmark",
+                          );
+                        }}
+                      />
+                      <span className="relative mt-1 block fantasy-font text-base font-bold tracking-wide">
+                        {option.value}
+                      </span>
+                      <span className="sr-only">
+                        {selected ? "Selected faction" : "Choose faction"}
+                      </span>
+                    </button>
+                  );
+                })}
+              </div>
+              <p className="text-xs text-gray-500">
+                Choose your faction before creating the Guild Master.
+              </p>
+            </fieldset>
+
+            <section className="space-y-4 rounded-lg border border-amber-800/60 bg-amber-950/15 p-4">
+              <div>
+                <div className="text-xs font-bold uppercase tracking-wider text-amber-200">
+                  Founding Guild Master
+                </div>
+                <div className="mt-1 text-xs text-slate-400">
+                  Create the leader around whom the first balanced dungeon group
+                  will be formed.
+                </div>
+              </div>
+
+              <div className="block space-y-2">
+                <label
+                  htmlFor="founder-name"
+                  className="block text-xs font-bold uppercase tracking-wider text-gray-400"
+                >
+                  Character Name
+                </label>
+                <span className="relative block">
+                  <input
+                    id="founder-name"
+                    type="text"
+                    value={founder.name}
+                    onChange={(event) =>
+                      updateFounder({ name: event.target.value })
+                    }
+                    className="w-full rounded border border-gray-600 bg-gray-900 py-2 pl-3 pr-14 text-gray-100 focus:border-amber-500 focus:outline-none"
+                    placeholder="Enter guild master name"
+                    maxLength={24}
+                  />
+                  <button
+                    type="button"
+                    aria-label="Randomize character name"
+                    title="Randomize character name"
+                    onClick={() =>
+                      updateFounder({
+                        name: generateRandomCharacterName(
+                          founder.race,
+                          founder.gender,
+                          founder.name,
+                        ),
+                      })
+                    }
+                    className="absolute inset-y-0 right-0 flex min-w-11 items-center justify-center rounded-r border-l border-gray-600 text-amber-200 transition-colors hover:bg-amber-950/45 hover:text-amber-100 focus-visible:z-10 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-amber-400"
+                  >
+                    <Dices size={19} aria-hidden="true" />
+                  </button>
+                </span>
+              </div>
+
+              <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
+                <label className="block space-y-2">
+                  <span className="text-xs font-bold uppercase tracking-wider text-gray-400">
+                    Race
+                  </span>
+                  <select
+                    value={founder.race}
+                    onChange={(event) =>
+                      updateFounder({ race: event.target.value, charClass: "" })
+                    }
+                    className="w-full rounded border border-gray-600 bg-gray-900 px-3 py-2 text-gray-100 focus:border-amber-500 focus:outline-none"
+                  >
+                    {founderOptions.map((entry) => (
+                      <option key={entry.race} value={entry.race}>
+                        {entry.race}
+                      </option>
+                    ))}
+                  </select>
+                </label>
+                <label className="block space-y-2">
+                  <span className="text-xs font-bold uppercase tracking-wider text-gray-400">
+                    Gender
+                  </span>
+                  <select
+                    value={founder.gender}
+                    onChange={(event) =>
+                      updateFounder({ gender: event.target.value })
+                    }
+                    className="w-full rounded border border-gray-600 bg-gray-900 px-3 py-2 text-gray-100 focus:border-amber-500 focus:outline-none"
+                  >
+                    <option value="Male">Male</option>
+                    <option value="Female">Female</option>
+                  </select>
+                </label>
+                <label className="block space-y-2">
+                  <span className="text-xs font-bold uppercase tracking-wider text-gray-400">
+                    Class
+                  </span>
+                  <select
+                    value={founder.charClass}
+                    onChange={(event) =>
+                      updateFounder({ charClass: event.target.value, role: "" })
+                    }
+                    className="w-full rounded border border-gray-600 bg-gray-900 px-3 py-2 text-gray-100 focus:border-amber-500 focus:outline-none"
+                  >
+                    {founderClasses.map((charClass) => (
+                      <option key={charClass} value={charClass}>
+                        {charClass}
+                      </option>
+                    ))}
+                  </select>
+                </label>
+                <label className="block space-y-2">
+                  <span className="text-xs font-bold uppercase tracking-wider text-gray-400">
+                    Role
+                  </span>
+                  <select
+                    value={founder.role}
+                    onChange={(event) =>
+                      updateFounder({ role: event.target.value })
+                    }
+                    className="w-full rounded border border-gray-600 bg-gray-900 px-3 py-2 text-gray-100 focus:border-amber-500 focus:outline-none"
+                  >
+                    {founderRoles.map((role) => (
+                      <option key={role} value={role}>
+                        {role}
+                      </option>
+                    ))}
+                  </select>
+                </label>
+              </div>
+
+              <div className="grid gap-3 sm:grid-cols-2">
+                <label className="block space-y-2">
+                  <span className="text-xs font-bold uppercase tracking-wider text-gray-400">
+                    Gameplay Trait
+                  </span>
+                  <select
+                    value={founder.personalityTrait}
+                    onChange={(event) =>
+                      updateFounder({ personalityTrait: event.target.value })
+                    }
+                    className="w-full rounded border border-gray-600 bg-gray-900 px-3 py-2 text-gray-100 focus:border-amber-500 focus:outline-none"
+                  >
+                    {Object.values(PERSONALITY_TRAIT_DEFINITIONS).map((trait) => (
+                      <option key={trait.id} value={trait.id}>
+                        {trait.name}
+                      </option>
+                    ))}
+                  </select>
+                  <span className="block text-[11px] text-slate-500">
+                    {
+                      PERSONALITY_TRAIT_DEFINITIONS[
+                        founder.personalityTrait as PersonalityTraitId
+                      ]?.description
+                    }
+                  </span>
+                </label>
+                <label className="block space-y-2">
+                  <span className="text-xs font-bold uppercase tracking-wider text-gray-400">
+                    Leadership Trait
+                  </span>
+                  <select
+                    value={founder.leadershipTrait}
+                    onChange={(event) =>
+                      updateFounder({ leadershipTrait: event.target.value })
+                    }
+                    className="w-full rounded border border-gray-600 bg-gray-900 px-3 py-2 text-gray-100 focus:border-amber-500 focus:outline-none"
+                  >
+                    {Object.values(LEADERSHIP_TRAIT_DEFINITIONS).map((trait) => (
+                      <option key={trait.id} value={trait.id}>
+                        {trait.name}
+                      </option>
+                    ))}
+                  </select>
+                  <span className="block text-[11px] text-slate-500">
+                    {
+                      LEADERSHIP_TRAIT_DEFINITIONS[
+                        founder.leadershipTrait as LeadershipTraitId
+                      ]?.description
+                    }
+                  </span>
+                </label>
+              </div>
+            </section>
 
             <div className="space-y-3 rounded border border-gray-700 bg-gray-800/50 p-3">
               <div>
@@ -139,20 +439,6 @@ const GuildSetupScreen = ({
                 </div>
               </div>
             </div>
-
-            <label className="block space-y-2">
-              <span className="text-xs uppercase tracking-wider text-gray-300 font-bold">
-                Faction
-              </span>
-              <select
-                value={guildSetup?.faction || GUILD_FACTION.ALLIANCE}
-                onChange={(event) => onChange("faction", event.target.value)}
-                className="w-full rounded border border-gray-600 bg-gray-800 px-3 py-2 text-gray-100 focus:outline-none focus:border-amber-500"
-              >
-                <option value={GUILD_FACTION.ALLIANCE}>{GUILD_FACTION.ALLIANCE}</option>
-                <option value={GUILD_FACTION.HORDE}>{GUILD_FACTION.HORDE}</option>
-              </select>
-            </label>
 
             <label className="block space-y-2">
               <span className="text-xs uppercase tracking-wider text-gray-300 font-bold">

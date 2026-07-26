@@ -10,6 +10,10 @@ import { normalizeGuildRelationships } from "../social/relationshipSystem";
 import { ensureSocialState } from "../social/socialSimulation";
 import { ensureRealmState } from "../server/realmGeneration";
 import { normalizeCharacterPersonalityTraits } from "../game/characterPersonality";
+import {
+  normalizeGuildRelationsState,
+  normalizeLeadershipTrait,
+} from "../guildRelations/guildRelations";
 import { ensureCharacterPvpData } from "../pvp/pvpCharacterUtils";
 import { ensureWorldPvpState } from "../pvp/worldPvpUtils";
 import {
@@ -254,6 +258,7 @@ export const buildSessionPayload = ({
   raidLockouts,
   missionBoardState,
   socialState,
+  guildRelationsState,
   gameSpeed,
   isPaused,
   gameTimeMs,
@@ -294,6 +299,10 @@ export const buildSessionPayload = ({
       ),
       missionBoardState: normalizeMissionBoardState(missionBoardState),
       socialState: normalizePersistedSocialState(socialState),
+      guildRelationsState: normalizeGuildRelationsState(
+        guildRelationsState,
+        Array.isArray(roster) ? roster : [],
+      ),
       raidLockouts: normalizeRaidLockouts(
         raidLockouts,
         Math.max(
@@ -485,6 +494,10 @@ export const hydrateSessionData = ({
       : [];
     const baseCharacter = {
       ...characterWithPvp,
+      leadershipTrait: normalizeLeadershipTrait(
+        characterWithPvp?.leadershipTrait,
+        characterWithPvp?.id,
+      ),
       status: characterWithPvp?.status || "Idle",
       statusText: characterWithPvp?.statusText || "Awaiting Orders",
       history: normalizedHistory,
@@ -554,6 +567,10 @@ export const hydrateSessionData = ({
       personalityTraits: normalizedPersonalityTraits,
     };
   });
+  const loadedGuildRelationsState = normalizeGuildRelationsState(
+    safePayload.guildRelationsState,
+    normalizedRoster,
+  );
 
   return {
     normalizedRoster,
@@ -571,6 +588,7 @@ export const hydrateSessionData = ({
     loadedStashPolicy,
     loadedMissionBoardState,
     loadedSocialState,
+    loadedGuildRelationsState,
     loadedProgression,
     loadedCalendarState,
     loadedRaidLockouts,

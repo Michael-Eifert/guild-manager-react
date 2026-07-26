@@ -3,6 +3,7 @@ import {
   CalendarDays,
   Castle,
   ClipboardList,
+  GitBranch,
   Hammer,
   Home,
   Map,
@@ -59,6 +60,15 @@ export const buildHomeNavigation = ({
     to: ROUTES.CHAT,
     badge: unreadChatCount,
     badgeTone: "amber",
+  },
+  {
+    id: "guild-relations",
+    label: "Guild Relations",
+    shortLabel: "Relations",
+    icon: GitBranch,
+    group: "overview",
+    kind: "route",
+    to: ROUTES.GUILD_RELATIONS,
   },
   {
     id: "recruit",

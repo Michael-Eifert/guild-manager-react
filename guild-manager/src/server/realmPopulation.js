@@ -32,12 +32,19 @@ import {
 import {
   NPC_GUILD_ARCHETYPES,
   REALM_DAILY_ARRIVAL_RANGE,
+  REALM_DAILY_DEPARTURE_CAP,
+  REALM_DAILY_NPC_GUILD_EXIT_CAP,
+  REALM_DAILY_RETIREMENT_CAP,
+  REALM_DAILY_RETURNER_CAP,
+  REALM_DEPARTED_PLAYER_LIMIT,
   REALM_GUILD_APPLICATION_CAP,
+  REALM_GUILD_APPLICATION_LIFETIME_DAYS,
   REALM_GUILD_ROSTER_CAP,
   REALM_MARKET_STATUS,
   REALM_POPULATION_SOFT_CAP,
   REALM_POPULATION_SOFT_CAP_VARIANCE,
   REALM_POPULATION_START,
+  REALM_RETURN_MINIMUM_DAYS,
   getRealmPopulationProfile,
 } from "./realmDefinitions";
 import { simulateRealmDungeonActivity } from "./realmDungeons";
@@ -116,6 +123,11 @@ const DAILY_STAT_COUNTER_KEYS = Object.freeze([
   "npcRecruits",
   "poached",
   "applications",
+  "expiredApplications",
+  "npcGuildExits",
+  "realmDepartures",
+  "returners",
+  "retirements",
   "guildDungeonRuns",
   "guildDungeonClears",
   "pugDungeonRuns",
@@ -304,6 +316,10 @@ export const getRealmPopulationStats = (realmState, playerRoster = []) => {
     freeAgents,
     openToOffers,
     applications: applications.length,
+    departedPlayers: normalizeDepartedPlayers(
+      population.departedPlayers,
+      players,
+    ).length,
     softCap: Math.round(
       clampNumber(
         Number(population.currentSoftCap) || populationProfile.softCap,
@@ -334,6 +350,7 @@ export const createRealmPlayer = ({
   zoneProgress = 0,
   zonesCleared = [],
   personalityTraits = [],
+  arrivalDayIndex = null,
 }) => {
   const combo = normalizeRaceClassCombo({ faction, race, charClass });
   return {
@@ -357,10 +374,23 @@ export const createRealmPlayer = ({
     zoneProgress: Math.round(clampNumber(zoneProgress, 0, 99)),
     zonesCleared: normalizeZoneClears(zonesCleared),
     personalityTraits: normalizeCharacterPersonalityTraits(personalityTraits),
+    arrivalDayIndex:
+      arrivalDayIndex !== null &&
+      arrivalDayIndex !== undefined &&
+      arrivalDayIndex !== "" &&
+      Number.isFinite(Number(arrivalDayIndex))
+      ? Math.max(0, Math.floor(Number(arrivalDayIndex)))
+      : null,
   };
 };
 
-const generateFreeAgent = ({ realmId, index, random, usedNameKeys }) => {
+const generateFreeAgent = ({
+  realmId,
+  index,
+  random,
+  usedNameKeys,
+  arrivalDayIndex = null,
+}) => {
   const faction = random() < 0.5 ? GUILD_FACTION.ALLIANCE : GUILD_FACTION.HORDE;
   const { race, charClass } = pickValidRaceClassCombination({
     faction,
@@ -395,7 +425,45 @@ const generateFreeAgent = ({ realmId, index, random, usedNameKeys }) => {
     guildId: null,
     marketStatus: REALM_MARKET_STATUS.FREE_AGENT,
     personalityTraits: rollCharacterPersonalityTraits({ random }),
+    arrivalDayIndex,
   });
+};
+
+const normalizeDepartedPlayers = (departedPlayers = [], activePlayers = []) => {
+  const activeIds = new Set(
+    (Array.isArray(activePlayers) ? activePlayers : []).map((player) =>
+      String(player?.id || ""),
+    ),
+  );
+  const seenIds = new Set();
+  return (Array.isArray(departedPlayers) ? departedPlayers : [])
+    .map((entry) => {
+      const sourcePlayer = entry?.player && typeof entry.player === "object"
+        ? entry.player
+        : entry;
+      const player = createRealmPlayer(sourcePlayer || {});
+      if (!player.id || activeIds.has(player.id) || seenIds.has(player.id)) return null;
+      seenIds.add(player.id);
+      const departedDayIndex = Math.max(
+        0,
+        Math.floor(Number(entry?.departedDayIndex) || 0),
+      );
+      return {
+        player,
+        departedDayIndex,
+        eligibleReturnDayIndex: Math.max(
+          departedDayIndex + REALM_RETURN_MINIMUM_DAYS,
+          Math.floor(
+            Number(entry?.eligibleReturnDayIndex) ||
+              departedDayIndex + REALM_RETURN_MINIMUM_DAYS,
+          ),
+        ),
+        reason: String(entry?.reason || "realm_break"),
+      };
+    })
+    .filter(Boolean)
+    .sort((left, right) => left.departedDayIndex - right.departedDayIndex)
+    .slice(-REALM_DEPARTED_PLAYER_LIMIT);
 };
 
 const convertGuildRosterToRealmPlayers = ({ guild, random }) =>
@@ -474,6 +542,10 @@ export const normalizeRealmPopulation = ({
     safePopulation.applications,
     players,
   );
+  const departedPlayers = normalizeDepartedPlayers(
+    safePopulation.departedPlayers,
+    players,
+  );
 
   return {
     serverPopulation: normalizedServerPopulation,
@@ -495,6 +567,7 @@ export const normalizeRealmPopulation = ({
     ),
     players,
     applications,
+    departedPlayers,
     lastArrivalDayIndex: Number.isFinite(Number(safePopulation.lastArrivalDayIndex))
       ? Math.max(0, Math.floor(Number(safePopulation.lastArrivalDayIndex)))
       : Math.max(0, Math.floor(Number(currentDayIndex) || 0)),
@@ -503,6 +576,16 @@ export const normalizeRealmPopulation = ({
     )
       ? Math.max(0, Math.floor(Number(safePopulation.lastPlayerMarketDayIndex)))
       : Math.max(0, Math.floor(Number(currentDayIndex) || 0)),
+    lastLifecycleDayIndex: Number.isFinite(
+      Number(safePopulation.lastLifecycleDayIndex),
+    )
+      ? Math.max(0, Math.floor(Number(safePopulation.lastLifecycleDayIndex)))
+      : -1,
+    lastApplicationDayIndex: Number.isFinite(
+      Number(safePopulation.lastApplicationDayIndex),
+    )
+      ? Math.max(0, Math.floor(Number(safePopulation.lastApplicationDayIndex)))
+      : -1,
     dailyStats:
       safePopulation.dailyStats && typeof safePopulation.dailyStats === "object"
         ? safePopulation.dailyStats
@@ -726,7 +809,10 @@ const advanceRealmPlayerForDay = ({
   const loyaltyDelta = guilded ? (random() < 0.18 * safeDayFraction ? 1 : 0) : 0;
   const loyalty = clampNumber(player.loyalty + loyaltyDelta, 1, 100);
   const marketStatus =
-    player.guildId && loyalty < 35
+    player.guildId &&
+    (loyalty < 35 ||
+      (player.marketStatus === REALM_MARKET_STATUS.OPEN_TO_OFFERS &&
+        loyalty < 50))
       ? REALM_MARKET_STATUS.OPEN_TO_OFFERS
       : player.guildId
         ? REALM_MARKET_STATUS.GUILDED
@@ -849,7 +935,9 @@ const recruitNpcGuilds = ({
         .filter(({ player }) =>
           !player.guildId &&
           player.faction === guild.faction &&
-          player.marketStatus === REALM_MARKET_STATUS.FREE_AGENT,
+          player.marketStatus === REALM_MARKET_STATUS.FREE_AGENT &&
+          (player.arrivalDayIndex == null ||
+            Number(player.arrivalDayIndex) < safeDayIndex),
         )
         .sort((left, right) => {
           if (isFoundingDay && (right.player.level || 0) !== (left.player.level || 0)) {
@@ -914,6 +1002,327 @@ const poachNpcGuildMembers = ({ npcGuilds, players, random }) => {
   return { players: nextPlayers, poached };
 };
 
+const getLifecycleGuildStability = (guild) =>
+  clampNumber(
+    ((Number(guild?.activityLevel) || 50) +
+      (Number(guild?.reputation) || 50)) /
+      2,
+    1,
+    100,
+  );
+
+const getLifecycleSortValue = (realmId, dayIndex, playerId, kind) =>
+  hashPopulationSeed(`${realmId}:${dayIndex}:${kind}:${playerId}`);
+
+export const advanceRealmPopulationLifecycle = ({
+  realmState,
+  npcGuilds = [],
+  dayIndex,
+  playerRosterSize = 0,
+  serverPopulation = null,
+  random,
+} = {}) => {
+  const safeRandom = typeof random === "function" ? random : Math.random;
+  const safeDayIndex = Math.max(0, Math.floor(Number(dayIndex) || 0));
+  const population = normalizeRealmPopulation({
+    population: realmState?.population,
+    realmId: realmState?.id,
+    npcGuilds,
+    currentDayIndex: safeDayIndex,
+    playerRosterSize,
+    serverPopulation:
+      serverPopulation ||
+      realmState?.populationLabel ||
+      realmState?.population?.serverPopulation,
+  });
+  if (Number(population.lastLifecycleDayIndex) === safeDayIndex) {
+    return {
+      population,
+      npcGuilds: syncGuildRostersFromPopulation(npcGuilds, population.players),
+      events: [],
+      stats: {},
+    };
+  }
+
+  const guildById = new Map(
+    (Array.isArray(npcGuilds) ? npcGuilds : []).map((guild) => [
+      String(guild?.id || ""),
+      guild,
+    ]),
+  );
+  let players = population.players.map((player) => {
+    if (!player.guildId) {
+      return {
+        ...player,
+        marketStatus: REALM_MARKET_STATUS.FREE_AGENT,
+      };
+    }
+    const guild = guildById.get(String(player.guildId));
+    const stability = getLifecycleGuildStability(guild);
+    const negativeChance =
+      0.08 +
+      Math.max(0, 50 - (Number(player.activityLevel) || 50)) / 220 +
+      Math.max(0, 55 - stability) / 260;
+    const positiveChance =
+      0.1 +
+      Math.max(0, stability - 55) / 260;
+    const roll = safeRandom();
+    let loyaltyDelta = 0;
+    if (roll < negativeChance) {
+      loyaltyDelta = -(1 + Math.floor(safeRandom() * 4));
+    } else if (roll > 1 - positiveChance) {
+      loyaltyDelta = 1 + Math.floor(safeRandom() * 3);
+    }
+    const loyalty = clampNumber(
+      (Number(player.loyalty) || 50) + loyaltyDelta,
+      1,
+      100,
+    );
+    return {
+      ...player,
+      loyalty,
+      marketStatus:
+        loyalty < 35
+          ? REALM_MARKET_STATUS.OPEN_TO_OFFERS
+          : REALM_MARKET_STATUS.GUILDED,
+    };
+  });
+
+  const events = [];
+  const guildExitIds = new Set(
+    players
+      .filter(
+        (player) =>
+          player.guildId &&
+          Number(player.loyalty) < 25 &&
+          safeRandom() < 0.45,
+      )
+      .sort((left, right) => {
+        if (left.loyalty !== right.loyalty) return left.loyalty - right.loyalty;
+        return (
+          getLifecycleSortValue(
+            realmState?.id,
+            safeDayIndex,
+            left.id,
+            "guild-exit",
+          ) -
+          getLifecycleSortValue(
+            realmState?.id,
+            safeDayIndex,
+            right.id,
+            "guild-exit",
+          )
+        );
+      })
+      .slice(0, REALM_DAILY_NPC_GUILD_EXIT_CAP)
+      .map((player) => String(player.id)),
+  );
+  players = players.map((player) => {
+    if (!guildExitIds.has(String(player.id))) return player;
+    const previousGuild = guildById.get(String(player.guildId));
+    events.push({
+      type: "npc-guild-exit",
+      playerId: player.id,
+      message: `${player.name} left ${previousGuild?.name || player.sourceGuildName || "their guild"} and entered the recruitment market.`,
+    });
+    return {
+      ...player,
+      guildId: null,
+      sourceGuildName: previousGuild?.name || player.sourceGuildName || null,
+      marketStatus: REALM_MARKET_STATUS.FREE_AGENT,
+      loyalty: Math.max(40, Number(player.loyalty) || 0),
+    };
+  });
+
+  const activePlayerIds = new Set(players.map((player) => String(player.id)));
+  let departedPlayers = normalizeDepartedPlayers(
+    population.departedPlayers,
+    players,
+  );
+  const applicationPlayerIds = new Set(
+    normalizeRealmApplications(population.applications, players).map(
+      (application) => String(application.playerId),
+    ),
+  );
+  const departureCandidates = players
+    .filter((player) => {
+      const established =
+        player.arrivalDayIndex == null ||
+        Number(player.arrivalDayIndex) <= safeDayIndex - 3;
+      return (
+        established &&
+        !guildExitIds.has(String(player.id)) &&
+        !applicationPlayerIds.has(String(player.id)) &&
+        Number(player.activityLevel) < 45 &&
+        safeRandom() <
+          0.05 + Math.max(0, 40 - Number(player.activityLevel)) / 180
+      );
+    })
+    .sort((left, right) => {
+      if (left.activityLevel !== right.activityLevel) {
+        return left.activityLevel - right.activityLevel;
+      }
+      return (
+        getLifecycleSortValue(
+          realmState?.id,
+          safeDayIndex,
+          left.id,
+          "departure",
+        ) -
+        getLifecycleSortValue(
+          realmState?.id,
+          safeDayIndex,
+          right.id,
+          "departure",
+        )
+      );
+    })
+    .slice(0, REALM_DAILY_DEPARTURE_CAP);
+  const departureIds = new Set(
+    departureCandidates.map((player) => String(player.id)),
+  );
+  departureCandidates.forEach((player) => {
+    departedPlayers.push({
+      player,
+      departedDayIndex: safeDayIndex,
+      eligibleReturnDayIndex: safeDayIndex + REALM_RETURN_MINIMUM_DAYS,
+      reason: "realm_break",
+    });
+    events.push({
+      type: "realm-departure",
+      playerId: player.id,
+      message: `${player.name} is taking a break from the realm.`,
+    });
+  });
+  players = players.filter((player) => !departureIds.has(String(player.id)));
+
+  const retirementCandidate = players
+    .filter(
+      (player) =>
+        Number(player.level) >= CONFIG.LEVEL_CAP &&
+        Number(player.activityLevel) < 40 &&
+        !applicationPlayerIds.has(String(player.id)) &&
+        safeRandom() < 0.012,
+    )
+    .sort((left, right) => {
+      if (left.activityLevel !== right.activityLevel) {
+        return left.activityLevel - right.activityLevel;
+      }
+      return String(left.id).localeCompare(String(right.id));
+    })
+    .slice(0, REALM_DAILY_RETIREMENT_CAP);
+  const retirementIds = new Set(
+    retirementCandidate.map((player) => String(player.id)),
+  );
+  retirementCandidate.forEach((player) => {
+    events.push({
+      type: "realm-retirement",
+      playerId: player.id,
+      message: `${player.name} retired from adventuring on the realm.`,
+    });
+  });
+  players = players.filter((player) => !retirementIds.has(String(player.id)));
+
+  const availableSlots = Math.max(
+    0,
+    Number(population.currentSoftCap) - players.length - playerRosterSize,
+  );
+  const returningEntries = departedPlayers
+    .filter(
+      (entry) =>
+        Number(entry.eligibleReturnDayIndex) <= safeDayIndex &&
+        !activePlayerIds.has(String(entry.player?.id)) &&
+        safeRandom() < 0.55,
+    )
+    .sort((left, right) => {
+      if (left.departedDayIndex !== right.departedDayIndex) {
+        return left.departedDayIndex - right.departedDayIndex;
+      }
+      return String(left.player?.id).localeCompare(String(right.player?.id));
+    })
+    .slice(
+      0,
+      Math.min(REALM_DAILY_RETURNER_CAP, availableSlots),
+    );
+  const returningIds = new Set(
+    returningEntries.map((entry) => String(entry.player.id)),
+  );
+  returningEntries.forEach((entry) => {
+    players.push(
+      ensureRealmPlayerZone({
+        ...entry.player,
+        guildId: null,
+        sourceGuildName: entry.player.sourceGuildName || null,
+        marketStatus: REALM_MARKET_STATUS.FREE_AGENT,
+        loyalty: Math.max(40, Number(entry.player.loyalty) || 0),
+        arrivalDayIndex: null,
+      }),
+    );
+    events.push({
+      type: "realm-return",
+      playerId: entry.player.id,
+      message: `${entry.player.name} returned to the realm and is looking for a guild.`,
+    });
+  });
+  departedPlayers = departedPlayers
+    .filter((entry) => !returningIds.has(String(entry.player.id)))
+    .slice(-REALM_DEPARTED_PLAYER_LIMIT);
+
+  const validPlayerIds = new Set(players.map((player) => String(player.id)));
+  const existingApplications = normalizeRealmApplications(
+    population.applications,
+    players,
+  );
+  const applications = existingApplications.filter(
+    (application) =>
+      validPlayerIds.has(String(application.playerId)) &&
+      safeDayIndex - Number(application.dayIndex) <
+        REALM_GUILD_APPLICATION_LIFETIME_DAYS,
+  );
+  const expiredApplications =
+    existingApplications.length - applications.length;
+  if (expiredApplications > 0) {
+    events.push({
+      type: "applications-expired",
+      count: expiredApplications,
+      message: `${expiredApplications} guild application${expiredApplications === 1 ? "" : "s"} expired and returned to the recruitment market.`,
+    });
+  }
+
+  const stats = {
+    expiredApplications,
+    npcGuildExits: guildExitIds.size,
+    realmDepartures: departureIds.size,
+    returners: returningEntries.length,
+    retirements: retirementIds.size,
+  };
+  return {
+    population: {
+      ...population,
+      players,
+      applications,
+      departedPlayers,
+      lastLifecycleDayIndex: safeDayIndex,
+      dailyStats: mergeDailyStats(
+        population.dailyStats,
+        safeDayIndex,
+        stats,
+      ),
+    },
+    npcGuilds: syncGuildRostersFromPopulation(npcGuilds, players),
+    events,
+    stats,
+  };
+};
+
+export const getRealmApplicationChance = (applicationCount) => {
+  const safeCount = Math.max(0, Math.floor(Number(applicationCount) || 0));
+  if (safeCount <= 1) return 0.7;
+  if (safeCount <= 4) return 0.45;
+  if (safeCount <= 7) return 0.2;
+  return 0;
+};
+
 const generatePlayerGuildApplications = ({
   applications,
   players,
@@ -929,12 +1338,14 @@ const generatePlayerGuildApplications = ({
     0,
     REALM_GUILD_APPLICATION_CAP - existingApplications.length,
   );
-  const scheduledApplicationDay = Math.max(0, Number(dayIndex) || 0) % 3 === 0;
-  if (openSlots <= 0 || (!scheduledApplicationDay && random() > 0.58)) {
+  const applicationChance = getRealmApplicationChance(
+    existingApplications.length,
+  );
+  if (openSlots <= 0 || random() >= applicationChance) {
     return { applications: existingApplications, added: 0 };
   }
 
-  const addCount = Math.min(openSlots, random() < 0.16 ? 2 : 1);
+  const addCount = Math.min(openSlots, 1);
   const candidates = players
     .filter(
       (player) =>
@@ -1046,7 +1457,7 @@ export const advanceRealmPopulationActivity = ({
   const safeRandom = typeof random === "function" ? random : Math.random;
   const safeDayFraction = clampNumber(dayFraction, 0.05, 1);
   const safeDayIndex = Math.max(0, Math.floor(Number(dayIndex) || 0));
-  const population = normalizeRealmPopulation({
+  let population = normalizeRealmPopulation({
     population: realmState?.population,
     realmId: realmState?.id,
     npcGuilds,
@@ -1057,6 +1468,24 @@ export const advanceRealmPopulationActivity = ({
       realmState?.populationLabel ||
       realmState?.population?.serverPopulation,
   });
+  let lifecycleEvents = [];
+  let activeNpcGuilds = npcGuilds;
+  if (Number(dayStepIndex) === 0) {
+    const lifecycleResult = advanceRealmPopulationLifecycle({
+      realmState: {
+        ...realmState,
+        population,
+      },
+      npcGuilds,
+      dayIndex: safeDayIndex,
+      playerRosterSize,
+      serverPopulation,
+      random: safeRandom,
+    });
+    population = lifecycleResult.population;
+    activeNpcGuilds = lifecycleResult.npcGuilds;
+    lifecycleEvents = lifecycleResult.events;
+  }
   const softCap = population.currentSoftCap;
   let players = population.players;
   const currentTotal = players.length + playerRosterSize;
@@ -1105,23 +1534,28 @@ export const advanceRealmPopulationActivity = ({
           index: players.length + index + safeDayIndex * 1000,
           random: safeRandom,
           usedNameKeys,
+          arrivalDayIndex: safeDayIndex,
         }),
       ),
     );
   }
 
   const recruitedResult = recruitNpcGuilds({
-    npcGuilds,
+    npcGuilds: activeNpcGuilds,
     players,
     dayIndex: safeDayIndex,
     dayFraction: safeDayFraction,
     random: safeRandom,
   });
   players = recruitedResult.players;
-  const poachResult = poachNpcGuildMembers({ npcGuilds, players, random: safeRandom });
+  const poachResult = poachNpcGuildMembers({
+    npcGuilds: activeNpcGuilds,
+    players,
+    random: safeRandom,
+  });
   players = poachResult.players;
   const dungeonResult = simulateRealmDungeonActivity({
-    npcGuilds,
+    npcGuilds: activeNpcGuilds,
     players,
     dayIndex: safeDayIndex,
     dayFraction: safeDayFraction,
@@ -1130,13 +1564,24 @@ export const advanceRealmPopulationActivity = ({
     random: safeRandom,
   });
   players = dungeonResult.players;
-  const applicationResult = generatePlayerGuildApplications({
-    applications: population.applications,
-    players,
-    guildFaction,
-    dayIndex: safeDayIndex,
-    random: safeRandom,
-  });
+  const shouldGenerateApplications =
+    Number(dayStepIndex) === 0 &&
+    Number(population.lastApplicationDayIndex) !== safeDayIndex;
+  const applicationResult = shouldGenerateApplications
+    ? generatePlayerGuildApplications({
+        applications: population.applications,
+        players,
+        guildFaction,
+        dayIndex: safeDayIndex,
+        random: safeRandom,
+      })
+    : {
+        applications: normalizeRealmApplications(
+          population.applications,
+          players,
+        ),
+        added: 0,
+      };
   const dungeonStats = dungeonResult.stats || {};
   const syncedGuilds = syncGuildRostersFromPopulation(
     dungeonResult.npcGuilds,
@@ -1149,6 +1594,9 @@ export const advanceRealmPopulationActivity = ({
       players,
       applications: applicationResult.applications,
       lastArrivalDayIndex: safeDayIndex,
+      lastApplicationDayIndex: shouldGenerateApplications
+        ? safeDayIndex
+        : population.lastApplicationDayIndex,
       dailyStats: mergeDailyStats(population.dailyStats, safeDayIndex, {
         arrivals,
         npcRecruits: recruitedResult.recruited,
@@ -1163,6 +1611,7 @@ export const advanceRealmPopulationActivity = ({
     },
     npcGuilds: syncedGuilds,
     events: [
+      ...lifecycleEvents,
       arrivals > 0
         ? {
             type: "population-arrivals",

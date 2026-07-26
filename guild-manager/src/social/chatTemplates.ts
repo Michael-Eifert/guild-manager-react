@@ -67,6 +67,9 @@ const TEMPLATES: Record<ChatIntent, string[]> = {
     "Back from {mission} empty-handed. That one hurts.",
     "{mission} went badly. I really thought we had it.",
   ],
+  "guild-election": [
+    "{speaker} has been elected as the new Guild Master.",
+  ],
 };
 
 const PERSONALITY_TEMPLATES: Record<

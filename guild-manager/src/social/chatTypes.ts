@@ -11,7 +11,8 @@ export type ChatIntent =
   | "group-start"
   | "search-expired"
   | "mission-success"
-  | "mission-failed";
+  | "mission-failed"
+  | "guild-election";
 
 export type ParticipantSource = "guild" | "realm";
 

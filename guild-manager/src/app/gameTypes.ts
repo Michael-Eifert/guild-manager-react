@@ -9,6 +9,10 @@ import type {
 } from "../types/missionTypes";
 import type { GuildInventory } from "../types/itemTypes";
 import type { WorldPvpState } from "../pvp/worldPvpUtils";
+import type {
+  GuildRankId,
+  RelationsManagementMode,
+} from "../guildRelations/guildRelations";
 
 export type { Character, CharacterId, Mission, MissionId };
 
@@ -121,6 +125,15 @@ export type GuildSetupState = {
   serverStyle?: string;
   serverPopulation?: string;
   lastFocusChangeDayIndex?: number | null;
+  founder?: {
+    name?: string;
+    race?: string;
+    gender?: string;
+    charClass?: string;
+    role?: string;
+    personalityTrait?: string;
+    leadershipTrait?: string;
+  };
 };
 
 export interface GameActions {
@@ -129,6 +142,14 @@ export interface GameActions {
   loadSession: () => void;
   loadSessionFile: (event: ChangeEvent<HTMLInputElement>) => void;
   startGuild: () => void;
+  setGuildRank: (characterId: string, rank: GuildRankId) => void;
+  setGuildRankLabels: (
+    labels: Record<GuildRankId, string>,
+  ) => boolean;
+  setRelationsManagementMode: (mode: RelationsManagementMode) => void;
+  resolveGuildIncident: (incidentId: string, choiceId: string) => void;
+  castGuildElectionVote: (candidateId: string) => void;
+  finishGuildElection: () => void;
 }
 
 /** Public provider value. Domain modules refine individual fields as they migrate. */

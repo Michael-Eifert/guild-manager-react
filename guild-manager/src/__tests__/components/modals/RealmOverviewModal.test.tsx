@@ -24,7 +24,23 @@ describe("RealmOverviewModal", () => {
           type: GUILD_SERVER_STYLE.PVE,
           ageDays: 2,
           npcGuilds: [],
-          news: [{ dayIndex: 0, message: "A guild cleared Ragefire Chasm." }],
+          populationLabel: "Medium",
+          population: {
+            players: [],
+            departedPlayers: [],
+            dailyStats: {
+              returners: 2,
+              npcGuildExits: 1,
+              expiredApplications: 1,
+            },
+          },
+          news: [
+            {
+              dayIndex: 0,
+              type: "realm-return",
+              message: "Aria returned to the realm.",
+            },
+          ],
         }}
         guildSetup={guildSetup}
         roster={roster}
@@ -40,6 +56,12 @@ describe("RealmOverviewModal", () => {
     expect(html).toContain("Realm PvE Leaderboard");
     expect(html).toContain("PvE Score Breakdown");
     expect(html).toContain("Competition: Normal");
+    expect(html).toContain("Open to Offers");
+    expect(html).toContain("Away from Realm");
+    expect(html).toContain("Guild Exits");
+    expect(html).toContain("Returned Today");
+    expect(html).toContain("Aria returned to the realm.");
+    expect(html).toContain("Return");
     expect(html).not.toContain('role="dialog"');
   });
 });

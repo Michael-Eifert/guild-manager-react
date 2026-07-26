@@ -7,6 +7,7 @@ import {
   Users,
 } from "lucide-react";
 import { useMemo, type ReactNode } from "react";
+import { Link } from "react-router-dom";
 
 import { DB_CLASSES } from "../../constants";
 import {
@@ -16,6 +17,7 @@ import {
   type PopularityRankingEntry,
 } from "../../guild/guildStatistics";
 import type { Character } from "../../types/characterTypes";
+import { ROUTES } from "../../routes";
 
 const CLASS_PRESENTATIONS = DB_CLASSES as Record<
   string,
@@ -37,6 +39,7 @@ type LeaderboardProps<T> = {
   getValue: (entry: T) => string;
   getDetail: (entry: T) => string;
   onSelectCharacter?: (characterId: string) => void;
+  relationsLink?: boolean;
 };
 
 const formatCharacterClass = (character: Character) =>
@@ -51,6 +54,7 @@ function Leaderboard<T>({
   getValue,
   getDetail,
   onSelectCharacter,
+  relationsLink = false,
 }: LeaderboardProps<T>) {
   return (
     <article className="overflow-hidden rounded-lg border border-slate-700/80 bg-slate-950/45">
@@ -119,6 +123,14 @@ function Leaderboard<T>({
           })
         )}
       </ol>
+      {relationsLink ? (
+        <Link
+          to={ROUTES.GUILD_RELATIONS}
+          className="flex min-h-11 items-center justify-center border-t border-slate-800 px-3 text-xs font-bold text-amber-300 hover:bg-amber-950/20 hover:text-amber-100 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-amber-300"
+        >
+          View in Guild Relations
+        </Link>
+      ) : null}
     </article>
   );
 }
@@ -226,6 +238,7 @@ export default function GuildStatistics({
             }`
           }
           onSelectCharacter={onSelectCharacter}
+          relationsLink
         />
         <Leaderboard<ImpactRankingEntry>
           title="Guild Impact"
@@ -238,6 +251,7 @@ export default function GuildStatistics({
             `${entry.successfulRuns} wins · ${entry.bossesCleared} bosses · ${entry.honorableKills} HK`
           }
           onSelectCharacter={onSelectCharacter}
+          relationsLink
         />
       </div>
     </section>

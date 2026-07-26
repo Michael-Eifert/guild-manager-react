@@ -1,12 +1,13 @@
 import { z } from "zod";
 
 export const SESSION_FORMAT_VALUE = "guild-manager-session" as const;
-export const CURRENT_SESSION_VERSION = 9;
+export const CURRENT_SESSION_VERSION = 11;
 
 const dataSchema = z.record(z.string(), z.unknown());
 const recognizedKeys = new Set([
   "roster", "activeMissions", "missionList", "guildSetup", "guildProgress", "progression",
   "milestones", "achievements", "gameSpeed",
+  "guildRelationsState",
 ]);
 const hasRecognizedSessionData = (data: Record<string, unknown>) =>
   Object.keys(data).some((key) => recognizedKeys.has(key));
@@ -51,6 +52,32 @@ export const SESSION_MIGRATIONS: ReadonlyArray<Migration> = [
   (data) => ({ ...data, missionBoardState: data.missionBoardState || {}, battlefieldState: data.battlefieldState || {} }),
   (data) => ({ ...data, roster: Array.isArray(data.roster) ? data.roster : [] }),
   (data) => ({ ...data, socialState: data.socialState || null }),
+  (data) => ({ ...data, guildRelationsState: data.guildRelationsState || null }),
+  (data) => {
+    const realmState =
+      data.realmState && typeof data.realmState === "object"
+        ? (data.realmState as Record<string, unknown>)
+        : null;
+    const population =
+      realmState?.population && typeof realmState.population === "object"
+        ? (realmState.population as Record<string, unknown>)
+        : null;
+    return {
+      ...data,
+      realmState:
+        realmState && population
+          ? {
+              ...realmState,
+              population: {
+                ...population,
+                departedPlayers: Array.isArray(population.departedPlayers)
+                  ? population.departedPlayers
+                  : [],
+              },
+            }
+          : realmState,
+    };
+  },
 ];
 
 export const migrateSessionPayload = (input: unknown) => {

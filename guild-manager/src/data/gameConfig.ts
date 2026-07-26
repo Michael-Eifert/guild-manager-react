@@ -338,6 +338,15 @@ export const DEFAULT_GUILD_SETUP = Object.freeze({
   pvpActivityFocus: "25",
   eliteQuestMinSuccessChance: AUTO_GROUP_SUCCESS_RATE.DEFAULT,
   dungeonMinSuccessChance: AUTO_GROUP_SUCCESS_RATE.DEFAULT,
+  founder: Object.freeze({
+    name: "",
+    race: "Human",
+    gender: "Male",
+    charClass: "Warrior",
+    role: "Tank",
+    personalityTrait: "casual_gamer",
+    leadershipTrait: "diplomat",
+  }),
   hasStarted: false,
 });
 

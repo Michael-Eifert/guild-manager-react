@@ -134,19 +134,19 @@ export const buildRealmNewsForDay = ({
       `${event.guildName} pushed ${event.shortName} to ${event.clearedBosses}/${event.totalBosses} bosses.`,
     );
   });
-  populationEvents.slice(0, Math.max(0, 2 - news.length)).forEach((event) => {
+  populationEvents.slice(0, Math.max(0, 4 - news.length)).forEach((event) => {
     addNews(event.type || "realm", event.message);
   });
 
-  if (news.length < 2 && safeRandom() < 0.45) {
+  if (news.length < 4 && safeRandom() < 0.45) {
     const guild = pickGuild();
     addNews("dungeon", `${guild.name} cleared a dangerous dungeon wing.`);
   }
-  if (news.length < 2 && safeRandom() < 0.3) {
+  if (news.length < 4 && safeRandom() < 0.3) {
     const guild = pickGuild();
     addNews("recruitment", `${guild.name} recruited several new adventurers.`);
   }
-  if (news.length < 2 && dayIndex > 0 && dayIndex % 7 === 0) {
+  if (news.length < 4 && dayIndex > 0 && dayIndex % 7 === 0) {
     const topGuild = rankings[0];
     if (topGuild) {
       addNews(
@@ -155,7 +155,7 @@ export const buildRealmNewsForDay = ({
       );
     }
   }
-  if (news.length < 2 && playerGuildSnapshot) {
+  if (news.length < 4 && playerGuildSnapshot) {
     const playerRank = rankings.find((row) => row.isPlayerGuild)?.rank;
     if (playerRank && playerRank <= 10 && safeRandom() < 0.35) {
       addNews(
@@ -165,5 +165,5 @@ export const buildRealmNewsForDay = ({
     }
   }
 
-  return news.slice(0, 2);
+  return news.slice(0, 4);
 };

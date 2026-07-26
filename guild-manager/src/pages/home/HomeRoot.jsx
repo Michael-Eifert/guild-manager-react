@@ -8,6 +8,7 @@ import AppShell from "../../components/shell/AppShell";
 import GameHeader from "../../components/shell/GameHeader";
 import ChatPanel from "../../components/chat/ChatPanel";
 import ChatPreview from "../../components/chat/ChatPreview";
+import GuildElectionModal from "../../components/guild-relations/GuildElectionModal";
 import { buildHomeNavigation } from "../../components/shell/homeNavigation";
 import { useGame } from "../../app/useGame";
 import { GUILD_POINT_LABEL } from "../../guildProgression";
@@ -27,6 +28,7 @@ const DashboardPage = lazy(() => import("../dashboard/DashboardPage"));
 const DungeonBoardPage = lazy(() => import("../dungeon-board/DungeonBoardPage"));
 const GuildLogPage = lazy(() => import("../guild-log/GuildLogPage"));
 const GuildPage = lazy(() => import("../guild/GuildPage"));
+const GuildRelationsPage = lazy(() => import("../guild-relations/GuildRelationsPage"));
 const MissionBoardPage = lazy(() => import("../mission-board/MissionBoardPage"));
 const ProfessionsPage = lazy(() => import("../professions/ProfessionsPage"));
 const RealmPage = lazy(() => import("../realm/RealmPage"));
@@ -45,6 +47,7 @@ const GUILD_FOCUS_CHANGE_COST_GOLD = 10;
 const HOME_ROUTE_PATHS = Object.freeze({
   DASHBOARD: "",
   GUILD: "guild",
+  GUILD_RELATIONS: "guild-relations",
   RECRUIT: "recruit",
   CALENDAR: "calendar",
   REALM: "realm",
@@ -92,6 +95,8 @@ export default function HomeRoot() {
     guildMemberSortMode,
     guildProgress,
     guildRelationships,
+    guildRelationsState,
+    guildRelationInsights,
     guildRoleSummary,
     guildSetup,
     handleCleanupGuildStash,
@@ -325,6 +330,23 @@ export default function HomeRoot() {
             }
           />
           <Route
+            path={HOME_ROUTE_PATHS.GUILD_RELATIONS}
+            element={
+              <GuildRelationsPage
+                roster={roster}
+                relationships={guildRelationships}
+                state={guildRelationsState}
+                insights={guildRelationInsights}
+                currentDayIndex={currentCalendarDayIndex}
+                onSelectCharacter={selectCharacter}
+                onSetRank={actions.setGuildRank}
+                onSetRankLabels={actions.setGuildRankLabels}
+                onSetManagementMode={actions.setRelationsManagementMode}
+                onResolveIncident={actions.resolveGuildIncident}
+              />
+            }
+          />
+          <Route
             path={HOME_ROUTE_PATHS.RECRUIT}
             element={
               <RecruitPage
@@ -493,6 +515,13 @@ export default function HomeRoot() {
 
       <AppErrorBoundary>
         <Suspense fallback={<LoadingFallback label="Opening guild window…" />}>
+        <GuildElectionModal
+          election={guildRelationsState?.election || null}
+          roster={roster}
+          insights={guildRelationInsights}
+          onVote={actions.castGuildElectionVote}
+          onFinish={actions.finishGuildElection}
+        />
         {showOptions && (
           <OptionsModal
             isOpen={showOptions}
@@ -579,6 +608,8 @@ export default function HomeRoot() {
             roster={roster}
             guildFaction={guildSetup.faction}
             guildRelationships={guildRelationships}
+            guildRelationsState={guildRelationsState}
+            guildRelationInsights={guildRelationInsights}
             raidLockouts={raidLockouts}
             currentDayIndex={currentCalendarDayIndex}
             onClose={closeCharacterDetail}
@@ -589,6 +620,7 @@ export default function HomeRoot() {
             onUpdateBackstory={handleUpdateBackstory}
             onLevelChange={debugActions.changeLevel}
             onRoleChange={updateMemberRole}
+            onSetGuildRank={actions.setGuildRank}
           />
         )}
         </Suspense>

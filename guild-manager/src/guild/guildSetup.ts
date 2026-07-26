@@ -10,6 +10,7 @@ import {
   normalizeRealmDifficulty,
 } from "../constants";
 import { normalizePvpActivityFocus } from "../pvp/battlefields/battlefieldUtils";
+import { normalizeFounderConfig } from "../guildRelations/founderCreation";
 
 type GuildSetupInput = Record<string, unknown>;
 type SessionSetupPayload = {
@@ -125,6 +126,7 @@ export const normalizeGuildSetup = (
     dungeonMinSuccessChance: normalizeAutoGroupSuccessRate(
       safe.dungeonMinSuccessChance,
     ),
+    founder: normalizeFounderConfig(safe.founder, normalizedFaction),
     hasStarted,
   };
 };

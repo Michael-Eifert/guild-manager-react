@@ -28,6 +28,12 @@ import {
   getMoraleSuccessModifier,
 } from "../../game/characterMorale";
 import { getCharacterPersonalityTraits } from "../../game/characterPersonality";
+import {
+  DEFAULT_GUILD_RANK_LABELS,
+  GUILD_RANK,
+  GUILD_RANK_ORDER,
+  LEADERSHIP_TRAIT_DEFINITIONS,
+} from "../../guildRelations/guildRelations";
 import { ensureCharacterPvpData } from "../../pvp/pvpCharacterUtils";
 import {
   getPvpRewardTiersForRank,
@@ -92,6 +98,8 @@ const DetailModal = ({
   roster = [],
   guildFaction,
   guildRelationships = {},
+  guildRelationsState = null,
+  guildRelationInsights = [],
   raidLockouts = {},
   currentDayIndex = 0,
   onClose,
@@ -100,6 +108,7 @@ const DetailModal = ({
   onRoleChange,
   onProfChange,
   onModeChange,
+  onSetGuildRank,
 }) => {
   const [tab, setTab] = useState("stats");
   const [historyPage, setHistoryPage] = useState(0);
@@ -158,6 +167,27 @@ const DetailModal = ({
     characterId: char?.id,
     roster,
   });
+  const guildInsight = guildRelationInsights.find(
+    (entry) => String(entry?.character?.id) === String(char?.id),
+  );
+  const isGuildMember = roster.some(
+    (member) => String(member?.id) === String(char?.id),
+  );
+  const guildRank = guildInsight?.rank || null;
+  const rankLabels =
+    guildRelationsState?.rankLabels || DEFAULT_GUILD_RANK_LABELS;
+  const leadershipTrait =
+    LEADERSHIP_TRAIT_DEFINITIONS[char?.leadershipTrait] || null;
+  const positiveRelationshipPoints = relationshipRows.reduce(
+    (total, row) =>
+      total + Math.max(0, Number(row?.relationship?.points) || 0),
+    0,
+  );
+  const negativeRelationshipPoints = relationshipRows.reduce(
+    (total, row) =>
+      total + Math.min(0, Number(row?.relationship?.points) || 0),
+    0,
+  );
   const characterKeys = Array.isArray(char?.keys)
     ? [...new Set(char.keys.map((keyId) => String(keyId || "").trim()).filter(Boolean))]
     : [];
@@ -387,6 +417,12 @@ const DetailModal = ({
             className={`min-w-[132px] flex-1 py-3 text-sm font-bold uppercase tracking-wider hover:bg-gray-700 ${tab === "personality" ? "text-white border-b-2 border-purple-500 bg-gray-700" : "text-gray-500"}`}
           >
             Personality
+          </button>
+          <button
+            onClick={() => setTab("guild")}
+            className={`min-w-[132px] flex-1 py-3 text-sm font-bold uppercase tracking-wider hover:bg-gray-700 ${tab === "guild" ? "text-white border-b-2 border-amber-500 bg-gray-700" : "text-gray-500"}`}
+          >
+            Guild
           </button>
           <button
             onClick={() => setTab("zones")}
@@ -1129,6 +1165,165 @@ const DetailModal = ({
                   </div>
                 )}
               </div>
+            </div>
+          )}
+
+          {tab === "guild" && (
+            <div className="space-y-4">
+              {!isGuildMember || !guildInsight ? (
+                <div className="rounded-lg border border-slate-700 bg-slate-950/50 p-5 text-center">
+                  <h3 className="text-base font-bold text-slate-200">
+                    Realm Character
+                  </h3>
+                  <p className="mt-1 text-sm text-slate-500">
+                    This character is not a member of your guild. Guild rank and
+                    internal influence cannot be managed here.
+                  </p>
+                </div>
+              ) : (
+                <>
+                  <section className="rounded-lg border border-amber-900/60 bg-amber-950/15 p-4">
+                    <div className="flex flex-col gap-3 sm:flex-row sm:items-end sm:justify-between">
+                      <div>
+                        <div className="text-[10px] font-bold uppercase tracking-widest text-amber-300">
+                          Guild Standing
+                        </div>
+                        <div className="mt-1 text-lg font-bold text-amber-100">
+                          {rankLabels[guildRank]}
+                        </div>
+                        <div className="mt-1 text-xs text-amber-100/65">
+                          Leadership style: {leadershipTrait?.name || "Strategist"}
+                        </div>
+                      </div>
+                      <label className="block min-w-56 space-y-1">
+                        <span className="block text-[10px] font-bold uppercase tracking-wide text-gray-400">
+                          Guild Rank
+                        </span>
+                        <select
+                          aria-label={`Guild rank for ${char.name}`}
+                          value={guildRank}
+                          disabled={
+                            guildRank === GUILD_RANK.GUILD_MASTER ||
+                            typeof onSetGuildRank !== "function"
+                          }
+                          onChange={(event) => {
+                            const nextRank = event.target.value;
+                            if (
+                              nextRank === GUILD_RANK.GUILD_MASTER &&
+                              !window.confirm(
+                                `Transfer Guild Master to ${char.name}?`,
+                              )
+                            ) {
+                              return;
+                            }
+                            onSetGuildRank(char.id, nextRank);
+                          }}
+                          className="min-h-11 w-full rounded-lg border border-amber-900/70 bg-gray-950 px-3 text-sm font-bold text-amber-100 focus:border-amber-400 focus:outline-none disabled:cursor-not-allowed disabled:opacity-50"
+                        >
+                          {GUILD_RANK_ORDER.map((rank) => (
+                            <option key={rank} value={rank}>
+                              {rankLabels[rank]}
+                            </option>
+                          ))}
+                        </select>
+                      </label>
+                    </div>
+                  </section>
+
+                  <section
+                    aria-label={`${char.name} guild relation scores`}
+                    className="grid grid-cols-2 gap-2 lg:grid-cols-4"
+                  >
+                    {[
+                      ["Influence", guildInsight.influence, "text-amber-200"],
+                      ["Support", guildInsight.support, "text-emerald-200"],
+                      ["Popularity", guildInsight.popularity, "text-sky-200"],
+                      ["Friction", guildInsight.friction, "text-red-200"],
+                    ].map(([label, value, tone]) => (
+                      <div
+                        key={label}
+                        className="rounded-lg border border-gray-700 bg-gray-950/55 p-3 text-center"
+                      >
+                        <div className="text-[10px] font-bold uppercase tracking-wide text-gray-500">
+                          {label}
+                        </div>
+                        <div className={`mt-1 text-2xl font-black ${tone}`}>
+                          {value}
+                        </div>
+                        <div className="text-[10px] text-gray-600">of 100</div>
+                      </div>
+                    ))}
+                  </section>
+
+                  <section className="rounded-lg border border-pink-900/60 bg-pink-950/10">
+                    <div className="flex flex-col gap-2 border-b border-pink-950/60 p-4 sm:flex-row sm:items-center sm:justify-between">
+                      <div>
+                        <h3 className="text-sm font-bold uppercase tracking-wide text-pink-100">
+                          Guild Relations
+                        </h3>
+                        <p className="mt-1 text-xs text-gray-500">
+                          Direct relationship points with other guild members.
+                        </p>
+                      </div>
+                      <div className="flex flex-wrap gap-2 text-xs font-bold">
+                        <span className="rounded border border-emerald-800 bg-emerald-950/30 px-2 py-1 text-emerald-200">
+                          +{positiveRelationshipPoints} positive
+                        </span>
+                        <span className="rounded border border-red-900 bg-red-950/30 px-2 py-1 text-red-200">
+                          {negativeRelationshipPoints} negative
+                        </span>
+                      </div>
+                    </div>
+                    {relationshipRows.length === 0 ? (
+                      <div className="p-5 text-center text-sm italic text-gray-500">
+                        No established guild relationships yet.
+                      </div>
+                    ) : (
+                      <div className="grid gap-2 p-3 sm:grid-cols-2">
+                        {relationshipRows.map((row) => {
+                          const points =
+                            Number(row?.relationship?.points) || 0;
+                          return (
+                            <div
+                              key={`${char.id}-guild-relation-${row.otherMember.id}`}
+                              className="flex min-h-14 items-center gap-3 rounded-lg border border-gray-700 bg-gray-950/45 p-2"
+                            >
+                              <img
+                                src={getRacePortraitUrl(
+                                  row.otherMember.race,
+                                  row.otherMember.gender,
+                                )}
+                                alt=""
+                                className="h-9 w-9 rounded border border-gray-700 object-cover"
+                              />
+                              <div className="min-w-0 flex-1">
+                                <div className="truncate text-sm font-bold text-gray-100">
+                                  {row.otherMember.name}
+                                </div>
+                                <div className="text-[11px] text-gray-500">
+                                  {row.level}
+                                </div>
+                              </div>
+                              <div
+                                className={`text-sm font-black ${
+                                  points > 0
+                                    ? "text-emerald-300"
+                                    : points < 0
+                                      ? "text-red-300"
+                                      : "text-gray-400"
+                                }`}
+                              >
+                                {points > 0 ? "+" : ""}
+                                {points} pts
+                              </div>
+                            </div>
+                          );
+                        })}
+                      </div>
+                    )}
+                  </section>
+                </>
+              )}
             </div>
           )}
 

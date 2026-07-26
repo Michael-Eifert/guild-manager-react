@@ -40,6 +40,7 @@ export interface Character {
   morale?: number;
   personalityTrait?: string | { id?: string };
   personalityTraits?: Array<string | { id?: string }>;
+  leadershipTrait?: string;
   faction?: string;
   currentZoneId?: string;
   currentZoneProgress?: number;
