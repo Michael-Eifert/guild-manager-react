@@ -308,7 +308,7 @@ describe("realm population lifecycle", () => {
       },
     });
 
-    expect(migrated.version).toBe(11);
+    expect(migrated.version).toBe(12);
     expect(
       (
         (migrated.data.realmState as Record<string, unknown>)

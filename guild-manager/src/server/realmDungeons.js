@@ -291,6 +291,7 @@ export const simulateRealmDungeonActivity = ({
   rateMultiplier = 1,
   successBonus = 0,
   random = Math.random,
+  onlinePlayerIds = null,
 } = {}) => {
   const safeRandom = typeof random === "function" ? random : Math.random;
   const safeDayFraction = clampNumber(dayFraction, 0.05, 1);
@@ -316,7 +317,10 @@ export const simulateRealmDungeonActivity = ({
   const nextGuilds = (Array.isArray(npcGuilds) ? npcGuilds : []).map((guild) => {
     const profile = getGuildDungeonProfile(guild);
     const guildPlayers = nextPlayers.filter(
-      (player) => player.guildId === guild.id && Math.max(1, Number(player.level) || 1) >= 10,
+      (player) =>
+        (!onlinePlayerIds || onlinePlayerIds.has(String(player.id))) &&
+        player.guildId === guild.id &&
+        Math.max(1, Number(player.level) || 1) >= 10,
     );
     const expectedRuns =
       (guildPlayers.length / 14) *
@@ -359,7 +363,10 @@ export const simulateRealmDungeonActivity = ({
   });
 
   const pugCandidates = nextPlayers.filter(
-    (player) => !player.guildId && Math.max(1, Number(player.level) || 1) >= 10,
+    (player) =>
+      (!onlinePlayerIds || onlinePlayerIds.has(String(player.id))) &&
+      !player.guildId &&
+      Math.max(1, Number(player.level) || 1) >= 10,
   );
   const expectedPugRuns =
     (pugCandidates.length / 80) *

@@ -1396,6 +1396,7 @@ export const advanceRealmPopulationProgression = ({
   serverPopulation = null,
   difficultyProfile,
   random,
+  onlinePlayerIds = null,
 } = {}) => {
   const safeRandom = typeof random === "function" ? random : Math.random;
   const safeDayFraction = clampNumber(dayFraction, 0.01, 1);
@@ -1420,17 +1421,19 @@ export const advanceRealmPopulationProgression = ({
     ]),
   );
   const players = population.players.map((player) =>
-    advanceRealmPlayerForDay({
-      player,
-      random: safeRandom,
-      playerAverageLevel,
-      playerAverageItemLevel,
-      progression:
-        guildProgressionById.get(String(player?.guildId || "")) ||
-        DEFAULT_PROGRESSION,
-      difficultyProfile,
-      dayFraction: safeDayFraction,
-    }),
+    onlinePlayerIds && !onlinePlayerIds.has(String(player.id))
+      ? player
+      : advanceRealmPlayerForDay({
+          player,
+          random: safeRandom,
+          playerAverageLevel,
+          playerAverageItemLevel,
+          progression:
+            guildProgressionById.get(String(player?.guildId || "")) ||
+            DEFAULT_PROGRESSION,
+          difficultyProfile,
+          dayFraction: safeDayFraction,
+        }),
   );
 
   return {
@@ -1453,6 +1456,7 @@ export const advanceRealmPopulationActivity = ({
   guildFaction = GUILD_FACTION.ALLIANCE,
   difficultyProfile,
   random,
+  onlinePlayerIds = null,
 } = {}) => {
   const safeRandom = typeof random === "function" ? random : Math.random;
   const safeDayFraction = clampNumber(dayFraction, 0.05, 1);
@@ -1562,6 +1566,7 @@ export const advanceRealmPopulationActivity = ({
     rateMultiplier: difficultyProfile?.dungeonRateMultiplier,
     successBonus: difficultyProfile?.dungeonSuccessBonus,
     random: safeRandom,
+    onlinePlayerIds,
   });
   players = dungeonResult.players;
   const shouldGenerateApplications =

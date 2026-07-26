@@ -27,8 +27,8 @@ export const NPC_GUILD_ARCHETYPE_ORDER = Object.freeze([
 
 export const REALM_NEWS_LIMIT = 25;
 export const REALM_NPC_GUILD_INITIAL_RANGE = Object.freeze([4, 6]);
-export const REALM_NPC_GUILD_TARGET_RANGE = Object.freeze([10, 15]);
-export const REALM_NPC_GUILD_HIGH_POP_TARGET_RANGE = Object.freeze([15, 20]);
+export const REALM_NPC_GUILD_TARGET_RANGE = Object.freeze([15, 22]);
+export const REALM_NPC_GUILD_HIGH_POP_TARGET_RANGE = Object.freeze([22, 30]);
 export const REALM_NPC_GUILD_FOUNDED_ROSTER_RANGE = Object.freeze([6, 10]);
 export const DEFAULT_NPC_GUILD_COUNT = REALM_NPC_GUILD_INITIAL_RANGE[1];
 export const REALM_GUILD_ROSTER_CAP = 80;
@@ -41,8 +41,8 @@ export const REALM_DAILY_DEPARTURE_CAP = 2;
 export const REALM_DAILY_RETIREMENT_CAP = 1;
 export const REALM_DAILY_RETURNER_CAP = 2;
 export const REALM_POPULATION_START = 200;
-export const REALM_POPULATION_SOFT_CAP = 1000;
-export const REALM_HIGH_POPULATION_SOFT_CAP = 1500;
+export const REALM_POPULATION_SOFT_CAP = 1500;
+export const REALM_HIGH_POPULATION_SOFT_CAP = 2000;
 export const REALM_POPULATION_SOFT_CAP_VARIANCE = 100;
 export const REALM_DAILY_ARRIVAL_RANGE = Object.freeze([50, 100]);
 

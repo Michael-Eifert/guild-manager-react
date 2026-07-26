@@ -79,11 +79,14 @@ export default function HomeRoot() {
     dismissNotification,
     dungeonActivityInfoText,
     factionMissionIconUrl,
+    effectiveGameSpeed,
     gameSpeed,
     gameTimeMs,
     getAdjustedMissionSuccessPreview,
     guildInventory,
     guildActivityModeSummary,
+    guildActivityStats,
+    guildOnlineSnapshot,
     guildClassSummary,
     guildDerivedStats,
     guildFocusBonuses,
@@ -140,6 +143,7 @@ export default function HomeRoot() {
     hasGuildMemberSearch,
     hasGuildMemberSearchMatch,
     isPaused,
+    isAutoFastForward,
     itemDatabase,
     memberRankingMode,
     missionAchievementCatalog,
@@ -208,6 +212,25 @@ export default function HomeRoot() {
   });
   const guildName =
     guildSetup.name || getFactionFallbackManagerName(guildSetup.faction);
+  const displayRoster = roster.map((character) => {
+    const online = guildOnlineSnapshot.byId[String(character.id)];
+    if (!online) return character;
+    return {
+      ...character,
+      onlineStatus: online.status,
+      onlineProfile: online.profileLabel,
+      nextLoginDayIndex: online.nextLoginDayIndex,
+      nextLoginHour: online.nextLoginHour,
+      ...(online.status === "Offline"
+        ? {
+            status: "Offline",
+            statusText: `Next login: Day ${online.nextLoginDayIndex + 1}, ${String(
+              Math.floor(online.nextLoginHour),
+            ).padStart(2, "0")}:00 · ${online.profileLabel}`,
+          }
+        : {}),
+    };
+  });
   const calendarLabel = `${currentCalendarDate.weekdayName}, ${currentCalendarDate.monthName} ${currentCalendarDate.dayOfMonth}, Year ${currentCalendarDate.year}`;
 
   return (
@@ -242,6 +265,9 @@ export default function HomeRoot() {
           renownPoints={guildProgress.renownPoints}
           isPaused={isPaused}
           gameSpeed={gameSpeed}
+          effectiveGameSpeed={effectiveGameSpeed}
+          isAutoFastForward={isAutoFastForward}
+          nextLogin={guildOnlineSnapshot.nextLogin}
           onOpenSettings={openOptions}
           onTogglePause={togglePause}
           onCycleSpeed={cycleGameSpeed}
@@ -273,7 +299,7 @@ export default function HomeRoot() {
                 onGuildModeChange={handleGuildModeChange}
                 guildSetup={guildSetup}
                 guildRelationships={guildRelationships}
-                roster={roster}
+                roster={displayRoster}
                 onGuildSuccessRateChange={handleGuildSuccessRateChange}
                 dungeonActivityInfoText={dungeonActivityInfoText}
                 onGuildDungeonActivityChange={handleGuildDungeonActivityChange}
@@ -301,6 +327,8 @@ export default function HomeRoot() {
                 hasGuildMemberSearchMatch={hasGuildMemberSearchMatch}
                 bestGuildMemberSearchMatchId={bestGuildMemberSearchMatchId}
                 onSelectCharacter={selectCharacter}
+                guildActivityStats={guildActivityStats}
+                guildOnlineSnapshot={guildOnlineSnapshot}
               />
             }
           />
@@ -326,6 +354,12 @@ export default function HomeRoot() {
                 focusChangeCostGold={GUILD_FOCUS_CHANGE_COST_GOLD}
                 onChangeGuildFocus={handleChangeGuildFocus}
                 onUpgradeTalent={handleUpgradeGuildTalent}
+                roster={displayRoster}
+                guildRelationships={guildRelationships}
+                guildActivityStats={guildActivityStats}
+                guildOnlineSnapshot={guildOnlineSnapshot}
+                missionList={missionList}
+                onSelectCharacter={selectCharacter}
               />
             }
           />
@@ -333,7 +367,7 @@ export default function HomeRoot() {
             path={HOME_ROUTE_PATHS.GUILD_RELATIONS}
             element={
               <GuildRelationsPage
-                roster={roster}
+                roster={displayRoster}
                 relationships={guildRelationships}
                 state={guildRelationsState}
                 insights={guildRelationInsights}
@@ -392,7 +426,7 @@ export default function HomeRoot() {
               <RealmPage
                 realmState={realmState}
                 guildSetup={guildSetup}
-                roster={roster}
+                roster={displayRoster}
                 missionList={missionList}
                 guildProgress={guildProgress}
                 raidLockouts={raidLockouts}
@@ -404,7 +438,7 @@ export default function HomeRoot() {
             path={HOME_ROUTE_PATHS.MISSION_BOARD}
             element={
               <MissionBoardPage
-                roster={roster}
+                roster={displayRoster}
                 onDeploy={handleDeploy}
                 missionList={missionList}
                 activeMissions={activeMissions}
@@ -430,7 +464,7 @@ export default function HomeRoot() {
             path={HOME_ROUTE_PATHS.ADVENTURE_BOARD}
             element={
               <AdventureBoardPage
-                roster={roster}
+                roster={displayRoster}
                 missionList={missionList}
                 activeMissions={activeMissions}
                 realmState={realmState}
@@ -449,7 +483,7 @@ export default function HomeRoot() {
             path={HOME_ROUTE_PATHS.DUNGEON_BOARD}
             element={
               <DungeonBoardPage
-                roster={roster}
+                roster={displayRoster}
                 missionList={missionList}
                 activeMissions={activeMissions}
                 socialState={socialState}
@@ -464,7 +498,7 @@ export default function HomeRoot() {
             path={HOME_ROUTE_PATHS.BATTLEFIELDS}
             element={
               <BattlefieldsPage
-                roster={roster}
+                roster={displayRoster}
                 activeMissions={activeMissions}
                 battlefieldState={battlefieldState}
                 worldPvpState={worldPvpState}
@@ -481,7 +515,7 @@ export default function HomeRoot() {
             path={HOME_ROUTE_PATHS.PROFESSIONS}
             element={
               <ProfessionsPage
-                roster={roster}
+                roster={displayRoster}
                 guildInventory={guildInventory}
                 stashPolicy={stashPolicy}
                 guildGold={guildGold}
@@ -517,7 +551,7 @@ export default function HomeRoot() {
         <Suspense fallback={<LoadingFallback label="Opening guild window…" />}>
         <GuildElectionModal
           election={guildRelationsState?.election || null}
-          roster={roster}
+          roster={displayRoster}
           insights={guildRelationInsights}
           onVote={actions.castGuildElectionVote}
           onFinish={actions.finishGuildElection}
@@ -564,7 +598,7 @@ export default function HomeRoot() {
           <ProfessionsModal
             isOpen={showProfessions}
             onClose={closeProfessions}
-            roster={roster}
+            roster={displayRoster}
             guildInventory={guildInventory}
             stashPolicy={stashPolicy}
             guildGold={guildGold}
@@ -600,12 +634,12 @@ export default function HomeRoot() {
         )}
         {detailCharId && (
           <DetailModal
-            char={roster.find((character) => character.id === detailCharId)}
+            char={displayRoster.find((character) => character.id === detailCharId)}
             isOpen={!!detailCharId}
             missionAchievementCatalog={missionAchievementCatalog}
             missionList={missionList}
             itemDatabase={itemDatabase}
-            roster={roster}
+            roster={displayRoster}
             guildFaction={guildSetup.faction}
             guildRelationships={guildRelationships}
             guildRelationsState={guildRelationsState}

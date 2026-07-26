@@ -85,6 +85,8 @@ export default function DashboardPage({
   hasGuildMemberSearchMatch,
   bestGuildMemberSearchMatchId,
   onSelectCharacter,
+  guildActivityStats,
+  guildOnlineSnapshot,
 }) {
   const [filtersOpen, setFiltersOpen] = useState(false);
 
@@ -108,6 +110,8 @@ export default function DashboardPage({
       <GuildStatistics
         roster={roster}
         relationships={guildRelationships}
+        activityStats={guildActivityStats}
+        onlineSnapshot={guildOnlineSnapshot}
         onSelectCharacter={onSelectCharacter}
       />
 

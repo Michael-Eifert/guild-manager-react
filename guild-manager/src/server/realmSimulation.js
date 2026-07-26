@@ -22,6 +22,7 @@ import {
 } from "./realmRaidProgress";
 import { buildRealmRankings } from "./realmRankings";
 import { getRealmDifficultyProfile } from "../constants";
+import { buildOnlineSnapshot } from "../activity/characterOnline";
 
 const clampNumber = (value, min, max) =>
   Math.max(min, Math.min(max, Number(value) || 0));
@@ -210,6 +211,7 @@ const advanceNpcGuildActivity = ({
   random,
   dayIndex,
   raidRateMultiplier = 1,
+  onlineRatio = 1,
 }) => {
   const growth = getArchetypeGrowth(guild.archetype);
   const activityMultiplier = clampNumber(guild.activityLevel, 1, 100) / 70;
@@ -220,10 +222,12 @@ const advanceNpcGuildActivity = ({
       activityMultiplier *
       variance *
       REALM_ACTIVITY_STEP_FRACTION *
+      clampNumber(onlineRatio, 0, 1) *
       Math.max(0, Number(raidRateMultiplier) || 0)
     : growth.raid *
       0.12 *
       REALM_ACTIVITY_STEP_FRACTION *
+      clampNumber(onlineRatio, 0, 1) *
       Math.max(0, Number(raidRateMultiplier) || 0);
   const raidUpdate = advanceNpcRaidProgressForDay({
     guild,
@@ -308,6 +312,14 @@ export const advanceRealmSimulation = ({
     const random = createRandom(
       hashRealmSeed(`${nextRealm.id}:step:${simulatedStep}`),
     );
+    const simulatedDayProgress =
+      (simulatedStep % REALM_SIMULATION_STEPS_PER_DAY) /
+      REALM_SIMULATION_STEPS_PER_DAY;
+    const realmOnlineSnapshot = buildOnlineSnapshot({
+      characters: nextRealm.population.players,
+      dayIndex: day,
+      dayProgress: simulatedDayProgress,
+    });
     const progressionResult = advanceRealmPopulationProgression({
       realmState: nextRealm,
       npcGuilds: nextRealm.npcGuilds,
@@ -319,6 +331,7 @@ export const advanceRealmSimulation = ({
       serverPopulation: nextRealm.populationLabel,
       difficultyProfile,
       random,
+      onlinePlayerIds: realmOnlineSnapshot.onlineIds,
     });
     let nextNpcGuilds = progressionResult.npcGuilds;
     let nextPopulation = progressionResult.population;
@@ -337,12 +350,22 @@ export const advanceRealmSimulation = ({
             })
           : nextNpcGuilds;
       const npcGuildsWithEvents = activeNpcGuilds.map((guild) =>
-        advanceNpcGuildActivity({
-          guild,
-          random,
-          dayIndex: day,
-          raidRateMultiplier: difficultyProfile.raidRateMultiplier,
-        }),
+        {
+          const guildPlayers = nextPopulation.players.filter(
+            (player) => String(player.guildId || "") === String(guild.id),
+          );
+          const onlineCount = guildPlayers.filter((player) =>
+            realmOnlineSnapshot.onlineIds.has(String(player.id)),
+          ).length;
+          return advanceNpcGuildActivity({
+            guild,
+            random,
+            dayIndex: day,
+            raidRateMultiplier: difficultyProfile.raidRateMultiplier,
+            onlineRatio:
+              guildPlayers.length > 0 ? onlineCount / guildPlayers.length : 0,
+          });
+        },
       );
       const realmEvents = npcGuildsWithEvents.flatMap((guild) =>
         Array.isArray(guild.realmEvents) ? guild.realmEvents : [],
@@ -366,6 +389,7 @@ export const advanceRealmSimulation = ({
         guildFaction: guildSetup?.faction,
         difficultyProfile,
         random,
+        onlinePlayerIds: realmOnlineSnapshot.onlineIds,
       });
       nextNpcGuilds = activityResult.npcGuilds;
       nextPopulation = activityResult.population;

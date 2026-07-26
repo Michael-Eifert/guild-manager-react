@@ -13,6 +13,11 @@ import {
 } from "../../guildProgression";
 import { GUILD_FOCUS, GUILD_FOCUS_OPTIONS } from "../../constants";
 import type { GuildSetupState } from "../../app/gameTypes";
+import GuildStatistics from "../dashboard/GuildStatistics";
+import type { Character } from "../../types/characterTypes";
+import type { GuildActivityStats } from "../../guild/guildActivityStats";
+import type { OnlineSnapshot } from "../../activity/characterOnline";
+import type { Mission } from "../../types/missionTypes";
 
 type GuildProgress = {
   renownPoints: number;
@@ -34,6 +39,7 @@ const GUILD_FOCUS_DESCRIPTIONS = Object.freeze({
 });
 
 const GUILD_PAGE_TABS = [
+  { value: "statistics", label: "Statistics" },
   { value: "achievements", label: "Achievements" },
   { value: "talents", label: "Talent Tree" },
   { value: "focus", label: "Guild Focus" },
@@ -51,6 +57,12 @@ const GuildTalentsModal = ({
   focusChangeCostGold = 10,
   onChangeGuildFocus,
   onUpgradeTalent,
+  roster = [],
+  guildRelationships = {},
+  guildActivityStats = null,
+  guildOnlineSnapshot = null,
+  missionList = [],
+  onSelectCharacter,
 }: {
   isOpen: boolean;
   onClose?: () => void;
@@ -63,8 +75,14 @@ const GuildTalentsModal = ({
   focusChangeCostGold?: number;
   onChangeGuildFocus: (focus: string) => void;
   onUpgradeTalent: (talentKey: string) => void;
+  roster?: Character[];
+  guildRelationships?: Record<string, unknown>;
+  guildActivityStats?: GuildActivityStats | null;
+  guildOnlineSnapshot?: OnlineSnapshot | null;
+  missionList?: Mission[];
+  onSelectCharacter?: (characterId: string) => void;
 }) => {
-  const [activeTab, setActiveTab] = useState("achievements");
+  const [activeTab, setActiveTab] = useState("statistics");
   const isPage = variant === "page";
 
   if (!isPage && !isOpen) return null;
@@ -142,6 +160,19 @@ const GuildTalentsModal = ({
           onChange={setActiveTab}
           tone="amber"
         />
+
+        {activeTab === "statistics" && (
+          <GuildStatistics
+            roster={roster}
+            relationships={guildRelationships}
+            activityStats={guildActivityStats}
+            onlineSnapshot={guildOnlineSnapshot}
+            onSelectCharacter={onSelectCharacter}
+            detailed
+            showRelationsLinks={false}
+            missionList={missionList}
+          />
+        )}
 
         {activeTab === "achievements" && (
           <div className="space-y-4">

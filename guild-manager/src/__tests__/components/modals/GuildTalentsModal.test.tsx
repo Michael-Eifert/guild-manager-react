@@ -29,6 +29,8 @@ describe("GuildTalentsModal", () => {
 
     expect(html).toContain("Guild Progression");
     expect(html).toContain("Achievements");
+    expect(html).toContain("Statistics");
+    expect(html).toContain("Successful Dungeon Runs");
     expect(html).toContain("Guild Gold");
     expect(html).not.toContain('role="dialog"');
   });

@@ -53,6 +53,7 @@ export const startWarsongGulchBattle = ({
   roster,
   participantIds,
   activeMissions = [],
+  onlineMemberIds = null,
   guildFaction = GUILD_FACTION.ALLIANCE,
   now,
   currentDayIndex,
@@ -65,6 +66,7 @@ export const startWarsongGulchBattle = ({
     roster,
     activeMissions,
     battlefieldState: state,
+    onlineMemberIds,
   });
   const eligibleById = new Map(eligible.map((member) => [String(member.id), member]));
   const participants = (Array.isArray(participantIds) ? participantIds : [])
@@ -171,11 +173,13 @@ const buildAutoQueueCandidate = ({
   minGuildMembers,
   minWinChance,
   rng,
+  onlineMemberIds,
 }) => {
   const eligible = getEligibleBattlegroundCharacters({
     roster,
     activeMissions,
     battlefieldState,
+    onlineMemberIds,
   });
   const grouped = groupCharactersByBattlegroundBracket(eligible);
   const candidates = Object.entries(grouped)
@@ -229,6 +233,7 @@ export const resolveAutoBattlefieldQueue = ({
   rng = Math.random,
   createId,
   aggressiveOnly = false,
+  onlineMemberIds = null,
 } = {}) => {
   const state = ensureBattlefieldState(battlefieldState);
   const config = getPvpActivityConfig(guildSetup?.pvpActivityFocus);
@@ -277,6 +282,7 @@ export const resolveAutoBattlefieldQueue = ({
     minGuildMembers: config.minGuildMembers,
     minWinChance: config.minWinChance,
     rng,
+    onlineMemberIds,
   });
   if (!candidate) {
     return {
@@ -297,6 +303,7 @@ export const resolveAutoBattlefieldQueue = ({
     rng,
     createId,
     source: "auto",
+    onlineMemberIds,
     participantIds: candidate.selected.map((member) => member.id),
   });
   if (!started.started) {
@@ -328,4 +335,3 @@ export const resolveAutoBattlefieldQueue = ({
     ],
   };
 };
-

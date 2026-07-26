@@ -13,6 +13,12 @@ type GuildPageProps = {
   focusChangeCostGold: number;
   onChangeGuildFocus: ForwardedCallback;
   onUpgradeTalent: ForwardedCallback;
+  roster: unknown[];
+  guildRelationships: Record<string, unknown>;
+  guildActivityStats: Record<string, unknown>;
+  guildOnlineSnapshot: Record<string, unknown>;
+  missionList: unknown[];
+  onSelectCharacter?: (characterId: string) => void;
 };
 
 // Temporary adapter until GuildTalentsModal itself is migrated from JSX.
@@ -29,6 +35,12 @@ export default function GuildPage({
   focusChangeCostGold,
   onChangeGuildFocus,
   onUpgradeTalent,
+  roster,
+  guildRelationships,
+  guildActivityStats,
+  guildOnlineSnapshot,
+  missionList,
+  onSelectCharacter,
 }: GuildPageProps) {
   return (
     <PageGuildTalentsModal
@@ -42,6 +54,12 @@ export default function GuildPage({
       focusChangeCostGold={focusChangeCostGold}
       onChangeGuildFocus={onChangeGuildFocus}
       onUpgradeTalent={onUpgradeTalent}
+      roster={roster}
+      guildRelationships={guildRelationships}
+      guildActivityStats={guildActivityStats}
+      guildOnlineSnapshot={guildOnlineSnapshot}
+      missionList={missionList}
+      onSelectCharacter={onSelectCharacter}
     />
   );
 }

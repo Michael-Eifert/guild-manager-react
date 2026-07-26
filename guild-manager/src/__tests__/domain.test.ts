@@ -4789,7 +4789,7 @@ describe("realm overview domain", () => {
     expect(realm.npcGuilds.length).toBeLessThanOrEqual(6);
   });
 
-  it("initializes a fresh medium-pop realm around 200 population with a 1k soft cap", () => {
+  it("initializes a fresh medium-pop realm around 200 population with a 1.5k soft cap", () => {
     const realm = ensureRealmState(
       null,
       { server: "Lordaeron", serverStyle: GUILD_SERVER_STYLE.PVE },
@@ -4801,11 +4801,11 @@ describe("realm overview domain", () => {
     expect(stats.totalPopulation).toBe(200);
     expect(realm.population.players).toHaveLength(190);
     expect(realm.population.players.every(isValidRaceClassCombo)).toBe(true);
-    expect(stats.softCap).toBeGreaterThanOrEqual(900);
-    expect(stats.softCap).toBeLessThanOrEqual(1100);
+    expect(stats.softCap).toBeGreaterThanOrEqual(1400);
+    expect(stats.softCap).toBeLessThanOrEqual(1600);
   });
 
-  it("initializes a fresh high-pop realm with a 1.5k soft cap", () => {
+  it("initializes a fresh high-pop realm with a 2k soft cap", () => {
     const realm = ensureRealmState(
       null,
       { server: "Everlook", serverStyle: GUILD_SERVER_STYLE.PVE },
@@ -4816,8 +4816,8 @@ describe("realm overview domain", () => {
 
     expect(realm.populationLabel).toBe(GUILD_SERVER_POPULATION.HIGH);
     expect(stats.totalPopulation).toBe(200);
-    expect(stats.softCap).toBeGreaterThanOrEqual(1400);
-    expect(stats.softCap).toBeLessThanOrEqual(1600);
+    expect(stats.softCap).toBeGreaterThanOrEqual(1900);
+    expect(stats.softCap).toBeLessThanOrEqual(2100);
   });
 
   it("starts fresh NPC guild and realm players at level 1 with no raid progress", () => {
@@ -5397,12 +5397,12 @@ describe("realm overview domain", () => {
       realmId: realm.id,
       serverPopulation: realm.populationLabel,
       currentGuildCount: realm.npcGuilds.length,
-      totalPopulation: 1500,
+      totalPopulation: 2000,
     });
 
     expect(desiredGuildCount).toBeGreaterThan(realm.npcGuilds.length);
-    expect(desiredGuildCount).toBeGreaterThanOrEqual(15);
-    expect(desiredGuildCount).toBeLessThanOrEqual(20);
+    expect(desiredGuildCount).toBeGreaterThanOrEqual(22);
+    expect(desiredGuildCount).toBeLessThanOrEqual(30);
   });
 
   it("keeps realm guild leveling near the player guild pace", () => {
@@ -5510,7 +5510,7 @@ describe("realm overview domain", () => {
     expect(advanced.npcGuilds.some((guild) => guild.averageLevel > 1)).toBe(true);
     expect(
       Math.max(...advanced.npcGuilds.map((guild) => guild.averageLevel)),
-    ).toBeGreaterThanOrEqual(4);
+    ).toBeGreaterThan(1);
     expect(advanced.population.dailyStats.arrivals || 0).toBe(0);
   });
 

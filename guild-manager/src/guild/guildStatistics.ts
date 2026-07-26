@@ -1,5 +1,7 @@
 import { normalizeGuildRelationships } from "../social/relationshipSystem";
 import type { Character } from "../types/characterTypes";
+import type { GuildActivityStats } from "./guildActivityStats";
+import type { OnlineSnapshot } from "../activity/characterOnline";
 import {
   getCharacterAverageItemLevel,
   getCharacterPowerScore,
@@ -43,9 +45,12 @@ export type ImpactRankingEntry = {
 
 export type GuildStatistics = {
   averageGearScore: number;
-  activeMembers: number;
+  onlineMembers: number;
+  onMissionMembers: number;
   positiveBonds: number;
-  successfulRuns: number;
+  successfulDungeonRuns: number;
+  totalSuccessfulRuns: number;
+  activityStats: GuildActivityStats | null;
   equipmentLeaders: EquipmentRankingEntry[];
   popularityLeaders: PopularityRankingEntry[];
   impactLeaders: ImpactRankingEntry[];
@@ -78,18 +83,17 @@ const getHonorableKills = (character: StatisticsCharacter) =>
 const toGearScore = (itemLevel: number) =>
   Math.round(Math.max(0, itemLevel) * 10) / 10;
 
-const isCharacterActive = (character: StatisticsCharacter) => {
-  const status = String(character?.status || "").trim().toLowerCase();
-  return Boolean(status && status !== "idle");
-};
-
 export const buildGuildStatistics = ({
   roster,
   relationships,
+  activityStats = null,
+  onlineSnapshot = null,
   limit = 5,
 }: {
   roster: readonly StatisticsCharacter[];
   relationships?: Record<string, unknown> | null;
+  activityStats?: GuildActivityStats | null;
+  onlineSnapshot?: OnlineSnapshot | null;
   limit?: number;
 }): GuildStatistics => {
   const safeRoster = Array.isArray(roster) ? roster.filter(Boolean) : [];
@@ -196,12 +200,14 @@ export const buildGuildStatistics = ({
             ) / equipmentRows.length,
           )
         : 0,
-    activeMembers: safeRoster.filter(isCharacterActive).length,
+    onlineMembers: onlineSnapshot?.onlineCount ?? 0,
+    onMissionMembers: onlineSnapshot?.onMissionCount ?? 0,
     positiveBonds,
-    successfulRuns: impactRows.reduce(
-      (total, entry) => total + entry.successfulRuns,
-      0,
-    ),
+    successfulDungeonRuns: activityStats?.successfulDungeonRuns ?? 0,
+    totalSuccessfulRuns:
+      activityStats?.successfulRuns ??
+      impactRows.reduce((total, entry) => total + entry.successfulRuns, 0),
+    activityStats,
     equipmentLeaders,
     popularityLeaders,
     impactLeaders,

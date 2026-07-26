@@ -1,13 +1,13 @@
 import { z } from "zod";
 
 export const SESSION_FORMAT_VALUE = "guild-manager-session" as const;
-export const CURRENT_SESSION_VERSION = 11;
+export const CURRENT_SESSION_VERSION = 12;
 
 const dataSchema = z.record(z.string(), z.unknown());
 const recognizedKeys = new Set([
   "roster", "activeMissions", "missionList", "guildSetup", "guildProgress", "progression",
   "milestones", "achievements", "gameSpeed",
-  "guildRelationsState",
+  "guildRelationsState", "guildActivityStats",
 ]);
 const hasRecognizedSessionData = (data: Record<string, unknown>) =>
   Object.keys(data).some((key) => recognizedKeys.has(key));
@@ -78,6 +78,7 @@ export const SESSION_MIGRATIONS: ReadonlyArray<Migration> = [
           : realmState,
     };
   },
+  (data) => ({ ...data, guildActivityStats: data.guildActivityStats || null }),
 ];
 
 export const migrateSessionPayload = (input: unknown) => {

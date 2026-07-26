@@ -273,12 +273,14 @@ const selectGuildCandidate = ({
   mission,
   activeMissions,
   reservedGuildIds,
+  onlineGuildMemberIds,
 }: {
   roster: Character[];
   search: LfgSearch;
   mission: Mission;
   activeMissions: Mission[];
   reservedGuildIds: Set<string>;
+  onlineGuildMemberIds?: Set<string> | null;
 }) => {
   const participantIds = new Set(search.participantIds.map(String));
   const busyIds = getBusyGuildMemberIds(activeMissions);
@@ -291,6 +293,8 @@ const selectGuildCandidate = ({
         !participantIds.has(String(member.id)) &&
         !busyIds.has(String(member.id)) &&
         !reservedGuildIds.has(String(member.id)) &&
+        (!onlineGuildMemberIds ||
+          onlineGuildMemberIds.has(String(member.id))) &&
         isMissionBoardAvailableStatus(member.status) &&
         (!finalSlotRole || member.role === finalSlotRole) &&
         isCharacterEligible(member as unknown as Record<string, unknown>, mission),
@@ -309,12 +313,14 @@ const selectRealmCandidate = ({
   mission,
   guildFaction,
   reservedRealmIds,
+  onlineRealmPlayerIds,
 }: {
   realmState: Record<string, any>;
   search: LfgSearch;
   mission: Mission;
   guildFaction: string;
   reservedRealmIds: Set<string>;
+  onlineRealmPlayerIds?: Set<string> | null;
 }) => {
   const participantIds = new Set(search.participantIds.map(String));
   const neededRole = getNeededRole(search.participants, mission);
@@ -335,6 +341,8 @@ const selectRealmCandidate = ({
         String(player.faction || "") === String(guildFaction || "") &&
         !participantIds.has(String(player.id)) &&
         !reservedRealmIds.has(String(player.id)) &&
+        (!onlineRealmPlayerIds ||
+          onlineRealmPlayerIds.has(String(player.id))) &&
         (!finalSlotRole || player.role === finalSlotRole) &&
         isCharacterEligible(player, mission),
     )
@@ -475,6 +483,8 @@ export const advanceSocialSimulation = ({
   missionList,
   guildSetup,
   deferText = false,
+  onlineGuildMemberIds = null,
+  onlineRealmPlayerIds = null,
 }: {
   socialState: unknown;
   now: number;
@@ -484,6 +494,8 @@ export const advanceSocialSimulation = ({
   missionList: Mission[];
   guildSetup: Record<string, any>;
   deferText?: boolean;
+  onlineGuildMemberIds?: Set<string> | null;
+  onlineRealmPlayerIds?: Set<string> | null;
 }) => {
   let state = ensureSocialState(socialState);
   let nextRoster = [...roster];
@@ -556,6 +568,7 @@ export const advanceSocialSimulation = ({
         mission,
         activeMissions,
         reservedGuildIds,
+        onlineGuildMemberIds,
       });
       if (member) {
         participant = toParticipant(
@@ -571,6 +584,7 @@ export const advanceSocialSimulation = ({
         mission,
         guildFaction: guildSetup.faction,
         reservedRealmIds,
+        onlineRealmPlayerIds,
       });
       if (participant) reservedRealmIds.add(participant.id);
     }
@@ -664,7 +678,11 @@ export const advanceSocialSimulation = ({
     state = createSearch({
       state,
       now,
-      roster: nextRoster,
+      roster: onlineGuildMemberIds
+        ? nextRoster.filter((member) =>
+            onlineGuildMemberIds.has(String(member.id)),
+          )
+        : nextRoster,
       missionList,
       activeMissions,
       guildFaction: guildSetup.faction,

@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 
 import { buildGuildStatistics } from "../guild/guildStatistics";
+import { createInitialGuildActivityStats } from "../guild/guildActivityStats";
 
 const character = (
   id: string,
@@ -129,10 +130,24 @@ describe("guild statistics", () => {
         }),
       ],
       relationships: {},
+      activityStats: {
+        ...createInitialGuildActivityStats(4),
+        successfulDungeonRuns: 1,
+      },
+      onlineSnapshot: {
+        byId: {},
+        onlineIds: new Set(["raider"]),
+        onMissionIds: new Set(["raider"]),
+        onlineCount: 1,
+        onMissionCount: 1,
+        nextLogin: null,
+      },
     });
 
-    expect(statistics.activeMembers).toBe(1);
-    expect(statistics.successfulRuns).toBe(2);
+    expect(statistics.onlineMembers).toBe(1);
+    expect(statistics.onMissionMembers).toBe(1);
+    expect(statistics.successfulDungeonRuns).toBe(1);
+    expect(statistics.totalSuccessfulRuns).toBe(0);
     expect(statistics.impactLeaders[0]).toMatchObject({
       character: { id: "raider" },
       successfulRuns: 2,

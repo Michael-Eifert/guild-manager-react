@@ -17,6 +17,8 @@ type CharacterCardCharacter = Character & {
   lastLevelUp: number;
   race: string;
   gender: string;
+  onlineStatus?: "Online" | "Offline" | "On Mission";
+  onlineProfile?: string;
 };
 
 type CharacterCardProps = {
@@ -119,7 +121,29 @@ const CharacterCard = ({ char, onClick }: CharacterCardProps) => {
       </div>
 
       <div className="mb-2">
-        <div className="text-xs text-blue-300 italic truncate">{char.statusText}</div>
+        <div className="flex items-center gap-2">
+          {char.onlineStatus ? (
+            <span
+              className={`rounded-full border px-2 py-0.5 text-[9px] font-bold uppercase ${
+                char.onlineStatus === "Offline"
+                  ? "border-slate-700 text-slate-400"
+                  : char.onlineStatus === "On Mission"
+                    ? "border-blue-700 text-blue-300"
+                    : "border-emerald-700 text-emerald-300"
+              }`}
+            >
+              {char.onlineStatus}
+            </span>
+          ) : null}
+          {char.onlineProfile ? (
+            <span className="text-[10px] text-slate-500">
+              {char.onlineProfile}
+            </span>
+          ) : null}
+        </div>
+        <div className="mt-1 truncate text-xs italic text-blue-300">
+          {char.statusText}
+        </div>
       </div>
       {pvp.rank > 0 && (
         <div className="mb-2 truncate text-[11px] font-semibold text-orange-200">

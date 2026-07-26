@@ -448,6 +448,17 @@ const RecruitModal = ({
                   <div className="text-[11px] text-amber-200 font-bold mb-3">
                     iLvl {getCharacterAverageItemLevel(char).toFixed(1)}
                   </div>
+                  {char.onlineStatus && (
+                    <div
+                      className={`mb-3 text-[10px] font-bold ${
+                        char.onlineStatus === "Offline"
+                          ? "text-slate-500"
+                          : "text-emerald-300"
+                      }`}
+                    >
+                      {char.onlineStatus} · {char.onlineProfile}
+                    </div>
+                  )}
                   {char.realmRecruitmentSource && (
                     <div className="mb-3 rounded border border-cyan-900/60 bg-cyan-950/30 px-2 py-1 text-[11px] font-semibold text-cyan-100">
                       {char.realmRecruitmentSource}
@@ -585,6 +596,17 @@ const RecruitModal = ({
                     <div className="mb-2 text-[11px] font-bold text-amber-200">
                       iLvl {getCharacterAverageItemLevel(char).toFixed(1)}
                     </div>
+                    {char.onlineStatus && (
+                      <div
+                        className={`mb-2 text-[10px] font-bold ${
+                          char.onlineStatus === "Offline"
+                            ? "text-slate-500"
+                            : "text-emerald-300"
+                        }`}
+                      >
+                        {char.onlineStatus} · {char.onlineProfile}
+                      </div>
+                    )}
                     <div className="mb-2 rounded border border-cyan-900/60 bg-cyan-950/30 px-2 py-1 text-[11px] font-semibold text-cyan-100">
                       {char.realmRecruitmentSource || "Free Agent"}
                     </div>

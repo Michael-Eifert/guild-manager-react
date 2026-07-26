@@ -32,6 +32,7 @@ import {
   migrateSessionPayload,
   SESSION_FORMAT_VALUE,
 } from "./sessionMigrations";
+import { normalizeGuildActivityStats } from "../guild/guildActivityStats";
 
 export const SESSION_FORMAT = SESSION_FORMAT_VALUE;
 export const SESSION_VERSION = CURRENT_SESSION_VERSION;
@@ -259,6 +260,7 @@ export const buildSessionPayload = ({
   missionBoardState,
   socialState,
   guildRelationsState,
+  guildActivityStats,
   gameSpeed,
   isPaused,
   gameTimeMs,
@@ -302,6 +304,16 @@ export const buildSessionPayload = ({
       guildRelationsState: normalizeGuildRelationsState(
         guildRelationsState,
         Array.isArray(roster) ? roster : [],
+      ),
+      guildActivityStats: normalizeGuildActivityStats(
+        guildActivityStats,
+        Math.max(
+          0,
+          Math.floor(
+            (now - (calendarState?.calendarEpochGameTimeMs || now)) /
+              CALENDAR_DAY_MS,
+          ),
+        ),
       ),
       raidLockouts: normalizeRaidLockouts(
         raidLockouts,
@@ -571,6 +583,10 @@ export const hydrateSessionData = ({
     safePayload.guildRelationsState,
     normalizedRoster,
   );
+  const loadedGuildActivityStats = normalizeGuildActivityStats(
+    safePayload.guildActivityStats,
+    loadedCalendarDayIndex,
+  );
 
   return {
     normalizedRoster,
@@ -589,6 +605,7 @@ export const hydrateSessionData = ({
     loadedMissionBoardState,
     loadedSocialState,
     loadedGuildRelationsState,
+    loadedGuildActivityStats,
     loadedProgression,
     loadedCalendarState,
     loadedRaidLockouts,

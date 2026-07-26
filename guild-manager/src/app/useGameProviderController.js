@@ -88,6 +88,15 @@ import {
   validateGuildRankLabels,
 } from "../guildRelations/guildRelations";
 import {
+  createInitialGuildActivityStats,
+  recordCompletedGuildRun,
+  registerStartedGuildRuns,
+} from "../guild/guildActivityStats";
+import {
+  buildOnlineSnapshot,
+  shouldUseAutoFastForward,
+} from "../activity/characterOnline";
+import {
   GUILD_POINT_LABEL,
   createInitialGuildProgress,
   getGuildDerivedStats,
@@ -376,6 +385,8 @@ export const useGameProviderController = () => {
   );
   const [guildRelationsState, setGuildRelationsState, guildRelationsStateRef] =
     useSynchronizedState(() => createInitialGuildRelationsState());
+  const [guildActivityStats, setGuildActivityStats, guildActivityStatsRef] =
+    useSynchronizedState(() => createInitialGuildActivityStats(0));
   const [chatAiSettings, setChatAiSettings] = useState(loadChatAiSettings);
   const chatAiSettingsRef = useRef(chatAiSettings);
   const chatGenerationBusyRef = useRef(false);
@@ -605,6 +616,41 @@ export const useGameProviderController = () => {
   const currentCalendarDayProgressPercent = Math.round(
     currentCalendarDayProgress * 100,
   );
+  const guildOnlineSnapshot = useMemo(
+    () =>
+      buildOnlineSnapshot({
+        characters: roster,
+        dayIndex: currentCalendarDayIndex,
+        dayProgress: currentCalendarDayProgress,
+        activeMissions,
+        activeBattles: battlefieldState?.activeBattles,
+        searches: socialState?.searches,
+        calendarEvents: calendarState?.calendarEvents,
+      }),
+    [
+      activeMissions,
+      battlefieldState,
+      calendarState,
+      currentCalendarDayIndex,
+      currentCalendarDayProgress,
+      roster,
+      socialState,
+    ],
+  );
+  const hasActiveLfg = (socialState?.searches || []).some((search) =>
+    ["guild", "general", "ready", "forming"].includes(String(search?.phase)),
+  );
+  const isAutoFastForward = shouldUseAutoFastForward({
+    isPaused,
+    memberCount: roster.length,
+    onlineCount: guildOnlineSnapshot.onlineCount,
+    hasActiveMission: activeMissions.length > 0,
+    hasActiveBattlefield:
+      (battlefieldState?.activeBattles || []).length > 0,
+    hasActiveLfg,
+    hasElection: Boolean(guildRelationsState?.election),
+  });
+  const effectiveGameSpeed = isAutoFastForward ? 8 : gameSpeed;
   const getCurrentCalendarDayIndex = useCallback(
     () =>
       getCalendarDayIndex(
@@ -1003,7 +1049,7 @@ export const useGameProviderController = () => {
   // --- GAME LOOP ---
   useGameRuntime({
     isPaused,
-    gameSpeed,
+    gameSpeed: effectiveGameSpeed,
     services,
     gameTimeRef,
     lastRealTimeRef,
@@ -1073,6 +1119,10 @@ export const useGameProviderController = () => {
       let currentGuildRelationsState = normalizeGuildRelationsState(
         guildRelationsStateRef.current,
         currentRoster,
+      );
+      let currentGuildActivityStats = registerStartedGuildRuns(
+        guildActivityStatsRef.current,
+        currentMissions,
       );
       let relationsMissionCandidate = null;
       let nextGuildInventory = ensureGuildInventory(guildInventoryRef.current);
@@ -1280,6 +1330,12 @@ export const useGameProviderController = () => {
         rewardedMissionIdsRef.current.add(missionInstanceId);
 
         const result = processMissionRewards(m, newRoster);
+        currentGuildActivityStats = recordCompletedGuildRun({
+          stats: currentGuildActivityStats,
+          mission: m,
+          succeeded: result.missionSucceeded,
+          dayIndex: calendarDayIndex,
+        });
         if (!relationsMissionCandidate && Array.isArray(m.memberIds)) {
           relationsMissionCandidate = {
             missionSucceeded: result.missionSucceeded,
@@ -1417,6 +1473,25 @@ export const useGameProviderController = () => {
         });
       });
 
+      const tickOnlineSnapshot = buildOnlineSnapshot({
+        characters: newRoster,
+        dayIndex: calendarDayIndex,
+        dayProgress: calendarDayProgress,
+        activeMissions: newMissions,
+        activeBattles: currentBattlefieldState.activeBattles,
+        searches: currentSocialState.searches,
+        calendarEvents: calendarStateRef.current.calendarEvents,
+      });
+      let onlineRoster = newRoster.filter((member) =>
+        tickOnlineSnapshot.onlineIds.has(String(member.id)),
+      );
+      const realmOnlineSnapshot = buildOnlineSnapshot({
+        characters: realmStateRef.current?.population?.players || [],
+        dayIndex: calendarDayIndex,
+        dayProgress: calendarDayProgress,
+        searches: currentSocialState.searches,
+      });
+
       const aggressivePvpQueue = resolveAutoBattlefieldQueue({
         battlefieldState: currentBattlefieldState,
         roster: newRoster,
@@ -1427,9 +1502,13 @@ export const useGameProviderController = () => {
         guildFaction: currentFaction,
         createId,
         aggressiveOnly: true,
+        onlineMemberIds: tickOnlineSnapshot.onlineIds,
       });
       currentBattlefieldState = aggressivePvpQueue.battlefieldState;
       newRoster = aggressivePvpQueue.roster;
+      onlineRoster = newRoster.filter((member) =>
+        tickOnlineSnapshot.onlineIds.has(String(member.id)),
+      );
       newLogs = [...newLogs, ...aggressivePvpQueue.logs];
       if (aggressivePvpQueue.queued) {
         pushNotification({
@@ -1454,7 +1533,7 @@ export const useGameProviderController = () => {
         calendarEpochGameTimeMs:
           calendarStateRef.current.calendarEpochGameTimeMs,
         missionList: missionListRef.current,
-        roster: newRoster,
+        roster: onlineRoster,
         activeMissions: newMissions,
         minSuccessChance: guildSetupRef.current?.dungeonMinSuccessChance,
         getSuccessPreview: getAdjustedMissionSuccessPreview,
@@ -1568,7 +1647,7 @@ export const useGameProviderController = () => {
       });
 
       const autoZoneEliteGroups = resolveAutoZoneEliteGroups({
-        roster: newRoster,
+        roster: onlineRoster,
         activeMissions: newMissions,
         missionList: missionListRef.current,
         minSuccessChance: guildSetupRef.current?.eliteQuestMinSuccessChance,
@@ -1646,6 +1725,8 @@ export const useGameProviderController = () => {
         activeMissions: newMissions,
         missionList: missionListRef.current,
         guildSetup: guildSetupRef.current,
+        onlineGuildMemberIds: tickOnlineSnapshot.onlineIds,
+        onlineRealmPlayerIds: realmOnlineSnapshot.onlineIds,
         deferText:
           chatAiSettingsRef.current.provider !== "templates" &&
           gameSpeed <= 4,
@@ -1732,6 +1813,7 @@ export const useGameProviderController = () => {
         guildFaction: currentFaction,
         createId,
         aggressiveOnly: false,
+        onlineMemberIds: tickOnlineSnapshot.onlineIds,
       });
       currentBattlefieldState = conservativePvpQueue.battlefieldState;
       newRoster = conservativePvpQueue.roster;
@@ -1768,6 +1850,13 @@ export const useGameProviderController = () => {
           char,
           currentFaction,
         );
+        if (!tickOnlineSnapshot.onlineIds.has(String(normalizedChar.id))) {
+          return {
+            ...normalizedChar,
+            status: "Idle",
+            statusText: "Offline",
+          };
+        }
         if (
           normalizedChar.status === "Questing" ||
           normalizedChar.status === "LFG" ||
@@ -2143,7 +2232,9 @@ export const useGameProviderController = () => {
         guildRelationshipsRef.current = expiredRelations.relationships;
 
         const shouldCreateAmbientIncident =
-          !relationsMissionCandidate && calendarDayProgress >= 0.75;
+          !relationsMissionCandidate &&
+          tickOnlineSnapshot.onlineCount >= 2 &&
+          calendarDayProgress >= 0.75;
         if (relationsMissionCandidate || shouldCreateAmbientIncident) {
           const created = createGuildIncident({
             state: currentGuildRelationsState,
@@ -2175,10 +2266,12 @@ export const useGameProviderController = () => {
       missionsRef.current = newMissions;
       socialStateRef.current = currentSocialState;
       guildRelationsStateRef.current = currentGuildRelationsState;
+      guildActivityStatsRef.current = currentGuildActivityStats;
       setRoster(newRoster);
       setActiveMissions(newMissions);
       setSocialState(currentSocialState);
       setGuildRelationsState(currentGuildRelationsState);
+      setGuildActivityStats(currentGuildActivityStats);
       setGuildRelationships(guildRelationshipsRef.current);
       setWorldPvpState(nextWorldPvpState);
       setBattlefieldState(currentBattlefieldState);
@@ -2300,12 +2393,29 @@ export const useGameProviderController = () => {
         charClass: player.charClass,
         role: player.role,
         personalityTraits: player.personalityTraits,
+        activityLevel: player.activityLevel,
         level,
         exp: 0,
         maxExp: CONFIG.XP_TABLE[level] || CONFIG.XP_TABLE[1],
       };
+      const candidateOnline = buildOnlineSnapshot({
+        characters: [candidate],
+        dayIndex: getCalendarDayIndex(
+          gameTimeRef.current,
+          calendarStateRef.current.calendarEpochGameTimeMs,
+        ),
+        dayProgress: getCalendarDayProgress(
+          gameTimeRef.current,
+          calendarStateRef.current.calendarEpochGameTimeMs,
+        ),
+        searches: socialStateRef.current?.searches,
+      }).byId[String(candidate.id)];
       return {
         ...candidate,
+        onlineStatus: candidateOnline?.status || "Offline",
+        onlineProfile: candidateOnline?.profileLabel || "Regular (2/4)",
+        nextLoginDayIndex: candidateOnline?.nextLoginDayIndex,
+        nextLoginHour: candidateOnline?.nextLoginHour,
         equipment: buildRecruitmentEquipment({
           character: candidate,
           itemDatabase,
@@ -2321,7 +2431,7 @@ export const useGameProviderController = () => {
         .map((member) => String(member?.name || "").trim().toLowerCase())
         .filter(Boolean),
     );
-    return getRealmGuildApplications({
+    const applications = getRealmGuildApplications({
       realmState,
       faction: guildSetup.faction || GUILD_FACTION.ALLIANCE,
     })
@@ -2333,8 +2443,26 @@ export const useGameProviderController = () => {
           ),
       )
       .map(buildRealmRecruitmentCandidate);
+    const snapshot = buildOnlineSnapshot({
+      characters: applications,
+      dayIndex: currentCalendarDayIndex,
+      dayProgress: currentCalendarDayProgress,
+      searches: socialState?.searches,
+    });
+    return applications.map((candidate) => {
+      const online = snapshot.byId[String(candidate.id)];
+      return {
+        ...candidate,
+        onlineStatus: online?.status || "Offline",
+        onlineProfile: online?.profileLabel || "Regular (2/4)",
+        nextLoginDayIndex: online?.nextLoginDayIndex,
+        nextLoginHour: online?.nextLoginHour,
+      };
+    });
   }, [
     buildRealmRecruitmentCandidate,
+    currentCalendarDayIndex,
+    currentCalendarDayProgress,
     guildSetup.faction,
     realmState,
     roster,
@@ -2635,6 +2763,18 @@ export const useGameProviderController = () => {
       const now = gameTimeRef.current;
       const currentFaction =
         guildSetupRef.current?.faction || GUILD_FACTION.ALLIANCE;
+      const queueOnlineSnapshot = buildOnlineSnapshot({
+        characters: rosterRef.current,
+        dayIndex: getCurrentCalendarDayIndex(),
+        dayProgress: getCalendarDayProgress(
+          now,
+          calendarStateRef.current.calendarEpochGameTimeMs,
+        ),
+        activeMissions: missionsRef.current,
+        activeBattles: battlefieldStateRef.current?.activeBattles,
+        searches: socialStateRef.current?.searches,
+        calendarEvents: calendarStateRef.current?.calendarEvents,
+      });
       const queued = startWarsongGulchBattle({
         battlefieldState: battlefieldStateRef.current,
         roster: rosterRef.current,
@@ -2644,6 +2784,7 @@ export const useGameProviderController = () => {
         now,
         currentDayIndex: getCurrentCalendarDayIndex(),
         createId,
+        onlineMemberIds: queueOnlineSnapshot.onlineIds,
       });
       if (!queued.started) {
         pushNotification({
@@ -2853,6 +2994,7 @@ export const useGameProviderController = () => {
     const starterSocialState = createInitialSocialState();
     const starterGuildRelationsState =
       createInitialGuildRelationsState(starterRoster);
+    const starterGuildActivityStats = createInitialGuildActivityStats(0);
 
     rewardedMissionIdsRef.current = new Set();
     autoDungeonStateRef.current = { nextAttemptAt: 0 };
@@ -2864,6 +3006,7 @@ export const useGameProviderController = () => {
     raidLockoutsRef.current = {};
     socialStateRef.current = starterSocialState;
     guildRelationsStateRef.current = starterGuildRelationsState;
+    guildActivityStatsRef.current = starterGuildActivityStats;
     const starterRealmState = ensureRealmState(null, guildSetup, 0);
     realmStateRef.current = starterRealmState;
     setRoster(starterRoster);
@@ -2873,6 +3016,7 @@ export const useGameProviderController = () => {
     setRealmState(starterRealmState);
     setSocialState(starterSocialState);
     setGuildRelationsState(starterGuildRelationsState);
+    setGuildActivityStats(starterGuildActivityStats);
     setMissionList(
       getMissionListWithZones(INITIAL_MISSIONS.map(cloneMissionTemplate)),
     );
@@ -3059,6 +3203,39 @@ export const useGameProviderController = () => {
     (quest, ids, options = {}) => {
       const memberIds = Array.isArray(ids) ? ids.filter(Boolean) : [];
       if (!quest || memberIds.length === 0) return false;
+      const deployDayIndex = getCalendarDayIndex(
+        gameTimeRef.current,
+        calendarStateRef.current.calendarEpochGameTimeMs,
+      );
+      const deployDayProgress = getCalendarDayProgress(
+        gameTimeRef.current,
+        calendarStateRef.current.calendarEpochGameTimeMs,
+      );
+      const deployOnlineSnapshot = buildOnlineSnapshot({
+        characters: rosterRef.current,
+        dayIndex: deployDayIndex,
+        dayProgress: deployDayProgress,
+        activeMissions: missionsRef.current,
+        activeBattles: battlefieldStateRef.current?.activeBattles,
+        searches: socialStateRef.current?.searches,
+        calendarEvents: calendarStateRef.current?.calendarEvents,
+      });
+      const offlineMembers = memberIds.filter(
+        (memberId) =>
+          !deployOnlineSnapshot.onlineIds.has(String(memberId)),
+      );
+      if (offlineMembers.length > 0) {
+        const firstStatus =
+          deployOnlineSnapshot.byId[String(offlineMembers[0])];
+        pushNotification({
+          type: "error",
+          title: "Hero Offline",
+          message: `Selected heroes must be online. Next login: Day ${
+            (firstStatus?.nextLoginDayIndex ?? deployDayIndex) + 1
+          }, ${String(Math.floor(firstStatus?.nextLoginHour ?? 0)).padStart(2, "0")}:00.`,
+        });
+        return false;
+      }
       let rosterSnapshot = Array.isArray(rosterRef.current)
         ? rosterRef.current
         : roster;
@@ -4117,6 +4294,7 @@ export const useGameProviderController = () => {
       guildInventory, stashPolicy, calendarState, raidLockouts, missionBoardState,
       socialState, gameSpeed, isPaused,
       guildRelationsState,
+      guildActivityStats,
     },
     refs: {
       rewardedMissionIds: rewardedMissionIdsRef, roster: rosterRef,
@@ -4128,6 +4306,7 @@ export const useGameProviderController = () => {
       raidLockouts: raidLockoutsRef, gameTime: gameTimeRef,
       socialState: socialStateRef,
       guildRelationsState: guildRelationsStateRef,
+      guildActivityStats: guildActivityStatsRef,
       lastRealTime: lastRealTimeRef, sessionFileInput: sessionFileInputRef,
     },
     setters: {
@@ -4137,6 +4316,7 @@ export const useGameProviderController = () => {
       setMissionBoardState, setCalendarState, setRaidLockouts, setIsPaused,
       setSocialState, setGameSpeed, setGameTimeMs, setDetailCharId,
       setGuildRelationsState,
+      setGuildActivityStats,
     },
     closeOverlays: () => {
       setShowRecruit(false);
@@ -4437,11 +4617,15 @@ export const useGameProviderController = () => {
     dungeonActivityInfoText,
     factionMissionIconUrl,
     gameSpeed,
+    effectiveGameSpeed,
+    isAutoFastForward,
     gameTimeMs,
     getAdjustedMissionSuccessPreview,
     getMissionInstanceId,
     guildInventory,
     guildActivityModeSummary,
+    guildActivityStats,
+    guildOnlineSnapshot,
     guildClassSummary,
     guildDerivedStats,
     guildFocusBonuses,

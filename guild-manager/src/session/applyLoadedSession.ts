@@ -2,6 +2,7 @@ import type { StashPolicy } from "../inventory/itemEvaluation";
 import type { GuildInventory } from "../types/itemTypes";
 import type { SocialState } from "../social/chatTypes";
 import type { GuildRelationsState } from "../guildRelations/guildRelations";
+import type { GuildActivityStats } from "../guild/guildActivityStats";
 
 type StateRef<T> = { current: T };
 type UnknownRecord = Record<string, unknown>;
@@ -22,6 +23,7 @@ export type LoadedSession = {
   loadedMissionBoardState: Record<string, unknown>;
   loadedSocialState: SocialState;
   loadedGuildRelationsState: GuildRelationsState;
+  loadedGuildActivityStats: GuildActivityStats;
   loadedProgression: {
     gameTimeMs: number;
     isPaused: boolean;
@@ -47,6 +49,7 @@ export type SessionRefs = {
   raidLockouts?: StateRef<Record<string, unknown>>;
   socialState?: StateRef<SocialState>;
   guildRelationsState?: StateRef<GuildRelationsState>;
+  guildActivityStats?: StateRef<GuildActivityStats>;
   gameTime: StateRef<number>;
   lastRealTime: StateRef<number>;
   sessionFileInput: StateRef<HTMLInputElement | null>;
@@ -71,6 +74,7 @@ export type SessionSetters = {
   setRaidLockouts?: StateSetter;
   setSocialState?: StateSetter;
   setGuildRelationsState?: StateSetter;
+  setGuildActivityStats?: StateSetter;
   setIsPaused: StateSetter;
   setGameSpeed: StateSetter;
   setGameTimeMs: StateSetter;
@@ -118,6 +122,7 @@ export const applyLoadedSessionToApp = ({
     loadedMissionBoardState,
     loadedSocialState,
     loadedGuildRelationsState,
+    loadedGuildActivityStats,
     loadedProgression,
     loadedCalendarState,
     loadedRaidLockouts,
@@ -145,6 +150,7 @@ export const applyLoadedSessionToApp = ({
   if (refs.guildRelationsState) {
     refs.guildRelationsState.current = loadedGuildRelationsState;
   }
+  if (refs.guildActivityStats) refs.guildActivityStats.current = loadedGuildActivityStats;
   refs.gameTime.current = loadedProgression.gameTimeMs;
   refs.lastRealTime.current = getCurrentTime();
 
@@ -179,6 +185,9 @@ export const applyLoadedSessionToApp = ({
   }
   if (setters.setGuildRelationsState) {
     setters.setGuildRelationsState(loadedGuildRelationsState);
+  }
+  if (setters.setGuildActivityStats) {
+    setters.setGuildActivityStats(loadedGuildActivityStats);
   }
   setters.setIsPaused(loadedProgression.isPaused);
   setters.setGameSpeed(clampGameSpeed(loadedProgression.gameSpeed));

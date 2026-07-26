@@ -2,6 +2,7 @@ import type { ChangeEvent, RefObject } from "react";
 import type { MissionInput } from "../types/missionTypes";
 import type { SocialState } from "../social/chatTypes";
 import type { GuildRelationsState } from "../guildRelations/guildRelations";
+import type { GuildActivityStats } from "../guild/guildActivityStats";
 
 import {
   buildSessionPayload,
@@ -29,6 +30,7 @@ export type SessionState = {
   missionBoardState: Record<string, unknown>;
   socialState: SocialState;
   guildRelationsState: GuildRelationsState;
+  guildActivityStats: GuildActivityStats;
   gameSpeed: number;
   isPaused: boolean;
   gameTimeMs: number;

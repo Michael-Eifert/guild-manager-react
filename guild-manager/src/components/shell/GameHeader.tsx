@@ -3,6 +3,7 @@ import { Gauge, Pause, Play, Settings } from "lucide-react";
 import { formatGameSpeedLabel } from "../../progression";
 import { getWowIconUrl } from "../../utils";
 import IconButton from "../ui/IconButton";
+import type { CharacterOnlineStatus } from "../../activity/characterOnline";
 
 type GameHeaderProps = {
   guildName: string;
@@ -20,6 +21,9 @@ type GameHeaderProps = {
   renownPoints: number;
   isPaused: boolean;
   gameSpeed: number;
+  effectiveGameSpeed?: number;
+  isAutoFastForward?: boolean;
+  nextLogin?: CharacterOnlineStatus | null;
   onOpenSettings: () => void;
   onTogglePause: () => void;
   onCycleSpeed: () => void;
@@ -68,6 +72,9 @@ export default function GameHeader({
   renownPoints,
   isPaused,
   gameSpeed,
+  effectiveGameSpeed = gameSpeed,
+  isAutoFastForward = false,
+  nextLogin = null,
   onOpenSettings,
   onTogglePause,
   onCycleSpeed,
@@ -144,13 +151,19 @@ export default function GameHeader({
               onClick={onTogglePause}
             />
             <IconButton
-              label={`Game speed ${formatGameSpeedLabel(gameSpeed)}`}
-              active={gameSpeed > 1}
+              label={
+                isAutoFastForward
+                  ? `Auto x8 until the next member login, then ${formatGameSpeedLabel(gameSpeed)}`
+                  : `Game speed ${formatGameSpeedLabel(gameSpeed)}`
+              }
+              active={effectiveGameSpeed > 1}
               icon={
                 <span className="flex flex-col items-center leading-none">
                   <Gauge size={16} aria-hidden="true" />
                   <span className="mt-0.5 text-[9px] font-extrabold">
-                    {formatGameSpeedLabel(gameSpeed)}
+                    {isAutoFastForward
+                      ? "Auto x8"
+                      : formatGameSpeedLabel(effectiveGameSpeed)}
                   </span>
                 </span>
               }
@@ -158,6 +171,13 @@ export default function GameHeader({
             />
           </div>
         </div>
+        {isAutoFastForward && nextLogin ? (
+          <div className="text-right text-[10px] text-cyan-200/80 lg:absolute lg:bottom-1 lg:right-5">
+            Next login Day {nextLogin.nextLoginDayIndex + 1},{" "}
+            {String(Math.floor(nextLogin.nextLoginHour)).padStart(2, "0")}:00 ·
+            resumes {formatGameSpeedLabel(gameSpeed)}
+          </div>
+        ) : null}
       </div>
     </header>
   );

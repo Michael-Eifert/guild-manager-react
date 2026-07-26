@@ -79,6 +79,7 @@ export const getEligibleBattlegroundCharacters = ({
   roster = [],
   activeMissions = [],
   battlefieldState = null,
+  onlineMemberIds = null,
 } = {}) => {
   const activeMissionIds = new Set(
     (Array.isArray(activeMissions) ? activeMissions : []).flatMap((mission) =>
@@ -86,10 +87,17 @@ export const getEligibleBattlegroundCharacters = ({
     ),
   );
   const activeBattleIds = getActiveBattlefieldMemberIdSet(battlefieldState);
+  const onlineIds =
+    onlineMemberIds instanceof Set
+      ? onlineMemberIds
+      : Array.isArray(onlineMemberIds)
+        ? new Set(onlineMemberIds.map(String))
+        : null;
 
   return (Array.isArray(roster) ? roster : []).filter((character) => {
     const id = normalizeId(character?.id);
     if (!id || activeMissionIds.has(id) || activeBattleIds.has(id)) return false;
+    if (onlineIds && !onlineIds.has(id)) return false;
     if ((Number(character?.level) || 1) < WARSONG_GULCH.minLevel) return false;
     if (character?.isDismissed || character?.dead || character?.isDead) return false;
     const status = String(character?.status || "Idle");
@@ -364,4 +372,3 @@ export const pruneCompletedBattlefields = (battlefieldState) => {
     ),
   };
 };
-
