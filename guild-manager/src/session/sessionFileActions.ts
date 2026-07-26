@@ -76,7 +76,10 @@ export const loadSessionFile = ({
 }: {
   event: ChangeEvent<HTMLInputElement>;
   hydrateOptions: HydrateOptions;
-  onLoaded?: (loadedSession: HydratedSession) => void;
+  onLoaded?: (
+    loadedSession: HydratedSession,
+    rawSession: string,
+  ) => void;
   onInvalidSession?: (error: unknown) => void;
   onReadError?: () => void;
 }) => {
@@ -87,12 +90,13 @@ export const loadSessionFile = ({
   const reader = new FileReader();
   reader.onload = () => {
     try {
-      const payloadData = parseSessionPayload(reader.result);
+      const rawSession = String(reader.result || "");
+      const payloadData = parseSessionPayload(rawSession);
       const loadedSession = hydrateSessionData({
         payloadData,
         ...hydrateOptions,
       });
-      onLoaded?.(loadedSession);
+      onLoaded?.(loadedSession, rawSession);
     } catch (error) {
       onInvalidSession?.(error);
     }

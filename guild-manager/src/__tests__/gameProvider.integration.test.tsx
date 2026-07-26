@@ -1,16 +1,36 @@
 // @vitest-environment jsdom
 import React from "react";
-import { act, cleanup, render, screen } from "@testing-library/react";
+import {
+  act,
+  cleanup,
+  render,
+  screen,
+  waitFor,
+} from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
-import { afterEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { MemoryRouter } from "react-router-dom";
 
 import { GameProvider } from "../app/GameProvider";
 import { useGameActions, useGameSelector } from "../app/useGame";
-import { CONFIG } from "../constants";
+import { CONFIG, DEFAULT_GUILD_SETUP } from "../constants";
+import {
+  BROWSER_SESSION_STORAGE_KEY,
+  clearBrowserSession,
+  writeBrowserSession,
+} from "../session/browserSessionPersistence";
+import {
+  CURRENT_SESSION_VERSION,
+  SESSION_FORMAT_VALUE,
+} from "../session/sessionMigrations";
+
+beforeEach(() => {
+  clearBrowserSession();
+});
 
 afterEach(() => {
   cleanup();
+  clearBrowserSession();
   vi.useRealTimers();
 });
 
@@ -32,6 +52,7 @@ const Probe = () => {
 const RuntimeProbe = () => {
   const gameTimeMs = useGameSelector((game) => game.gameTimeMs);
   const guildStarted = useGameSelector((game) => game.guildSetup.hasStarted);
+  const guildName = useGameSelector((game) => game.guildSetup.name);
   const rosterSize = useGameSelector((game) => game.roster.length);
   const actions = useGameActions();
   return (
@@ -39,6 +60,7 @@ const RuntimeProbe = () => {
       <output data-testid="game-time">{gameTimeMs}</output>
       <output data-testid="roster-size">{rosterSize}</output>
       <output data-testid="started">{String(guildStarted)}</output>
+      <output data-testid="guild-name">{guildName}</output>
       <button type="button" onClick={() => actions.changeGuildSetup("name", "Runtime Guild")}>Name</button>
       <button type="button" onClick={() => actions.startGuild()}>Start</button>
     </div>
@@ -78,5 +100,88 @@ describe("GameProvider integration", () => {
     act(() => screen.getByRole("button", { name: "Start" }).click());
     expect(screen.getByTestId("started").textContent).toBe("true");
     expect(Number(screen.getByTestId("roster-size").textContent)).toBeGreaterThan(0);
+  });
+
+  it("writes a browser autosave when a guild starts", async () => {
+    render(
+      <MemoryRouter>
+        <GameProvider><RuntimeProbe /></GameProvider>
+      </MemoryRouter>,
+    );
+
+    act(() => screen.getByRole("button", { name: "Name" }).click());
+    act(() => screen.getByRole("button", { name: "Start" }).click());
+
+    await waitFor(() => {
+      const rawAutosave = window.localStorage.getItem(
+        BROWSER_SESSION_STORAGE_KEY,
+      );
+      expect(rawAutosave).toBeTruthy();
+      const autosave = JSON.parse(rawAutosave || "{}");
+      expect(autosave.data.guildSetup).toMatchObject({
+        hasStarted: true,
+        name: "Runtime Guild",
+      });
+      expect(autosave.data.roster.length).toBeGreaterThan(0);
+    });
+  });
+
+  it("restores a started guild automatically from the browser session", async () => {
+    writeBrowserSession(
+      {
+        format: SESSION_FORMAT_VALUE,
+        version: CURRENT_SESSION_VERSION,
+        savedAt: "2026-07-26T12:00:00.000Z",
+        data: {
+          roster: [],
+          guildSetup: {
+            ...DEFAULT_GUILD_SETUP,
+            hasStarted: true,
+            name: "Restored Browser Guild",
+          },
+          progression: {
+            gameTimeMs: 1_760_000_000_000,
+            gameSpeed: 2,
+            isPaused: true,
+          },
+        },
+      },
+    );
+
+    render(
+      <MemoryRouter initialEntries={["/start"]}>
+        <GameProvider><RuntimeProbe /></GameProvider>
+      </MemoryRouter>,
+    );
+
+    await waitFor(() => {
+      expect(screen.getByTestId("started").textContent).toBe("true");
+      expect(screen.getByTestId("guild-name").textContent).toBe(
+        "Restored Browser Guild",
+      );
+      expect(Number(screen.getByTestId("game-time").textContent)).toBe(
+        1_760_000_000_000,
+      );
+    });
+  });
+
+  it("discards an invalid browser autosave without crashing the provider", async () => {
+    window.localStorage.setItem(
+      BROWSER_SESSION_STORAGE_KEY,
+      "{invalid session",
+    );
+
+    render(
+      <MemoryRouter>
+        <GameProvider><RuntimeProbe /></GameProvider>
+      </MemoryRouter>,
+    );
+
+    await waitFor(() => {
+      expect(
+        window.localStorage.getItem(BROWSER_SESSION_STORAGE_KEY),
+      ).toBeNull();
+      expect(screen.getByTestId("started").textContent).toBe("false");
+    });
   });
 });

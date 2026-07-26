@@ -1,3 +1,5 @@
+import type { ChangeEvent } from "react";
+
 import { DEFAULT_GUILD_SETUP, GUILD_FACTION, INITIAL_MISSIONS } from "../constants";
 import { getMissionListWithZones } from "../zones/zoneLogic";
 import { normalizeGuildProgress, getGuildDerivedStats } from "../guildProgression";
@@ -12,9 +14,18 @@ import type {
 import {
   loadSessionFile,
   openSessionFilePicker,
-  saveSessionFile,
 } from "../session/sessionFileActions";
 import type { SessionState } from "../session/sessionFileActions";
+import {
+  buildSessionPayload,
+  downloadSessionPayload,
+  hydrateSessionData,
+  parseSessionPayload,
+} from "../session/sessionPersistence";
+import {
+  readBrowserSession,
+  writeBrowserSession,
+} from "../session/browserSessionPersistence";
 import type { NotificationInput } from "./gameTypes";
 
 type SessionCharacter = Record<string, unknown>;
@@ -39,12 +50,84 @@ export const createSessionActions = ({
   createId: () => string;
   pushNotification: (notification: NotificationInput) => unknown;
 }) => {
+  const hydrateOptions = {
+    initialMissions: getMissionListWithZones(INITIAL_MISSIONS),
+    normalizeGuildProgress,
+    normalizeGuildSetup,
+    getGuildDerivedStats,
+    normalizeProgressionState,
+    defaultGameSpeed: DEFAULT_GAME_SPEED,
+    createId,
+    resolveDungeonBossCount: getDungeonBossCount,
+    defaultGuildSetup: DEFAULT_GUILD_SETUP,
+  };
+
+  const applySession = (
+    loadedSession: ReturnType<typeof hydrateSessionData>,
+  ) => {
+    applyLoadedSessionToApp({
+      loadedSession,
+      factionFallback: GUILD_FACTION.ALLIANCE,
+      normalizeRosterZones,
+      getMissionListWithZones,
+      clampGameSpeed,
+      refs,
+      setters,
+      closeOverlays,
+    });
+  };
+
+  const buildCurrentSessionPayload = () =>
+    buildSessionPayload({
+      ...state,
+      gameTimeMs: refs.gameTime.current,
+    });
+
+  const persistBrowserSession = () => {
+    const saved = writeBrowserSession(buildCurrentSessionPayload());
+    if (!saved && typeof window !== "undefined") {
+      throw new Error("Browser storage is unavailable.");
+    }
+    return saved;
+  };
+
+  const restoreBrowserSession = () => {
+    const rawSession = readBrowserSession();
+    if (!rawSession) return false;
+
+    const payloadData = parseSessionPayload(rawSession);
+    const loadedSession = hydrateSessionData({
+      payloadData,
+      ...hydrateOptions,
+    });
+    applySession(loadedSession);
+    return true;
+  };
+
   const saveSession = () => {
+    const payload = buildCurrentSessionPayload();
     try {
-      saveSessionFile({ ...state, gameTimeMs: refs.gameTime.current });
+      if (!writeBrowserSession(payload)) {
+        throw new Error("Browser storage is unavailable.");
+      }
+    } catch (error) {
+      console.error("Failed to update browser autosave:", error);
+      pushNotification({
+        type: "warning",
+        title: "Browser Autosave Failed",
+        message: "The browser copy could not be updated.",
+      });
+    }
+
+    try {
+      downloadSessionPayload(payload);
     } catch (error) {
       console.error("Failed to save session:", error);
-      pushNotification({ type: "error", title: "Save Failed", message: "Could not create the session file." });
+      pushNotification({
+        type: "error",
+        title: "Save Failed",
+        message: "Could not create the session file.",
+      });
     }
   };
 
@@ -53,28 +136,21 @@ export const createSessionActions = ({
   const loadSession = (event: ChangeEvent<HTMLInputElement>) => {
     loadSessionFile({
       event,
-      hydrateOptions: {
-        initialMissions: getMissionListWithZones(INITIAL_MISSIONS),
-        normalizeGuildProgress,
-        normalizeGuildSetup,
-        getGuildDerivedStats,
-        normalizeProgressionState,
-        defaultGameSpeed: DEFAULT_GAME_SPEED,
-        createId,
-        resolveDungeonBossCount: getDungeonBossCount,
-        defaultGuildSetup: DEFAULT_GUILD_SETUP,
-      },
-      onLoaded: (loadedSession) => {
-        applyLoadedSessionToApp({
-          loadedSession,
-          factionFallback: GUILD_FACTION.ALLIANCE,
-          normalizeRosterZones,
-          getMissionListWithZones,
-          clampGameSpeed,
-          refs,
-          setters,
-          closeOverlays,
-        });
+      hydrateOptions,
+      onLoaded: (loadedSession, rawSession) => {
+        applySession(loadedSession);
+        try {
+          if (!writeBrowserSession(rawSession, true)) {
+            throw new Error("Browser storage is unavailable.");
+          }
+        } catch (error) {
+          console.error("Failed to update browser autosave:", error);
+          pushNotification({
+            type: "warning",
+            title: "Browser Autosave Failed",
+            message: "The browser copy could not be updated.",
+          });
+        }
         pushNotification({ type: "success", title: "Session Loaded", message: "The guild session was loaded successfully." });
       },
       onInvalidSession: (error: unknown) => {
@@ -96,6 +172,11 @@ export const createSessionActions = ({
     });
   };
 
-  return { saveSession, openSession, loadSession };
+  return {
+    saveSession,
+    openSession,
+    loadSession,
+    persistBrowserSession,
+    restoreBrowserSession,
+  };
 };
-import type { ChangeEvent } from "react";

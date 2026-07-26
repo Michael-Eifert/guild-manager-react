@@ -15,6 +15,7 @@ import { useGameRuntime } from "./useGameRuntime";
 import { useHomeUiState } from "./useHomeUiState";
 import { useNotifications } from "./useNotifications";
 import { createSessionActions } from "./sessionActions";
+import { clearBrowserSession } from "../session/browserSessionPersistence";
 import {
   autoEquipGuildStashItem,
   cleanGuildStash,
@@ -338,6 +339,7 @@ const {
   EPIC_DROP_CHANCE: WORLD_TICK_EPIC_DROP_CHANCE,
   EPIC_MIN_LEVEL: WORLD_TICK_EPIC_MIN_LEVEL,
 } = WORLD_DROP_CONFIG;
+const BROWSER_AUTOSAVE_INTERVAL_MS = 30_000;
 
 // --- MAIN APP COMPONENT ---
 
@@ -450,6 +452,9 @@ export const useGameProviderController = () => {
   const lastRealTimeRef = useRef(services.now());
   const rewardedMissionIdsRef = useRef(new Set());
   const sessionFileInputRef = useRef(null);
+  const browserSessionReadyRef = useRef(false);
+  const browserAutosaveWarningShownRef = useRef(false);
+  const persistBrowserSessionRef = useRef(() => false);
 
   useEffect(() => {
     let isMounted = true;
@@ -4287,6 +4292,8 @@ export const useGameProviderController = () => {
     saveSession: handleSaveSession,
     openSession: handleLoadButtonClick,
     loadSession: handleLoadSessionFile,
+    persistBrowserSession,
+    restoreBrowserSession,
   } = createSessionActions({
     state: {
       roster, activeMissions, missionList, guildLog, guildGold, guildProgress,
@@ -4295,6 +4302,7 @@ export const useGameProviderController = () => {
       socialState, gameSpeed, isPaused,
       guildRelationsState,
       guildActivityStats,
+      gameTimeMs,
     },
     refs: {
       rewardedMissionIds: rewardedMissionIdsRef, roster: rosterRef,
@@ -4331,6 +4339,91 @@ export const useGameProviderController = () => {
     createId: services.createId,
     pushNotification,
   });
+
+  persistBrowserSessionRef.current = persistBrowserSession;
+
+  const runBrowserAutosave = useCallback(() => {
+    if (
+      !browserSessionReadyRef.current ||
+      !guildSetupRef.current?.hasStarted
+    ) {
+      return false;
+    }
+
+    try {
+      const saved = persistBrowserSessionRef.current();
+      if (saved) browserAutosaveWarningShownRef.current = false;
+      return saved;
+    } catch (error) {
+      console.error("Failed to update browser autosave:", error);
+      if (!browserAutosaveWarningShownRef.current) {
+        browserAutosaveWarningShownRef.current = true;
+        pushNotification({
+          type: "warning",
+          title: "Browser Autosave Failed",
+          message: "This browser could not update its local autosave.",
+          durationMs: 6500,
+        });
+      }
+      return false;
+    }
+  }, [pushNotification]);
+
+  useEffect(() => {
+    if (browserSessionReadyRef.current) return;
+
+    try {
+      const restored = restoreBrowserSession();
+      if (restored) {
+        pushNotification({
+          type: "success",
+          title: "Autosave Restored",
+          message: "Your browser session was restored automatically.",
+        });
+      }
+    } catch (error) {
+      console.error("Failed to restore browser autosave:", error);
+      try {
+        clearBrowserSession();
+      } catch (clearError) {
+        console.error("Failed to clear invalid browser autosave:", clearError);
+      }
+      pushNotification({
+        type: "warning",
+        title: "Autosave Could Not Be Restored",
+        message: "Start a new guild or load a session file.",
+        durationMs: 6500,
+      });
+    } finally {
+      browserSessionReadyRef.current = true;
+    }
+  }, []);
+
+  useEffect(() => {
+    if (!guildSetup.hasStarted) return;
+    runBrowserAutosave();
+  }, [currentCalendarDayIndex, guildSetup.hasStarted, runBrowserAutosave]);
+
+  useEffect(() => {
+    const saveBeforeLeaving = () => {
+      runBrowserAutosave();
+    };
+    const saveWhenHidden = () => {
+      if (document.visibilityState === "hidden") runBrowserAutosave();
+    };
+    const intervalId = window.setInterval(
+      runBrowserAutosave,
+      BROWSER_AUTOSAVE_INTERVAL_MS,
+    );
+
+    window.addEventListener("pagehide", saveBeforeLeaving);
+    document.addEventListener("visibilitychange", saveWhenHidden);
+    return () => {
+      window.clearInterval(intervalId);
+      window.removeEventListener("pagehide", saveBeforeLeaving);
+      document.removeEventListener("visibilitychange", saveWhenHidden);
+    };
+  }, [runBrowserAutosave]);
 
   const guildActivityModeSummary = getGuildActivityModeSummary(roster);
   const dungeonActivityInfoText = getDungeonActivityInfoText(
