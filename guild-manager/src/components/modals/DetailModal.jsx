@@ -49,6 +49,7 @@ import {
 import { getRaidLockoutStatus } from "../../raids/raidLockouts";
 import { getCharacterRelationshipRows } from "../../social/relationshipSystem";
 import BaseModal from "./BaseModal";
+import GameButton from "../ui/GameButton";
 import {
   ARMORY_BOTTOM_SLOTS,
   ARMORY_LEFT_SLOTS,
@@ -601,12 +602,15 @@ const DetailModal = ({
                     +
                   </button>
                 </div>
-                <button
+                <GameButton
                   onClick={() => onDismiss(char.id)}
-                  className="ml-auto text-red-400 text-xs border border-red-900 px-3 py-1 rounded hover:bg-red-900/20"
+                  tone="danger"
+                  size="md"
+                  icon={<span aria-hidden="true" className="text-base leading-none">🥾</span>}
+                  className="ml-auto"
                 >
-                  Dismiss Hero
-                </button>
+                  Kick Player
+                </GameButton>
               </div>
 
               <div className="mt-4 bg-gray-800/50 p-3 rounded border border-gray-700">

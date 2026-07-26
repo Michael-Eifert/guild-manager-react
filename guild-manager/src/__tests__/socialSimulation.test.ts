@@ -201,7 +201,7 @@ describe("social LFG simulation", () => {
   it("caps chat history and keeps realm reservations unique", () => {
     const state = ensureSocialState({
       ...createInitialSocialState(),
-      messages: Array.from({ length: 240 }, (_, index) => ({
+      messages: Array.from({ length: 340 }, (_, index) => ({
         id: `chat:${index + 1}`,
         sequence: index + 1,
         channel: index % 2 ? "guild" : "general",
@@ -214,11 +214,11 @@ describe("social LFG simulation", () => {
         speaker: null,
       })),
       searches: [],
-      nextSequence: 241,
+      nextSequence: 341,
       reservedRealmPlayerIds: ["same", "same"],
     });
 
-    expect(state.messages).toHaveLength(200);
+    expect(state.messages).toHaveLength(300);
     expect(state.messages[0]?.sequence).toBe(41);
     expect(state.reservedRealmPlayerIds).toEqual([]);
   });

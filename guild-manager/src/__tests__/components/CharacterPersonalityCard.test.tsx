@@ -12,4 +12,15 @@ describe("CharacterPersonalityCard", () => {
     expect(html).toContain("Morale");
     expect(html).toContain("Likes");
   });
+
+  it("keeps offline presentation available in personality mode", () => {
+    const html = render(
+      <CharacterPersonalityCard
+        char={{ ...hero, onlineStatus: "Offline" }}
+        onClick={noop}
+      />,
+    );
+
+    expect(html).toContain('data-online-status="Offline"');
+  });
 });

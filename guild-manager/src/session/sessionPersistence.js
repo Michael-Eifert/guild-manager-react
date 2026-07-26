@@ -33,6 +33,7 @@ import {
   SESSION_FORMAT_VALUE,
 } from "./sessionMigrations";
 import { normalizeGuildActivityStats } from "../guild/guildActivityStats";
+import { normalizeGameSettings } from "../settings/gameSettings";
 
 export const SESSION_FORMAT = SESSION_FORMAT_VALUE;
 export const SESSION_VERSION = CURRENT_SESSION_VERSION;
@@ -261,6 +262,7 @@ export const buildSessionPayload = ({
   socialState,
   guildRelationsState,
   guildActivityStats,
+  gameSettings,
   gameSpeed,
   isPaused,
   gameTimeMs,
@@ -315,6 +317,7 @@ export const buildSessionPayload = ({
           ),
         ),
       ),
+      gameSettings: normalizeGameSettings(gameSettings),
       raidLockouts: normalizeRaidLockouts(
         raidLockouts,
         Math.max(
@@ -587,6 +590,7 @@ export const hydrateSessionData = ({
     safePayload.guildActivityStats,
     loadedCalendarDayIndex,
   );
+  const loadedGameSettings = normalizeGameSettings(safePayload.gameSettings);
 
   return {
     normalizedRoster,
@@ -606,6 +610,7 @@ export const hydrateSessionData = ({
     loadedSocialState,
     loadedGuildRelationsState,
     loadedGuildActivityStats,
+    loadedGameSettings,
     loadedProgression,
     loadedCalendarState,
     loadedRaidLockouts,

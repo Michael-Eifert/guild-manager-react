@@ -11,9 +11,13 @@ describe("social session persistence", () => {
       version: 8,
       data: { roster: [] },
     });
-    expect(migrated.version).toBe(12);
+    expect(migrated.version).toBe(14);
     expect(migrated.data).toHaveProperty("guildActivityStats", null);
-    expect(migrated.data).toHaveProperty("socialState", null);
+    expect(migrated.data.socialState).toMatchObject({
+      rpScenes: [],
+      processedRpEventIds: [],
+      lastReadSequenceByChannel: { tavern: 0 },
+    });
     expect(migrated.data).toHaveProperty("guildRelationsState", null);
   });
 
@@ -65,6 +69,22 @@ describe("social session persistence", () => {
           initiatorId: "guild-1",
         },
       ],
+      rpScenes: [
+        {
+          id: "rp:run",
+          sourceEventId: "run:1",
+          kind: "run-success",
+          tag: "Run Accomplished",
+          priority: 2,
+          status: "completed",
+          createdAt: 100,
+          nextTurnAt: 100,
+          completedAt: 120,
+          participants: [],
+          turns: [],
+          nextTurnIndex: 0,
+        },
+      ],
     });
 
     expect(state.searches[0]?.participants).toHaveLength(2);
@@ -74,5 +94,6 @@ describe("social session persistence", () => {
       textSource: "template",
       generationStatus: "ready",
     });
+    expect(state.rpScenes[0]?.sourceEventId).toBe("run:1");
   });
 });

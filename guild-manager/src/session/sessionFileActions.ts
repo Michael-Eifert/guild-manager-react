@@ -3,6 +3,7 @@ import type { MissionInput } from "../types/missionTypes";
 import type { SocialState } from "../social/chatTypes";
 import type { GuildRelationsState } from "../guildRelations/guildRelations";
 import type { GuildActivityStats } from "../guild/guildActivityStats";
+import type { GameSettingsState } from "../settings/gameSettings";
 
 import {
   buildSessionPayload,
@@ -31,6 +32,7 @@ export type SessionState = {
   socialState: SocialState;
   guildRelationsState: GuildRelationsState;
   guildActivityStats: GuildActivityStats;
+  gameSettings: GameSettingsState;
   gameSpeed: number;
   isPaused: boolean;
   gameTimeMs: number;

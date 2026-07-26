@@ -10,7 +10,10 @@ import {
   getRealmGuildApplications,
 } from "../server/realmPopulation";
 import { REALM_MARKET_STATUS } from "../server/realmDefinitions";
-import { migrateSessionPayload } from "../session/sessionMigrations";
+import {
+  CURRENT_SESSION_VERSION,
+  migrateSessionPayload,
+} from "../session/sessionMigrations";
 
 const guildSetup = {
   faction: GUILD_FACTION.ALLIANCE,
@@ -308,7 +311,7 @@ describe("realm population lifecycle", () => {
       },
     });
 
-    expect(migrated.version).toBe(12);
+    expect(migrated.version).toBe(CURRENT_SESSION_VERSION);
     expect(
       (
         (migrated.data.realmState as Record<string, unknown>)

@@ -16,5 +16,6 @@ export const ROUTES = Object.freeze({
   PROFESSIONS: "/home/professions",
   DATABASE: "/home/database",
   GUILD_LOG: "/home/guild-log",
+  GAME_SETTINGS: "/home/game-settings",
   CHAT: "/home/chat",
 });

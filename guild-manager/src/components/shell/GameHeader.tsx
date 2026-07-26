@@ -1,4 +1,4 @@
-import { Gauge, Pause, Play, Settings } from "lucide-react";
+import { Gauge, Pause, Play, Save } from "lucide-react";
 
 import { formatGameSpeedLabel } from "../../progression";
 import { getWowIconUrl } from "../../utils";
@@ -24,7 +24,7 @@ type GameHeaderProps = {
   effectiveGameSpeed?: number;
   isAutoFastForward?: boolean;
   nextLogin?: CharacterOnlineStatus | null;
-  onOpenSettings: () => void;
+  onOpenSaveLoad: () => void;
   onTogglePause: () => void;
   onCycleSpeed: () => void;
 };
@@ -75,7 +75,7 @@ export default function GameHeader({
   effectiveGameSpeed = gameSpeed,
   isAutoFastForward = false,
   nextLogin = null,
-  onOpenSettings,
+  onOpenSaveLoad,
   onTogglePause,
   onCycleSpeed,
 }: GameHeaderProps) {
@@ -134,9 +134,9 @@ export default function GameHeader({
           </div>
           <div className="flex shrink-0 items-center gap-1.5">
             <IconButton
-              label="Settings"
-              icon={<Settings size={18} aria-hidden="true" />}
-              onClick={onOpenSettings}
+              label="Save & Load"
+              icon={<Save size={18} aria-hidden="true" />}
+              onClick={onOpenSaveLoad}
             />
             <IconButton
               label={isPaused ? "Resume game" : "Pause game"}

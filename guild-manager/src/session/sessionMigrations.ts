@@ -1,13 +1,14 @@
 import { z } from "zod";
 
 export const SESSION_FORMAT_VALUE = "guild-manager-session" as const;
-export const CURRENT_SESSION_VERSION = 12;
+export const CURRENT_SESSION_VERSION = 14;
 
 const dataSchema = z.record(z.string(), z.unknown());
 const recognizedKeys = new Set([
   "roster", "activeMissions", "missionList", "guildSetup", "guildProgress", "progression",
   "milestones", "achievements", "gameSpeed",
   "guildRelationsState", "guildActivityStats",
+  "gameSettings",
 ]);
 const hasRecognizedSessionData = (data: Record<string, unknown>) =>
   Object.keys(data).some((key) => recognizedKeys.has(key));
@@ -79,6 +80,49 @@ export const SESSION_MIGRATIONS: ReadonlyArray<Migration> = [
     };
   },
   (data) => ({ ...data, guildActivityStats: data.guildActivityStats || null }),
+  (data) => {
+    const socialState =
+      data.socialState && typeof data.socialState === "object"
+        ? (data.socialState as Record<string, unknown>)
+        : {};
+    const lastRead =
+      socialState.lastReadSequenceByChannel &&
+      typeof socialState.lastReadSequenceByChannel === "object"
+        ? (socialState.lastReadSequenceByChannel as Record<string, unknown>)
+        : {};
+    return {
+      ...data,
+      socialState: {
+        ...socialState,
+        rpScenes: Array.isArray(socialState.rpScenes)
+          ? socialState.rpScenes
+          : [],
+        processedRpEventIds: Array.isArray(socialState.processedRpEventIds)
+          ? socialState.processedRpEventIds
+          : [],
+        rpDailyCounters:
+          socialState.rpDailyCounters &&
+          typeof socialState.rpDailyCounters === "object"
+            ? socialState.rpDailyCounters
+            : { dayIndex: -1, nonInteractiveScenes: 0 },
+        lastReadSequenceByChannel: {
+          ...lastRead,
+          tavern: Number(lastRead.tavern) || 0,
+        },
+      },
+    };
+  },
+  (data) => ({
+    ...data,
+    gameSettings: {
+      offlineSimulationEnabled:
+        typeof (data.gameSettings as Record<string, unknown> | undefined)
+          ?.offlineSimulationEnabled === "boolean"
+          ? (data.gameSettings as Record<string, unknown>)
+              .offlineSimulationEnabled
+          : true,
+    },
+  }),
 ];
 
 export const migrateSessionPayload = (input: unknown) => {

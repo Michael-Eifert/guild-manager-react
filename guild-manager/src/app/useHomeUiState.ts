@@ -15,7 +15,6 @@ export const useHomeUiState = ({
   const [showLootTable, setShowLootTable] = useState(false);
   const [showGuildLog, setShowGuildLog] = useState(false);
   const [showProfessions, setShowProfessions] = useState(false);
-  const [showDebug, setShowDebug] = useState(false);
   const [showOptions, setShowOptions] = useState(false);
   const [dashboardSectionsOpen, setDashboardSectionsOpen] = useState(defaultDashboardSections);
   const [detailCharId, setDetailCharId] = useState<string | null>(null);
@@ -40,13 +39,11 @@ export const useHomeUiState = ({
     setGuildMemberSearch,
     setGuildMemberSortMode,
     setMemberRankingMode,
-    setShowDebug,
     setShowGuildLog,
     setShowLootTable,
     setShowOptions,
     setShowProfessions,
     setShowRecruit,
-    showDebug,
     showGuildLog,
     showLootTable,
     showOptions,

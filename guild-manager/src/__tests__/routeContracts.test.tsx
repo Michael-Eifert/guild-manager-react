@@ -7,6 +7,7 @@ import { GameContext } from "../app/GameContext";
 import HomeRoot from "../pages/home/HomeRoot";
 import StartPage from "../pages/start/StartPage";
 import { ROUTES } from "../routes";
+import { buildHomeNavigation } from "../components/shell/homeNavigation";
 
 vi.mock("react-router-dom", async () => {
   const actual = await vi.importActual("react-router-dom");
@@ -43,6 +44,23 @@ describe("route contracts", () => {
     expect(ROUTES.PROFESSIONS).toBe("/home/professions");
     expect(ROUTES.DATABASE).toBe("/home/database");
     expect(ROUTES.GUILD_LOG).toBe("/home/guild-log");
+    expect(ROUTES.GAME_SETTINGS).toBe("/home/game-settings");
+  });
+
+  it("places Game Settings last in the Tools navigation group", () => {
+    const tools = buildHomeNavigation({
+      applicationCount: 0,
+      activeDungeonCount: 0,
+      activeBattlefieldCount: 0,
+      unreadChatCount: 0,
+    }).filter((item) => item.group === "tools");
+
+    expect(tools.at(-1)).toMatchObject({
+      id: "game-settings",
+      label: "Game Settings",
+      kind: "route",
+      to: ROUTES.GAME_SETTINGS,
+    });
   });
 
   it("renders setup on /start before a guild exists", () => {

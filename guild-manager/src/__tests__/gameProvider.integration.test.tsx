@@ -123,6 +123,9 @@ describe("GameProvider integration", () => {
         name: "Runtime Guild",
       });
       expect(autosave.data.roster.length).toBeGreaterThan(0);
+      expect(autosave.data.gameSettings).toEqual({
+        offlineSimulationEnabled: true,
+      });
     });
   });
 

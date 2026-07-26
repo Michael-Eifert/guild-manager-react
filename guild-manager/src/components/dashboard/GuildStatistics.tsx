@@ -3,11 +3,14 @@ import {
   CheckCircle2,
   Circle,
   Castle,
+  Coffee,
+  Flame,
   HeartHandshake,
   ShieldCheck,
   Sparkles,
   Trophy,
   Users,
+  Zap,
 } from "lucide-react";
 import { useMemo, type ReactNode } from "react";
 import { Link } from "react-router-dom";
@@ -267,6 +270,17 @@ export default function GuildStatistics({
       );
     return { dungeons, raids };
   }, [missionList]);
+  const onlineProfileCounts = useMemo(() => {
+    const profiles = Object.values(onlineSnapshot?.byId || {});
+
+    return {
+      hardcore: profiles.filter(
+        (entry) => entry.profile === "three_quarters",
+      ).length,
+      regular: profiles.filter((entry) => entry.profile === "half").length,
+      casual: profiles.filter((entry) => entry.profile === "quarter").length,
+    };
+  }, [onlineSnapshot]);
   const pulse = [
     {
       label: "Average GS",
@@ -381,20 +395,42 @@ export default function GuildStatistics({
             </div>
           </div>
           <div className="rounded-lg border border-slate-700/80 bg-black/20 p-3 text-xs text-slate-300">
-            <div className="font-bold text-slate-100">Online profiles</div>
-            <div className="mt-1">
-              {Object.values(onlineSnapshot?.byId || {}).filter(
-                (entry) => entry.profile === "quarter",
-              ).length}{" "}
-              Casual (1/4) ·{" "}
-              {Object.values(onlineSnapshot?.byId || {}).filter(
-                (entry) => entry.profile === "half",
-              ).length}{" "}
-              Regular (2/4) ·{" "}
-              {Object.values(onlineSnapshot?.byId || {}).filter(
-                (entry) => entry.profile === "three_quarters",
-              ).length}{" "}
-              Hardcore (3/4)
+            <div className="font-bold text-slate-100">
+              Online Profile Gamers
+            </div>
+            <div className="mt-2 grid gap-1.5">
+              {[
+                {
+                  label: "Hardcore",
+                  count: onlineProfileCounts.hardcore,
+                  icon: Flame,
+                  tone: "text-orange-300",
+                },
+                {
+                  label: "Regular",
+                  count: onlineProfileCounts.regular,
+                  icon: Zap,
+                  tone: "text-sky-300",
+                },
+                {
+                  label: "Casual",
+                  count: onlineProfileCounts.casual,
+                  icon: Coffee,
+                  tone: "text-emerald-300",
+                },
+              ].map(({ label, count, icon: Icon, tone }) => (
+                <div
+                  key={label}
+                  aria-label={`${count} ${label} gamers`}
+                  className="grid grid-cols-[2rem_1.25rem_1fr] items-center gap-2 rounded-md border border-slate-800 bg-slate-950/55 px-2.5 py-1.5"
+                >
+                  <span className="text-right text-sm font-black tabular-nums text-slate-100">
+                    {count}
+                  </span>
+                  <Icon size={15} className={tone} aria-hidden="true" />
+                  <span className="font-bold text-slate-300">{label}</span>
+                </div>
+              ))}
             </div>
           </div>
           <p className="text-[10px] text-slate-500 sm:col-span-2 xl:col-span-4">

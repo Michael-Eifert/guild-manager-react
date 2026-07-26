@@ -254,6 +254,7 @@ export const advanceRealmSimulation = ({
   currentDayProgress = 0,
   playerGuildSnapshot,
   guildSetup,
+  offlineSimulationEnabled = true,
 } = {}) => {
   const safeCurrentDay = Math.max(0, Math.floor(Number(currentDayIndex) || 0));
   const safeCurrentStep = getRealmSimulationStepIndex(
@@ -319,6 +320,7 @@ export const advanceRealmSimulation = ({
       characters: nextRealm.population.players,
       dayIndex: day,
       dayProgress: simulatedDayProgress,
+      offlineSimulationEnabled,
     });
     const progressionResult = advanceRealmPopulationProgression({
       realmState: nextRealm,

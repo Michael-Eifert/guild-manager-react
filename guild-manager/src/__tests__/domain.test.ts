@@ -1148,7 +1148,7 @@ describe("relationship system", () => {
     ]);
     expect(relationships["healer::tank"]).toMatchObject({
       memberIds: ["healer", "tank"],
-      points: -3,
+      points: -2,
       runsTogether: 1,
       dungeonRuns: 1,
       successfulDungeonRuns: 0,
@@ -1161,7 +1161,7 @@ describe("relationship system", () => {
       missionName: "Deadmines",
       activityType: "dungeon",
       missionSucceeded: false,
-      pointsDelta: -3,
+      pointsDelta: -2,
       occurredAt: 1000,
     });
   });
@@ -1184,17 +1184,17 @@ describe("relationship system", () => {
 
     expect(succeeded["a::b"].points).toBeGreaterThan(failed["a::b"].points);
     expect(succeeded["a::b"]).toMatchObject({
-      points: 5,
+      points: 2,
       successfulRuns: 1,
       successfulDungeonRuns: 1,
     });
     expect(succeeded["a::b"].events[0]).toMatchObject({
       missionName: "Wailing Caverns",
-      pointsDelta: 5,
+      pointsDelta: 2,
       missionSucceeded: true,
     });
     expect(failed["a::b"]).toMatchObject({
-      points: -3,
+      points: -2,
       failedRuns: 1,
       failedDungeonRuns: 1,
     });
@@ -1217,8 +1217,8 @@ describe("relationship system", () => {
       },
     );
 
-    expect(relationships["a::b"].points).toBe(-1);
-    expect(getRelationshipLevel(relationships["a::b"])).toBe("Unfriendly");
+    expect(relationships["a::b"].points).toBe(0);
+    expect(getRelationshipLevel(relationships["a::b"])).toBe("Stranger");
     expect(relationships["a::b"].events).toHaveLength(1);
   });
 
@@ -1248,7 +1248,7 @@ describe("relationship system", () => {
     });
 
     expect(failed["a::b"]).toMatchObject({
-      points: 2,
+      points: 0,
       eliteRuns: 2,
       successfulEliteRuns: 1,
       failedEliteRuns: 1,
@@ -1257,8 +1257,8 @@ describe("relationship system", () => {
       lastMissionName: "Redridge Mountains Elite: Hunt the Warband",
     });
     expect(failed["a::b"].events.map((event) => event.pointsDelta)).toEqual([
-      -3,
-      5,
+      -2,
+      2,
     ]);
     expect(failed["a::b"].events[0]).toMatchObject({
       activityType: "elite",

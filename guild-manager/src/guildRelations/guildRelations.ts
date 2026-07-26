@@ -337,6 +337,24 @@ export const assignGuildRank = ({
 const normalizeAgainstMax = (value: number, maximum: number) =>
   maximum > 0 ? Math.round((Math.max(0, value) / maximum) * 100) : 0;
 
+const buildFrictionScore = (
+  negativePoints: number,
+  positivePoints: number,
+  openAdverseIncidents: number,
+) => {
+  // Positive relationships provide a social safety net, but never turn conflict
+  // into a benefit. The curve uses an absolute scale so a small raw value cannot
+  // become 100 merely because it is the highest value in a peaceful guild.
+  return clamp(
+    Math.round(
+      Math.max(0, negativePoints - positivePoints * 0.25) * 1.5 +
+        Math.min(32, openAdverseIncidents * 8),
+    ),
+    0,
+    100,
+  );
+};
+
 export const buildGuildRelationInsights = ({
   roster,
   relationships,
@@ -387,6 +405,7 @@ export const buildGuildRelationInsights = ({
     .filter(
       (incident) =>
         incident.dayIndex >= currentDayIndex - 30 &&
+        incident.status === "pending" &&
         (incident.kind === "dispute" ||
           incident.kind === "blame" ||
           incident.kind === "morale"),
@@ -414,29 +433,35 @@ export const buildGuildRelationInsights = ({
   });
   const maxima = {
     popularity: Math.max(0, ...raw.map((row) => row.popularity)),
-    negative: Math.max(0, ...raw.map((row) => row.negativePoints)),
     impact: Math.max(0, ...raw.map((row) => row.impact)),
-    incidents: Math.max(0, ...raw.map((row) => row.adverseIncidents)),
   };
   return raw
     .map((row) => {
       const popularity = normalizeAgainstMax(row.popularity, maxima.popularity);
       const impact = normalizeAgainstMax(row.impact, maxima.impact);
-      const negative = normalizeAgainstMax(row.negativePoints, maxima.negative);
-      const incidents = normalizeAgainstMax(row.adverseIncidents, maxima.incidents);
+      const friction = buildFrictionScore(
+        row.negativePoints,
+        row.popularity,
+        row.adverseIncidents,
+      );
+      const baseSupport = popularity * 0.6 + impact * 0.4;
+      const baseInfluence =
+        popularity * 0.4 +
+        impact * 0.4 +
+        RANK_AUTHORITY[row.rank] * 0.2;
       return {
         character: row.character,
         rank: row.rank,
         popularity,
         negativePoints: row.negativePoints,
         impact,
-        support: Math.round(popularity * 0.6 + impact * 0.4),
-        influence: Math.round(
-          popularity * 0.4 +
-            impact * 0.4 +
-            RANK_AUTHORITY[row.rank] * 0.2,
+        support: clamp(Math.round(baseSupport - friction * 0.2), 0, 100),
+        influence: clamp(
+          Math.round(baseInfluence - friction * 0.15),
+          0,
+          100,
         ),
-        friction: Math.round(negative * 0.7 + incidents * 0.3),
+        friction,
         positiveConnections: row.positiveConnections,
         negativeConnections: row.negativeConnections,
       };
@@ -452,27 +477,27 @@ export const buildGuildRelationInsights = ({
 
 const INCIDENT_CHOICES: Record<GuildIncident["kind"], GuildIncidentChoice[]> = {
   dispute: [
-    { id: "mediate", label: "Mediate", description: "Repair trust on both sides.", relationshipDelta: 6, moraleDelta: 2, target: "both" },
-    { id: "warn", label: "Issue a warning", description: "Stop the argument, but upset the instigator.", relationshipDelta: 2, moraleDelta: -5, target: "actor" },
-    { id: "ignore", label: "Let it cool down", description: "Avoid intervention and accept lingering tension.", relationshipDelta: -3, moraleDelta: -1, target: "both" },
+    { id: "mediate", label: "Mediate", description: "Repair trust on both sides.", relationshipDelta: 3, moraleDelta: 2, target: "both" },
+    { id: "warn", label: "Issue a warning", description: "Stop the argument, but upset the instigator.", relationshipDelta: 1, moraleDelta: -5, target: "actor" },
+    { id: "ignore", label: "Let it cool down", description: "Avoid intervention and accept lingering tension.", relationshipDelta: -2, moraleDelta: -1, target: "both" },
   ],
   blame: [
-    { id: "mediate", label: "Review the run", description: "Turn blame into a constructive debrief.", relationshipDelta: 5, moraleDelta: 2, target: "both" },
-    { id: "side_subject", label: "Defend the accused", description: "Support the accused and confront the accuser.", relationshipDelta: -2, moraleDelta: -4, target: "actor" },
+    { id: "mediate", label: "Review the run", description: "Turn blame into a constructive debrief.", relationshipDelta: 3, moraleDelta: 2, target: "both" },
+    { id: "side_subject", label: "Defend the accused", description: "Support the accused and confront the accuser.", relationshipDelta: -1, moraleDelta: -4, target: "actor" },
     { id: "warn", label: "Warn both members", description: "End the dispute with a firm ruling.", relationshipDelta: 1, moraleDelta: -3, target: "both" },
   ],
   praise: [
-    { id: "praise", label: "Praise publicly", description: "Celebrate the contribution with the whole guild.", relationshipDelta: 4, moraleDelta: 5, target: "guild" },
-    { id: "private_thanks", label: "Thank them privately", description: "Strengthen the pair without making a spectacle.", relationshipDelta: 6, moraleDelta: 3, target: "both" },
+    { id: "praise", label: "Praise publicly", description: "Celebrate the contribution with the whole guild.", relationshipDelta: 2, moraleDelta: 5, target: "guild" },
+    { id: "private_thanks", label: "Thank them privately", description: "Strengthen the pair without making a spectacle.", relationshipDelta: 3, moraleDelta: 3, target: "both" },
   ],
   morale: [
-    { id: "support", label: "Offer support", description: "Give the member time and reassurance.", relationshipDelta: 3, moraleDelta: 6, target: "actor" },
-    { id: "assign_mentor", label: "Assign a mentor", description: "Build a positive connection between both members.", relationshipDelta: 7, moraleDelta: 3, target: "both" },
+    { id: "support", label: "Offer support", description: "Give the member time and reassurance.", relationshipDelta: 2, moraleDelta: 6, target: "actor" },
+    { id: "assign_mentor", label: "Assign a mentor", description: "Build a positive connection between both members.", relationshipDelta: 3, moraleDelta: 3, target: "both" },
     { id: "ignore", label: "Stay focused", description: "Do not intervene.", relationshipDelta: 0, moraleDelta: -3, target: "actor" },
   ],
   reconciliation: [
-    { id: "encourage", label: "Encourage them", description: "Reinforce the improving relationship.", relationshipDelta: 8, moraleDelta: 3, target: "both" },
-    { id: "acknowledge", label: "Acknowledge quietly", description: "Let the reconciliation grow naturally.", relationshipDelta: 4, moraleDelta: 1, target: "both" },
+    { id: "encourage", label: "Encourage them", description: "Reinforce the improving relationship.", relationshipDelta: 4, moraleDelta: 3, target: "both" },
+    { id: "acknowledge", label: "Acknowledge quietly", description: "Let the reconciliation grow naturally.", relationshipDelta: 2, moraleDelta: 1, target: "both" },
   ],
 };
 
@@ -513,9 +538,47 @@ export const createGuildIncident = ({
     : [...roster];
   if (memberPool.length < 2) return { state: normalized, incident: null };
   const seed = stableHash(`${safeDay}:${normalized.sequence}:${memberPool.map((member) => member.id).join(":")}`);
-  const actor = memberPool[seed % memberPool.length];
-  const subject = memberPool[(seed + 1 + (seed % (memberPool.length - 1))) % memberPool.length];
-  const pair = (normalizeGuildRelationships(relationships) as Record<string, RelationshipEntry>)[
+  let actor = memberPool[seed % memberPool.length];
+  let subject = memberPool[(seed + 1 + (seed % (memberPool.length - 1))) % memberPool.length];
+  const normalizedRelationships = normalizeGuildRelationships(
+    relationships,
+  ) as Record<string, RelationshipEntry>;
+  if (missionSucceeded !== undefined) {
+    const pairs: Array<{
+      actor: Character;
+      subject: Character;
+      points: number;
+    }> = [];
+    for (let left = 0; left < memberPool.length; left += 1) {
+      for (let right = left + 1; right < memberPool.length; right += 1) {
+        const leftMember = memberPool[left];
+        const rightMember = memberPool[right];
+        const relationship =
+          normalizedRelationships[
+            getRelationshipPairKey(leftMember.id, rightMember.id)
+          ];
+        pairs.push({
+          actor: leftMember,
+          subject: rightMember,
+          points: Number(relationship?.points) || 0,
+        });
+      }
+    }
+    pairs.sort((left, right) =>
+      missionSucceeded
+        ? right.points - left.points ||
+          `${left.actor.id}:${left.subject.id}`.localeCompare(
+            `${right.actor.id}:${right.subject.id}`,
+          )
+        : left.points - right.points ||
+          `${left.actor.id}:${left.subject.id}`.localeCompare(
+            `${right.actor.id}:${right.subject.id}`,
+          ),
+    );
+    actor = pairs[0]?.actor || actor;
+    subject = pairs[0]?.subject || subject;
+  }
+  const pair = normalizedRelationships[
     getRelationshipPairKey(actor.id, subject.id)
   ];
   const points = Number(pair?.points) || 0;
@@ -627,7 +690,7 @@ export const resolveGuildIncident = ({
     };
     const relationshipBonus =
       leadershipTrait === LEADERSHIP_TRAIT.DIPLOMAT && choice.relationshipDelta > 0
-        ? 2
+        ? 1
         : 0;
     nextRelationships[pairKey] = {
       ...current,
@@ -674,6 +737,7 @@ export const resolveExpiredGuildIncidents = ({
   let nextState = normalizeGuildRelationsState(state, roster);
   let nextRoster = [...roster];
   let nextRelationships = normalizeGuildRelationships(relationships);
+  const resolvedIncidents: GuildIncident[] = [];
   nextState.incidents
     .filter(
       (incident) =>
@@ -691,8 +755,14 @@ export const resolveExpiredGuildIncidents = ({
       nextState = result.state;
       nextRoster = result.roster;
       nextRelationships = result.relationships;
+      if (result.incident) resolvedIncidents.push(result.incident);
     });
-  return { state: nextState, roster: nextRoster, relationships: nextRelationships };
+  return {
+    state: nextState,
+    roster: nextRoster,
+    relationships: nextRelationships,
+    resolvedIncidents,
+  };
 };
 
 export const createGuildElection = ({

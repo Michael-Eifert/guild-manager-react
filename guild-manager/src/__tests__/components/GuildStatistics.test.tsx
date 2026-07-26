@@ -5,6 +5,7 @@ import { MemoryRouter } from "react-router-dom";
 import GuildStatistics from "../../components/dashboard/GuildStatistics";
 import { render, roster } from "./componentTestUtils";
 import { createInitialGuildActivityStats } from "../../guild/guildActivityStats";
+import type { OnlineSnapshot } from "../../activity/characterOnline";
 
 describe("GuildStatistics", () => {
   it("renders guild pulse and all three leaderboards", () => {
@@ -89,6 +90,46 @@ describe("GuildStatistics", () => {
     expect(html).toContain("Lucifron");
     expect(html).toContain("Magmadar");
     expect(html).toContain("1/2");
+  });
+
+  it("renders online profiles as an ordered gamer list", () => {
+    const onlineSnapshot = {
+      byId: {
+        hardcoreOne: { profile: "three_quarters" },
+        hardcoreTwo: { profile: "three_quarters" },
+        regular: { profile: "half" },
+        casualOne: { profile: "quarter" },
+        casualTwo: { profile: "quarter" },
+        casualThree: { profile: "quarter" },
+      },
+      onlineIds: new Set<string>(),
+      onMissionIds: new Set<string>(),
+      onlineCount: 0,
+      onMissionCount: 0,
+      nextLogin: null,
+    } as unknown as OnlineSnapshot;
+    const html = render(
+      <MemoryRouter>
+        <GuildStatistics
+          roster={roster}
+          relationships={{}}
+          activityStats={createInitialGuildActivityStats()}
+          onlineSnapshot={onlineSnapshot}
+          detailed
+        />
+      </MemoryRouter>,
+    );
+
+    expect(html).toContain("Online Profile Gamers");
+    expect(html).toContain('aria-label="2 Hardcore gamers"');
+    expect(html).toContain('aria-label="1 Regular gamers"');
+    expect(html).toContain('aria-label="3 Casual gamers"');
+    expect(html.indexOf("Hardcore gamers")).toBeLessThan(
+      html.indexOf("Regular gamers"),
+    );
+    expect(html.indexOf("Regular gamers")).toBeLessThan(
+      html.indexOf("Casual gamers"),
+    );
   });
 
   it("orders raid progression from entry raids to Naxxramas", () => {

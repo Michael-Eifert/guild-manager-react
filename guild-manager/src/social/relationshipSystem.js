@@ -17,9 +17,9 @@ export const RELATIONSHIP_THRESHOLDS = Object.freeze({
 });
 
 export const RELATIONSHIP_PROGRESS = Object.freeze({
-  SHARED_ATTEMPT: 3,
-  SUCCESS_BONUS: 2,
-  FAILURE_PENALTY: -6,
+  SHARED_ATTEMPT: 1,
+  SUCCESS_BONUS: 1,
+  FAILURE_PENALTY: -3,
 });
 
 export const RELATIONSHIP_POINT_RANGE = Object.freeze({

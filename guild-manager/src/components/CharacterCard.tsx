@@ -52,10 +52,13 @@ const CharacterCard = ({ char, onClick }: CharacterCardProps) => {
   const isFlashing = now - char.lastLevelUp < 1000;
   const avgItemLevel = getCharacterAverageItemLevel(char);
   const pvp = ensureCharacterPvpData(char).pvp;
+  const onlineStatus =
+    char.onlineStatus || (char.status === "Offline" ? "Offline" : undefined);
 
   return (
     <div
       onClick={() => onClick(char)}
+      data-online-status={onlineStatus}
       className={`wow-card relative h-full bg-gray-800 border p-4 rounded-lg cursor-pointer transition-all active:scale-95 hover:-translate-y-1 hover:shadow-lg hover:border-yellow-500 ${char.status === "Questing" ? "border-blue-500 opacity-80" : "border-gray-600"} ${isFlashing ? "animate-levelup" : ""}`}
     >
       {char.status === "Questing" && (
@@ -122,17 +125,17 @@ const CharacterCard = ({ char, onClick }: CharacterCardProps) => {
 
       <div className="mb-2">
         <div className="flex items-center gap-2">
-          {char.onlineStatus ? (
+          {onlineStatus ? (
             <span
               className={`rounded-full border px-2 py-0.5 text-[9px] font-bold uppercase ${
-                char.onlineStatus === "Offline"
+                onlineStatus === "Offline"
                   ? "border-slate-700 text-slate-400"
-                  : char.onlineStatus === "On Mission"
+                  : onlineStatus === "On Mission"
                     ? "border-blue-700 text-blue-300"
                     : "border-emerald-700 text-emerald-300"
               }`}
             >
-              {char.onlineStatus}
+              {onlineStatus}
             </span>
           ) : null}
           {char.onlineProfile ? (

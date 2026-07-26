@@ -7,6 +7,14 @@ import {
 import type { Character } from "../types/characterTypes";
 import type { Mission } from "../types/missionTypes";
 import { getDeterministicResponseDelayMs, renderChatTemplate } from "./chatTemplates";
+import {
+  advanceRpScenes,
+  enqueueMissionRpScene,
+  enqueueRealmNewsRpScene,
+  MAX_PROCESSED_RP_EVENTS,
+  MAX_RP_QUEUE,
+  MAX_RP_SCENES,
+} from "./rpSimulation";
 import type {
   ChatChannel,
   ChatIntent,
@@ -17,14 +25,14 @@ import type {
   SocialState,
 } from "./chatTypes";
 
-export const MAX_CHAT_MESSAGES = 200;
+export const MAX_CHAT_MESSAGES = 300;
 export const MAX_LFG_SEARCH_HISTORY = 20;
 export const MAX_ACTIVE_LFG_SEARCHES = 3;
 export const LFG_GUILD_SEARCH_DURATION_MS = 15_000;
 export const LFG_GENERAL_SEARCH_DURATION_MS = 60_000;
 export const LFG_SEARCH_CHECKPOINT_MS = 30_000;
 
-const EMPTY_READ_STATE = { guild: 0, general: 0 } as const;
+const EMPTY_READ_STATE = { guild: 0, general: 0, tavern: 0 } as const;
 
 export const createInitialSocialState = (): SocialState => ({
   messages: [],
@@ -33,6 +41,9 @@ export const createInitialSocialState = (): SocialState => ({
   nextSequence: 1,
   lastSearchCheckpoint: -1,
   lastReadSequenceByChannel: { ...EMPTY_READ_STATE },
+  rpScenes: [],
+  processedRpEventIds: [],
+  rpDailyCounters: { dayIndex: -1, nonInteractiveScenes: 0 },
 });
 
 const ACTIVE_SEARCH_PHASES = new Set([
@@ -49,6 +60,18 @@ export const ensureSocialState = (value: unknown): SocialState => {
       : createInitialSocialState();
   const messages = (Array.isArray(input.messages) ? input.messages : [])
     .filter((message): message is ChatMessage => Boolean(message?.id && message?.channel))
+    .map((message) => {
+      const contentKind =
+        message.contentKind === "roleplay" ? "roleplay" as const : "system" as const;
+      const wasLegacyPending =
+        contentKind === "system" && message.generationStatus === "pending";
+      return {
+        ...message,
+        contentKind,
+        generationStatus: wasLegacyPending ? "ready" as const : message.generationStatus,
+        text: wasLegacyPending ? message.text || message.fallbackText : message.text,
+      };
+    })
     .slice(-MAX_CHAT_MESSAGES);
   const searches = (Array.isArray(input.searches) ? input.searches : [])
     .filter((search): search is LfgSearch => Boolean(search?.id && search?.missionId))
@@ -69,6 +92,9 @@ export const ensureSocialState = (value: unknown): SocialState => {
     ),
   ];
   const rawLastSearchCheckpoint = Number(input.lastSearchCheckpoint);
+  const rpScenes = (Array.isArray(input.rpScenes) ? input.rpScenes : [])
+    .filter((scene) => Boolean(scene?.id && scene?.sourceEventId))
+    .slice(-(MAX_RP_SCENES + MAX_RP_QUEUE));
 
   return {
     messages,
@@ -90,11 +116,27 @@ export const ensureSocialState = (value: unknown): SocialState => {
         0,
         Math.floor(Number(input.lastReadSequenceByChannel?.general) || 0),
       ),
+      tavern: Math.max(
+        0,
+        Math.floor(Number(input.lastReadSequenceByChannel?.tavern) || 0),
+      ),
+    },
+    rpScenes,
+    processedRpEventIds: (Array.isArray(input.processedRpEventIds)
+      ? input.processedRpEventIds.map(String)
+      : []
+    ).slice(-MAX_PROCESSED_RP_EVENTS),
+    rpDailyCounters: {
+      dayIndex: Math.floor(Number(input.rpDailyCounters?.dayIndex) || -1),
+      nonInteractiveScenes: Math.max(
+        0,
+        Math.floor(Number(input.rpDailyCounters?.nonInteractiveScenes) || 0),
+      ),
     },
   };
 };
 
-const toParticipant = (
+export const toParticipant = (
   character: Record<string, unknown>,
   source: "guild" | "realm",
   realmGuildName?: string | null,
@@ -214,7 +256,6 @@ const appendMessage = ({
   speaker,
   search,
   now,
-  deferText,
 }: {
   state: SocialState;
   channel: ChatChannel;
@@ -242,12 +283,13 @@ const appendMessage = ({
     sequence,
     channel,
     intent,
-    text: deferText ? "" : fallbackText,
+    text: fallbackText,
     fallbackText,
     textSource: "template",
-    generationStatus: deferText ? "pending" : "ready",
+    generationStatus: "ready",
     gameTimeMs: now,
     speaker,
+    contentKind: "system",
     ...(search.id ? { searchId: search.id } : {}),
   };
   return {
@@ -485,6 +527,7 @@ export const advanceSocialSimulation = ({
   deferText = false,
   onlineGuildMemberIds = null,
   onlineRealmPlayerIds = null,
+  currentDayIndex = 0,
 }: {
   socialState: unknown;
   now: number;
@@ -496,6 +539,7 @@ export const advanceSocialSimulation = ({
   deferText?: boolean;
   onlineGuildMemberIds?: Set<string> | null;
   onlineRealmPlayerIds?: Set<string> | null;
+  currentDayIndex?: number;
 }) => {
   let state = ensureSocialState(socialState);
   let nextRoster = [...roster];
@@ -729,6 +773,92 @@ export const advanceSocialSimulation = ({
     return member;
   });
 
+  const eligibleRealmNewsTypes = new Set([
+    "raid-clear",
+    "raid-progress",
+    "dungeon",
+    "ranking",
+    "player",
+    "return",
+    "returner",
+    "realm-return",
+    "guild-exit",
+    "npc-guild-exit",
+    "transfer",
+  ]);
+  const realmNews = (Array.isArray(realmState?.news) ? realmState.news : [])
+    .filter(
+      (entry: Record<string, unknown>) =>
+        entry?.message &&
+        Number(entry.dayIndex) === Math.max(0, Math.floor(currentDayIndex)) &&
+        eligibleRealmNewsTypes.has(String(entry.type || "")) &&
+        !state.processedRpEventIds.includes(
+          `realm:${String(entry.id || `${entry.dayIndex}:${entry.message}`)}`,
+        ),
+    )
+    .sort(
+      (left: Record<string, unknown>, right: Record<string, unknown>) =>
+        (Number(right.dayIndex) || 0) - (Number(left.dayIndex) || 0) ||
+        String(left.id || "").localeCompare(String(right.id || "")),
+    )[0];
+  if (realmNews) {
+    const guildSpeaker = nextRoster
+      .filter(
+        (member) =>
+          !onlineGuildMemberIds ||
+          onlineGuildMemberIds.has(String(member.id)),
+      )
+      .sort((left, right) =>
+        String(left.id).localeCompare(String(right.id)),
+      )[0];
+    const guildNames = new Map(
+      (Array.isArray(realmState?.npcGuilds) ? realmState.npcGuilds : []).map(
+        (guild: Record<string, unknown>) => [
+          String(guild.id || ""),
+          String(guild.name || ""),
+        ],
+      ),
+    );
+    const realmSpeaker = (
+      Array.isArray(realmState?.population?.players)
+        ? realmState.population.players
+        : []
+    )
+      .filter(
+        (player: Record<string, unknown>) =>
+          player?.id &&
+          String(player.faction || "") === String(guildSetup.faction || "") &&
+          (!onlineRealmPlayerIds ||
+            onlineRealmPlayerIds.has(String(player.id))),
+      )
+      .sort((left: Record<string, unknown>, right: Record<string, unknown>) =>
+        String(left.id).localeCompare(String(right.id)),
+      )[0];
+    if (guildSpeaker && realmSpeaker) {
+      state = enqueueRealmNewsRpScene({
+        state,
+        news: realmNews,
+        participants: [
+          toParticipant(
+            {
+              ...guildSpeaker,
+              faction: guildSpeaker.faction || guildSetup.faction,
+            },
+            "guild",
+          ),
+          toParticipant(
+            realmSpeaker,
+            "realm",
+            guildNames.get(String(realmSpeaker.guildId || "")) || null,
+          ),
+        ],
+        now,
+        dayIndex: currentDayIndex,
+      });
+    }
+  }
+  state = advanceRpScenes({ state, now, deferText });
+
   return { socialState: state, roster: nextRoster, readyGroups };
 };
 
@@ -775,6 +905,8 @@ export const completeMissionSocialActivity = ({
   now,
   deferText = false,
   roster = [],
+  relationships = {},
+  dayIndex = 0,
 }: {
   socialState: unknown;
   mission: Mission;
@@ -782,6 +914,8 @@ export const completeMissionSocialActivity = ({
   now: number;
   deferText?: boolean;
   roster?: readonly Character[];
+  relationships?: unknown;
+  dayIndex?: number;
 }) => {
   let state = ensureSocialState(socialState);
   const searchId = mission.lfgSearchId;
@@ -840,7 +974,7 @@ export const completeMissionSocialActivity = ({
     };
   }
 
-  return appendMessage({
+  state = appendMessage({
     state,
     channel: "guild",
     intent: succeeded ? "mission-success" : "mission-failed",
@@ -853,6 +987,18 @@ export const completeMissionSocialActivity = ({
     search: completedSearch,
     now,
     deferText,
+  });
+  if (mission.type !== "dungeon" && mission.type !== "raid" && mission.isRaid !== true) {
+    return state;
+  }
+  return enqueueMissionRpScene({
+    state,
+    mission,
+    participants: completedSearch.participants,
+    relationships,
+    succeeded,
+    now,
+    dayIndex,
   });
 };
 
@@ -889,6 +1035,7 @@ export const appendGuildElectionMessage = ({
           winner as unknown as Record<string, unknown>,
           "guild",
         ),
+        contentKind: "system",
       },
     ],
   });

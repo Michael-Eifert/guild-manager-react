@@ -38,5 +38,7 @@ describe("DetailModal", () => {
     expect(html).toContain("Stats &amp; Gear");
     expect(html).toContain("Professions");
     expect(html).toContain(">Guild<");
+    expect(html).toContain("Kick Player");
+    expect(html).not.toContain("Dismiss Hero");
   });
 });

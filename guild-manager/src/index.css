@@ -311,6 +311,28 @@ body::after {
     0 10px 18px rgb(0 0 0 / 28%);
 }
 
+.wow-card[data-online-status="Offline"] {
+  background: linear-gradient(
+    180deg,
+    rgb(30 36 46 / 94%) 0%,
+    rgb(20 25 34 / 96%) 100%
+  ) !important;
+  border-color: #475569 !important;
+  box-shadow:
+    0 0 0 1px rgb(148 163 184 / 7%) inset,
+    0 8px 16px rgb(0 0 0 / 22%);
+  filter: grayscale(0.92) saturate(0.18);
+  opacity: 0.7;
+}
+
+.wow-card[data-online-status="Offline"]:hover {
+  border-color: #64748b !important;
+  box-shadow:
+    0 0 0 1px rgb(148 163 184 / 12%) inset,
+    0 10px 20px rgb(0 0 0 / 28%);
+  opacity: 0.86;
+}
+
 .wow-modal-panel {
   background: linear-gradient(
     180deg,

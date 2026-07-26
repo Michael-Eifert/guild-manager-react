@@ -44,7 +44,9 @@ export default function ChatPreview({
             <div
               key={message.id}
               className={`rounded-lg border px-2.5 py-2 ${
-                message.speaker?.source === "guild"
+                message.contentKind === "roleplay"
+                  ? "border-violet-800/70 bg-violet-950/25"
+                  : message.speaker?.source === "guild"
                   ? "border-amber-800/65 bg-amber-950/20"
                   : "border-slate-800 bg-slate-900/60"
               }`}
@@ -53,6 +55,11 @@ export default function ChatPreview({
                 <span className="min-w-0 truncate">
                   {message.channel} · {message.speaker?.name || "System"}
                 </span>
+                {message.sceneTag ? (
+                  <span className="flex-none rounded border border-violet-800 bg-violet-950/70 px-1.5 py-0.5 text-[8px] text-violet-200">
+                    {message.sceneTag}
+                  </span>
+                ) : null}
                 {message.intent === "mission-failed" ? (
                   <span className="flex-none rounded border border-rose-800 bg-rose-950/70 px-1.5 py-0.5 text-[8px] text-rose-200">
                     Mission Failed

@@ -135,4 +135,84 @@ describe("ChatPanel", () => {
       within(messageCard!).getByText("Mission Accomplished"),
     ).toBeTruthy();
   });
+
+  it("shows Tavern scenes and resolves a manual incident through its existing choice", () => {
+    const onResolveIncident = vi.fn();
+    const view = render(
+      <ChatPanel
+        socialState={{
+          ...socialState,
+          rpScenes: [
+            {
+              id: "rp:incident",
+              sourceEventId: "incident:1",
+              kind: "guild-incident",
+              tag: "Mission Blame",
+              priority: 3,
+              status: "awaiting-choice",
+              createdAt: 0,
+              nextTurnAt: 0,
+              participants: [],
+              turns: [],
+              nextTurnIndex: 2,
+              incidentId: "incident-1",
+              interactive: true,
+            },
+          ],
+          messages: [
+            {
+              ...socialState.messages[0],
+              id: "chat:rp",
+              sequence: 3,
+              channel: "tavern",
+              intent: "rp-defense",
+              contentKind: "roleplay",
+              text: "Let us review what actually happened.",
+              fallbackText: "Let us review what actually happened.",
+              sceneId: "rp:incident",
+              sceneTag: "Mission Blame",
+              incidentId: "incident-1",
+            },
+          ],
+        }}
+        guildName="Test Guild"
+        onMarkRead={vi.fn()}
+        managementMode="manual"
+        incidents={[
+          {
+            id: "incident-1",
+            kind: "blame",
+            title: "Mission Blame",
+            description: "A failed run caused an argument.",
+            actorId: "guild-1",
+            subjectId: "guild-2",
+            dayIndex: 1,
+            expiresDayIndex: 2,
+            source: "mission",
+            status: "pending",
+            choices: [
+              {
+                id: "mediate",
+                label: "Review the run",
+                description: "Turn blame into a constructive debrief.",
+                relationshipDelta: 5,
+                moraleDelta: 2,
+                target: "both",
+              },
+            ],
+          },
+        ]}
+        onResolveIncident={onResolveIncident}
+      />,
+    );
+
+    fireEvent.click(
+      within(view.container).getByRole("tab", { name: /Tavern RP/ }),
+    );
+    expect(within(view.container).getByText("Mission Blame")).toBeTruthy();
+    fireEvent.click(
+      within(view.container).getByRole("button", { name: /Review the run/ }),
+    );
+    expect(onResolveIncident).toHaveBeenCalledWith("incident-1", "mediate");
+  });
 });

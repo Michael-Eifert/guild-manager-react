@@ -1,7 +1,8 @@
 import type { Character } from "../types/characterTypes";
 import type { Mission } from "../types/missionTypes";
 
-export type ChatChannel = "guild" | "general";
+export type ChatChannel = "guild" | "general" | "tavern";
+export type ChatContentKind = "system" | "roleplay";
 export type ChatIntent =
   | "lfg-request"
   | "join"
@@ -12,7 +13,17 @@ export type ChatIntent =
   | "search-expired"
   | "mission-success"
   | "mission-failed"
-  | "guild-election";
+  | "guild-election"
+  | "rp-run-success"
+  | "rp-run-failure"
+  | "rp-blame"
+  | "rp-defense"
+  | "rp-praise"
+  | "rp-dispute"
+  | "rp-morale"
+  | "rp-reconciliation"
+  | "rp-world-rumor"
+  | "rp-leadership";
 
 export type ParticipantSource = "guild" | "realm";
 
@@ -43,6 +54,64 @@ export interface ChatMessage {
   gameTimeMs: number;
   speaker: PartyParticipant | null;
   searchId?: string;
+  contentKind?: ChatContentKind;
+  sceneId?: string;
+  replyToMessageId?: string;
+  incidentId?: string;
+  sceneTag?: string;
+  rpContext?: {
+    missionName?: string;
+    bossName?: string;
+    otherSpeakerName?: string;
+    relationshipPoints?: number;
+    relationshipLabel?: string;
+    subjectiveClaim?: string;
+    choiceLabel?: string;
+  };
+}
+
+export type RpSceneStatus =
+  | "queued"
+  | "active"
+  | "awaiting-choice"
+  | "completed";
+
+export type RpSceneKind =
+  | "run-success"
+  | "run-failure"
+  | "guild-incident"
+  | "realm-news";
+
+export interface RpSceneTurn {
+  speakerId: string;
+  intent: ChatIntent;
+  subjectiveClaim?: string;
+  choiceLabel?: string;
+}
+
+export interface RpScene {
+  id: string;
+  sourceEventId: string;
+  kind: RpSceneKind;
+  tag: string;
+  priority: number;
+  status: RpSceneStatus;
+  createdAt: number;
+  nextTurnAt: number;
+  completedAt?: number;
+  participants: PartyParticipant[];
+  turns: RpSceneTurn[];
+  nextTurnIndex: number;
+  missionName?: string;
+  bossName?: string;
+  incidentId?: string;
+  relationshipPoints?: number;
+  interactive?: boolean;
+}
+
+export interface RpDailyCounters {
+  dayIndex: number;
+  nonInteractiveScenes: number;
 }
 
 export type LfgSearchPhase =
@@ -77,6 +146,9 @@ export interface SocialState {
   nextSequence: number;
   lastSearchCheckpoint: number;
   lastReadSequenceByChannel: Record<ChatChannel, number>;
+  rpScenes: RpScene[];
+  processedRpEventIds: string[];
+  rpDailyCounters: RpDailyCounters;
 }
 
 export interface ReadyLfgGroup {

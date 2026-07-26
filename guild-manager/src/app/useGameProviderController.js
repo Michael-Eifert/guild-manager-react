@@ -98,6 +98,10 @@ import {
   shouldUseAutoFastForward,
 } from "../activity/characterOnline";
 import {
+  DEFAULT_GAME_SETTINGS,
+  normalizeGameSettings,
+} from "../settings/gameSettings";
+import {
   GUILD_POINT_LABEL,
   createInitialGuildProgress,
   getGuildDerivedStats,
@@ -168,7 +172,12 @@ import {
   markChatChannelRead,
   markLfgSearchStarted,
   resolveChatMessageText,
+  toParticipant,
 } from "../social/socialSimulation";
+import {
+  attachGuildIncidentToScene,
+  resolveGuildIncidentRpScene,
+} from "../social/rpSimulation";
 import {
   CHAT_AI_MAX_QUEUE_SIZE,
   createChatTextProvider,
@@ -341,6 +350,26 @@ const {
 } = WORLD_DROP_CONFIG;
 const BROWSER_AUTOSAVE_INTERVAL_MS = 30_000;
 
+const buildMissionSocialParticipants = (mission, roster, faction) => {
+  if (
+    Array.isArray(mission?.partyParticipants) &&
+    mission.partyParticipants.length > 0
+  ) {
+    return mission.partyParticipants;
+  }
+  const memberIds = new Set(
+    (Array.isArray(mission?.memberIds) ? mission.memberIds : []).map(String),
+  );
+  return (Array.isArray(roster) ? roster : [])
+    .filter((member) => memberIds.has(String(member.id)))
+    .map((member) =>
+      toParticipant(
+        { ...member, faction: member.faction || faction },
+        "guild",
+      ),
+    );
+};
+
 // --- MAIN APP COMPONENT ---
 
 export const useGameProviderController = () => {
@@ -389,6 +418,8 @@ export const useGameProviderController = () => {
     useSynchronizedState(() => createInitialGuildRelationsState());
   const [guildActivityStats, setGuildActivityStats, guildActivityStatsRef] =
     useSynchronizedState(() => createInitialGuildActivityStats(0));
+  const [gameSettings, setGameSettings, gameSettingsRef] =
+    useSynchronizedState(() => normalizeGameSettings(DEFAULT_GAME_SETTINGS));
   const [chatAiSettings, setChatAiSettings] = useState(loadChatAiSettings);
   const chatAiSettingsRef = useRef(chatAiSettings);
   const chatGenerationBusyRef = useRef(false);
@@ -427,13 +458,11 @@ export const useGameProviderController = () => {
     setGuildMemberSearch,
     setGuildMemberSortMode,
     setMemberRankingMode,
-    setShowDebug,
     setShowGuildLog,
     setShowLootTable,
     setShowOptions,
     setShowProfessions,
     setShowRecruit,
-    showDebug,
     showGuildLog,
     showLootTable,
     showOptions,
@@ -481,14 +510,18 @@ export const useGameProviderController = () => {
 
   const pendingChatMessageId =
     socialState.messages.find(
-      (message) => message.generationStatus === "pending",
+      (message) =>
+        message.contentKind === "roleplay" &&
+        message.generationStatus === "pending",
     )?.id || null;
   useEffect(() => {
     if (isPaused) return undefined;
     if (chatGenerationBusyRef.current) return undefined;
     const currentMessages = socialStateRef.current.messages;
     const pendingMessages = currentMessages.filter(
-      (message) => message.generationStatus === "pending",
+      (message) =>
+        message.contentKind === "roleplay" &&
+        message.generationStatus === "pending",
     );
     if (pendingMessages.length === 0) return undefined;
 
@@ -518,7 +551,8 @@ export const useGameProviderController = () => {
       .filter(
         (entry) =>
           entry.sequence < message.sequence &&
-          entry.generationStatus === "ready",
+          entry.generationStatus === "ready" &&
+          entry.sceneId === message.sceneId,
       )
       .slice(-4);
     generateChatTextWithTimeout({
@@ -631,6 +665,8 @@ export const useGameProviderController = () => {
         activeBattles: battlefieldState?.activeBattles,
         searches: socialState?.searches,
         calendarEvents: calendarState?.calendarEvents,
+        offlineSimulationEnabled:
+          gameSettings.offlineSimulationEnabled,
       }),
     [
       activeMissions,
@@ -640,6 +676,7 @@ export const useGameProviderController = () => {
       currentCalendarDayProgress,
       roster,
       socialState,
+      gameSettings.offlineSimulationEnabled,
     ],
   );
   const hasActiveLfg = (socialState?.searches || []).some((search) =>
@@ -1093,6 +1130,8 @@ export const useGameProviderController = () => {
         currentDayProgress: calendarDayProgress,
         playerGuildSnapshot,
         guildSetup: guildSetupRef.current,
+        offlineSimulationEnabled:
+          gameSettingsRef.current.offlineSimulationEnabled,
       });
       if (
         JSON.stringify(nextRealmState) !== JSON.stringify(realmStateRef.current)
@@ -1347,17 +1386,19 @@ export const useGameProviderController = () => {
             missionMemberIds: m.memberIds,
           };
         }
+        recordMissionRelationships(m, result.missionSucceeded);
         currentSocialState = completeMissionSocialActivity({
           socialState: currentSocialState,
           mission: m,
           succeeded: result.missionSucceeded,
           now,
           roster: result.updatedRoster,
+          relationships: guildRelationshipsRef.current,
+          dayIndex: calendarDayIndex,
           deferText:
             chatAiSettingsRef.current.provider !== "templates" &&
             gameSpeed <= 4,
         });
-        recordMissionRelationships(m, result.missionSucceeded);
         if (m?.isRaid === true) {
           const nextRaidLockouts = updateRaidLockoutProgress({
             raidLockouts: raidLockoutsRef.current,
@@ -1486,6 +1527,8 @@ export const useGameProviderController = () => {
         activeBattles: currentBattlefieldState.activeBattles,
         searches: currentSocialState.searches,
         calendarEvents: calendarStateRef.current.calendarEvents,
+        offlineSimulationEnabled:
+          gameSettingsRef.current.offlineSimulationEnabled,
       });
       let onlineRoster = newRoster.filter((member) =>
         tickOnlineSnapshot.onlineIds.has(String(member.id)),
@@ -1495,6 +1538,8 @@ export const useGameProviderController = () => {
         dayIndex: calendarDayIndex,
         dayProgress: calendarDayProgress,
         searches: currentSocialState.searches,
+        offlineSimulationEnabled:
+          gameSettingsRef.current.offlineSimulationEnabled,
       });
 
       const aggressivePvpQueue = resolveAutoBattlefieldQueue({
@@ -1732,6 +1777,7 @@ export const useGameProviderController = () => {
         guildSetup: guildSetupRef.current,
         onlineGuildMemberIds: tickOnlineSnapshot.onlineIds,
         onlineRealmPlayerIds: realmOnlineSnapshot.onlineIds,
+        currentDayIndex: calendarDayIndex,
         deferText:
           chatAiSettingsRef.current.provider !== "templates" &&
           gameSpeed <= 4,
@@ -2235,6 +2281,28 @@ export const useGameProviderController = () => {
         currentGuildRelationsState = expiredRelations.state;
         newRoster = expiredRelations.roster;
         guildRelationshipsRef.current = expiredRelations.relationships;
+        expiredRelations.resolvedIncidents.forEach((incident) => {
+          const guildMasterId = Object.entries(
+            currentGuildRelationsState.assignments,
+          ).find(([, rank]) => rank === GUILD_RANK.GUILD_MASTER)?.[0];
+          const guildMaster = newRoster.find(
+            (member) => String(member.id) === String(guildMasterId || ""),
+          );
+          currentSocialState = resolveGuildIncidentRpScene({
+            state: currentSocialState,
+            incident,
+            guildMaster: guildMaster
+              ? toParticipant(
+                  {
+                    ...guildMaster,
+                    faction: guildMaster.faction || currentFaction,
+                  },
+                  "guild",
+                )
+              : null,
+            now,
+          });
+        });
 
         const shouldCreateAmbientIncident =
           !relationsMissionCandidate &&
@@ -2249,6 +2317,7 @@ export const useGameProviderController = () => {
             ...relationsMissionCandidate,
           });
           currentGuildRelationsState = created.state;
+          let sceneIncident = created.incident;
           if (
             created.incident &&
             currentGuildRelationsState.managementMode === "automatic"
@@ -2263,6 +2332,46 @@ export const useGameProviderController = () => {
             currentGuildRelationsState = resolved.state;
             newRoster = resolved.roster;
             guildRelationshipsRef.current = resolved.relationships;
+            sceneIncident = resolved.incident || created.incident;
+          }
+          if (sceneIncident) {
+            const sceneParticipants = [sceneIncident.actorId, sceneIncident.subjectId]
+              .map((memberId) =>
+                newRoster.find(
+                  (member) => String(member.id) === String(memberId),
+                ),
+              )
+              .filter(Boolean)
+              .map((member) =>
+                toParticipant(
+                  {
+                    ...member,
+                    faction: member.faction || currentFaction,
+                  },
+                  "guild",
+                ),
+              );
+            const guildMasterId = Object.entries(
+              currentGuildRelationsState.assignments,
+            ).find(([, rank]) => rank === GUILD_RANK.GUILD_MASTER)?.[0];
+            const guildMaster = newRoster.find(
+              (member) => String(member.id) === String(guildMasterId || ""),
+            );
+            currentSocialState = attachGuildIncidentToScene({
+              state: currentSocialState,
+              incident: sceneIncident,
+              participants: sceneParticipants,
+              guildMaster: guildMaster
+                ? toParticipant(
+                    {
+                      ...guildMaster,
+                      faction: guildMaster.faction || currentFaction,
+                    },
+                    "guild",
+                  )
+                : null,
+              now,
+            });
           }
         }
       }
@@ -2414,6 +2523,8 @@ export const useGameProviderController = () => {
           calendarStateRef.current.calendarEpochGameTimeMs,
         ),
         searches: socialStateRef.current?.searches,
+        offlineSimulationEnabled:
+          gameSettingsRef.current.offlineSimulationEnabled,
       }).byId[String(candidate.id)];
       return {
         ...candidate,
@@ -2453,6 +2564,8 @@ export const useGameProviderController = () => {
       dayIndex: currentCalendarDayIndex,
       dayProgress: currentCalendarDayProgress,
       searches: socialState?.searches,
+      offlineSimulationEnabled:
+        gameSettings.offlineSimulationEnabled,
     });
     return applications.map((candidate) => {
       const online = snapshot.byId[String(candidate.id)];
@@ -2468,6 +2581,7 @@ export const useGameProviderController = () => {
     buildRealmRecruitmentCandidate,
     currentCalendarDayIndex,
     currentCalendarDayProgress,
+    gameSettings.offlineSimulationEnabled,
     guildSetup.faction,
     realmState,
     roster,
@@ -2779,6 +2893,8 @@ export const useGameProviderController = () => {
         activeBattles: battlefieldStateRef.current?.activeBattles,
         searches: socialStateRef.current?.searches,
         calendarEvents: calendarStateRef.current?.calendarEvents,
+        offlineSimulationEnabled:
+          gameSettingsRef.current.offlineSimulationEnabled,
       });
       const queued = startWarsongGulchBattle({
         battlefieldState: battlefieldStateRef.current,
@@ -3224,6 +3340,8 @@ export const useGameProviderController = () => {
         activeBattles: battlefieldStateRef.current?.activeBattles,
         searches: socialStateRef.current?.searches,
         calendarEvents: calendarStateRef.current?.calendarEvents,
+        offlineSimulationEnabled:
+          gameSettingsRef.current.offlineSimulationEnabled,
       });
       const offlineMembers = memberIds.filter(
         (memberId) =>
@@ -4050,17 +4168,77 @@ export const useGameProviderController = () => {
     const rosterAfterMission = chainResolution.updatedRoster;
     rosterRef.current = rosterAfterMission;
     setRoster(rosterAfterMission);
-    const nextSocialState = completeMissionSocialActivity({
+    let nextSocialState = completeMissionSocialActivity({
       socialState: socialStateRef.current,
       mission: missionWithStepLoot,
       succeeded: result.missionSucceeded,
       now,
       roster: rosterAfterMission,
+      relationships: guildRelationshipsRef.current,
+      dayIndex: getCurrentCalendarDayIndex(),
       deferText:
         chatAiSettingsRef.current.provider !== "templates" && gameSpeed <= 4,
     });
+    const createdIncident = createGuildIncident({
+      state: guildRelationsStateRef.current,
+      roster: rosterAfterMission,
+      relationships: guildRelationshipsRef.current,
+      dayIndex: getCurrentCalendarDayIndex(),
+      missionSucceeded: result.missionSucceeded,
+      missionMemberIds: missionWithStepLoot.memberIds,
+    });
+    guildRelationsStateRef.current = createdIncident.state;
+    let sceneIncident = createdIncident.incident;
+    if (
+      sceneIncident &&
+      createdIncident.state.managementMode === "automatic"
+    ) {
+      const resolved = resolveGuildIncident({
+        state: createdIncident.state,
+        roster: rosterAfterMission,
+        relationships: guildRelationshipsRef.current,
+        incidentId: sceneIncident.id,
+        resolvedBy: "guild_master",
+      });
+      guildRelationsStateRef.current = resolved.state;
+      rosterRef.current = resolved.roster;
+      setRoster(resolved.roster);
+      guildRelationshipsRef.current = resolved.relationships;
+      setGuildRelationships(resolved.relationships);
+      sceneIncident = resolved.incident || sceneIncident;
+    }
+    if (sceneIncident) {
+      const participants = buildMissionSocialParticipants(
+        missionWithStepLoot,
+        rosterRef.current,
+        guildSetupRef.current.faction,
+      );
+      const guildMasterId = Object.entries(
+        guildRelationsStateRef.current.assignments,
+      ).find(([, rank]) => rank === GUILD_RANK.GUILD_MASTER)?.[0];
+      const guildMaster = rosterRef.current.find(
+        (member) => String(member.id) === String(guildMasterId || ""),
+      );
+      nextSocialState = attachGuildIncidentToScene({
+        state: nextSocialState,
+        incident: sceneIncident,
+        participants,
+        guildMaster: guildMaster
+          ? toParticipant(
+              {
+                ...guildMaster,
+                faction:
+                  guildMaster.faction || guildSetupRef.current.faction,
+              },
+              "guild",
+            )
+          : null,
+        now,
+      });
+    }
     socialStateRef.current = nextSocialState;
     setSocialState(nextSocialState);
+    setGuildRelationsState(guildRelationsStateRef.current);
     if (chainResolution.queuedMission) {
       setActiveMissions((prev) => [...prev, chainResolution.queuedMission]);
     }
@@ -4275,7 +4453,6 @@ export const useGameProviderController = () => {
           setGuildLog,
           setMissionList,
         },
-        closeDebug: () => setShowDebug(false),
         pushNotification,
         appendGuildRenownLog,
       }),
@@ -4302,6 +4479,7 @@ export const useGameProviderController = () => {
       socialState, gameSpeed, isPaused,
       guildRelationsState,
       guildActivityStats,
+      gameSettings,
       gameTimeMs,
     },
     refs: {
@@ -4315,6 +4493,7 @@ export const useGameProviderController = () => {
       socialState: socialStateRef,
       guildRelationsState: guildRelationsStateRef,
       guildActivityStats: guildActivityStatsRef,
+      gameSettings: gameSettingsRef,
       lastRealTime: lastRealTimeRef, sessionFileInput: sessionFileInputRef,
     },
     setters: {
@@ -4325,12 +4504,12 @@ export const useGameProviderController = () => {
       setSocialState, setGameSpeed, setGameTimeMs, setDetailCharId,
       setGuildRelationsState,
       setGuildActivityStats,
+      setGameSettings,
     },
     closeOverlays: () => {
       setShowRecruit(false);
       setShowLootTable(false);
       setShowGuildLog(false);
-      setShowDebug(false);
       setShowOptions(false);
       setShowProfessions(false);
       navigate(ROUTES.DASHBOARD);
@@ -4474,6 +4653,17 @@ export const useGameProviderController = () => {
     setChatAiSettings(savedSettings);
     return savedSettings;
   }, []);
+  const handleGameSettingsChange = useCallback((nextSettings) => {
+    const normalized = normalizeGameSettings({
+      ...gameSettingsRef.current,
+      ...(nextSettings && typeof nextSettings === "object"
+        ? nextSettings
+        : {}),
+    });
+    gameSettingsRef.current = normalized;
+    setGameSettings(normalized);
+    return normalized;
+  }, []);
   const handleTestChatProvider = useCallback(
     (settings = chatAiSettingsRef.current) =>
       testChatProviderConnection({ settings }),
@@ -4554,6 +4744,31 @@ export const useGameProviderController = () => {
           nextState = result.state;
           nextRoster = result.roster;
           nextRelationships = result.relationships;
+          if (result.incident) {
+            const guildMasterId = Object.entries(result.state.assignments).find(
+              ([, rank]) => rank === GUILD_RANK.GUILD_MASTER,
+            )?.[0];
+            const guildMaster = result.roster.find(
+              (member) => String(member.id) === String(guildMasterId || ""),
+            );
+            const nextSocialState = resolveGuildIncidentRpScene({
+              state: ensureSocialState(socialStateRef.current),
+              incident: result.incident,
+              guildMaster: guildMaster
+                ? toParticipant(
+                    {
+                      ...guildMaster,
+                      faction:
+                        guildMaster.faction || guildSetupRef.current.faction,
+                    },
+                    "guild",
+                  )
+                : null,
+              now: gameTimeRef.current,
+            });
+            socialStateRef.current = nextSocialState;
+            setSocialState(nextSocialState);
+          }
         });
     }
     guildRelationsStateRef.current = nextState;
@@ -4579,6 +4794,29 @@ export const useGameProviderController = () => {
     setRoster(result.roster);
     setGuildRelationships(result.relationships);
     if (result.incident) {
+      const guildMasterId = Object.entries(result.state.assignments).find(
+        ([, rank]) => rank === GUILD_RANK.GUILD_MASTER,
+      )?.[0];
+      const guildMaster = result.roster.find(
+        (member) => String(member.id) === String(guildMasterId || ""),
+      );
+      const nextSocialState = resolveGuildIncidentRpScene({
+        state: ensureSocialState(socialStateRef.current),
+        incident: result.incident,
+        guildMaster: guildMaster
+          ? toParticipant(
+              {
+                ...guildMaster,
+                faction:
+                  guildMaster.faction || guildSetupRef.current.faction,
+              },
+              "guild",
+            )
+          : null,
+        now: gameTimeRef.current,
+      });
+      socialStateRef.current = nextSocialState;
+      setSocialState(nextSocialState);
       setGuildLog((current) =>
         [
           {
@@ -4663,6 +4901,7 @@ export const useGameProviderController = () => {
     resolveGuildIncident: handleResolveGuildIncident,
     castGuildElectionVote: handleCastGuildElectionVote,
     finishGuildElection: handleFinishGuildElection,
+    updateGameSettings: handleGameSettingsChange,
     selectCharacter: setDetailCharId,
     closeCharacterDetail: () => setDetailCharId(null),
     togglePause: () => setIsPaused((current) => !current),
@@ -4680,8 +4919,6 @@ export const useGameProviderController = () => {
           character.id === id ? { ...character, role } : character,
         ),
       ),
-    openDebug: () => setShowDebug(true),
-    closeDebug: () => setShowDebug(false),
     openGuildLog: () => setShowGuildLog(true),
     closeGuildLog: () => setShowGuildLog(false),
     openLootTable: () => setShowLootTable(true),
@@ -4710,6 +4947,7 @@ export const useGameProviderController = () => {
     dungeonActivityInfoText,
     factionMissionIconUrl,
     gameSpeed,
+    gameSettings,
     effectiveGameSpeed,
     isAutoFastForward,
     gameTimeMs,
@@ -4793,12 +5031,12 @@ export const useGameProviderController = () => {
     socialState,
     chatAiSettings,
     handleChatAiSettingsChange,
+    handleGameSettingsChange,
     handleTestChatProvider,
     unreadChatCount,
     handleMarkChatRead,
     roster,
     sessionFileInputRef,
-    showDebug,
     showGuildLog,
     showLootTable,
     showOptions,

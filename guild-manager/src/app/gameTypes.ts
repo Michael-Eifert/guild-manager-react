@@ -13,6 +13,7 @@ import type {
   GuildRankId,
   RelationsManagementMode,
 } from "../guildRelations/guildRelations";
+import type { GameSettingsState } from "../settings/gameSettings";
 
 export type { Character, CharacterId, Mission, MissionId };
 
@@ -142,6 +143,9 @@ export interface GameActions {
   loadSession: () => void;
   loadSessionFile: (event: ChangeEvent<HTMLInputElement>) => void;
   startGuild: () => void;
+  updateGameSettings: (
+    settings: Partial<GameSettingsState>,
+  ) => GameSettingsState;
   setGuildRank: (characterId: string, rank: GuildRankId) => void;
   setGuildRankLabels: (
     labels: Record<GuildRankId, string>,
@@ -156,6 +160,7 @@ export interface GameActions {
 export type GameProviderSnapshot = {
   actions: GameActions;
   guildSetup: GuildSetupState;
+  gameSettings: GameSettingsState;
   roster: Character[];
   activeMissions: Mission[];
   notifications: GameNotification[];

@@ -29,6 +29,7 @@ const DungeonBoardPage = lazy(() => import("../dungeon-board/DungeonBoardPage"))
 const GuildLogPage = lazy(() => import("../guild-log/GuildLogPage"));
 const GuildPage = lazy(() => import("../guild/GuildPage"));
 const GuildRelationsPage = lazy(() => import("../guild-relations/GuildRelationsPage"));
+const GameSettingsPage = lazy(() => import("../game-settings/GameSettingsPage"));
 const MissionBoardPage = lazy(() => import("../mission-board/MissionBoardPage"));
 const ProfessionsPage = lazy(() => import("../professions/ProfessionsPage"));
 const RealmPage = lazy(() => import("../realm/RealmPage"));
@@ -38,8 +39,7 @@ const RecruitModal = lazy(() => import("../../components/modals/RecruitModal"));
 const DetailModal = lazy(() => import("../../components/modals/DetailModal"));
 const LootTableModal = lazy(() => import("../../components/modals/LootTableModal"));
 const GuildLogModal = lazy(() => import("../../components/modals/GuildLogModal"));
-const DebugModal = lazy(() => import("../../components/modals/DebugModal"));
-const OptionsModal = lazy(() => import("../../components/modals/OptionsModal"));
+const SaveLoadModal = lazy(() => import("../../components/modals/SaveLoadModal"));
 const ProfessionsModal = lazy(() => import("../../components/modals/ProfessionsModal"));
 
 const GUILD_FOCUS_CHANGE_COST_GOLD = 10;
@@ -58,6 +58,7 @@ const HOME_ROUTE_PATHS = Object.freeze({
   PROFESSIONS: "professions",
   DATABASE: "database",
   GUILD_LOG: "guild-log",
+  GAME_SETTINGS: "game-settings",
   CHAT: "chat",
 });
 
@@ -81,6 +82,7 @@ export default function HomeRoot() {
     factionMissionIconUrl,
     effectiveGameSpeed,
     gameSpeed,
+    gameSettings,
     gameTimeMs,
     getAdjustedMissionSuccessPreview,
     guildInventory,
@@ -161,7 +163,6 @@ export default function HomeRoot() {
     socialState,
     roster,
     sessionFileInputRef,
-    showDebug,
     showGuildLog,
     showLootTable,
     showOptions,
@@ -176,14 +177,12 @@ export default function HomeRoot() {
   } = game;
   const {
     closeCharacterDetail,
-    closeDebug,
     closeGuildLog,
     closeLootTable,
     closeOptions,
     closeProfessions,
     closeRecruit,
     cycleGameSpeed,
-    openDebug,
     openOptions,
     selectCharacter,
     togglePause,
@@ -231,6 +230,13 @@ export default function HomeRoot() {
         : {}),
     };
   });
+  const displayRosterById = new Map(
+    displayRoster.map((character) => [String(character.id), character]),
+  );
+  const displayRankedRoster = rankedRoster.map(
+    (character) =>
+      displayRosterById.get(String(character.id)) || character,
+  );
   const calendarLabel = `${currentCalendarDate.weekdayName}, ${currentCalendarDate.monthName} ${currentCalendarDate.dayOfMonth}, Year ${currentCalendarDate.year}`;
 
   return (
@@ -242,6 +248,9 @@ export default function HomeRoot() {
           socialState={socialState}
           guildName={guildName}
           onMarkRead={handleMarkChatRead}
+          incidents={guildRelationsState.incidents}
+          managementMode={guildRelationsState.managementMode}
+          onResolveIncident={actions.resolveGuildIncident}
           compact
         />
       }
@@ -268,7 +277,7 @@ export default function HomeRoot() {
           effectiveGameSpeed={effectiveGameSpeed}
           isAutoFastForward={isAutoFastForward}
           nextLogin={guildOnlineSnapshot.nextLogin}
-          onOpenSettings={openOptions}
+          onOpenSaveLoad={openOptions}
           onTogglePause={togglePause}
           onCycleSpeed={cycleGameSpeed}
         />
@@ -323,7 +332,7 @@ export default function HomeRoot() {
                 }}
                 hasAnyGuildMemberLevelFilter={hasAnyGuildMemberLevelFilter}
                 hasGuildMemberSearch={hasGuildMemberSearch}
-                rankedRoster={rankedRoster}
+                rankedRoster={displayRankedRoster}
                 hasGuildMemberSearchMatch={hasGuildMemberSearchMatch}
                 bestGuildMemberSearchMatchId={bestGuildMemberSearchMatchId}
                 onSelectCharacter={selectCharacter}
@@ -339,6 +348,9 @@ export default function HomeRoot() {
                 socialState={socialState}
                 guildName={guildName}
                 onMarkRead={handleMarkChatRead}
+                incidents={guildRelationsState.incidents}
+                managementMode={guildRelationsState.managementMode}
+                onResolveIncident={actions.resolveGuildIncident}
               />
             }
           />
@@ -534,6 +546,19 @@ export default function HomeRoot() {
             path={HOME_ROUTE_PATHS.GUILD_LOG}
             element={<GuildLogPage logs={guildLog} missionList={missionList} />}
           />
+          <Route
+            path={HOME_ROUTE_PATHS.GAME_SETTINGS}
+            element={
+              <GameSettingsPage
+                gameSettings={gameSettings}
+                onGameSettingsChange={actions.updateGameSettings}
+                chatAiSettings={chatAiSettings}
+                onChatAiSettingsChange={handleChatAiSettingsChange}
+                onTestChatProvider={handleTestChatProvider}
+                debugActions={debugActions}
+              />
+            }
+          />
           <Route path="*" element={<Navigate to={ROUTES.DASHBOARD} replace />} />
           </Routes>
         </Suspense>
@@ -557,15 +582,11 @@ export default function HomeRoot() {
           onFinish={actions.finishGuildElection}
         />
         {showOptions && (
-          <OptionsModal
+          <SaveLoadModal
             isOpen={showOptions}
             onClose={closeOptions}
             onSaveSession={handleSaveSession}
             onLoadSession={handleLoadButtonClick}
-            onOpenDebug={openDebug}
-            chatAiSettings={chatAiSettings}
-            onChatAiSettingsChange={handleChatAiSettingsChange}
-            onTestChatProvider={handleTestChatProvider}
           />
         )}
 
@@ -614,22 +635,6 @@ export default function HomeRoot() {
             onClose={closeGuildLog}
             logs={guildLog}
             missionList={missionList}
-          />
-        )}
-        {showDebug && (
-          <DebugModal
-            isOpen={showDebug}
-            onClose={closeDebug}
-            onBulkLevel={debugActions.bulkLevel}
-            onAddGold={debugActions.addGold}
-            onAddRenown={debugActions.addRenown}
-            onAddPresetParty={debugActions.addPresetParty}
-            onPrepareMoltenCoreTestGuild={debugActions.prepareMoltenCoreTestGuild}
-            onPrepareBlackwingLairTestGuild={
-              debugActions.prepareBlackwingLairTestGuild
-            }
-            onPrepareNaxxramasTestGuild={debugActions.prepareNaxxramasTestGuild}
-            onReloadDatabase={debugActions.reloadDatabase}
           />
         )}
         {detailCharId && (

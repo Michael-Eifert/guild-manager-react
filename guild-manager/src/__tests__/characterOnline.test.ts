@@ -139,4 +139,35 @@ describe("character online schedules", () => {
       shouldUseAutoFastForward({ ...base, hasActiveMission: true }),
     ).toBe(false);
   });
+
+  it("keeps the whole population effectively online when offline simulation is disabled", () => {
+    const characters = [
+      member("idle", "casual_gamer"),
+      member("mission", "casual_gamer"),
+    ];
+    const snapshot = buildOnlineSnapshot({
+      characters,
+      dayIndex: 4,
+      dayProgress: 0.99,
+      activeMissions: [{ memberIds: ["mission"] }],
+      offlineSimulationEnabled: false,
+    });
+
+    expect(snapshot.onlineIds).toEqual(new Set(["idle", "mission"]));
+    expect(snapshot.onlineCount).toBe(2);
+    expect(snapshot.nextLogin).toBeNull();
+    expect(snapshot.byId.idle.status).toBe("Online");
+    expect(snapshot.byId.mission.status).toBe("On Mission");
+    expect(
+      shouldUseAutoFastForward({
+        isPaused: false,
+        memberCount: 2,
+        onlineCount: snapshot.onlineCount,
+        hasActiveMission: false,
+        hasActiveBattlefield: false,
+        hasActiveLfg: false,
+        hasElection: false,
+      }),
+    ).toBe(false);
+  });
 });

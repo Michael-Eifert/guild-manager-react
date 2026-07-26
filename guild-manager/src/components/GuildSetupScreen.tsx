@@ -15,6 +15,11 @@ import {
 import { PVP_ACTIVITY_FOCUS_OPTIONS } from "../pvp/battlefields/battlefieldDefinitions";
 import type { GuildSetupState } from "../app/gameTypes";
 import {
+  DEFAULT_GAME_SETTINGS,
+  normalizeGameSettings,
+  type GameSettingsState,
+} from "../settings/gameSettings";
+import {
   PERSONALITY_TRAIT_DEFINITIONS,
   type PersonalityTraitId,
 } from "../game/characterPersonality";
@@ -45,12 +50,18 @@ const getPopulationClassName = (population: string) =>
 
 const GuildSetupScreen = ({
   guildSetup,
+  gameSettings = DEFAULT_GAME_SETTINGS,
   onChange,
+  onGameSettingsChange,
   onStart,
   onLoadSession,
 }: {
   guildSetup: GuildSetupState;
+  gameSettings?: GameSettingsState;
   onChange: (field: string, value: unknown) => void;
+  onGameSettingsChange?: (
+    settings: Partial<GameSettingsState>,
+  ) => void;
   onStart: () => void;
   onLoadSession: () => void;
 }) => {
@@ -80,6 +91,7 @@ const GuildSetupScreen = ({
   const selectedRealmDifficulty = normalizeRealmDifficulty(
     guildSetup?.realmDifficulty,
   );
+  const normalizedGameSettings = normalizeGameSettings(gameSettings);
   const handleSubmit = (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
     if (canStart) onStart();
@@ -439,6 +451,29 @@ const GuildSetupScreen = ({
                 </div>
               </div>
             </div>
+
+            <label className="flex cursor-pointer items-start justify-between gap-4 rounded-lg border border-cyan-900/70 bg-cyan-950/15 p-4 transition-colors hover:border-cyan-700">
+              <span>
+                <span className="block text-sm font-bold text-cyan-100">
+                  Play with Offline Simulation
+                </span>
+                <span className="mt-1 block text-xs leading-relaxed text-slate-400">
+                  Characters follow individual online schedules. Offline
+                  members cannot start activities, and quiet periods may
+                  automatically fast-forward to the next login.
+                </span>
+              </span>
+              <input
+                type="checkbox"
+                checked={normalizedGameSettings.offlineSimulationEnabled}
+                onChange={(event) =>
+                  onGameSettingsChange?.({
+                    offlineSimulationEnabled: event.target.checked,
+                  })
+                }
+                className="mt-0.5 h-5 w-5 shrink-0 rounded border-slate-600 bg-slate-950 accent-cyan-500"
+              />
+            </label>
 
             <label className="block space-y-2">
               <span className="text-xs uppercase tracking-wider text-gray-300 font-bold">

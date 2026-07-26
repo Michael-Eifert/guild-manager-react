@@ -12,4 +12,15 @@ describe("CharacterEquipCheckCard", () => {
     expect(html).toContain("iLvl");
     expect(html).toContain("mainHand");
   });
+
+  it("keeps offline presentation available in equipment mode", () => {
+    const html = render(
+      <CharacterEquipCheckCard
+        char={{ ...hero, onlineStatus: "Offline" }}
+        onClick={noop}
+      />,
+    );
+
+    expect(html).toContain('data-online-status="Offline"');
+  });
 });

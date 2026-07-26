@@ -255,6 +255,7 @@ export const buildOnlineSnapshot = ({
   activeBattles,
   searches,
   calendarEvents,
+  offlineSimulationEnabled = true,
 }: {
   characters: Array<Character & { activityLevel?: number }>;
   dayIndex: number;
@@ -263,6 +264,7 @@ export const buildOnlineSnapshot = ({
   activeBattles?: Array<Record<string, any>>;
   searches?: Array<Record<string, any>>;
   calendarEvents?: Array<Record<string, any>>;
+  offlineSimulationEnabled?: boolean;
 }): OnlineSnapshot => {
   const { reasons, onMissionIds } = collectActivityLocks({
     activeMissions,
@@ -277,13 +279,20 @@ export const buildOnlineSnapshot = ({
   let nextLogin: CharacterOnlineStatus | null = null;
   characters.forEach((character) => {
     const id = String(character.id || "");
-    const status = getCharacterOnlineStatus({
+    const scheduledStatus = getCharacterOnlineStatus({
       character,
       dayIndex,
       dayProgress,
       extensionReason: reasons.get(id) || null,
       onMission: onMissionIds.has(id),
     });
+    const status = offlineSimulationEnabled
+      ? scheduledStatus
+      : {
+          ...scheduledStatus,
+          effectiveOnline: true,
+          status: onMissionIds.has(id) ? "On Mission" as const : "Online" as const,
+        };
     byId[id] = status;
     if (status.effectiveOnline) onlineIds.add(id);
     if (

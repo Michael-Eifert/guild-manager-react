@@ -4,11 +4,16 @@ import {
   MessageCircle,
   Shield,
   Users,
+  Wine,
 } from "lucide-react";
 import { useEffect, useMemo, useRef, useState } from "react";
 
 import type { ChatChannel, SocialState } from "../../social/chatTypes";
 import { ensureSocialState } from "../../social/socialSimulation";
+import type {
+  GuildIncident,
+  RelationsManagementMode,
+} from "../../guildRelations/guildRelations";
 
 const CHANNELS: Array<{
   id: ChatChannel;
@@ -17,6 +22,7 @@ const CHANNELS: Array<{
 }> = [
   { id: "guild", label: "Guild", icon: Shield },
   { id: "general", label: "General", icon: Users },
+  { id: "tavern", label: "Tavern RP", icon: Wine },
 ];
 
 export default function ChatPanel({
@@ -24,11 +30,17 @@ export default function ChatPanel({
   guildName,
   onMarkRead,
   compact = false,
+  incidents = [],
+  managementMode = "automatic",
+  onResolveIncident,
 }: {
   socialState: SocialState | unknown;
   guildName: string;
   onMarkRead: (channel: ChatChannel) => void;
   compact?: boolean;
+  incidents?: GuildIncident[];
+  managementMode?: RelationsManagementMode;
+  onResolveIncident?: (incidentId: string, choiceId: string) => void;
 }) {
   const state = ensureSocialState(socialState);
   const [channel, setChannel] = useState<ChatChannel>("guild");
@@ -80,7 +92,7 @@ export default function ChatPanel({
       </header>
 
       <div
-        className="sticky top-0 z-10 grid grid-cols-2 gap-1 border-b border-slate-800 bg-slate-950 p-2"
+        className="sticky top-0 z-10 grid grid-cols-3 gap-1 border-b border-slate-800 bg-slate-950 p-2"
         role="tablist"
         aria-label="Chat channels"
       >
@@ -129,18 +141,41 @@ export default function ChatPanel({
               />
               <p className="text-sm text-slate-400">The channel is quiet.</p>
               <p className="mt-1 text-xs text-slate-600">
-                New messages appear as characters form groups.
+                {channel === "tavern"
+                  ? "Roleplay scenes appear after real guild and realm events."
+                  : "New messages appear as characters form groups."}
               </p>
             </div>
           </div>
         ) : (
           messages.map((message) => {
             const isGuildMember = message.speaker?.source === "guild";
+            const scene = message.sceneId
+              ? state.rpScenes.find((entry) => entry.id === message.sceneId)
+              : null;
+            const incident = message.incidentId
+              ? incidents.find((entry) => entry.id === message.incidentId)
+              : null;
+            const isLastSceneMessage =
+              Boolean(message.sceneId) &&
+              !messages.some(
+                (entry) =>
+                  entry.sceneId === message.sceneId &&
+                  entry.sequence > message.sequence,
+              );
+            const showChoices =
+              managementMode === "manual" &&
+              scene?.status === "awaiting-choice" &&
+              incident?.status === "pending" &&
+              isLastSceneMessage &&
+              Boolean(onResolveIncident);
             return (
               <article
                 key={message.id}
                 className={`rounded-lg border p-2.5 ${
-                  isGuildMember
+                  message.contentKind === "roleplay"
+                    ? "border-violet-700/70 bg-violet-950/20"
+                    : isGuildMember
                     ? "border-amber-600/65 bg-amber-950/25 shadow-sm shadow-amber-950/30"
                     : "border-slate-800 bg-slate-900/65"
                 }`}
@@ -171,6 +206,12 @@ export default function ChatPanel({
                       )}
                     </span>
                   ) : null}
+                  {message.sceneTag ? (
+                    <span className="inline-flex flex-none items-center gap-1 rounded border border-violet-700/80 bg-violet-950/70 px-1.5 py-0.5 text-[8px] font-bold uppercase tracking-wide text-violet-200">
+                      <Wine size={10} aria-hidden="true" />
+                      {message.sceneTag}
+                    </span>
+                  ) : null}
                   {message.intent === "mission-failed" ? (
                     <span className="inline-flex flex-none items-center gap-1 rounded border border-rose-700/80 bg-rose-950/70 px-1.5 py-0.5 text-[8px] font-bold uppercase tracking-wide text-rose-200">
                       <CircleX size={10} aria-hidden="true" />
@@ -189,6 +230,37 @@ export default function ChatPanel({
                     ? "…"
                     : message.text || message.fallbackText}
                 </p>
+                {showChoices ? (
+                  <div
+                    className="mt-3 grid gap-2 border-t border-violet-800/50 pt-3"
+                    aria-label={`Management choices for ${incident.title}`}
+                  >
+                    <p className="text-[10px] font-bold uppercase tracking-wide text-violet-300">
+                      Your guild management decision
+                    </p>
+                    {incident.choices.map((choice) => (
+                      <button
+                        key={choice.id}
+                        type="button"
+                        className="min-h-11 rounded-lg border border-violet-700/70 bg-slate-950 px-3 py-2 text-left transition-colors hover:bg-violet-950/50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-violet-300"
+                        onClick={() =>
+                          onResolveIncident?.(incident.id, choice.id)
+                        }
+                      >
+                        <span className="block text-xs font-bold text-violet-100">
+                          {choice.label}
+                        </span>
+                        <span className="mt-0.5 block text-[10px] text-slate-400">
+                          {choice.description} Relationship{" "}
+                          {choice.relationshipDelta >= 0 ? "+" : ""}
+                          {choice.relationshipDelta}; Morale{" "}
+                          {choice.moraleDelta >= 0 ? "+" : ""}
+                          {choice.moraleDelta}
+                        </span>
+                      </button>
+                    ))}
+                  </div>
+                ) : null}
               </article>
             );
           })
@@ -196,7 +268,9 @@ export default function ChatPanel({
       </div>
 
       <footer className="border-t border-slate-800 px-3 py-2 text-center text-[10px] text-slate-600">
-        Chat is simulated. You do not need to reply.
+        {channel === "tavern"
+          ? "Scenes reflect real game events; AI changes wording only."
+          : "Chat is simulated. You do not need to reply."}
       </footer>
     </section>
   );

@@ -151,6 +151,48 @@ describe("GuildRelationsPage", () => {
     expect(onSetRank).toHaveBeenCalledWith("recruit", GUILD_RANK.MEMBER);
   });
 
+  it("orders member relations by guild hierarchy", () => {
+    const initialState = createInitialGuildRelationsState(roster);
+    const state = {
+      ...initialState,
+      assignments: {
+        ...initialState.assignments,
+        member: GUILD_RANK.OFFICER,
+        recruit: GUILD_RANK.RECRUIT,
+      },
+    };
+    const insights = buildGuildRelationInsights({
+      roster,
+      relationships,
+      relationsState: state,
+    });
+
+    render(
+      <GuildRelationsPage
+        roster={roster}
+        relationships={relationships}
+        state={state}
+        insights={[...insights].reverse()}
+        currentDayIndex={0}
+        onSelectCharacter={vi.fn()}
+        onSetRank={vi.fn()}
+        onSetRankLabels={() => true}
+        onSetManagementMode={vi.fn()}
+        onResolveIncident={vi.fn()}
+      />,
+    );
+
+    expect(
+      screen
+        .getAllByRole("article", { name: /member relations card$/ })
+        .map((card) => card.getAttribute("aria-label")),
+    ).toEqual([
+      "Leader member relations card",
+      "Member member relations card",
+      "Recruit member relations card",
+    ]);
+  });
+
   it("opens complete focus rankings inline and switches between them", () => {
     const state = createInitialGuildRelationsState(roster);
     render(

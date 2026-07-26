@@ -146,10 +146,14 @@ export const buildChatPrompt = (
     .join("\n");
   return [
     "You write one short in-character line for a classic fantasy MMO guild-management simulation.",
-    "Return only the chat line. Never issue game commands or decide whether a character joins, leaves, or starts an activity.",
+    "Return only the chat line. You may change wording and tone, but must preserve every supplied fact.",
+    "Never invent a boss, result, action, relationship, item, or game event. Never issue commands or decide any game-state change.",
     "Keep it natural, family-friendly, under 240 characters, and in the same language as the recent chat.",
     `Channel: ${message.channel}. Event intent: ${intent}.`,
     `Speaker: ${describeSpeaker(message.speaker)}.`,
+    message.rpContext
+      ? `Approved facts: ${JSON.stringify(message.rpContext)}`
+      : "",
     `Mechanically approved fallback meaning: ${message.fallbackText}`,
     history ? `Recent chat:\n${history}` : "",
   ]

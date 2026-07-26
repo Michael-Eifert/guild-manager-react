@@ -592,7 +592,7 @@ export default function GuildRelationsPage({
       id: "support" as const,
       title: "Strongest Support",
       description:
-        "Members who combine positive relationships with meaningful guild impact.",
+        "60% popularity + 40% guild impact, minus 20% friction.",
       icon: HeartHandshake,
       entries: strongestSupport,
       metric: "support" as const,
@@ -602,7 +602,7 @@ export default function GuildRelationsPage({
       id: "influence" as const,
       title: "Most Influence",
       description:
-        "The people whose performance, popularity, and formal rank shape the guild most.",
+        "40% popularity + 40% impact + 20% rank, minus 15% friction.",
       icon: Crown,
       entries: mostInfluence,
       metric: "influence" as const,
@@ -612,7 +612,7 @@ export default function GuildRelationsPage({
       id: "friction" as const,
       title: "Highest Friction",
       description:
-        "Members with the most negative bonds and recent unresolved social pressure.",
+        "Negative bonds minus 25% of positive bonds, x1.5; +8 per open incident.",
       icon: AlertTriangle,
       entries: highestFriction,
       metric: "friction" as const,
@@ -625,9 +625,22 @@ export default function GuildRelationsPage({
   const activeRankFilter =
     MEMBER_RANK_FILTERS.find((filter) => filter.id === memberRankFilter) ||
     MEMBER_RANK_FILTERS[0];
-  const filteredMemberInsights = insights.filter((entry) =>
-    activeRankFilter.ranks.includes(entry.rank),
-  );
+  const filteredMemberInsights = [...insights]
+    .filter((entry) => activeRankFilter.ranks.includes(entry.rank))
+    .sort((left, right) => {
+      const rankDifference =
+        GUILD_RANK_ORDER.indexOf(left.rank) -
+        GUILD_RANK_ORDER.indexOf(right.rank);
+
+      if (rankDifference !== 0) return rankDifference;
+      if (right.influence !== left.influence) {
+        return right.influence - left.influence;
+      }
+
+      return String(left.character.name || "").localeCompare(
+        String(right.character.name || ""),
+      );
+    });
   const selectableVisibleIds = filteredMemberInsights
     .filter((entry) => entry.rank !== GUILD_RANK.GUILD_MASTER)
     .map((entry) => String(entry.character.id));

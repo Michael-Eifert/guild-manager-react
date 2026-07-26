@@ -91,6 +91,75 @@ describe("guild relations domain", () => {
     expect(leader?.friction).toBeGreaterThan(0);
   });
 
+  it("uses an absolute friction scale and lets positive bonds soften conflict", () => {
+    const roster = [member("a"), member("b"), member("c"), member("d")];
+    const state = createInitialGuildRelationsState(roster);
+    const withoutSupport = buildGuildRelationInsights({
+      roster,
+      relationships: {
+        "a::b": { memberIds: ["a", "b"], points: -3 },
+        "a::c": { memberIds: ["a", "c"], points: -3 },
+        "a::d": { memberIds: ["a", "d"], points: -3 },
+      },
+      relationsState: state,
+    }).find((entry) => entry.character.id === "a")!;
+    const withSupport = buildGuildRelationInsights({
+      roster,
+      relationships: {
+        "a::b": { memberIds: ["a", "b"], points: -3 },
+        "a::c": { memberIds: ["a", "c"], points: -3 },
+        "a::d": { memberIds: ["a", "d"], points: 17 },
+      },
+      relationsState: state,
+    }).find((entry) => entry.character.id === "a")!;
+
+    expect(withoutSupport.friction).toBeLessThan(20);
+    expect(withSupport.friction).toBeLessThan(withoutSupport.friction);
+  });
+
+  it("counts only open adverse incidents and lets friction temper social authority", () => {
+    const roster = [
+      member("a", { history: [{ result: "Success" }] as never }),
+      member("b"),
+    ];
+    const baseState = createInitialGuildRelationsState(roster);
+    const incident = {
+      id: "incident",
+      kind: "blame" as const,
+      title: "Blame",
+      description: "A recent dispute.",
+      actorId: "a",
+      subjectId: "b",
+      dayIndex: 5,
+      expiresDayIndex: 6,
+      source: "mission" as const,
+      status: "pending" as const,
+      choices: [],
+    };
+    const relationships = {
+      "a::b": { memberIds: ["a", "b"], points: -30 },
+    };
+    const open = buildGuildRelationInsights({
+      roster,
+      relationships,
+      relationsState: { ...baseState, incidents: [incident] },
+      currentDayIndex: 5,
+    }).find((entry) => entry.character.id === "a")!;
+    const resolved = buildGuildRelationInsights({
+      roster,
+      relationships,
+      relationsState: {
+        ...baseState,
+        incidents: [{ ...incident, status: "resolved" as const }],
+      },
+      currentDayIndex: 5,
+    }).find((entry) => entry.character.id === "a")!;
+
+    expect(open.friction).toBe(resolved.friction + 8);
+    expect(open.support).toBeLessThan(resolved.support);
+    expect(open.influence).toBeLessThan(resolved.influence);
+  });
+
   it("creates at most one incident per day and resolves it only once", () => {
     const roster = [
       member("a", { leadershipTrait: LEADERSHIP_TRAIT.DIPLOMAT }),

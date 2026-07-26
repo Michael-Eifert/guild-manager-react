@@ -8,6 +8,7 @@ import { ROUTES } from "../../routes";
 export default function StartPage() {
   const actions = useGameActions();
   const guildSetup = useGameSelector((game) => game.guildSetup);
+  const gameSettings = useGameSelector((game) => game.gameSettings);
   const notifications = useGameSelector((game) => game.notifications);
   const sessionFileInputRef = useGameSelector((game) => game.sessionFileInputRef);
 
@@ -30,7 +31,9 @@ export default function StartPage() {
       />
       <GuildSetupScreen
         guildSetup={guildSetup}
+        gameSettings={gameSettings}
         onChange={actions.changeGuildSetup}
+        onGameSettingsChange={actions.updateGameSettings}
         onStart={actions.startGuild}
         onLoadSession={actions.loadSession}
       />

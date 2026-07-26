@@ -417,6 +417,7 @@ export default function DashboardPage({
         ) : (
           <div className="grid gap-4 [grid-template-columns:repeat(auto-fit,minmax(min(100%,320px),1fr))]">
             {rankedRoster.map((char) => {
+              const isOffline = char.onlineStatus === "Offline";
               const isBestSearchMatch =
                 hasGuildMemberSearchMatch &&
                 char.id === bestGuildMemberSearchMatchId;
@@ -428,7 +429,9 @@ export default function DashboardPage({
                   key={char.id}
                   className={`rounded-lg transition-all ${
                     isBestSearchMatch
-                      ? "ring-2 ring-amber-400 shadow-lg shadow-amber-900/30"
+                      ? isOffline
+                        ? "ring-2 ring-slate-500 shadow-lg shadow-slate-950/30"
+                        : "ring-2 ring-amber-400 shadow-lg shadow-amber-900/30"
                       : ""
                   } ${isDimmedSearchResult ? "opacity-45" : ""}`}
                 >

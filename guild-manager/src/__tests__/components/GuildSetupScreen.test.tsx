@@ -27,6 +27,8 @@ describe("GuildSetupScreen", () => {
       html.indexOf("Founding Guild Master"),
     );
     expect(html).toContain("Starting Activity");
+    expect(html).toContain("Play with Offline Simulation");
+    expect(html).toContain('checked=""');
     expect(html).toContain("Dungeon Groups");
     expect(html).toContain("PvP Activity");
     expect(html).toContain("Realm Competition");

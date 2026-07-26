@@ -14,6 +14,9 @@ import type { Character } from "../types/characterTypes";
 
 type ClassPresentation = { color: string };
 const CLASS_PRESENTATIONS = DB_CLASSES as Record<string, ClassPresentation>;
+type OverviewCharacter = Character & {
+  onlineStatus?: "Online" | "Offline" | "On Mission";
+};
 
 const ZONE_ARCHETYPE_LABEL: Readonly<Record<string, string>> = Object.freeze({
   [ZONE_COMPLETION_ARCHETYPE.GEAR_SEEKER]: "Gear Seeker",
@@ -78,8 +81,8 @@ const CharacterPersonalityCard = ({
   char,
   onClick,
 }: {
-  char: Character;
-  onClick: (character: Character) => void;
+  char: OverviewCharacter;
+  onClick: (character: OverviewCharacter) => void;
 }) => {
   const classData = CLASS_PRESENTATIONS[char.charClass || ""];
   if (!classData) return null;
@@ -114,6 +117,9 @@ const CharacterPersonalityCard = ({
   return (
     <div
       onClick={() => onClick(char)}
+      data-online-status={
+        char.onlineStatus || (char.status === "Offline" ? "Offline" : undefined)
+      }
       className={`wow-card relative h-full cursor-pointer rounded-lg border bg-gray-800 p-3 transition-all active:scale-95 hover:-translate-y-0.5 hover:border-yellow-500 hover:shadow-lg ${char.status === "Questing" ? "border-blue-500 opacity-80" : "border-gray-600"}`}
     >
       {char.status === "Questing" && (

@@ -9,6 +9,7 @@ import {
   Map,
   MessageCircle,
   ScrollText,
+  Settings2,
   Shield,
   Swords,
   Trophy,
@@ -168,5 +169,14 @@ export const buildHomeNavigation = ({
     group: "tools",
     kind: "route",
     to: ROUTES.GUILD_LOG,
+  },
+  {
+    id: "game-settings",
+    label: "Game Settings",
+    shortLabel: "Settings",
+    icon: Settings2,
+    group: "tools",
+    kind: "route",
+    to: ROUTES.GAME_SETTINGS,
   },
 ];
