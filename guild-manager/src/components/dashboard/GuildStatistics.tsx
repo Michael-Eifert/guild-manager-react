@@ -30,6 +30,29 @@ const CLASS_PRESENTATIONS = DB_CLASSES as Record<
   { color?: string; icon?: string }
 >;
 
+type RaidDifficulty = {
+  rank: number;
+  shortName: string;
+  groupSize: number;
+};
+
+const RAID_DIFFICULTY: Partial<Record<string, RaidDifficulty>> = {
+  molten_core: { rank: 1, shortName: "MC", groupSize: 40 },
+  zul_gurub: { rank: 2, shortName: "ZG", groupSize: 20 },
+  ahn_qiraj_ruins: { rank: 3, shortName: "AQ20", groupSize: 20 },
+  onyxias_lair: { rank: 4, shortName: "Ony", groupSize: 40 },
+  blackwing_lair: { rank: 5, shortName: "BWL", groupSize: 40 },
+  ahn_qiraj_temple: { rank: 6, shortName: "AQ40", groupSize: 40 },
+  naxxramas: { rank: 7, shortName: "Naxx", groupSize: 40 },
+};
+
+const getRaidDifficulty = (raidId: string) =>
+  RAID_DIFFICULTY[raidId] || {
+    rank: Number.MAX_SAFE_INTEGER,
+    shortName: "",
+    groupSize: 40,
+  };
+
 type GuildStatisticsProps = {
   roster: Character[];
   relationships?: Record<string, unknown> | null;
@@ -233,7 +256,16 @@ export default function GuildStatistics({
         });
         raidsById.set(id, current);
       });
-    return { dungeons, raids: [...raidsById.values()] };
+    const raids = [...raidsById.values()]
+      .map((raid) => ({
+        ...raid,
+        ...getRaidDifficulty(raid.id),
+      }))
+      .sort(
+        (left, right) =>
+          left.rank - right.rank || left.name.localeCompare(right.name),
+      );
+    return { dungeons, raids };
   }, [missionList]);
   const pulse = [
     {
@@ -434,61 +466,117 @@ export default function GuildStatistics({
           <section className="space-y-2" aria-labelledby="raid-progress-heading">
             <div className="flex min-h-11 items-center gap-2 rounded-lg border border-slate-700/80 bg-slate-950/45 px-3">
               <Castle size={15} className="text-amber-300" aria-hidden="true" />
-              <h4
-                id="raid-progress-heading"
-                className="text-xs font-bold uppercase tracking-wide text-slate-200"
-              >
-                Guild Raid Progress
-              </h4>
-            </div>
-            {progressionCatalog.raids.map((raid) => {
-              const stored = activityStats.guildRaidProgress[raid.id];
-              const defeated = new Set(stored?.defeatedBossNames || []);
-              return (
-                <details
-                  key={raid.id}
-                  className="overflow-hidden rounded-lg border border-slate-700/80 bg-slate-950/45"
+              <div className="min-w-0 flex-1">
+                <h4
+                  id="raid-progress-heading"
+                  className="text-xs font-bold uppercase tracking-wide text-slate-200"
                 >
-                  <summary className="flex min-h-11 cursor-pointer list-none items-center justify-between gap-3 px-3 py-2.5 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-amber-300">
-                    <span className="font-bold text-amber-100">{raid.name}</span>
-                    <span className="text-xs font-bold text-amber-300">
-                      {raid.bosses.filter((boss) => defeated.has(boss)).length}/
-                      {raid.bosses.length}
-                    </span>
-                  </summary>
-                  <ul className="grid gap-1 border-t border-slate-800 p-2 sm:grid-cols-2">
-                    {raid.bosses.map((boss) => {
-                      const isDefeated = defeated.has(boss);
-                      return (
-                        <li
-                          key={boss}
-                          className={`flex min-h-9 items-center gap-2 rounded px-2 text-xs ${
-                            isDefeated
-                              ? "bg-emerald-950/25 text-emerald-200"
-                              : "bg-black/20 text-slate-500"
+                  Guild Raid Progress
+                </h4>
+                <p className="text-[10px] text-slate-500">
+                  Difficulty increases from top to bottom
+                </p>
+              </div>
+            </div>
+            {progressionCatalog.raids.length > 0 ? (
+              <div className="rounded-lg border border-slate-800 bg-black/15 p-2">
+                <div className="mb-1 pl-10 text-[9px] font-bold uppercase tracking-[0.18em] text-emerald-400/80">
+                  Entry raids
+                </div>
+                <ol className="relative space-y-2 before:absolute before:bottom-5 before:left-[17px] before:top-5 before:w-px before:bg-gradient-to-b before:from-emerald-500/70 before:via-amber-500/60 before:to-red-500/70">
+                  {progressionCatalog.raids.map((raid, index) => {
+                    const stored =
+                      activityStats.guildRaidProgress[raid.id];
+                    const defeated = new Set(
+                      stored?.defeatedBossNames || [],
+                    );
+                    const defeatedCount = raid.bosses.filter((boss) =>
+                      defeated.has(boss),
+                    ).length;
+                    const isCleared =
+                      raid.bosses.length > 0 &&
+                      defeatedCount === raid.bosses.length;
+                    return (
+                      <li key={raid.id} className="relative pl-10">
+                        <span
+                          aria-hidden="true"
+                          className={`absolute left-1 top-3.5 z-10 flex h-7 w-7 items-center justify-center rounded-full border-2 text-[10px] font-black shadow-[0_0_0_4px_rgba(2,6,23,0.9)] ${
+                            isCleared
+                              ? "border-emerald-400 bg-emerald-950 text-emerald-200"
+                              : "border-amber-700 bg-slate-950 text-amber-300"
                           }`}
                         >
-                          {isDefeated ? (
-                            <CheckCircle2
-                              size={14}
-                              className="shrink-0"
-                              aria-label="Defeated"
-                            />
-                          ) : (
-                            <Circle
-                              size={14}
-                              className="shrink-0"
-                              aria-label="Not defeated"
-                            />
-                          )}
-                          {boss}
-                        </li>
-                      );
-                    })}
-                  </ul>
-                </details>
-              );
-            })}
+                          {index + 1}
+                        </span>
+                        <details
+                          className="overflow-hidden rounded-lg border border-slate-700/80 bg-slate-950/65"
+                          aria-label={`Difficulty ${index + 1} of ${progressionCatalog.raids.length}: ${raid.name}`}
+                        >
+                          <summary className="flex min-h-14 cursor-pointer list-none items-center justify-between gap-3 px-3 py-2.5 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-amber-300">
+                            <span className="min-w-0">
+                              <span className="block font-bold text-amber-100">
+                                {raid.shortName || raid.name}
+                              </span>
+                              {raid.shortName ? (
+                                <span className="block truncate text-[10px] text-slate-500">
+                                  {raid.name} · {raid.groupSize}-player
+                                </span>
+                              ) : null}
+                            </span>
+                            <span
+                              className={`shrink-0 text-xs font-bold ${
+                                isCleared
+                                  ? "text-emerald-300"
+                                  : "text-amber-300"
+                              }`}
+                            >
+                              {defeatedCount}/{raid.bosses.length}
+                            </span>
+                          </summary>
+                          <ul className="grid gap-1 border-t border-slate-800 p-2 sm:grid-cols-2">
+                            {raid.bosses.map((boss) => {
+                              const isDefeated = defeated.has(boss);
+                              return (
+                                <li
+                                  key={boss}
+                                  className={`flex min-h-9 items-center gap-2 rounded px-2 text-xs ${
+                                    isDefeated
+                                      ? "bg-emerald-950/25 text-emerald-200"
+                                      : "bg-black/20 text-slate-500"
+                                  }`}
+                                >
+                                  {isDefeated ? (
+                                    <CheckCircle2
+                                      size={14}
+                                      className="shrink-0"
+                                      aria-label="Defeated"
+                                    />
+                                  ) : (
+                                    <Circle
+                                      size={14}
+                                      className="shrink-0"
+                                      aria-label="Not defeated"
+                                    />
+                                  )}
+                                  {boss}
+                                </li>
+                              );
+                            })}
+                          </ul>
+                        </details>
+                      </li>
+                    );
+                  })}
+                </ol>
+                <div className="mt-1 pl-10 text-[9px] font-bold uppercase tracking-[0.18em] text-red-400/80">
+                  Hardest raids
+                </div>
+              </div>
+            ) : (
+              <div className="rounded-lg border border-dashed border-slate-700 px-3 py-6 text-center text-xs text-slate-500">
+                No raids are available in this realm yet.
+              </div>
+            )}
           </section>
         </div>
         </>

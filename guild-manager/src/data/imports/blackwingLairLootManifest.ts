@@ -69,15 +69,15 @@ const TIER_TWO_CLASS_SETS = Object.freeze([
     className: "Paladin",
     type: "Plate",
     setId: "t2_judgment_armor",
-    setName: "Judgment Armor",
+    setName: "Judgement Armor",
     stats: { strength: 18, intellect: 20, stamina: 20 },
     pieces: {
-      chest: [16958, "Judgment Breastplate"],
-      feet: [16957, "Judgment Sabatons"],
-      hands: [16956, "Judgment Gauntlets"],
-      shoulder: [16953, "Judgment Spaulders"],
-      waist: [16952, "Judgment Belt"],
-      wrist: [16951, "Judgment Bindings"],
+      chest: [16958, "Judgement Breastplate"],
+      feet: [16957, "Judgement Sabatons"],
+      hands: [16956, "Judgement Gauntlets"],
+      shoulder: [16953, "Judgement Spaulders"],
+      waist: [16952, "Judgement Belt"],
+      wrist: [16951, "Judgement Bindings"],
     },
   },
   {
@@ -161,7 +161,7 @@ const SLOT_SOURCE = Object.freeze({
   chest: { slot: "chest", sourceBosses: [BOSS.NEFARIAN] },
   feet: { slot: "feet", sourceBosses: [BOSS.BROODLORD] },
   hands: { slot: "hands", sourceBosses: DRAKE_BOSSES },
-  shoulder: { unsupportedSlot: "shoulder", sourceBosses: [BOSS.CHROMAGGUS] },
+  shoulder: { slot: "shoulder", sourceBosses: [BOSS.CHROMAGGUS] },
   waist: { slot: "belt", sourceBosses: [BOSS.VAELASTRASZ] },
   wrist: { slot: "wrist", sourceBosses: [BOSS.RAZORGORE] },
 });
@@ -200,6 +200,7 @@ const getSlotIcon = (slot: string, armorType: string) => {
   if (slot === "chest") return armorType === "Cloth" ? "inv_chest_cloth_03" : "inv_chest_chain_05";
   if (slot === "feet") return armorType === "Cloth" ? "inv_boots_07" : "inv_boots_plate_03";
   if (slot === "hands") return armorType === "Cloth" ? "inv_gauntlets_17" : "inv_gauntlets_30";
+  if (slot === "shoulder") return armorType === "Cloth" ? "inv_shoulder_02" : "inv_shoulder_15";
   if (slot === "wrist") return armorType === "Cloth" ? "inv_bracer_09" : "inv_bracer_16";
   if (slot === "waist") return armorType === "Cloth" ? "inv_belt_22" : "inv_belt_09";
   return "inv_misc_questionmark";
@@ -553,7 +554,7 @@ const EXTRA_BLACKWING_DROPS = Object.freeze([
   },
   {
     internalId: 402124,
-    wowheadId: 19367,
+    wowheadId: 19434,
     name: "Band of Dark Dominion",
     slot: "ring",
     quality: 4,
@@ -561,7 +562,7 @@ const EXTRA_BLACKWING_DROPS = Object.freeze([
     minLevel: 60,
     itemLevel: 76,
     iconCode: "inv_jewelry_ring_35",
-    sourceBosses: [BOSS.VAELASTRASZ],
+    sourceBosses: ["Zone Drop"],
     allowedClasses: ["Warlock", "Mage", "Priest"],
     stats: { intellect: 24, stamina: 14 },
   },

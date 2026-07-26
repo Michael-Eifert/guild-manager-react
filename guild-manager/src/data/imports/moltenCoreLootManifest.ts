@@ -12,6 +12,7 @@ const ACTIVE_EQUIPMENT_SLOTS = Object.freeze([
   "legs",
   "feet",
   "hands",
+  "shoulder",
   "trinket",
   "ring",
   "mainHand",
@@ -125,6 +126,15 @@ const SET_PIECE_ICON_CODES = Object.freeze({
   16865: "inv_chest_plate16",
   16866: "inv_helmet_09",
   16867: "inv_pants_04",
+  16797: "inv_shoulder_02",
+  16836: "inv_shoulder_07",
+  16848: "inv_shoulder_10",
+  16856: "inv_shoulder_20",
+  16816: "inv_shoulder_02",
+  16823: "inv_shoulder_25",
+  16844: "inv_shoulder_29",
+  16807: "inv_shoulder_23",
+  16868: "inv_shoulder_15",
 });
 
 const SET_SLOT_BOSSES = Object.freeze({
@@ -165,6 +175,20 @@ const resolveSetSlotBosses = (slot: string, itemName: string) => {
     }
     return [BOSS.SHAZZRAH];
   }
+  if (slot === "shoulder") {
+    if (
+      [
+        "Arcanist Mantle",
+        "Cenarion Spaulders",
+        "Earthfury Epaulets",
+        "Felheart Shoulder Pads",
+        "Lawbringer Spaulders",
+      ].includes(itemName)
+    ) {
+      return [BOSS.BARON_GEDDON];
+    }
+    return [BOSS.SULFURON];
+  }
   return [];
 };
 
@@ -181,6 +205,7 @@ const SET_DEFINITIONS = Object.freeze([
       { wowheadId: 16835, name: "Cenarion Leggings", slot: "legs" },
       { wowheadId: 16829, name: "Cenarion Boots", slot: "feet" },
       { wowheadId: 16831, name: "Cenarion Gloves", slot: "hands" },
+      { wowheadId: 16836, name: "Cenarion Spaulders", slot: "shoulder" },
     ],
   },
   {
@@ -195,6 +220,7 @@ const SET_DEFINITIONS = Object.freeze([
       { wowheadId: 16847, name: "Giantstalker's Leggings", slot: "legs" },
       { wowheadId: 16849, name: "Giantstalker's Boots", slot: "feet" },
       { wowheadId: 16852, name: "Giantstalker's Gloves", slot: "hands" },
+      { wowheadId: 16848, name: "Giantstalker's Epaulets", slot: "shoulder" },
     ],
   },
   {
@@ -209,6 +235,7 @@ const SET_DEFINITIONS = Object.freeze([
       { wowheadId: 16796, name: "Arcanist Leggings", slot: "legs" },
       { wowheadId: 16800, name: "Arcanist Boots", slot: "feet" },
       { wowheadId: 16801, name: "Arcanist Gloves", slot: "hands" },
+      { wowheadId: 16797, name: "Arcanist Mantle", slot: "shoulder" },
     ],
   },
   {
@@ -223,6 +250,7 @@ const SET_DEFINITIONS = Object.freeze([
       { wowheadId: 16855, name: "Lawbringer Legplates", slot: "legs" },
       { wowheadId: 16859, name: "Lawbringer Boots", slot: "feet" },
       { wowheadId: 16860, name: "Lawbringer Gauntlets", slot: "hands" },
+      { wowheadId: 16856, name: "Lawbringer Spaulders", slot: "shoulder" },
     ],
   },
   {
@@ -237,6 +265,7 @@ const SET_DEFINITIONS = Object.freeze([
       { wowheadId: 16814, name: "Pants of Prophecy", slot: "legs" },
       { wowheadId: 16811, name: "Boots of Prophecy", slot: "feet" },
       { wowheadId: 16812, name: "Gloves of Prophecy", slot: "hands" },
+      { wowheadId: 16816, name: "Mantle of Prophecy", slot: "shoulder" },
     ],
   },
   {
@@ -251,6 +280,7 @@ const SET_DEFINITIONS = Object.freeze([
       { wowheadId: 16822, name: "Nightslayer Pants", slot: "legs" },
       { wowheadId: 16824, name: "Nightslayer Boots", slot: "feet" },
       { wowheadId: 16826, name: "Nightslayer Gloves", slot: "hands" },
+      { wowheadId: 16823, name: "Nightslayer Shoulder Pads", slot: "shoulder" },
     ],
   },
   {
@@ -265,6 +295,7 @@ const SET_DEFINITIONS = Object.freeze([
       { wowheadId: 16843, name: "Earthfury Legguards", slot: "legs" },
       { wowheadId: 16837, name: "Earthfury Boots", slot: "feet" },
       { wowheadId: 16839, name: "Earthfury Gauntlets", slot: "hands" },
+      { wowheadId: 16844, name: "Earthfury Epaulets", slot: "shoulder" },
     ],
   },
   {
@@ -279,6 +310,7 @@ const SET_DEFINITIONS = Object.freeze([
       { wowheadId: 16810, name: "Felheart Pants", slot: "legs" },
       { wowheadId: 16803, name: "Felheart Slippers", slot: "feet" },
       { wowheadId: 16805, name: "Felheart Gloves", slot: "hands" },
+      { wowheadId: 16807, name: "Felheart Shoulder Pads", slot: "shoulder" },
     ],
   },
   {
@@ -293,6 +325,7 @@ const SET_DEFINITIONS = Object.freeze([
       { wowheadId: 16867, name: "Legplates of Might", slot: "legs" },
       { wowheadId: 16862, name: "Sabatons of Might", slot: "feet" },
       { wowheadId: 16863, name: "Gauntlets of Might", slot: "hands" },
+      { wowheadId: 16868, name: "Pauldrons of Might", slot: "shoulder" },
     ],
   },
 ]);
@@ -1340,7 +1373,8 @@ export const unsupportedMoltenCoreDrops = Object.freeze([
     entry.unsupportedSlot &&
     entry.unsupportedSlot !== "wrist" &&
     entry.unsupportedSlot !== "waist" &&
-    entry.unsupportedSlot !== "finger",
+    entry.unsupportedSlot !== "finger" &&
+    entry.unsupportedSlot !== "shoulder",
 ));
 
 export const convertMoltenCoreManifestEntry = (

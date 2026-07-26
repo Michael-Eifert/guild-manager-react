@@ -106,7 +106,7 @@ export const UPPER_BLACKROCK_SPIRE_ACTIVE_LOOT_MANIFEST = Object.freeze([
     stats: { agility: 14, stamina: 10, spirit: 6 },
   },
   {
-    wowheadId: 12796,
+    wowheadId: 18048,
     name: "Mastersmith's Hammer",
     slot: "mainHand",
     quality: 3,
@@ -126,17 +126,6 @@ export const UPPER_BLACKROCK_SPIRE_ACTIVE_LOOT_MANIFEST = Object.freeze([
     iconCode: "inv_helmet_30",
     sourceBosses: [BOSS.JED],
     stats: { intellect: 14, spirit: 11, stamina: 8 },
-  },
-  {
-    wowheadId: 12605,
-    name: "Serpentine Skuller",
-    slot: "mainHand",
-    quality: 3,
-    type: "Generic",
-    minLevel: 54,
-    iconCode: "inv_wand_07",
-    sourceBosses: [BOSS.JED],
-    stats: { intellect: 13, spirit: 10, stamina: 7 },
   },
   {
     wowheadId: 12952,
@@ -537,6 +526,7 @@ export const UPPER_BLACKROCK_SPIRE_ACTIVE_LOOT_MANIFEST = Object.freeze([
 ]);
 
 export const unsupportedUpperBlackrockSpireDrops = Object.freeze([
+  { wowheadId: 12605, name: "Serpentine Skuller", unsupportedSlot: "ranged", sourceBosses: [BOSS.JED] },
   { wowheadId: 12927, name: "Truestrike Shoulders", unsupportedSlot: "shoulder", sourceBosses: [BOSS.EMBERSEER] },
   { wowheadId: 12929, name: "Emberfury Talisman", unsupportedSlot: "neck", sourceBosses: [BOSS.EMBERSEER] },
   { wowheadId: 16695, name: "Devout Mantle", unsupportedSlot: "shoulder", sourceBosses: [BOSS.SOLAKAR], setId: TIER_ZERO_SET_IDS.PRIEST, setName: "Vestments of the Devout" },

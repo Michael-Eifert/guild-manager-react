@@ -104,28 +104,6 @@ export const LOWER_BLACKROCK_SPIRE_ACTIVE_LOOT_MANIFEST = Object.freeze([
     stats: { agility: 14, stamina: 10, spirit: 6 },
   },
   {
-    wowheadId: 12651,
-    name: "Blackcrow",
-    slot: "mainHand",
-    quality: 3,
-    type: "Generic",
-    minLevel: 54,
-    iconCode: "inv_weapon_crossbow_02",
-    sourceBosses: [BOSS.VOSHGAJIN],
-    stats: { agility: 13, stamina: 8 },
-  },
-  {
-    wowheadId: 12653,
-    name: "Riphook",
-    slot: "mainHand",
-    quality: 3,
-    type: "Generic",
-    minLevel: 54,
-    iconCode: "inv_weapon_bow_08",
-    sourceBosses: [BOSS.VOSHGAJIN],
-    stats: { agility: 14, stamina: 8 },
-  },
-  {
     wowheadId: 16712,
     name: "Shadowcraft Gloves",
     slot: "hands",
@@ -165,7 +143,7 @@ export const LOWER_BLACKROCK_SPIRE_ACTIVE_LOOT_MANIFEST = Object.freeze([
     stats: { agility: 14, stamina: 9, intellect: 9 },
   },
   {
-    wowheadId: 13254,
+    wowheadId: 12582,
     name: "Keris of Zul'Serak",
     slot: "mainHand",
     quality: 3,
@@ -174,17 +152,6 @@ export const LOWER_BLACKROCK_SPIRE_ACTIVE_LOOT_MANIFEST = Object.freeze([
     iconCode: "inv_weapon_shortblade_15",
     sourceBosses: [BOSS.VOONE],
     stats: { agility: 14, stamina: 9 },
-  },
-  {
-    wowheadId: 13175,
-    name: "Voone's Twitchbow",
-    slot: "mainHand",
-    quality: 3,
-    type: "Generic",
-    minLevel: 55,
-    iconCode: "inv_weapon_bow_07",
-    sourceBosses: [BOSS.VOONE],
-    stats: { agility: 13, stamina: 9 },
   },
   {
     wowheadId: 13244,
@@ -270,7 +237,7 @@ export const LOWER_BLACKROCK_SPIRE_ACTIVE_LOOT_MANIFEST = Object.freeze([
     stats: { intellect: 14, spirit: 10, stamina: 8 },
   },
   {
-    wowheadId: 13182,
+    wowheadId: 13206,
     name: "Wolfshear Leggings",
     slot: "legs",
     quality: 3,
@@ -478,6 +445,9 @@ export const LOWER_BLACKROCK_SPIRE_ACTIVE_LOOT_MANIFEST = Object.freeze([
 ]);
 
 export const unsupportedLowerBlackrockSpireDrops = Object.freeze([
+  { wowheadId: 12651, name: "Blackcrow", unsupportedSlot: "ranged", sourceBosses: [BOSS.VOSHGAJIN] },
+  { wowheadId: 12653, name: "Riphook", unsupportedSlot: "ranged", sourceBosses: [BOSS.VOSHGAJIN] },
+  { wowheadId: 13175, name: "Voone's Twitchbow", unsupportedSlot: "ranged", sourceBosses: [BOSS.VOONE] },
   { wowheadId: 16716, name: "Wildheart Belt", unsupportedSlot: "waist", sourceBosses: [BOSS.ZIGRIS, "Shared: LBRS Trash"], setId: TIER_ZERO_SET_IDS.DRUID, setName: "Wildheart Raiment" },
   { wowheadId: 16718, name: "Wildheart Spaulders", unsupportedSlot: "shoulder", sourceBosses: [BOSS.GIZRUL], setId: TIER_ZERO_SET_IDS.DRUID, setName: "Wildheart Raiment" },
   { wowheadId: 16680, name: "Beaststalker's Belt", unsupportedSlot: "waist", sourceBosses: [BOSS.ZIGRIS, "Shared: LBRS Trash"], setId: TIER_ZERO_SET_IDS.HUNTER, setName: "Beaststalker Armor" },

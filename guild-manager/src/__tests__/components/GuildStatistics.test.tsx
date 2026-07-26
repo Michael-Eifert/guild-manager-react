@@ -83,9 +83,56 @@ describe("GuildStatistics", () => {
     expect(html).toContain("Guild Dungeon Clears");
     expect(html).toContain("The Deadmines");
     expect(html).toContain("Guild Raid Progress");
+    expect(html).toContain("Difficulty increases from top to bottom");
+    expect(html).toContain("MC");
     expect(html).toContain("Molten Core");
     expect(html).toContain("Lucifron");
     expect(html).toContain("Magmadar");
     expect(html).toContain("1/2");
+  });
+
+  it("orders raid progression from entry raids to Naxxramas", () => {
+    const raid = (dungeonSetId: string, dungeonSetName: string) => ({
+      id: `${dungeonSetId}-mission`,
+      type: "dungeon",
+      isRaid: true,
+      dungeonSetId,
+      dungeonSetName,
+      dungeonBosses: [`${dungeonSetName} Boss`],
+    });
+    const html = render(
+      <MemoryRouter>
+        <GuildStatistics
+          roster={roster}
+          relationships={{}}
+          activityStats={createInitialGuildActivityStats()}
+          detailed
+          missionList={[
+            raid("naxxramas", "Naxxramas"),
+            raid("blackwing_lair", "Blackwing Lair"),
+            raid("molten_core", "Molten Core"),
+            raid("ahn_qiraj_temple", "Temple of Ahn'Qiraj"),
+            raid("onyxias_lair", "Onyxia's Lair"),
+            raid("ahn_qiraj_ruins", "Ruins of Ahn'Qiraj"),
+            raid("zul_gurub", "Zul'Gurub"),
+          ]}
+        />
+      </MemoryRouter>,
+    );
+
+    const orderedNames = [
+      "Molten Core",
+      "Zul&#x27;Gurub",
+      "Ruins of Ahn&#x27;Qiraj",
+      "Onyxia&#x27;s Lair",
+      "Blackwing Lair",
+      "Temple of Ahn&#x27;Qiraj",
+      "Naxxramas",
+    ];
+    const positions = orderedNames.map((name) => html.indexOf(name));
+
+    expect(positions.every((position) => position >= 0)).toBe(true);
+    expect(positions).toEqual([...positions].sort((a, b) => a - b));
+    expect(html).toContain("Hardest raids");
   });
 });

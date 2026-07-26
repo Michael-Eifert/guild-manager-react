@@ -12,6 +12,7 @@ const ACTIVE_EQUIPMENT_SLOTS = Object.freeze([
   "legs",
   "feet",
   "hands",
+  "shoulder",
   "trinket",
   "ring",
   "mainHand",
@@ -35,6 +36,7 @@ const BOSS = Object.freeze({
 export const AHN_QIRAJ_TEMPLE_ACTIVE_LOOT_MANIFEST = Object.freeze([
   {
     internalId: 301001,
+    wowheadId: 21128,
     name: "Staff of the Qiraji Prophets",
     slot: "mainHand",
     quality: 4,
@@ -47,6 +49,7 @@ export const AHN_QIRAJ_TEMPLE_ACTIVE_LOOT_MANIFEST = Object.freeze([
   },
   {
     internalId: 301002,
+    wowheadId: 21703,
     name: "Hammer of Ji'zhi",
     slot: "mainHand",
     quality: 4,
@@ -59,6 +62,7 @@ export const AHN_QIRAJ_TEMPLE_ACTIVE_LOOT_MANIFEST = Object.freeze([
   },
   {
     internalId: 301003,
+    wowheadId: 21814,
     name: "Breastplate of Annihilation",
     slot: "chest",
     quality: 4,
@@ -71,6 +75,7 @@ export const AHN_QIRAJ_TEMPLE_ACTIVE_LOOT_MANIFEST = Object.freeze([
   },
   {
     internalId: 301004,
+    wowheadId: 21704,
     name: "Boots of the Redeemed Prophecy",
     slot: "feet",
     quality: 4,
@@ -83,12 +88,20 @@ export const AHN_QIRAJ_TEMPLE_ACTIVE_LOOT_MANIFEST = Object.freeze([
   },
   {
     internalId: 301005,
+    wowheadId: 21686,
     name: "Mantle of Phrenic Power",
-    unsupportedSlot: "shoulder",
+    slot: "shoulder",
+    quality: 4,
+    type: "Cloth",
+    minLevel: 60,
+    iconCode: "inv_shoulder_02",
     sourceBosses: [BOSS.BUG_TRIO],
+    allowedClasses: ["Mage", "Warlock", "Priest"],
+    stats: { intellect: 28, spirit: 16, stamina: 12 },
   },
   {
     internalId: 301006,
+    wowheadId: 21680,
     name: "Vest of Swift Execution",
     slot: "chest",
     quality: 4,
@@ -101,6 +114,7 @@ export const AHN_QIRAJ_TEMPLE_ACTIVE_LOOT_MANIFEST = Object.freeze([
   },
   {
     internalId: 301007,
+    wowheadId: 21691,
     name: "Ooze-Ridden Gauntlets",
     slot: "hands",
     quality: 4,
@@ -113,18 +127,20 @@ export const AHN_QIRAJ_TEMPLE_ACTIVE_LOOT_MANIFEST = Object.freeze([
   },
   {
     internalId: 301008,
+    wowheadId: 21688,
     name: "Boots of the Fallen Hero",
     slot: "feet",
     quality: 4,
-    type: "Mail",
+    type: "Plate",
     minLevel: 60,
     iconCode: "inv_boots_chain_13",
     sourceBosses: [BOSS.BUG_TRIO],
-    allowedClasses: ["Hunter", "Shaman", "Warrior"],
-    stats: { agility: 22, stamina: 18 },
+    allowedClasses: ["Warrior", "Paladin"],
+    stats: { strength: 22, stamina: 18 },
   },
   {
     internalId: 301009,
+    wowheadId: 21696,
     name: "Robes of the Triumvirate",
     slot: "chest",
     quality: 4,
@@ -137,6 +153,7 @@ export const AHN_QIRAJ_TEMPLE_ACTIVE_LOOT_MANIFEST = Object.freeze([
   },
   {
     internalId: 301010,
+    wowheadId: 21673,
     name: "Silithid Claw",
     slot: "mainHand",
     quality: 4,
@@ -149,6 +166,7 @@ export const AHN_QIRAJ_TEMPLE_ACTIVE_LOOT_MANIFEST = Object.freeze([
   },
   {
     internalId: 301011,
+    wowheadId: 21671,
     name: "Robes of the Battleguard",
     slot: "chest",
     quality: 4,
@@ -161,6 +179,7 @@ export const AHN_QIRAJ_TEMPLE_ACTIVE_LOOT_MANIFEST = Object.freeze([
   },
   {
     internalId: 301012,
+    wowheadId: 21672,
     name: "Gloves of Enforcement",
     slot: "hands",
     quality: 4,
@@ -173,6 +192,7 @@ export const AHN_QIRAJ_TEMPLE_ACTIVE_LOOT_MANIFEST = Object.freeze([
   },
   {
     internalId: 301013,
+    wowheadId: 21667,
     name: "Legplates of Blazing Light",
     slot: "legs",
     quality: 4,
@@ -185,6 +205,7 @@ export const AHN_QIRAJ_TEMPLE_ACTIVE_LOOT_MANIFEST = Object.freeze([
   },
   {
     internalId: 301014,
+    wowheadId: 21650,
     name: "Ancient Qiraji Ripper",
     slot: "mainHand",
     quality: 4,
@@ -197,6 +218,7 @@ export const AHN_QIRAJ_TEMPLE_ACTIVE_LOOT_MANIFEST = Object.freeze([
   },
   {
     internalId: 301015,
+    wowheadId: 21635,
     name: "Barb of the Sand Reaver",
     slot: "mainHand",
     quality: 4,
@@ -209,6 +231,7 @@ export const AHN_QIRAJ_TEMPLE_ACTIVE_LOOT_MANIFEST = Object.freeze([
   },
   {
     internalId: 301016,
+    wowheadId: 21663,
     name: "Robes of the Guardian Saint",
     slot: "chest",
     quality: 4,
@@ -221,6 +244,7 @@ export const AHN_QIRAJ_TEMPLE_ACTIVE_LOOT_MANIFEST = Object.freeze([
   },
   {
     internalId: 301017,
+    wowheadId: 21652,
     name: "Silithid Carapace Chestguard",
     slot: "chest",
     quality: 4,
@@ -233,6 +257,7 @@ export const AHN_QIRAJ_TEMPLE_ACTIVE_LOOT_MANIFEST = Object.freeze([
   },
   {
     internalId: 301018,
+    wowheadId: 21622,
     name: "Sharpened Silithid Femur",
     slot: "mainHand",
     quality: 4,
@@ -245,6 +270,7 @@ export const AHN_QIRAJ_TEMPLE_ACTIVE_LOOT_MANIFEST = Object.freeze([
   },
   {
     internalId: 301019,
+    wowheadId: 21626,
     name: "Slime-Coated Leggings",
     slot: "legs",
     quality: 4,
@@ -257,6 +283,7 @@ export const AHN_QIRAJ_TEMPLE_ACTIVE_LOOT_MANIFEST = Object.freeze([
   },
   {
     internalId: 301020,
+    wowheadId: 21623,
     name: "Gauntlets of the Righteous Champion",
     slot: "hands",
     quality: 4,
@@ -269,18 +296,14 @@ export const AHN_QIRAJ_TEMPLE_ACTIVE_LOOT_MANIFEST = Object.freeze([
   },
   {
     internalId: 301021,
+    wowheadId: 21616,
     name: "Huhuran's Stinger",
-    slot: "mainHand",
-    quality: 4,
-    type: "Generic",
-    minLevel: 60,
-    iconCode: "inv_weapon_bow_14",
+    unsupportedSlot: "ranged",
     sourceBosses: [BOSS.HUHURAN],
-    allowedClasses: ["Hunter", "Rogue", "Warrior"],
-    stats: { agility: 30, stamina: 12 },
   },
   {
     internalId: 301022,
+    wowheadId: 21619,
     name: "Gloves of the Messiah",
     slot: "hands",
     quality: 4,
@@ -293,6 +316,7 @@ export const AHN_QIRAJ_TEMPLE_ACTIVE_LOOT_MANIFEST = Object.freeze([
   },
   {
     internalId: 301023,
+    wowheadId: 21617,
     name: "Wasphide Gauntlets",
     slot: "hands",
     quality: 4,
@@ -305,6 +329,7 @@ export const AHN_QIRAJ_TEMPLE_ACTIVE_LOOT_MANIFEST = Object.freeze([
   },
   {
     internalId: 301024,
+    wowheadId: 21679,
     name: "Kalimdor's Revenge",
     slot: "mainHand",
     quality: 4,
@@ -317,24 +342,21 @@ export const AHN_QIRAJ_TEMPLE_ACTIVE_LOOT_MANIFEST = Object.freeze([
   },
   {
     internalId: 301025,
+    wowheadId: 21597,
     name: "Royal Scepter of Vek'lor",
     unsupportedSlot: "offHand",
     sourceBosses: [BOSS.TWIN_EMPERORS],
   },
   {
-    internalId: 301026,
-    name: "Belt of the Fallen Emperor",
-    unsupportedSlot: "waist",
-    sourceBosses: [BOSS.TWIN_EMPERORS],
-  },
-  {
     internalId: 301027,
+    wowheadId: 23557,
     name: "Larvae of the Great Worm",
     unsupportedSlot: "ranged",
     sourceBosses: [BOSS.OURO],
   },
   {
     internalId: 301028,
+    wowheadId: 21615,
     name: "Don Rigoberto's Lost Hat",
     slot: "head",
     quality: 4,
@@ -347,6 +369,7 @@ export const AHN_QIRAJ_TEMPLE_ACTIVE_LOOT_MANIFEST = Object.freeze([
   },
   {
     internalId: 301029,
+    wowheadId: 21581,
     name: "Gauntlets of Annihilation",
     slot: "hands",
     quality: 4,
@@ -359,6 +382,7 @@ export const AHN_QIRAJ_TEMPLE_ACTIVE_LOOT_MANIFEST = Object.freeze([
   },
   {
     internalId: 301030,
+    wowheadId: 21585,
     name: "Dark Storm Gauntlets",
     slot: "hands",
     quality: 4,
@@ -371,6 +395,7 @@ export const AHN_QIRAJ_TEMPLE_ACTIVE_LOOT_MANIFEST = Object.freeze([
   },
   {
     internalId: 301031,
+    wowheadId: 21126,
     name: "Death's Sting",
     slot: "mainHand",
     quality: 4,
@@ -383,6 +408,7 @@ export const AHN_QIRAJ_TEMPLE_ACTIVE_LOOT_MANIFEST = Object.freeze([
   },
   {
     internalId: 301032,
+    wowheadId: 21839,
     name: "Scepter of the False Prophet",
     slot: "mainHand",
     quality: 4,
@@ -395,9 +421,10 @@ export const AHN_QIRAJ_TEMPLE_ACTIVE_LOOT_MANIFEST = Object.freeze([
   },
   {
     internalId: 301033,
+    wowheadId: 21134,
     name: "Dark Edge of Insanity",
     slot: "mainHand",
-    quality: 5,
+    quality: 4,
     type: "Generic",
     minLevel: 60,
     iconCode: "inv_axe_24",
@@ -407,6 +434,7 @@ export const AHN_QIRAJ_TEMPLE_ACTIVE_LOOT_MANIFEST = Object.freeze([
   },
   {
     internalId: 301034,
+    wowheadId: 21604,
     name: "Bracelets of Royal Redemption",
     slot: "wrist",
     quality: 4,
@@ -419,6 +447,7 @@ export const AHN_QIRAJ_TEMPLE_ACTIVE_LOOT_MANIFEST = Object.freeze([
   },
   {
     internalId: 301035,
+    wowheadId: 21602,
     name: "Qiraji Execution Bracers",
     slot: "wrist",
     quality: 4,
@@ -431,6 +460,7 @@ export const AHN_QIRAJ_TEMPLE_ACTIVE_LOOT_MANIFEST = Object.freeze([
   },
   {
     internalId: 301036,
+    wowheadId: 21618,
     name: "Hive Defiler Wristguards",
     slot: "wrist",
     quality: 4,
@@ -443,6 +473,7 @@ export const AHN_QIRAJ_TEMPLE_ACTIVE_LOOT_MANIFEST = Object.freeze([
   },
   {
     internalId: 301037,
+    wowheadId: 21670,
     name: "Badge of the Swarmguard",
     slot: "trinket",
     quality: 4,
@@ -455,6 +486,7 @@ export const AHN_QIRAJ_TEMPLE_ACTIVE_LOOT_MANIFEST = Object.freeze([
   },
   {
     internalId: 301038,
+    wowheadId: 21625,
     name: "Scarab Brooch",
     slot: "trinket",
     quality: 4,
@@ -467,6 +499,7 @@ export const AHN_QIRAJ_TEMPLE_ACTIVE_LOOT_MANIFEST = Object.freeze([
   },
   {
     internalId: 301039,
+    wowheadId: 23570,
     name: "Jom Gabbar",
     slot: "trinket",
     quality: 4,
@@ -479,6 +512,7 @@ export const AHN_QIRAJ_TEMPLE_ACTIVE_LOOT_MANIFEST = Object.freeze([
   },
   {
     internalId: 301040,
+    wowheadId: 21579,
     name: "Vanquished Tentacle of C'Thun",
     slot: "trinket",
     quality: 4,
@@ -490,6 +524,7 @@ export const AHN_QIRAJ_TEMPLE_ACTIVE_LOOT_MANIFEST = Object.freeze([
   },
   {
     internalId: 301041,
+    wowheadId: 21701,
     name: "Cloak of Concentrated Hatred",
     slot: "back",
     quality: 4,
@@ -502,6 +537,7 @@ export const AHN_QIRAJ_TEMPLE_ACTIVE_LOOT_MANIFEST = Object.freeze([
   },
   {
     internalId: 301042,
+    wowheadId: 21697,
     name: "Cape of the Trinity",
     slot: "back",
     quality: 4,
@@ -514,6 +550,7 @@ export const AHN_QIRAJ_TEMPLE_ACTIVE_LOOT_MANIFEST = Object.freeze([
   },
   {
     internalId: 301043,
+    wowheadId: 22731,
     name: "Cloak of the Devoured",
     slot: "back",
     quality: 4,
@@ -526,6 +563,7 @@ export const AHN_QIRAJ_TEMPLE_ACTIVE_LOOT_MANIFEST = Object.freeze([
   },
   {
     internalId: 301044,
+    wowheadId: 21664,
     name: "Barbed Choker",
     slot: "neck",
     quality: 4,
@@ -538,6 +576,7 @@ export const AHN_QIRAJ_TEMPLE_ACTIVE_LOOT_MANIFEST = Object.freeze([
   },
   {
     internalId: 301045,
+    wowheadId: 21678,
     name: "Necklace of Purity",
     slot: "neck",
     quality: 4,
@@ -550,6 +589,7 @@ export const AHN_QIRAJ_TEMPLE_ACTIVE_LOOT_MANIFEST = Object.freeze([
   },
   {
     internalId: 301046,
+    wowheadId: 22732,
     name: "Mark of C'Thun",
     slot: "neck",
     quality: 4,
@@ -561,6 +601,7 @@ export const AHN_QIRAJ_TEMPLE_ACTIVE_LOOT_MANIFEST = Object.freeze([
   },
   {
     internalId: 301047,
+    wowheadId: 21598,
     name: "Royal Qiraji Belt",
     slot: "belt",
     quality: 4,
@@ -573,6 +614,7 @@ export const AHN_QIRAJ_TEMPLE_ACTIVE_LOOT_MANIFEST = Object.freeze([
   },
   {
     internalId: 301048,
+    wowheadId: 21606,
     name: "Belt of the Fallen Emperor",
     slot: "belt",
     quality: 4,
@@ -585,18 +627,20 @@ export const AHN_QIRAJ_TEMPLE_ACTIVE_LOOT_MANIFEST = Object.freeze([
   },
   {
     internalId: 301049,
+    wowheadId: 21692,
     name: "Triad Girdle",
     slot: "belt",
     quality: 4,
-    type: "Mail",
+    type: "Plate",
     minLevel: 60,
     iconCode: "inv_belt_09",
     sourceBosses: [BOSS.BUG_TRIO],
-    allowedClasses: ["Hunter", "Shaman", "Warrior"],
-    stats: { agility: 22, stamina: 18 },
+    allowedClasses: ["Warrior", "Paladin"],
+    stats: { strength: 22, stamina: 18 },
   },
   {
     internalId: 301050,
+    wowheadId: 21586,
     name: "Belt of Never-ending Agony",
     slot: "belt",
     quality: 4,
@@ -609,6 +653,7 @@ export const AHN_QIRAJ_TEMPLE_ACTIVE_LOOT_MANIFEST = Object.freeze([
   },
   {
     internalId: 301051,
+    wowheadId: 22730,
     name: "Eyestalk Waist Cord",
     slot: "belt",
     quality: 4,
@@ -621,6 +666,7 @@ export const AHN_QIRAJ_TEMPLE_ACTIVE_LOOT_MANIFEST = Object.freeze([
   },
   {
     internalId: 301052,
+    wowheadId: 21707,
     name: "Ring of Swarming Thought",
     slot: "ring",
     quality: 4,
@@ -633,6 +679,7 @@ export const AHN_QIRAJ_TEMPLE_ACTIVE_LOOT_MANIFEST = Object.freeze([
   },
   {
     internalId: 301053,
+    wowheadId: 21677,
     name: "Ring of the Qiraji Fury",
     slot: "ring",
     quality: 4,
@@ -645,6 +692,7 @@ export const AHN_QIRAJ_TEMPLE_ACTIVE_LOOT_MANIFEST = Object.freeze([
   },
   {
     internalId: 301054,
+    wowheadId: 21601,
     name: "Ring of Emperor Vek'lor",
     slot: "ring",
     quality: 4,
@@ -656,6 +704,7 @@ export const AHN_QIRAJ_TEMPLE_ACTIVE_LOOT_MANIFEST = Object.freeze([
   },
   {
     internalId: 301055,
+    wowheadId: 21596,
     name: "Ring of the Godslayer",
     slot: "ring",
     quality: 4,
@@ -668,15 +717,10 @@ export const AHN_QIRAJ_TEMPLE_ACTIVE_LOOT_MANIFEST = Object.freeze([
   },
   {
     internalId: 301056,
+    wowheadId: 21709,
     name: "Ring of the Fallen God",
-    slot: "ring",
-    quality: 4,
-    type: "Generic",
-    minLevel: 60,
-    iconCode: "inv_jewelry_ring_ahnqiraj_05",
+    unsupportedSlot: "questReward",
     sourceBosses: [BOSS.CTHUN],
-    allowedClasses: ["Mage", "Warlock", "Priest", "Druid", "Shaman", "Paladin"],
-    stats: { intellect: 30, spirit: 14, stamina: 12 },
   },
 ]);
 
@@ -684,6 +728,7 @@ export const unsupportedAhnQirajTempleDrops = Object.freeze(
   AHN_QIRAJ_TEMPLE_ACTIVE_LOOT_MANIFEST.filter((entry) => entry.unsupportedSlot).map(
     (entry) => ({
       internalId: entry.internalId,
+      wowheadId: entry.wowheadId,
       name: entry.name,
       unsupportedSlot: entry.unsupportedSlot,
       sourceBosses: [...entry.sourceBosses],
@@ -695,6 +740,7 @@ export const convertAhnQirajTempleManifestEntry = (
   entry: LootManifestEntry,
 ) => ({
   id: (entry.internalId ?? entry.wowheadId) as number,
+  wowheadId: entry.wowheadId,
   name: entry.name,
   slot: entry.slot,
   quality: entry.quality,

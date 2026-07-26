@@ -47,11 +47,11 @@ const TIER_TWO_HELMS = Object.freeze([
   {
     internalId: 401004,
     wowheadId: 16955,
-    name: "Judgment Crown",
+    name: "Judgement Crown",
     type: "Plate",
     allowedClasses: ["Paladin"],
     setId: "t2_judgment_armor",
-    setName: "Judgment Armor",
+    setName: "Judgement Armor",
     iconCode: "inv_helmet_74",
     stats: { strength: 18, intellect: 20, stamina: 20 },
   },
@@ -115,6 +115,7 @@ const TIER_TWO_HELMS = Object.freeze([
 const EXTRA_ONYXIA_DROPS = Object.freeze([
   {
     internalId: 401101,
+    wowheadId: 17068,
     name: "Deathbringer",
     slot: "mainHand",
     quality: 4,
@@ -127,6 +128,7 @@ const EXTRA_ONYXIA_DROPS = Object.freeze([
   },
   {
     internalId: 401102,
+    wowheadId: 17075,
     name: "Vis'kag the Bloodletter",
     slot: "mainHand",
     quality: 4,
@@ -139,15 +141,10 @@ const EXTRA_ONYXIA_DROPS = Object.freeze([
   },
   {
     internalId: 401103,
+    wowheadId: 17067,
     name: "Ancient Cornerstone Grimoire",
-    slot: "mainHand",
-    quality: 4,
-    type: "Generic",
-    minLevel: 60,
-    iconCode: "inv_misc_book_06",
+    unsupportedSlot: "offHand",
     sourceBosses: [BOSS.ONYXIA],
-    allowedClasses: ["Mage", "Warlock", "Priest", "Druid", "Shaman", "Paladin"],
-    stats: { intellect: 24, spirit: 16, stamina: 12 },
   },
   {
     internalId: 401104,
@@ -198,10 +195,14 @@ export const ONYXIAS_LAIR_ACTIVE_LOOT_MANIFEST = Object.freeze([
     sourceBosses: [BOSS.ONYXIA],
     itemLevel: 76,
   })),
-  ...EXTRA_ONYXIA_DROPS.map((entry) => ({ ...entry, itemLevel: 76 })),
+  ...EXTRA_ONYXIA_DROPS
+    .filter((entry) => entry.slot)
+    .map((entry) => ({ ...entry, itemLevel: 76 })),
 ]);
 
-export const unsupportedOnyxiasLairDrops = Object.freeze([]);
+export const unsupportedOnyxiasLairDrops = Object.freeze(
+  EXTRA_ONYXIA_DROPS.filter((entry) => entry.unsupportedSlot),
+);
 
 export const convertOnyxiasLairManifestEntry = (
   entry: LootManifestEntry,

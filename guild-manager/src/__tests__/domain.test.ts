@@ -206,6 +206,7 @@ import { DB_ITEMS } from "../data/items";
 import {
   DIRE_MAUL_ACTIVE_LOOT_MANIFEST,
   DIRE_MAUL_ITEMS,
+  unsupportedDireMaulDrops,
 } from "../data/imports/direMaulLootManifest";
 import {
   PVP_GEAR_SET_ID,
@@ -246,10 +247,12 @@ import {
 import {
   ONYXIAS_LAIR_ACTIVE_LOOT_MANIFEST,
   ONYXIAS_LAIR_ITEMS,
+  unsupportedOnyxiasLairDrops,
 } from "../data/imports/onyxiasLairLootManifest";
 import {
   LOWER_BLACKROCK_SPIRE_ACTIVE_LOOT_MANIFEST,
   LOWER_BLACKROCK_SPIRE_ITEMS,
+  unsupportedLowerBlackrockSpireDrops,
 } from "../data/imports/lowerBlackrockSpireLootManifest";
 import {
   UPPER_BLACKROCK_SPIRE_ACTIVE_LOOT_MANIFEST,
@@ -342,7 +345,7 @@ describe("Dire Maul integration", () => {
   it("includes notable rewards from every wing", () => {
     const expectedDrops = [
       ["East", "Whipvine Cord"],
-      ["East", "Satyr's Bow"],
+      ["East", "Waterspout Boots"],
       ["West", "Mindtap Talisman"],
       ["West", "Eldritch Reinforced Legplates"],
       ["North", "Barbarous Blade"],
@@ -3225,9 +3228,9 @@ describe("Tier 2 raid integration", () => {
     expect(BLACKWING_LAIR_ACTIVE_LOOT_MANIFEST.length).toBeGreaterThan(25);
     expect(ONYXIAS_LAIR_ITEMS.filter((item) => item.setId?.startsWith("t2_"))).toHaveLength(9);
     expect(BLACKWING_LAIR_ITEMS.filter((item) => item.setId?.startsWith("t2_")).length)
-      .toBeGreaterThanOrEqual(27);
-    expect(unsupportedBlackwingLairDrops.length).toBeGreaterThan(5);
-    expect(tierTwoItems.length).toBeGreaterThanOrEqual(36);
+      .toBe(54);
+    expect(unsupportedBlackwingLairDrops).toHaveLength(0);
+    expect(tierTwoItems).toHaveLength(63);
   });
 
   it("converts Tier 2 raid manifest entries into valid database items", () => {
@@ -3245,7 +3248,7 @@ describe("Tier 2 raid integration", () => {
       ["Stormrage Chestguard", "inv_chest_chain_16"],
       ["Dragonstalker's Breastplate", "inv_chest_chain_03"],
       ["Netherwind Robes", "inv_chest_cloth_03"],
-      ["Judgment Breastplate", "inv_chest_plate03"],
+      ["Judgement Breastplate", "inv_chest_plate03"],
       ["Robes of Transcendence", "inv_chest_cloth_03"],
       ["Bloodfang Chestpiece", "inv_chest_cloth_07"],
       ["Breastplate of Ten Storms", "inv_chest_chain_11"],
@@ -3358,8 +3361,8 @@ describe("Naxxramas raid integration", () => {
   it("converts Naxxramas loot and supported Tier 3 pieces into database items", () => {
     expect(NAXXRAMAS_ACTIVE_LOOT_MANIFEST.length).toBeGreaterThan(60);
     expect(NAXXRAMAS_ITEMS.length).toBe(NAXXRAMAS_ACTIVE_LOOT_MANIFEST.length);
-    expect(tierThreeItems).toHaveLength(72);
-    expect(unsupportedNaxxramasDrops.length).toBeGreaterThan(5);
+    expect(tierThreeItems).toHaveLength(81);
+    expect(unsupportedNaxxramasDrops).toHaveLength(4);
     naxxItems.forEach((item) => {
       expect(item.id).toBeTypeOf("number");
       expect(item.icon).toContain("wow/icons/large/");
@@ -3409,7 +3412,7 @@ describe("raid accessory slot coverage", () => {
       ["ahn_qiraj_temple", "trinket", "Jom Gabbar"],
       ["ahn_qiraj_temple", "neck", "Mark of C'Thun"],
       ["ahn_qiraj_temple", "back", "Cloak of the Devoured"],
-      ["ahn_qiraj_temple", "ring", "Ring of the Fallen God"],
+      ["ahn_qiraj_temple", "ring", "Ring of the Godslayer"],
       ["onyxias_lair", "trinket", "Shard of the Scale"],
       ["onyxias_lair", "neck", "Eskhandar's Collar"],
       ["onyxias_lair", "back", "Sapphiron Drape"],
@@ -3429,6 +3432,122 @@ describe("raid accessory slot coverage", () => {
           item.name === name,
       );
       expect(foundDrop, `${sourceId} ${slot} ${name}`).toBeTruthy();
+    });
+  });
+});
+
+describe("Classic Era loot data regressions", () => {
+  const findItem = (name) => DB_ITEMS.find((item) => item.name === name);
+
+  it("keeps supported raid shoulder armor in the active equipment pool", () => {
+    const expectedShoulders = [
+      ["Arcanist Mantle", 16797],
+      ["Animist's Spaulders", 19928],
+      ["Stormrage Pauldrons", 16902],
+      ["Mantle of Phrenic Power", 21686],
+      ["Dreamwalker Spaulders", 22491],
+    ];
+
+    expectedShoulders.forEach(([name, wowheadId]) => {
+      expect(findItem(name)).toMatchObject({
+        name,
+        wowheadId,
+        slot: "shoulder",
+      });
+    });
+  });
+
+  it("uses verified Classic item ids for corrected raid and dungeon drops", () => {
+    const expectedIds = [
+      ["Band of Dark Dominion", 19434],
+      ["Ring of the Eternal Flame", 23237],
+      ["Deathbringer", 17068],
+      ["Vis'kag the Bloodletter", 17075],
+      ["Wolfshear Leggings", 13206],
+      ["Mastersmith's Hammer", 18048],
+      ["Bracers of the Eclipse", 18375],
+      ["Dreadmist Mask", 16698],
+      ["Dreadmist Leggings", 16699],
+    ];
+
+    expectedIds.forEach(([name, wowheadId]) => {
+      expect(findItem(name)?.wowheadId, name).toBe(wowheadId);
+    });
+  });
+
+  it("does not disguise off-hand, ranged, or quest rewards as supported slots", () => {
+    const unsupportedDrops = [
+      ...unsupportedZulGurubDrops,
+      ...unsupportedAhnQirajRuinsDrops,
+      ...unsupportedAhnQirajTempleDrops,
+      ...unsupportedOnyxiasLairDrops,
+      ...unsupportedNaxxramasDrops,
+      ...unsupportedDireMaulDrops,
+      ...unsupportedLowerBlackrockSpireDrops,
+    ];
+    const expectedUnsupported = [
+      ["Mar'li's Touch", "ranged"],
+      ["Arlokk's Grasp", "offHand"],
+      ["Talon of Furious Concentration", "offHand"],
+      ["Amulet of the Shifting Sands", "questReward"],
+      ["Huhuran's Stinger", "ranged"],
+      ["Ring of the Fallen God", "questReward"],
+      ["Ancient Cornerstone Grimoire", "offHand"],
+      ["Nerubian Slavemaker", "ranged"],
+      ["Digested Hand of Power", "offHand"],
+      ["Satyr's Bow", "ranged"],
+      ["Blackcrow", "ranged"],
+      ["Voone's Twitchbow", "ranged"],
+    ];
+
+    expectedUnsupported.forEach(([name, unsupportedSlot]) => {
+      expect(
+        unsupportedDrops.find((item) => item.name === name),
+        name,
+      ).toMatchObject({ unsupportedSlot });
+      expect(findItem(name), name).toBeUndefined();
+    });
+  });
+
+  it("preserves corrected boss sources and item categories", () => {
+    expect(findItem("Mar'li's Eye")).toMatchObject({
+      wowheadId: 19930,
+      slot: "trinket",
+      sourceBosses: ["High Priestess Mar'li"],
+    });
+    expect(findItem("Thekal's Grasp")).toMatchObject({
+      wowheadId: 19896,
+      slot: "mainHand",
+      sourceBosses: ["High Priest Thekal"],
+    });
+    expect(findItem("Wraith Blade")?.sourceBosses).toEqual(["Maexxna"]);
+    expect(findItem("Might of Menethil")?.sourceBosses).toEqual(["Kel'Thuzad"]);
+    expect(findItem("Death's Bargain")).toBeUndefined();
+    expect(findItem("Mark of the Dragon Lord")).toMatchObject({
+      wowheadId: 13143,
+      slot: "ring",
+    });
+    expect(findItem("Talisman of Evasion")).toMatchObject({
+      wowheadId: 13177,
+      slot: "neck",
+    });
+    expect(findItem("Clutch of Andros")).toMatchObject({
+      wowheadId: 13956,
+      slot: "belt",
+      type: "Cloth",
+    });
+    [
+      "Mordresh's Lifeless Skull",
+      "Plaguerot Sprig",
+      "Thaurissan's Royal Scepter",
+    ].forEach((name) => {
+      expect(findItem(name), name).toBeUndefined();
+    });
+  });
+
+  it("carries canonical Wowhead ids on every supported AQ drop", () => {
+    [...AHN_QIRAJ_RUINS_ITEMS, ...AHN_QIRAJ_TEMPLE_ITEMS].forEach((item) => {
+      expect(item.wowheadId, item.name).toBeTypeOf("number");
     });
   });
 });
@@ -3738,7 +3857,7 @@ describe("item level tuning", () => {
       ["Shadowfang Keep", "back", "Fenrus' Hide"],
       ["Blackfathom Deeps", "belt", "Ghamoo-Ra's Bind"],
       ["Gnomeregan", "wrist", "Spidertank Oilrag"],
-      ["Razorfen Kraul", "belt", "Agamaggan's Clutch"],
+      ["Razorfen Kraul", "ring", "Agamaggan's Clutch"],
       ["Razorfen Downs", "ring", "Dragonclaw Ring"],
       ["Uldaman", "wrist", "Revelosh's Armguards"],
       ["Uldaman", "belt", "Girdle of Golem Strength"],
