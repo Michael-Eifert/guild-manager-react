@@ -15,6 +15,7 @@ describe("CalendarModal", () => {
     const html = render(
       <CalendarModal
         isOpen
+        variant="page"
         onClose={noop}
         calendarState={{
           calendarEvents: [
@@ -50,5 +51,6 @@ describe("CalendarModal", () => {
     expect(html).toContain("Guild Calendar");
     expect(html).toContain("Molten Core Night");
     expect(html).toContain("Upcoming Events");
+    expect(html).not.toContain('role="dialog"');
   });
 });

@@ -29,5 +29,6 @@ describe("MissionModal", () => {
     expect(html).toContain("Mission Board");
     expect(html).toContain("Available Dungeons");
     expect(html).toContain("The Deadmines");
+    expect(html).not.toContain('role="dialog"');
   });
 });

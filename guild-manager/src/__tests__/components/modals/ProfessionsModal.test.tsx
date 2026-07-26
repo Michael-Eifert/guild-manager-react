@@ -9,6 +9,7 @@ describe("ProfessionsModal", () => {
     const html = render(
       <ProfessionsModal
         isOpen
+        variant="page"
         onClose={noop}
         roster={[
           {
@@ -38,5 +39,6 @@ describe("ProfessionsModal", () => {
     expect(html).toContain("Guild Stash");
     expect(html).toContain("Lunalis");
     expect(html).toContain("Tailoring");
+    expect(html).not.toContain('role="dialog"');
   });
 });

@@ -38,5 +38,6 @@ describe("WorldMapModal", () => {
     expect(html).toContain("Adventure Board");
     expect(html).toContain("Classic Azeroth");
     expect(html).toContain("Westfall");
+    expect(html).not.toContain('role="dialog"');
   });
 });

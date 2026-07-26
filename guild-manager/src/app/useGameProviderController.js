@@ -152,6 +152,7 @@ import {
 } from "../zones/zoneLogic";
 import {
   buildRecruitmentEquipment,
+  filterUniqueRecruitmentCandidates,
   resolveRecruitmentResult,
 } from "../recruitment/recruitmentLogic";
 import {
@@ -192,6 +193,8 @@ import {
   getCalendarDate,
   getCalendarDayIndex,
   getCalendarDayProgress,
+  hasDuplicateCalendarEvent,
+  hasDuplicateCalendarSeries,
   normalizeCalendarState,
   refreshCalendarState,
   getMissionInstanceKey,
@@ -291,6 +294,7 @@ const {
   EPIC_DROP_CHANCE: WORLD_TICK_EPIC_DROP_CHANCE,
   EPIC_MIN_LEVEL: WORLD_TICK_EPIC_MIN_LEVEL,
 } = WORLD_DROP_CONFIG;
+
 // --- MAIN APP COMPONENT ---
 
 export const useGameProviderController = () => {
@@ -2012,7 +2016,13 @@ export const useGameProviderController = () => {
 
   const handleRecruit = (chars, tier = {}) => {
     const recruitCostGold = Math.max(1, Number(tier?.recruitCostGold) || 1);
-    const { recruits, spentGold, updatedGold, updatedRoster } =
+    const {
+      recruits,
+      skippedDuplicateCount,
+      spentGold,
+      updatedGold,
+      updatedRoster,
+    } =
       resolveRecruitmentResult({
         currentRoster: rosterRef.current,
         currentGold: goldRef.current,
@@ -2024,11 +2034,17 @@ export const useGameProviderController = () => {
     if (recruits.length === 0) {
       pushNotification({
         type: "error",
-        title: "Recruitment Blocked",
-        message: "Need free roster slots to recruit heroes.",
+        title:
+          skippedDuplicateCount > 0
+            ? "Already Recruited"
+            : "Recruitment Blocked",
+        message:
+          skippedDuplicateCount > 0
+            ? "The selected heroes already belong to your guild."
+            : "Need free roster slots to recruit heroes.",
       });
       setShowRecruit(false);
-      return;
+      return [];
     }
 
     const recruitedRealmPlayerIds = recruits
@@ -2054,6 +2070,7 @@ export const useGameProviderController = () => {
       message: `${recruits.length} hero${recruits.length > 1 ? "es" : ""} recruited from ${tier?.label || "applicants"}. Additional recruitment cost: ${spentGold}g.`,
     });
     setShowRecruit(false);
+    return recruits;
   };
 
   const handleRecruitApplications = (chars = []) => {
@@ -2061,7 +2078,11 @@ export const useGameProviderController = () => {
       0,
       guildDerivedStats.maxRoster - rosterRef.current.length,
     );
-    const recruits = (Array.isArray(chars) ? chars : [])
+    const uniqueCandidates = filterUniqueRecruitmentCandidates({
+      currentRoster: rosterRef.current,
+      selectedCandidates: chars,
+    });
+    const recruits = uniqueCandidates
       .slice(0, openSlots)
       .map((candidate) => ({
         ...candidate,
@@ -2074,7 +2095,7 @@ export const useGameProviderController = () => {
         title: "Applications Blocked",
         message: "Need free roster slots to accept applications.",
       });
-      return;
+      return [];
     }
 
     const recruitedRealmPlayerIds = recruits
@@ -2101,6 +2122,7 @@ export const useGameProviderController = () => {
       message: `${recruits.length} applicant${recruits.length === 1 ? "" : "s"} joined your guild for free.`,
     });
     setShowRecruit(false);
+    return recruits;
   };
 
   const handleDeclineApplications = (chars = []) => {
@@ -3036,7 +3058,22 @@ export const useGameProviderController = () => {
       const mission = missionListRef.current.find(
         (entry) => String(entry?.id) === String(missionId),
       );
-      if (!mission) return;
+      if (!mission) return false;
+      const hasDuplicateEvent = hasDuplicateCalendarEvent({
+        events: calendarStateRef.current.calendarEvents,
+        missionId: mission.id,
+        missionIds,
+        scheduledDayIndex,
+        scheduledTimeOfDay,
+      });
+      if (hasDuplicateEvent) {
+        pushNotification({
+          type: "error",
+          title: "Event Already Scheduled",
+          message: "This raid is already scheduled for that date and time.",
+        });
+        return false;
+      }
       const event = buildCalendarEvent({
         id: createId(),
         title: title || mission.name,
@@ -3055,6 +3092,7 @@ export const useGameProviderController = () => {
         title: "Calendar Event Created",
         message: `${event.title} scheduled for ${formatCalendarDate(event.scheduledDayIndex)}.`,
       });
+      return event;
     },
     [pushNotification, refreshCalendarStateNow],
   );
@@ -3074,7 +3112,25 @@ export const useGameProviderController = () => {
       const mission = missionListRef.current.find(
         (entry) => String(entry?.id) === String(missionId),
       );
-      if (!mission) return;
+      if (!mission) return false;
+      const hasDuplicateSeries = hasDuplicateCalendarSeries({
+        series: calendarStateRef.current.calendarSeries,
+        missionId: mission.id,
+        missionIds,
+        seriesType,
+        scheduledTimeOfDay,
+        startsOnDayIndex,
+        weekday,
+        intervalDays,
+      });
+      if (hasDuplicateSeries) {
+        pushNotification({
+          type: "error",
+          title: "Series Already Scheduled",
+          message: "This recurring raid schedule already exists.",
+        });
+        return false;
+      }
       const series = buildCalendarSeries({
         id: createId(),
         title: title || `${mission.name} Raid Day`,
@@ -3099,6 +3155,7 @@ export const useGameProviderController = () => {
             ? `${series.title} repeats every ${series.intervalDays} days.`
             : `${series.title} repeats on ${formatCalendarDate(series.startsOnDayIndex).split(",")[0]} for ${series.durationWeeks} weeks.`,
       });
+      return series;
     },
     [pushNotification, refreshCalendarStateNow],
   );

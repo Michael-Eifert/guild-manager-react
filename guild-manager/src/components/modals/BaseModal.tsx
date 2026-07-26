@@ -10,6 +10,8 @@ export type BaseModalProps = {
   children?: ReactNode;
   overlayClassName?: string;
   panelClassName?: string;
+  pageClassName?: string;
+  variant?: "modal" | "page";
   closeOnEscape?: boolean;
   closeOnBackdrop?: boolean;
   ariaLabel?: string;
@@ -22,6 +24,8 @@ const BaseModal = ({
   children,
   overlayClassName,
   panelClassName,
+  pageClassName,
+  variant = "modal",
   closeOnEscape = true,
   closeOnBackdrop = true,
   ariaLabel = "Dialog",
@@ -37,11 +41,15 @@ const BaseModal = ({
   }, [closeOnEscape, onClose]);
 
   useEffect(() => {
-    if (!isOpen) return undefined;
+    if (!isOpen || variant === "page") return undefined;
 
     const previousActiveElement = document.activeElement;
     const previousOverflow = document.body.style.overflow;
+    const shellScroller =
+      document.querySelector<HTMLElement>(".app-shell-main");
+    const previousShellOverflow = shellScroller?.style.overflow;
     document.body.style.overflow = "hidden";
+    if (shellScroller) shellScroller.style.overflow = "hidden";
 
     const focusableSelector =
       'button:not([disabled]), [href], input:not([disabled]), select:not([disabled]), textarea:not([disabled]), [tabindex]:not([tabindex="-1"])';
@@ -85,11 +93,24 @@ const BaseModal = ({
     return () => {
       window.removeEventListener("keydown", handleKeyDown);
       document.body.style.overflow = previousOverflow;
+      if (shellScroller) shellScroller.style.overflow = previousShellOverflow || "";
       if (previousActiveElement instanceof HTMLElement) previousActiveElement.focus();
     };
-  }, [isOpen]);
+  }, [isOpen, variant]);
 
   if (!isOpen) return null;
+
+  if (variant === "page") {
+    return (
+      <section
+        aria-label={labelledBy ? undefined : ariaLabel}
+        aria-labelledby={labelledBy}
+        className={pageClassName}
+      >
+        {children}
+      </section>
+    );
+  }
 
   return (
     <div

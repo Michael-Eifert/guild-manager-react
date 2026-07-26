@@ -1,5 +1,7 @@
 import React, { useState } from "react";
 import BaseModal from "./BaseModal";
+import GameButton from "../ui/GameButton";
+import SegmentedControl from "../ui/SegmentedControl";
 import {
   GUILD_POINT_LABEL,
   GUILD_TALENT_DEFS,
@@ -30,6 +32,12 @@ const GUILD_FOCUS_DESCRIPTIONS = Object.freeze({
   [GUILD_FOCUS.RAID_ATTUNEMENTS]:
     "Auto groups prioritize raid key and attunement routes.",
 });
+
+const GUILD_PAGE_TABS = [
+  { value: "achievements", label: "Achievements" },
+  { value: "talents", label: "Talent Tree" },
+  { value: "focus", label: "Guild Focus" },
+] as const;
 
 const GuildTalentsModal = ({
   isOpen,
@@ -73,21 +81,17 @@ const GuildTalentsModal = ({
 
   const content = (
     <>
-      <div className="p-4 border-b border-gray-700 bg-gray-900 flex justify-between items-center">
+      <div className="flex items-center justify-between border-b border-gray-700 bg-gray-900/85 p-4 md:px-5">
         <div>
-          <h2 className="text-xl md:text-2xl font-bold fantasy-font text-amber-200">
+          <div className="text-[10px] font-bold uppercase tracking-[0.2em] text-amber-500/70">
+            Guild Management
+          </div>
+          <h2 className="fantasy-font text-xl font-bold text-amber-200 md:text-2xl">
             Guild Progression
           </h2>
-          <div className="text-xs text-gray-400 mt-1">
-            {GUILD_POINT_LABEL}:{" "}
-            <span className="text-amber-300 font-bold">
-              {guildProgress.renownPoints}
-            </span>{" "}
-            (earned {guildProgress.totalRenown})
-          </div>
-          <div className="text-xs text-gray-400 mt-1">
-            Guild Gold: <span className="text-yellow-300 font-bold">{guildGold}</span>
-          </div>
+          <p className="mt-1 text-xs text-gray-500">
+            Achievements, talent paths and long-term guild focus.
+          </p>
         </div>
         {!isPage && (
           <button
@@ -99,31 +103,49 @@ const GuildTalentsModal = ({
         )}
       </div>
 
-      <div className="flex-1 overflow-y-auto custom-scrollbar p-4 space-y-4">
-        <div className="grid grid-cols-3 rounded border border-gray-700 bg-gray-950/50 p-1 text-xs font-bold">
-          {[
-            ["achievements", "Achievements"],
-            ["talents", "Talent Tree"],
-            ["focus", "Guild Focus"],
-          ].map(([tabKey, label]) => (
-            <button
-              key={tabKey}
-              type="button"
-              onClick={() => setActiveTab(tabKey)}
-              className={`rounded px-3 py-2 transition ${
-                activeTab === tabKey
-                  ? "bg-amber-900/50 text-amber-100 border border-amber-700"
-                  : "text-gray-400 hover:text-gray-100"
-              }`}
-            >
-              {label}
-            </button>
-          ))}
+      <div className="custom-scrollbar flex-1 space-y-4 overflow-y-auto p-3 md:p-5">
+        <div className="grid grid-cols-2 gap-2 text-xs md:grid-cols-4">
+          <div className="rounded-lg border border-amber-800/70 bg-amber-950/30 px-3 py-2 text-gray-300">
+            <span className="block text-[9px] font-bold uppercase tracking-wide text-gray-500">
+              Available
+            </span>
+            <span className="font-bold text-amber-300">
+              {guildProgress.renownPoints} {GUILD_POINT_LABEL}
+            </span>
+          </div>
+          <div className="rounded-lg border border-slate-700 bg-slate-950/55 px-3 py-2 text-gray-300">
+            <span className="block text-[9px] font-bold uppercase tracking-wide text-gray-500">
+              Lifetime
+            </span>
+            <span className="font-bold text-slate-100">
+              {guildProgress.totalRenown}
+            </span>
+          </div>
+          <div className="rounded-lg border border-yellow-800/60 bg-yellow-950/25 px-3 py-2 text-gray-300">
+            <span className="block text-[9px] font-bold uppercase tracking-wide text-gray-500">
+              Guild Gold
+            </span>
+            <span className="font-bold text-yellow-300">{guildGold}</span>
+          </div>
+          <div className="rounded-lg border border-cyan-900/60 bg-cyan-950/20 px-3 py-2 text-gray-300">
+            <span className="block text-[9px] font-bold uppercase tracking-wide text-gray-500">
+              Current Focus
+            </span>
+            <span className="font-bold text-cyan-100">{currentFocus}</span>
+          </div>
         </div>
+
+        <SegmentedControl
+          ariaLabel="Guild progression section"
+          options={GUILD_PAGE_TABS}
+          value={activeTab}
+          onChange={setActiveTab}
+          tone="amber"
+        />
 
         {activeTab === "achievements" && (
           <div className="space-y-4">
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-3 text-xs">
+            <div className="grid grid-cols-1 gap-3 text-xs md:grid-cols-2">
               <div className="rounded border border-gray-700 bg-gray-800 px-3 py-2 text-gray-300">
                 Milestones: {unlockedAchievements} / {achievementEntries.length}
               </div>
@@ -141,7 +163,7 @@ const GuildTalentsModal = ({
                   {unlockedAchievements}/{achievementEntries.length} unlocked
                 </span>
               </div>
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-2">
+              <div className="grid grid-cols-1 gap-2 md:grid-cols-2 2xl:grid-cols-3">
                 {achievementEntries.map((achievement) => (
                   <div
                     key={achievement.key}
@@ -172,7 +194,7 @@ const GuildTalentsModal = ({
 
         {activeTab === "talents" && (
           <div className="space-y-4">
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-3 text-xs">
+            <div className="grid grid-cols-1 gap-3 text-xs md:grid-cols-2 xl:grid-cols-3">
               <div className="rounded border border-gray-700 bg-gray-800 px-3 py-2 text-gray-300">
                 Max Roster: {guildDerivedStats.maxRoster}
               </div>
@@ -269,13 +291,15 @@ const GuildTalentsModal = ({
                                     Need {missingGold}g more.
                                   </div>
                                 )}
-                                <button
+                                <GameButton
                                   onClick={() => onUpgradeTalent(node.talentKey)}
                                   disabled={!canUnlockWithGold}
-                                  className="w-full px-2 py-1 rounded border border-amber-700 bg-amber-900/40 text-amber-100 text-[11px] font-bold disabled:opacity-40 disabled:cursor-not-allowed hover:bg-amber-800/50"
+                                  fullWidth
+                                  size="sm"
+                                  tone="primary"
                                 >
                                   Unlock ({nodeStatus.cost} {GUILD_POINT_LABEL} + {nodeStatus.goldCost}g)
-                                </button>
+                                </GameButton>
                               </div>
                             ) : (
                               <div className="text-[11px] text-gray-500">
@@ -297,7 +321,7 @@ const GuildTalentsModal = ({
 
         {activeTab === "focus" && (
           <div className="space-y-4">
-            <div className="grid grid-cols-1 md:grid-cols-3 gap-3 text-xs">
+            <div className="grid grid-cols-1 gap-3 text-xs md:grid-cols-3">
               <div className="rounded border border-gray-700 bg-gray-800 px-3 py-2 text-gray-300">
                 Current Focus:{" "}
                 <span className="text-amber-200 font-bold">{currentFocus}</span>
@@ -331,7 +355,7 @@ const GuildTalentsModal = ({
                 </span>
               </div>
 
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-2">
+              <div className="grid grid-cols-1 gap-2 md:grid-cols-2 xl:grid-cols-3">
                 {GUILD_FOCUS_OPTIONS.map((focus) => {
                   const isCurrent = focus === currentFocus;
                   const isDisabled =
@@ -354,14 +378,15 @@ const GuildTalentsModal = ({
                           {GUILD_FOCUS_DESCRIPTIONS[focus]}
                         </div>
                       </div>
-                      <button
-                        type="button"
+                      <GameButton
                         onClick={() => onChangeGuildFocus(focus)}
                         disabled={isDisabled}
-                        className="w-full px-3 py-2 rounded border border-cyan-700 bg-cyan-950/40 text-cyan-100 text-[11px] font-bold disabled:opacity-40 disabled:cursor-not-allowed hover:bg-cyan-900/50"
+                        fullWidth
+                        size="sm"
+                        tone={isCurrent ? "primary" : "quest"}
                       >
                         {isCurrent ? "Active" : `Set Focus (${focusChangeCostGold}g)`}
-                      </button>
+                      </GameButton>
                     </div>
                   );
                 })}
@@ -382,7 +407,7 @@ const GuildTalentsModal = ({
 
   if (isPage) {
     return (
-      <section className="wow-modal-panel flex min-h-[calc(100vh-220px)] flex-col overflow-hidden rounded-lg border-2 border-amber-800 bg-gray-900 shadow-2xl">
+      <section className="wow-modal-panel flex min-h-[calc(100vh-140px)] flex-col overflow-hidden rounded-xl border border-amber-800 bg-gray-900 shadow-2xl">
         {content}
       </section>
     );

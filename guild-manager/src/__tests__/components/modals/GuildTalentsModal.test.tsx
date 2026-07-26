@@ -15,6 +15,7 @@ describe("GuildTalentsModal", () => {
     const html = render(
       <GuildTalentsModal
         isOpen
+        variant="page"
         onClose={noop}
         guildProgress={guildProgress}
         guildGold={50}
@@ -29,5 +30,6 @@ describe("GuildTalentsModal", () => {
     expect(html).toContain("Guild Progression");
     expect(html).toContain("Achievements");
     expect(html).toContain("Guild Gold");
+    expect(html).not.toContain('role="dialog"');
   });
 });

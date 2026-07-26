@@ -35,13 +35,13 @@ const ToastNotifications = ({
   }
 
   return (
-    <div className="fixed top-4 right-4 z-[70] flex flex-col gap-2 pointer-events-none">
+    <div className="pointer-events-none fixed left-3 right-3 top-40 z-[70] flex flex-col items-end gap-2 sm:left-auto sm:w-[340px] md:right-4 md:top-40 lg:top-24">
       {notifications.map((notification) => {
         const style = getToastStyle(notification.type);
         return (
           <div
             key={notification.id}
-            className={`pointer-events-auto min-w-[220px] max-w-[340px] px-3 py-2 rounded border shadow-lg text-sm flex items-start justify-between gap-2 ${style.container}`}
+            className={`pointer-events-auto w-full max-w-[340px] px-3 py-2 rounded border shadow-lg text-sm flex items-start justify-between gap-2 ${style.container}`}
           >
             <div className="flex gap-2">
               <span className="text-base leading-none mt-0.5">{style.icon}</span>

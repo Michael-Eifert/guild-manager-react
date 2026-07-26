@@ -13,6 +13,13 @@
   --q-rare: #0070dd;
   --q-epic: #a335ee;
   --q-legendary: #ff8000;
+  --ui-border: #4b4237;
+  --ui-border-strong: #8a6428;
+  --ui-surface: rgb(24 22 20 / 94%);
+  --ui-surface-raised: rgb(30 35 45 / 92%);
+  --ui-focus: #fcd34d;
+  --app-sidebar-width: 72px;
+  --app-mobile-nav-height: 72px;
 }
 
 * {
@@ -419,6 +426,206 @@ body::after {
   -ms-overflow-style: none;
   scrollbar-width: none;
 }
+
+.app-shell {
+  width: 100%;
+  max-width: 1920px;
+  height: 100vh;
+  height: 100dvh;
+  min-height: 0;
+  margin: 0 auto;
+  overflow: hidden;
+  background:
+    linear-gradient(180deg, rgb(27 24 20 / 90%), rgb(15 15 18 / 96%));
+  border-inline: 1px solid rgb(90 69 36 / 45%);
+  box-shadow: 0 0 55px rgb(0 0 0 / 45%);
+}
+
+.app-shell-main {
+  width: 100%;
+  height: 100%;
+  min-width: 0;
+  min-height: 0;
+  overflow-x: hidden;
+  overflow-y: auto;
+  overscroll-behavior-y: contain;
+  scrollbar-gutter: stable;
+  -webkit-overflow-scrolling: touch;
+}
+
+.app-sidebar {
+  position: sticky;
+  top: 0;
+  z-index: 40;
+  height: 100vh;
+  min-height: 0;
+  flex-direction: column;
+  overflow: hidden;
+  border-right: 1px solid rgb(108 80 36 / 55%);
+  background:
+    linear-gradient(180deg, rgb(30 26 21 / 98%), rgb(14 16 21 / 98%));
+  box-shadow: 10px 0 30px rgb(0 0 0 / 22%);
+}
+
+.app-sidebar-brand {
+  display: flex;
+  min-height: 72px;
+  align-items: center;
+  justify-content: center;
+  gap: 0.75rem;
+  border-bottom: 1px solid rgb(100 73 31 / 50%);
+  padding: 0.75rem;
+}
+
+.app-shell-content {
+  min-width: 0;
+  padding: 0.75rem 0.75rem calc(var(--app-mobile-nav-height) + env(safe-area-inset-bottom) + 1rem);
+}
+
+.app-nav-item {
+  display: flex;
+  width: 100%;
+  min-height: 44px;
+  align-items: center;
+  justify-content: flex-start;
+  gap: 0.7rem;
+  border: 1px solid transparent;
+  border-radius: 0.65rem;
+  padding: 0.6rem 0.75rem;
+  color: #cbd5e1;
+  font-size: 0.78rem;
+  font-weight: 700;
+  text-align: left;
+  transition:
+    color 150ms ease,
+    background-color 150ms ease,
+    border-color 150ms ease,
+    box-shadow 150ms ease,
+    transform 150ms ease;
+}
+
+.app-nav-item:hover {
+  border-color: rgb(100 116 139 / 70%);
+  background: rgb(51 65 85 / 55%);
+  color: #fff;
+  transform: translateY(-1px);
+}
+
+.app-nav-item:focus-visible {
+  outline: 2px solid var(--ui-focus);
+  outline-offset: 2px;
+}
+
+.app-nav-item:disabled {
+  cursor: not-allowed;
+  opacity: 0.42;
+  transform: none;
+}
+
+.app-nav-item-primary {
+  border-color: rgb(180 123 38 / 65%);
+  background: linear-gradient(180deg, rgb(145 98 34 / 58%), rgb(72 43 14 / 72%));
+  color: #fff3cf;
+}
+
+.app-nav-item-quest {
+  color: #dbeafe;
+}
+
+.app-nav-item-success {
+  color: #d1fae5;
+}
+
+.app-nav-item-danger {
+  color: #fee2e2;
+}
+
+.app-nav-item-active {
+  border-color: #fcd34d;
+  background:
+    linear-gradient(90deg, rgb(146 97 32 / 55%), rgb(67 49 27 / 50%));
+  color: #fff8df;
+  box-shadow:
+    0 0 0 1px rgb(252 211 77 / 18%) inset,
+    0 0 18px rgb(245 158 11 / 14%);
+}
+
+.app-nav-item-compact {
+  min-width: 0;
+  min-height: 52px;
+  flex-direction: column;
+  justify-content: center;
+  gap: 0.25rem;
+  padding: 0.35rem;
+}
+
+.app-mobile-nav {
+  position: fixed;
+  right: 0;
+  bottom: 0;
+  left: 0;
+  z-index: 60;
+  display: grid;
+  grid-template-columns: repeat(5, minmax(0, 1fr));
+  min-height: calc(var(--app-mobile-nav-height) + env(safe-area-inset-bottom));
+  gap: 0.25rem;
+  border-top: 1px solid rgb(146 105 43 / 70%);
+  background: rgb(15 17 22 / 96%);
+  padding: 0.45rem 0.45rem calc(0.45rem + env(safe-area-inset-bottom));
+  box-shadow: 0 -14px 30px rgb(0 0 0 / 35%);
+  backdrop-filter: blur(14px);
+}
+
+.game-button {
+  isolation: isolate;
+}
+
+@media (min-width: 768px) {
+  .app-shell {
+    display: grid;
+    grid-template-columns: var(--app-sidebar-width) minmax(0, 1fr);
+  }
+
+  .app-shell-content {
+    padding: 1rem;
+  }
+
+  .app-sidebar .app-nav-item {
+    justify-content: center;
+    padding-inline: 0.5rem;
+  }
+}
+
+@media (min-width: 1200px) {
+  :root {
+    --app-sidebar-width: 240px;
+  }
+
+  .app-shell-content {
+    padding: 1.5rem;
+  }
+
+  .app-sidebar-brand {
+    justify-content: flex-start;
+  }
+
+  .app-sidebar .app-nav-item {
+    justify-content: flex-start;
+    padding-inline: 0.75rem;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    scroll-behavior: auto !important;
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+  }
+}
+
 @tailwind base;
 @tailwind components;
 @tailwind utilities;

@@ -63,6 +63,7 @@ const getCategoryOrder = (category) =>
 const ProfessionsModal = ({
   isOpen,
   onClose,
+  variant = "modal",
   roster = [],
   guildInventory = null,
   stashPolicy = null,
@@ -182,8 +183,11 @@ const ProfessionsModal = ({
     <BaseModal
       isOpen={isOpen}
       onClose={onClose}
+      variant={variant}
       overlayClassName="bg-black/85 backdrop-blur-sm p-0 md:p-4"
       panelClassName="wow-modal-panel bg-gray-900 border-x-0 border-y-0 md:border-2 border-emerald-900 rounded-none md:rounded-lg w-full max-w-5xl h-full md:h-[88vh] flex flex-col relative shadow-2xl"
+      pageClassName="wow-modal-panel min-h-[calc(100dvh-10rem)] w-full overflow-hidden rounded-xl border border-emerald-900 bg-gray-900 shadow-2xl flex flex-col"
+      ariaLabel="Professions"
     >
       <div className="p-4 border-b border-gray-700 flex justify-between items-center bg-gray-900 z-10">
         <div>
@@ -194,12 +198,14 @@ const ProfessionsModal = ({
             Guild Stash gold value is handled in shared guild gold: {guildGold}g.
           </div>
         </div>
-        <button
-          onClick={onClose}
-          className="text-gray-500 hover:text-white text-3xl px-2"
-        >
-          &times;
-        </button>
+        {variant !== "page" && (
+          <button
+            onClick={onClose}
+            className="text-gray-500 hover:text-white text-3xl px-2"
+          >
+            &times;
+          </button>
+        )}
       </div>
 
       <div className="px-4 py-3 border-b border-gray-700 bg-gray-950/40">

@@ -1,7 +1,12 @@
+import { SlidersHorizontal } from "lucide-react";
+import { useId, useState } from "react";
+
 import CharacterCard from "../../components/CharacterCard";
 import CharacterEquipCheckCard from "../../components/CharacterEquipCheckCard";
 import CharacterPersonalityCard from "../../components/CharacterPersonalityCard";
 import DashboardAccordionSection from "../../components/DashboardAccordionSection";
+import GameButton from "../../components/ui/GameButton";
+import SegmentedControl from "../../components/ui/SegmentedControl";
 import {
   AUTO_GROUP_SUCCESS_RATE,
   DB_CLASSES,
@@ -18,15 +23,19 @@ import { getRoleIcon } from "../../utils";
 
 const SuccessRateSlider = ({ label, value, onChange }) => {
   const normalizedValue = normalizeAutoGroupSuccessRate(value);
+  const inputId = useId();
   return (
     <div className="border-t border-gray-700/70 pt-3">
       <div className="flex items-center justify-between gap-3 text-xs text-gray-300">
-        <label className="font-bold text-gray-200">{label}</label>
+        <label htmlFor={inputId} className="font-bold text-gray-200">
+          {label}
+        </label>
         <span className="font-mono text-emerald-200">{normalizedValue}%</span>
       </div>
       <div className="mt-2 grid grid-cols-[auto_1fr_auto] items-center gap-2 text-[10px] font-bold uppercase tracking-wide text-gray-500">
         <span>{AUTO_GROUP_SUCCESS_RATE.MIN}%</span>
         <input
+          id={inputId}
           type="range"
           min={AUTO_GROUP_SUCCESS_RATE.MIN}
           max={AUTO_GROUP_SUCCESS_RATE.MAX}
@@ -72,38 +81,48 @@ export default function DashboardPage({
   bestGuildMemberSearchMatchId,
   onSelectCharacter,
 }) {
+  const [filtersOpen, setFiltersOpen] = useState(false);
+
   return (
-    <>
-      <div className="mb-6 space-y-2">
+    <div className="space-y-5">
+      <div className="flex flex-col gap-1 sm:flex-row sm:items-end sm:justify-between">
+        <div>
+          <p className="text-[10px] font-bold uppercase tracking-[0.2em] text-amber-500/70">
+            Command Center
+          </p>
+          <h2 className="fantasy-font text-xl font-bold text-amber-100 md:text-2xl">
+            Guild Overview
+          </h2>
+        </div>
+        <p className="max-w-xl text-xs text-slate-500 sm:text-right">
+          Direct guild activity, monitor composition and manage the active
+          roster.
+        </p>
+      </div>
+
+      <div className="grid gap-3 xl:grid-cols-2">
         <DashboardAccordionSection
           title="Guild Activity"
           summary={`Current: ${guildActivityModeSummary || "None"}`}
           isOpen={dashboardSectionsOpen.guildActivity}
           onToggle={() => onToggleDashboardSection("guildActivity")}
         >
-          <div className="grid grid-cols-1 sm:grid-cols-3 gap-2">
-            {GUILD_ACTIVITY_MODES.map((mode) => {
-              const isActive = guildActivityModeSummary === mode;
-              return (
-                <button
-                  key={mode}
-                  onClick={() => onGuildModeChange(mode)}
-                  disabled={roster.length === 0}
-                  className={`px-3 py-2 rounded border text-xs md:text-sm font-bold transition-colors disabled:opacity-50 disabled:cursor-not-allowed ${
-                    isActive
-                      ? "border-blue-500 bg-blue-900/40 text-blue-100"
-                      : "border-gray-600 bg-gray-800 text-gray-300 hover:bg-gray-700"
-                  }`}
-                >
-                  {mode === "Auto"
-                    ? "Auto"
-                    : mode === "Leveling"
-                      ? "Leveling"
-                      : "Professions"}
-                </button>
-              );
-            })}
-          </div>
+          <SegmentedControl
+            ariaLabel="Guild activity"
+            options={GUILD_ACTIVITY_MODES.map((mode) => ({
+              value: mode,
+              label:
+                mode === "Auto"
+                  ? "Auto"
+                  : mode === "Leveling"
+                    ? "Leveling"
+                    : "Professions",
+            }))}
+            value={guildActivityModeSummary}
+            onChange={onGuildModeChange}
+            disabled={roster.length === 0}
+            tone="sky"
+          />
           <div className="mt-3">
             <SuccessRateSlider
               label="Start Elite Quest with min. Success Rate"
@@ -121,26 +140,18 @@ export default function DashboardPage({
           isOpen={dashboardSectionsOpen.pvpActivity}
           onToggle={() => onToggleDashboardSection("pvpActivity")}
         >
-          <div className="grid grid-cols-2 lg:grid-cols-5 gap-2">
-            {PVP_ACTIVITY_FOCUS_OPTIONS.map((option) => {
-              const isActive = guildSetup.pvpActivityFocus === option.value;
-              return (
-                <button
-                  key={option.value}
-                  onClick={() => onPvpActivityFocusChange(option.value)}
-                  disabled={roster.length === 0}
-                  title={option.description}
-                  className={`px-3 py-2 rounded border text-xs md:text-sm font-bold transition-colors disabled:opacity-50 disabled:cursor-not-allowed ${
-                    isActive
-                      ? "border-red-500 bg-red-900/30 text-red-100"
-                      : "border-gray-600 bg-gray-800 text-gray-300 hover:bg-gray-700"
-                  }`}
-                >
-                  {option.label}
-                </button>
-              );
-            })}
-          </div>
+          <SegmentedControl
+            ariaLabel="PvP activity"
+            options={PVP_ACTIVITY_FOCUS_OPTIONS.map((option) => ({
+              value: option.value,
+              label: option.label,
+              title: option.description,
+            }))}
+            value={guildSetup.pvpActivityFocus}
+            onChange={onPvpActivityFocusChange}
+            disabled={roster.length === 0}
+            tone="red"
+          />
           <p className="mt-2 text-[11px] text-gray-500">
             Controls automatic Warsong Gulch queues. Active heroes are never pulled
             out of missions, dungeons, raids, or other battlegrounds.
@@ -155,27 +166,17 @@ export default function DashboardPage({
           isOpen={dashboardSectionsOpen.dungeonGroups}
           onToggle={() => onToggleDashboardSection("dungeonGroups")}
         >
-          <div className="grid grid-cols-2 lg:grid-cols-4 gap-2">
-            {GUILD_DUNGEON_ACTIVITY_OPTIONS.map((mode) => {
-              const isActive =
-                (guildSetup.dungeonActivity || GUILD_DUNGEON_ACTIVITY.NONE) ===
-                mode;
-              return (
-                <button
-                  key={mode}
-                  onClick={() => onGuildDungeonActivityChange(mode)}
-                  disabled={roster.length === 0}
-                  className={`px-3 py-2 rounded border text-xs md:text-sm font-bold transition-colors disabled:opacity-50 disabled:cursor-not-allowed ${
-                    isActive
-                      ? "border-emerald-500 bg-emerald-900/30 text-emerald-100"
-                      : "border-gray-600 bg-gray-800 text-gray-300 hover:bg-gray-700"
-                  }`}
-                >
-                  {mode}
-                </button>
-              );
-            })}
-          </div>
+          <SegmentedControl
+            ariaLabel="Dungeon groups"
+            options={GUILD_DUNGEON_ACTIVITY_OPTIONS.map((mode) => ({
+              value: mode,
+              label: mode,
+            }))}
+            value={guildSetup.dungeonActivity || GUILD_DUNGEON_ACTIVITY.NONE}
+            onChange={onGuildDungeonActivityChange}
+            disabled={roster.length === 0}
+            tone="emerald"
+          />
           <p className="mt-2 text-[11px] text-gray-500">
             {dungeonActivityInfoText}
           </p>
@@ -262,14 +263,31 @@ export default function DashboardPage({
         </DashboardAccordionSection>
       </div>
 
-      <div className="mb-6 border-t border-amber-900/50"></div>
-
-      <div className="mb-6 rounded border border-gray-700 bg-gray-900/70 p-3">
-        <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2 mb-3">
+      <section className="rounded-xl border border-slate-700 bg-slate-900/70 p-3 shadow-lg md:p-4">
+        <div className="mb-3 flex items-center justify-between gap-3">
           <h3 className="text-sm font-bold text-gray-300 uppercase tracking-wider">
             Guild Members
           </h3>
-          <div className="flex flex-wrap items-end gap-2">
+          <div className="flex items-center gap-2">
+            <span className="hidden text-xs text-gray-500 sm:inline">
+              Showing {rankedRoster.length}/{roster.length}
+            </span>
+            <GameButton
+              size="sm"
+              tone="ghost"
+              aria-expanded={filtersOpen}
+              onClick={() => setFiltersOpen((isOpen) => !isOpen)}
+              className="sm:hidden"
+              icon={<SlidersHorizontal size={15} aria-hidden="true" />}
+            >
+              Filters
+            </GameButton>
+          </div>
+        </div>
+
+        <div
+          className={`${filtersOpen ? "grid" : "hidden"} mb-4 grid-cols-2 items-end gap-2 rounded-lg border border-slate-800 bg-slate-950/35 p-3 sm:flex sm:flex-wrap`}
+        >
             <label className="text-[11px] text-gray-300">
               <span className="block mb-1 uppercase tracking-wide text-gray-500">
                 Search
@@ -278,7 +296,7 @@ export default function DashboardPage({
                 type="search"
                 value={guildMemberSearch}
                 onChange={(event) => onGuildMemberSearchChange(event.target.value)}
-                className="w-36 bg-gray-800 text-gray-100 text-xs border border-gray-600 rounded px-2 py-1 focus:outline-none focus:border-amber-500"
+                className="min-h-9 w-full bg-gray-800 text-gray-100 text-xs border border-gray-600 rounded px-2 py-1 focus:outline-none focus:border-amber-500 sm:w-36"
                 placeholder="Character name"
               />
             </label>
@@ -289,7 +307,7 @@ export default function DashboardPage({
               <select
                 value={memberRankingMode}
                 onChange={(event) => onMemberRankingModeChange(event.target.value)}
-                className="bg-gray-800 text-gray-100 text-xs border border-gray-600 rounded px-2 py-1 focus:outline-none focus:border-amber-500"
+                className="min-h-9 w-full bg-gray-800 text-gray-100 text-xs border border-gray-600 rounded px-2 py-1 focus:outline-none focus:border-amber-500"
               >
                 <option value={MEMBER_RANKING_MODES.STANDARD}>Standard</option>
                 <option value={MEMBER_RANKING_MODES.EQUIP_CHECK}>
@@ -307,7 +325,7 @@ export default function DashboardPage({
               <select
                 value={guildMemberSortMode}
                 onChange={(event) => onGuildMemberSortModeChange(event.target.value)}
-                className="bg-gray-800 text-gray-100 text-xs border border-gray-600 rounded px-2 py-1 focus:outline-none focus:border-amber-500"
+                className="min-h-9 w-full bg-gray-800 text-gray-100 text-xs border border-gray-600 rounded px-2 py-1 focus:outline-none focus:border-amber-500"
               >
                 {GUILD_MEMBER_SORT_OPTIONS.map((option) => (
                   <option key={option.value} value={option.value}>
@@ -329,7 +347,7 @@ export default function DashboardPage({
                 onChange={(event) =>
                   onGuildMemberMinLevelFilterChange(event.target.value)
                 }
-                className="w-20 bg-gray-800 text-gray-100 text-xs border border-gray-600 rounded px-2 py-1 focus:outline-none focus:border-amber-500"
+                className="min-h-9 w-full bg-gray-800 text-gray-100 text-xs border border-gray-600 rounded px-2 py-1 focus:outline-none focus:border-amber-500 sm:w-20"
                 placeholder="Any"
               />
             </label>
@@ -346,22 +364,22 @@ export default function DashboardPage({
                 onChange={(event) =>
                   onGuildMemberMaxLevelFilterChange(event.target.value)
                 }
-                className="w-20 bg-gray-800 text-gray-100 text-xs border border-gray-600 rounded px-2 py-1 focus:outline-none focus:border-amber-500"
+                className="min-h-9 w-full bg-gray-800 text-gray-100 text-xs border border-gray-600 rounded px-2 py-1 focus:outline-none focus:border-amber-500 sm:w-20"
                 placeholder="Any"
               />
             </label>
-            <button
-              type="button"
+            <GameButton
               onClick={onClearGuildMemberFilters}
               disabled={!hasAnyGuildMemberLevelFilter && !hasGuildMemberSearch}
-              className="h-[26px] px-2 rounded border border-gray-600 bg-gray-800 text-[11px] text-gray-200 hover:bg-gray-700 disabled:opacity-40 disabled:cursor-not-allowed"
+              size="sm"
+              tone="ghost"
+              className="col-span-2 sm:col-span-1"
             >
               Clear
-            </button>
-            <span className="text-xs text-gray-500 ml-auto">
+            </GameButton>
+            <span className="col-span-2 text-xs text-gray-500 sm:hidden">
               Showing {rankedRoster.length}/{roster.length}
             </span>
-          </div>
         </div>
 
         {roster.length === 0 ? (
@@ -373,7 +391,7 @@ export default function DashboardPage({
             No guild members match these filters.
           </div>
         ) : (
-          <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+          <div className="grid gap-4 [grid-template-columns:repeat(auto-fit,minmax(min(100%,320px),1fr))]">
             {rankedRoster.map((char) => {
               const isBestSearchMatch =
                 hasGuildMemberSearchMatch &&
@@ -411,7 +429,7 @@ export default function DashboardPage({
             })}
           </div>
         )}
-      </div>
-    </>
+      </section>
+    </div>
   );
 }

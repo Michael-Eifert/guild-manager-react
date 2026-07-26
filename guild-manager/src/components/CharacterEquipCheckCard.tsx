@@ -92,7 +92,7 @@ const CharacterEquipCheckCard = ({
   return (
     <div
       onClick={() => onClick(char)}
-      className={`wow-card relative overflow-hidden bg-gray-800 border p-3.5 rounded-lg cursor-pointer transition-all active:scale-95 hover:-translate-y-0.5 hover:shadow-lg hover:border-yellow-500 ${char.status === "Questing" ? "border-blue-500/80 opacity-85" : "border-gray-600"}`}
+      className={`wow-card relative h-full overflow-hidden bg-gray-800 border p-3.5 rounded-lg cursor-pointer transition-all active:scale-95 hover:-translate-y-0.5 hover:shadow-lg hover:border-yellow-500 ${char.status === "Questing" ? "border-blue-500/80 opacity-85" : "border-gray-600"}`}
     >
       <div className="pointer-events-none absolute inset-x-0 top-0 h-20 bg-gradient-to-b from-amber-500/10 to-transparent" />
       <div className="flex items-start justify-between gap-3 mb-3">

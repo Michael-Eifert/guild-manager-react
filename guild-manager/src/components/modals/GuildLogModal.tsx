@@ -101,11 +101,13 @@ const getLogScenario = (
 const GuildLogModal = ({
   isOpen,
   onClose,
+  variant = "modal",
   logs,
   missionList = [],
 }: {
   isOpen: boolean;
-  onClose: () => void;
+  onClose?: () => void;
+  variant?: "modal" | "page";
   logs: GuildLogEntry[];
   missionList?: Mission[];
 }) => {
@@ -146,19 +148,24 @@ const GuildLogModal = ({
     <BaseModal
       isOpen={isOpen}
       onClose={onClose}
+      variant={variant}
       overlayClassName="bg-black/85 backdrop-blur-sm p-0 md:p-4"
       panelClassName="wow-modal-panel bg-gray-900 border-x-0 border-y-0 md:border-2 border-gray-600 rounded-none md:rounded-lg w-full max-w-2xl h-full md:h-[80vh] flex flex-col relative shadow-2xl"
+      pageClassName="wow-modal-panel min-h-[calc(100dvh-10rem)] w-full overflow-hidden rounded-xl border border-gray-600 bg-gray-900 shadow-2xl flex flex-col"
+      ariaLabel="Guild Log"
     >
         <div className="p-4 border-b border-gray-700 flex justify-between items-center bg-gray-900 z-10">
           <h2 className="text-xl md:text-2xl font-bold text-white fantasy-font">
             Guild Log
           </h2>
-          <button
-            onClick={onClose}
-            className="text-gray-500 hover:text-white text-3xl px-2"
-          >
-            &times;
-          </button>
+          {variant !== "page" && (
+            <button
+              onClick={onClose}
+              className="text-gray-500 hover:text-white text-3xl px-2"
+            >
+              &times;
+            </button>
+          )}
         </div>
         <div className="px-4 py-3 border-b border-gray-700 bg-gray-900/80">
           <div className="flex items-center gap-2 flex-wrap">

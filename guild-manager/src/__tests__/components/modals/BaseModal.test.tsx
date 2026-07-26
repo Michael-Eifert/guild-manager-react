@@ -21,4 +21,22 @@ describe("BaseModal", () => {
       ),
     ).toContain("Open child");
   });
+
+  it("renders inline page content without dialog semantics", () => {
+    const html = render(
+      <BaseModal
+        isOpen
+        variant="page"
+        ariaLabel="Guild tool"
+        pageClassName="page-panel"
+      >
+        <div>Page child</div>
+      </BaseModal>,
+    );
+
+    expect(html).toContain("<section");
+    expect(html).toContain('aria-label="Guild tool"');
+    expect(html).toContain('class="page-panel"');
+    expect(html).not.toContain('role="dialog"');
+  });
 });

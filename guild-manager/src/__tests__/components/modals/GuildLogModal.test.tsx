@@ -9,6 +9,7 @@ describe("GuildLogModal", () => {
     const html = render(
       <GuildLogModal
         isOpen
+        variant="page"
         onClose={noop}
         missionList={missionList}
         logs={[
@@ -25,5 +26,6 @@ describe("GuildLogModal", () => {
     expect(html).toContain("Guild Log");
     expect(html).toContain("The Deadmines");
     expect(html).toContain("Dungeon");
+    expect(html).not.toContain('role="dialog"');
   });
 });

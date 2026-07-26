@@ -114,7 +114,7 @@ const CharacterPersonalityCard = ({
   return (
     <div
       onClick={() => onClick(char)}
-      className={`wow-card relative cursor-pointer rounded-lg border bg-gray-800 p-3 transition-all active:scale-95 hover:-translate-y-0.5 hover:border-yellow-500 hover:shadow-lg ${char.status === "Questing" ? "border-blue-500 opacity-80" : "border-gray-600"}`}
+      className={`wow-card relative h-full cursor-pointer rounded-lg border bg-gray-800 p-3 transition-all active:scale-95 hover:-translate-y-0.5 hover:border-yellow-500 hover:shadow-lg ${char.status === "Questing" ? "border-blue-500 opacity-80" : "border-gray-600"}`}
     >
       {char.status === "Questing" && (
         <div className="pointer-events-none absolute inset-0 z-10 flex items-center justify-center rounded-lg bg-black/55 text-xs font-bold tracking-wide text-blue-300">

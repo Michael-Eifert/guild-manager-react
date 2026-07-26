@@ -54,7 +54,7 @@ const CharacterCard = ({ char, onClick }: CharacterCardProps) => {
   return (
     <div
       onClick={() => onClick(char)}
-      className={`wow-card relative bg-gray-800 border p-4 rounded-lg cursor-pointer transition-all active:scale-95 hover:-translate-y-1 hover:shadow-lg hover:border-yellow-500 ${char.status === "Questing" ? "border-blue-500 opacity-80" : "border-gray-600"} ${isFlashing ? "animate-levelup" : ""}`}
+      className={`wow-card relative h-full bg-gray-800 border p-4 rounded-lg cursor-pointer transition-all active:scale-95 hover:-translate-y-1 hover:shadow-lg hover:border-yellow-500 ${char.status === "Questing" ? "border-blue-500 opacity-80" : "border-gray-600"} ${isFlashing ? "animate-levelup" : ""}`}
     >
       {char.status === "Questing" && (
         <div className="absolute inset-0 flex items-center justify-center bg-black/60 z-10 font-bold text-blue-400 tracking-widest rounded-lg pointer-events-none">

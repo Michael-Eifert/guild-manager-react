@@ -161,6 +161,8 @@ import {
   getCalendarDayProgress,
   getCalendarTimeOfDayOption,
   getDungeonMissionPreemption,
+  hasDuplicateCalendarEvent,
+  hasDuplicateCalendarSeries,
   materializeCalendarSeriesEvents,
   refreshCalendarState,
 } from "../calendar/calendarLogic";
@@ -704,6 +706,35 @@ describe("recruitment", () => {
     expect(result.spentGold).toBe(10);
     expect(result.updatedGold).toBe(0);
     expect(result.updatedRoster).toHaveLength(4);
+  });
+
+  it("prevents the same scouted character from being recruited more than once", () => {
+    const candidate = {
+      id: "realm-player-1",
+      realmPlayerId: "realm-player-1",
+      name: "Arthas",
+    };
+    const firstRecruitment = resolveRecruitmentResult({
+      currentRoster: [],
+      currentGold: 10,
+      selectedCandidates: [candidate, { ...candidate }],
+      maxRoster: 10,
+      recruitCostGold: 5,
+    });
+    const secondRecruitment = resolveRecruitmentResult({
+      currentRoster: firstRecruitment.updatedRoster,
+      currentGold: firstRecruitment.updatedGold,
+      selectedCandidates: [candidate],
+      maxRoster: 10,
+      recruitCostGold: 5,
+    });
+
+    expect(firstRecruitment.recruits).toHaveLength(1);
+    expect(firstRecruitment.skippedDuplicateCount).toBe(1);
+    expect(secondRecruitment.recruits).toEqual([]);
+    expect(secondRecruitment.skippedDuplicateCount).toBe(1);
+    expect(secondRecruitment.updatedRoster).toHaveLength(1);
+    expect(secondRecruitment.spentGold).toBe(0);
   });
 
   it("unlocks recruitment tiers from level achievements and raid attunement", () => {
@@ -1816,6 +1847,75 @@ describe("calendar logic", () => {
       dayOfMonth: 1,
       year: 2,
     });
+  });
+
+  it("blocks exact duplicate event and series schedules", () => {
+    const event = buildCalendarEvent({
+      id: "event-1",
+      missionId: "mc-1",
+      missionIds: ["mc-1", "mc-2"],
+      scheduledDayIndex: 3,
+      scheduledTimeOfDay: CALENDAR_TIME_OF_DAY.EVENING,
+    });
+    const series = buildCalendarSeries({
+      id: "series-1",
+      missionId: "mc-1",
+      missionIds: ["mc-1", "mc-2"],
+      weekday: 2,
+      scheduledTimeOfDay: CALENDAR_TIME_OF_DAY.EVENING,
+      startsOnDayIndex: 3,
+      seriesType: CALENDAR_SERIES_TYPE.WEEKLY,
+    });
+
+    expect(
+      hasDuplicateCalendarEvent({
+        events: [event],
+        missionId: "mc-1",
+        missionIds: ["mc-2", "mc-1"],
+        scheduledDayIndex: 3,
+        scheduledTimeOfDay: CALENDAR_TIME_OF_DAY.EVENING,
+      }),
+    ).toBe(true);
+    expect(
+      hasDuplicateCalendarEvent({
+        events: [event],
+        missionId: "mc-1",
+        missionIds: ["mc-1", "mc-2"],
+        scheduledDayIndex: 3,
+        scheduledTimeOfDay: CALENDAR_TIME_OF_DAY.MORNING,
+      }),
+    ).toBe(false);
+    expect(
+      hasDuplicateCalendarEvent({
+        events: [{ ...event, status: CALENDAR_STATUS.CANCELLED }],
+        missionId: "mc-1",
+        missionIds: ["mc-1", "mc-2"],
+        scheduledDayIndex: 3,
+        scheduledTimeOfDay: CALENDAR_TIME_OF_DAY.EVENING,
+      }),
+    ).toBe(false);
+    expect(
+      hasDuplicateCalendarSeries({
+        series: [series],
+        missionId: "mc-1",
+        missionIds: ["mc-2", "mc-1"],
+        weekday: 2,
+        scheduledTimeOfDay: CALENDAR_TIME_OF_DAY.EVENING,
+        startsOnDayIndex: 3,
+        seriesType: CALENDAR_SERIES_TYPE.WEEKLY,
+      }),
+    ).toBe(true);
+    expect(
+      hasDuplicateCalendarSeries({
+        series: [{ ...series, active: false }],
+        missionId: "mc-1",
+        missionIds: ["mc-1", "mc-2"],
+        weekday: 2,
+        scheduledTimeOfDay: CALENDAR_TIME_OF_DAY.EVENING,
+        startsOnDayIndex: 3,
+        seriesType: CALENDAR_SERIES_TYPE.WEEKLY,
+      }),
+    ).toBe(false);
   });
 
   it("materializes weekly raid series without duplicates", () => {

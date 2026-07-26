@@ -17,6 +17,7 @@ describe("RealmOverviewModal", () => {
     const html = render(
       <RealmOverviewModal
         isOpen
+        variant="page"
         onClose={noop}
         realmState={{
           name: "Ashbringer",
@@ -39,5 +40,6 @@ describe("RealmOverviewModal", () => {
     expect(html).toContain("Realm PvE Leaderboard");
     expect(html).toContain("PvE Score Breakdown");
     expect(html).toContain("Competition: Normal");
+    expect(html).not.toContain('role="dialog"');
   });
 });

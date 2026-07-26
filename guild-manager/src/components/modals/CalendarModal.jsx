@@ -342,7 +342,7 @@ const CalendarModal = ({
         : [selectedMissionId];
     const primaryMissionId = missionIds[0] || selectedMissionId;
     const mission = missionLookup.get(String(primaryMissionId));
-    onCreateEvent({
+    const createdEvent = onCreateEvent({
       missionId: primaryMissionId,
       missionIds,
       scheduledDayIndex: selectedDayIndex,
@@ -355,6 +355,9 @@ const CalendarModal = ({
             ? `${mission?.dungeonSetName || mission?.name || "Raid"} ${missionIds.length} Wings`
           : mission?.dungeonWing || mission?.name || "Raid Event"),
     });
+    if (createdEvent === false) return;
+    setSelectedMissionId("");
+    setSelectedMissionIds([]);
     setEventTitle("");
   };
 
@@ -369,7 +372,7 @@ const CalendarModal = ({
     const startDay =
       selectedDayIndex >= currentDayIndex ? selectedDayIndex : currentDayIndex;
     const isIntervalRaid = mission?.raidReset?.type === "interval";
-    onCreateSeries({
+    const createdSeries = onCreateSeries({
       missionId: primaryMissionId,
       missionIds,
       weekday: selectedWeekday,
@@ -386,6 +389,9 @@ const CalendarModal = ({
           ? `${mission?.dungeonSetName || mission?.name || "Raid"} Reset`
           : `${mission?.dungeonSetName || mission?.name || "Raid"} ${CALENDAR_WEEKDAYS[selectedWeekday]}`),
     });
+    if (createdSeries === false) return;
+    setSelectedMissionId("");
+    setSelectedMissionIds([]);
     setEventTitle("");
   };
 

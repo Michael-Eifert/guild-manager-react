@@ -15,6 +15,7 @@ describe("RecruitModal", () => {
     const html = render(
       <RecruitModal
         isOpen
+        variant="page"
         onClose={noop}
         onRecruit={noop}
         openSlots={3}
@@ -34,5 +35,6 @@ describe("RecruitModal", () => {
     expect(html).toContain("Recruitment");
     expect(html).toContain("Guild Applications");
     expect(html).toContain("Cora");
+    expect(html).not.toContain('role="dialog"');
   });
 });

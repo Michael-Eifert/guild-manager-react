@@ -25,6 +25,7 @@ const getScoutCostGold = (tier, count) => {
 const RecruitModal = ({
   isOpen,
   onClose,
+  variant = "modal",
   onRecruit,
   openSlots,
   guildGold = 0,
@@ -167,7 +168,30 @@ const RecruitModal = ({
       selectedIds.includes(char.id),
     );
     if (selectedCandidates.length === 0) return;
-    onRecruit(selectedCandidates, activeTier);
+    const recruitedCandidates = onRecruit(selectedCandidates, activeTier);
+    if (!Array.isArray(recruitedCandidates) || recruitedCandidates.length === 0) {
+      return;
+    }
+
+    const recruitedIds = new Set(
+      recruitedCandidates.flatMap((candidate) =>
+        [candidate?.id, candidate?.realmPlayerId]
+          .map((value) => String(value || ""))
+          .filter(Boolean),
+      ),
+    );
+    setCandidates((previousCandidates) =>
+      previousCandidates.filter(
+        (candidate) =>
+          ![candidate?.id, candidate?.realmPlayerId]
+            .map((value) => String(value || ""))
+            .filter(Boolean)
+            .some((id) => recruitedIds.has(id)),
+      ),
+    );
+    setSelectedIds([]);
+    setLimitWarning(false);
+    setScoutMessage("Recruitment complete. Scout again to find more prospects.");
   };
 
   const handleAcceptApplications = () => {
@@ -201,17 +225,26 @@ const RecruitModal = ({
     <BaseModal
       isOpen={isOpen}
       onClose={onClose}
+      variant={variant}
       overlayClassName="bg-black/85 backdrop-blur-sm p-0 md:p-4"
       panelClassName="wow-modal-panel bg-gray-900 border-x-0 border-y-0 md:border-2 border-yellow-700 rounded-none md:rounded-lg w-full max-w-5xl h-full md:h-[90vh] overflow-y-auto relative"
+      pageClassName="wow-modal-panel min-h-[calc(100dvh-10rem)] w-full overflow-y-auto rounded-xl border border-yellow-700/70 bg-gray-900 shadow-2xl"
+      ariaLabel="Recruitment"
     >
-      <button
-        onClick={onClose}
-        className="absolute top-2 right-4 text-gray-500 hover:text-white text-3xl z-10"
-      >
-        &times;
-      </button>
+      {variant !== "page" && (
+        <button
+          onClick={onClose}
+          className="absolute top-2 right-4 text-gray-500 hover:text-white text-3xl z-10"
+        >
+          &times;
+        </button>
+      )}
       <div className="p-6">
-        <h2 className="text-2xl text-center mb-6 fantasy-font mt-8 md:mt-0">
+        <h2
+          className={`text-2xl text-center mb-6 fantasy-font ${
+            variant === "page" ? "mt-0" : "mt-8 md:mt-0"
+          }`}
+        >
           Recruitment
         </h2>
 
@@ -435,12 +468,14 @@ const RecruitModal = ({
                   Recruit Selected ({selectedIds.length}) -{" "}
                   {selectedRecruitCostGold}g
                 </button>
-                <button
-                  onClick={onClose}
-                  className="text-red-400 text-sm hover:text-white border-b border-red-900 p-2"
-                >
-                  Reject All
-                </button>
+                {variant !== "page" && (
+                  <button
+                    onClick={onClose}
+                    className="text-red-400 text-sm hover:text-white border-b border-red-900 p-2"
+                  >
+                    Reject All
+                  </button>
+                )}
               </div>
             </div>
           </div>

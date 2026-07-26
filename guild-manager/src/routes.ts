@@ -3,6 +3,7 @@ export const ROUTES = Object.freeze({
   HOME: "/home",
   DASHBOARD: "/home",
   GUILD: "/home/guild",
+  RECRUIT: "/home/recruit",
   CALENDAR: "/home/calendar",
   REALM: "/home/realm",
   MISSION_BOARD: "/home/mission-board",
@@ -11,4 +12,7 @@ export const ROUTES = Object.freeze({
   DUNGEON_BOARD_ALIAS: "/dungeon-board",
   BATTLEFIELDS: "/home/battlefields",
   BATTLEFIELDS_ALIAS: "/battlefields",
+  PROFESSIONS: "/home/professions",
+  DATABASE: "/home/database",
+  GUILD_LOG: "/home/guild-log",
 });

@@ -65,6 +65,57 @@ const normalizeIdList = (value) => [
   ),
 ];
 
+export const getCalendarMissionKey = (missionId, missionIds = []) =>
+  normalizeIdList(
+    Array.isArray(missionIds) && missionIds.length > 0
+      ? missionIds
+      : [missionId],
+  )
+    .sort()
+    .join("|");
+
+export const hasDuplicateCalendarEvent = ({
+  events,
+  missionId,
+  missionIds = [],
+  scheduledDayIndex,
+  scheduledTimeOfDay,
+}) => {
+  const missionKey = getCalendarMissionKey(missionId, missionIds);
+  return (Array.isArray(events) ? events : []).some(
+    (event) =>
+      event?.status !== CALENDAR_STATUS.CANCELLED &&
+      Number(event?.scheduledDayIndex) === Number(scheduledDayIndex) &&
+      String(event?.scheduledTimeOfDay || "") ===
+        String(scheduledTimeOfDay || "") &&
+      getCalendarMissionKey(event?.missionId, event?.missionIds) === missionKey,
+  );
+};
+
+export const hasDuplicateCalendarSeries = ({
+  series,
+  missionId,
+  missionIds = [],
+  seriesType,
+  scheduledTimeOfDay,
+  startsOnDayIndex,
+  weekday,
+  intervalDays,
+}) => {
+  const missionKey = getCalendarMissionKey(missionId, missionIds);
+  return (Array.isArray(series) ? series : []).some(
+    (entry) =>
+      entry?.active !== false &&
+      String(entry?.seriesType || "") === String(seriesType || "") &&
+      String(entry?.scheduledTimeOfDay || "") ===
+        String(scheduledTimeOfDay || "") &&
+      Number(entry?.startsOnDayIndex) === Number(startsOnDayIndex) &&
+      Number(entry?.weekday) === Number(weekday) &&
+      Number(entry?.intervalDays || 7) === Number(intervalDays || 7) &&
+      getCalendarMissionKey(entry?.missionId, entry?.missionIds) === missionKey,
+  );
+};
+
 const normalizeStatus = (status) =>
   Object.values(CALENDAR_STATUS).includes(status)
     ? status

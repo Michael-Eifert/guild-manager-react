@@ -79,4 +79,24 @@ describe("BaseModal interactions", () => {
     expect(firstOnClose).not.toHaveBeenCalled();
     expect(latestOnClose).toHaveBeenCalledTimes(1);
   });
+
+  it("locks and restores the app scroll container while open", () => {
+    const shellScroller = document.createElement("div");
+    shellScroller.className = "app-shell-main";
+    shellScroller.style.overflow = "auto";
+    document.body.appendChild(shellScroller);
+
+    const { rerender } = render(
+      <BaseModal isOpen onClose={() => {}}>
+        <button type="button">Inside</button>
+      </BaseModal>,
+    );
+
+    expect(shellScroller.style.overflow).toBe("hidden");
+
+    rerender(<BaseModal isOpen={false} onClose={() => {}} />);
+
+    expect(shellScroller.style.overflow).toBe("auto");
+    shellScroller.remove();
+  });
 });

@@ -1285,10 +1285,21 @@ const MissionModal = ({
       !selectedZoneEliteQuest && isChainEnabled && selectedChainMissions.length > 1
         ? selectedChainMissions.map((mission) => mission.id)
         : null;
-    onDeploy(missionToDeploy, party, {
+    const deployed = onDeploy(missionToDeploy, party, {
       ...(chainMissionIds ? { chainMissionIds } : {}),
       consumableMode,
     });
+    if (deployed === false) return;
+
+    setParty([]);
+    setSelectedQuest(null);
+    setView("list");
+    setAutoAssignSummary("");
+    setIsChainEnabled(false);
+    setSelectedChainMissionIds([]);
+    setSelectedZoneEliteQuestId(null);
+    setIsLootAccordionOpen(false);
+    setIsAutoSelectMenuOpen(false);
     onClose?.();
   };
 

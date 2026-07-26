@@ -196,6 +196,7 @@ const buildSetPieceGroups = (items) => {
 const LootTableModal = ({
   isOpen,
   onClose,
+  variant = "modal",
   itemCatalog = null,
   itemDatabase = [],
 }) => {
@@ -676,8 +677,11 @@ const LootTableModal = ({
     <BaseModal
       isOpen={isOpen}
       onClose={onClose}
+      variant={variant}
       overlayClassName="bg-black/85 backdrop-blur-sm p-0 md:p-4"
       panelClassName="wow-modal-panel bg-gray-900 border-x-0 border-y-0 md:border-2 border-yellow-700 rounded-none md:rounded-lg w-full max-w-5xl h-full md:h-[80vh] flex flex-col relative shadow-2xl"
+      pageClassName="wow-modal-panel min-h-[calc(100dvh-10rem)] w-full overflow-hidden rounded-xl border border-yellow-700/70 bg-gray-900 shadow-2xl flex flex-col"
+      ariaLabel="Loot Atlas"
     >
         <div className="p-4 border-b border-gray-700 flex justify-between items-center bg-gray-900 z-10">
           <div>
@@ -686,9 +690,11 @@ const LootTableModal = ({
               Filter by source and browse loot tables by zone/dungeon
             </p>
           </div>
-          <button onClick={onClose} className="text-gray-500 hover:text-white text-3xl px-2">
-            &times;
-          </button>
+          {variant !== "page" && (
+            <button onClick={onClose} className="text-gray-500 hover:text-white text-3xl px-2">
+              &times;
+            </button>
+          )}
         </div>
 
         <div className="px-4 pt-3 pb-2 border-b border-gray-700 bg-gray-900/80">
@@ -714,7 +720,7 @@ const LootTableModal = ({
                 {source.label}
               </button>
             ))}
-            <div className="ml-auto flex items-center gap-2">
+            <div className="grid w-full grid-cols-[auto_minmax(0,1fr)] items-center gap-2 md:ml-auto md:w-auto md:grid-cols-[auto_12rem_auto_12rem]">
               <label htmlFor="loot-dungeon-filter" className="text-xs text-gray-400 uppercase tracking-wider">
                 Dungeons
               </label>
@@ -755,7 +761,7 @@ const LootTableModal = ({
                   setSetPieceClassFilter(SET_PIECE_CLASS_FILTER_NONE);
                   setSetPieceSetFilter(SET_PIECE_SET_FILTER_NONE);
                 }}
-                className="bg-gray-800 border border-gray-600 rounded px-2 py-1 text-xs text-gray-100 focus:outline-none focus:border-yellow-500"
+                className="min-w-0 w-full bg-gray-800 border border-gray-600 rounded px-2 py-1 text-xs text-gray-100 focus:outline-none focus:border-yellow-500"
               >
                 <option value={RAID_FILTER_NONE}>Select raid</option>
                 {raidOptions.map((option) => (
@@ -781,7 +787,7 @@ const LootTableModal = ({
                   setSetPieceClassFilter(event.target.value);
                   setSetPieceSetFilter(SET_PIECE_SET_FILTER_NONE);
                 }}
-                className="bg-gray-800 border border-gray-600 rounded px-2 py-1 text-xs text-gray-100 focus:outline-none focus:border-yellow-500"
+                className="min-w-0 w-full bg-gray-800 border border-gray-600 rounded px-2 py-1 text-xs text-gray-100 focus:outline-none focus:border-yellow-500"
               >
                 <option value={SET_PIECE_CLASS_FILTER_NONE}>Any class</option>
                 {setPieceClassOptions.map((className) => (
@@ -844,9 +850,11 @@ const LootTableModal = ({
           )}
         </div>
 
-        <button onClick={onClose} className="m-4 mt-0 px-4 py-2 bg-gray-700 rounded self-center">
-          Close
-        </button>
+        {variant !== "page" && (
+          <button onClick={onClose} className="m-4 mt-0 px-4 py-2 bg-gray-700 rounded self-center">
+            Close
+          </button>
+        )}
     </BaseModal>
   );
 };

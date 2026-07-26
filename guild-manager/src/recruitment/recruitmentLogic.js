@@ -353,6 +353,45 @@ export const getRecruitmentCapacity = ({
   };
 };
 
+const getRecruitmentIdentityIds = (candidate) =>
+  [candidate?.id, candidate?.realmPlayerId]
+    .map((value) => String(value || "").trim())
+    .filter(Boolean);
+
+const getRecruitmentIdentityName = (candidate) =>
+  String(candidate?.name || "").trim().toLowerCase();
+
+export const filterUniqueRecruitmentCandidates = ({
+  currentRoster,
+  selectedCandidates,
+}) => {
+  const rosterList = Array.isArray(currentRoster) ? currentRoster : [];
+  const candidateList = Array.isArray(selectedCandidates) ? selectedCandidates : [];
+  const knownIds = new Set(rosterList.flatMap(getRecruitmentIdentityIds));
+  const knownNames = new Set(
+    rosterList.map(getRecruitmentIdentityName).filter(Boolean),
+  );
+  const knownObjects = new Set();
+
+  return candidateList.filter((candidate) => {
+    if (!candidate || typeof candidate !== "object") return false;
+
+    const identityIds = getRecruitmentIdentityIds(candidate);
+    const identityName = getRecruitmentIdentityName(candidate);
+    const isDuplicate =
+      knownObjects.has(candidate) ||
+      identityIds.some((id) => knownIds.has(id)) ||
+      (identityName && knownNames.has(identityName));
+
+    if (isDuplicate) return false;
+
+    knownObjects.add(candidate);
+    identityIds.forEach((id) => knownIds.add(id));
+    if (identityName) knownNames.add(identityName);
+    return true;
+  });
+};
+
 export const resolveRecruitmentResult = ({
   currentRoster,
   currentGold,
@@ -362,6 +401,10 @@ export const resolveRecruitmentResult = ({
 }) => {
   const rosterList = Array.isArray(currentRoster) ? currentRoster : [];
   const candidateList = Array.isArray(selectedCandidates) ? selectedCandidates : [];
+  const uniqueCandidateList = filterUniqueRecruitmentCandidates({
+    currentRoster: rosterList,
+    selectedCandidates: candidateList,
+  });
   const safeGold = Math.max(0, Number(currentGold) || 0);
   const safeRecruitCost = Math.max(1, Number(recruitCostGold) || 1);
 
@@ -372,7 +415,7 @@ export const resolveRecruitmentResult = ({
     recruitCostGold: safeRecruitCost,
   });
 
-  const recruits = candidateList.slice(0, availableSlots).map((candidate) => ({
+  const recruits = uniqueCandidateList.slice(0, availableSlots).map((candidate) => ({
     ...candidate,
     status: candidate?.status || "Idle",
     statusText: candidate?.statusText || "Waiting for orders...",
@@ -396,5 +439,6 @@ export const resolveRecruitmentResult = ({
     spentGold,
     updatedGold,
     updatedRoster,
+    skippedDuplicateCount: candidateList.length - uniqueCandidateList.length,
   };
 };
