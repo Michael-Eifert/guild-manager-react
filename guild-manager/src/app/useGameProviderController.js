@@ -2498,6 +2498,15 @@ export const useGameProviderController = () => {
       [sectionKey]: !prev[sectionKey],
     }));
   }, []);
+  const setAllDashboardSectionsOpen = useCallback((isOpen) => {
+    const nextValue = isOpen === true;
+    setDashboardSectionsOpen({
+      guildActivity: nextValue,
+      dungeonGroups: nextValue,
+      pvpActivity: nextValue,
+      guildComposition: nextValue,
+    });
+  }, []);
   const handleGuildFocusChange = (focus) => {
     if (!GUILD_FOCUS_OPTIONS.includes(focus)) return;
     const currentFocus = guildSetupRef.current?.focus || GUILD_FOCUS.LEVELING;
@@ -4128,6 +4137,7 @@ export const useGameProviderController = () => {
     showRecruit,
     SHOW_LEGACY_QUESTS,
     stashPolicy,
+    setAllDashboardSectionsOpen,
     toggleDashboardSection,
     worldPvpState,
   };

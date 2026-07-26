@@ -160,6 +160,7 @@ export default function HomeRoot() {
     showRecruit,
     SHOW_LEGACY_QUESTS,
     stashPolicy,
+    setAllDashboardSectionsOpen,
     toggleDashboardSection,
     worldPvpState,
     unreadChatCount,
@@ -263,6 +264,7 @@ export default function HomeRoot() {
                 guildActivityModeSummary={guildActivityModeSummary}
                 dashboardSectionsOpen={dashboardSectionsOpen}
                 onToggleDashboardSection={toggleDashboardSection}
+                onSetAllDashboardSectionsOpen={setAllDashboardSectionsOpen}
                 onGuildModeChange={handleGuildModeChange}
                 guildSetup={guildSetup}
                 guildRelationships={guildRelationships}
@@ -428,6 +430,7 @@ export default function HomeRoot() {
                 roster={roster}
                 missionList={missionList}
                 activeMissions={activeMissions}
+                socialState={socialState}
                 gameTimeMs={gameTimeMs}
                 onManualFinish={handleManualFinish}
                 onQueueAdventureGoal={handleQueueAdventureGoal}

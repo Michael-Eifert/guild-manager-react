@@ -1,4 +1,7 @@
 import type { Mission } from "../types/missionTypes";
+import type { LfgSearch, SocialState } from "../social/chatTypes";
+
+const FORMING_DUNGEON_PHASES = new Set(["guild", "general", "ready"]);
 
 export const getActiveDungeonRunMissions = (activeMissions: readonly Mission[] = []) =>
   (Array.isArray(activeMissions) ? activeMissions : []).filter(
@@ -7,3 +10,17 @@ export const getActiveDungeonRunMissions = (activeMissions: readonly Mission[] =
 
 export const getActiveDungeonRunCount = (activeMissions: readonly Mission[] = []) =>
   getActiveDungeonRunMissions(activeMissions).length;
+
+export const getFormingDungeonSearches = (
+  socialState: Pick<SocialState, "searches"> | null | undefined,
+): LfgSearch[] =>
+  (Array.isArray(socialState?.searches) ? socialState.searches : [])
+    .filter(
+      (search): search is LfgSearch =>
+        search?.missionType === "dungeon" &&
+        FORMING_DUNGEON_PHASES.has(search.phase),
+    )
+    .sort(
+      (left, right) =>
+        Number(left.createdAt || 0) - Number(right.createdAt || 0),
+    );

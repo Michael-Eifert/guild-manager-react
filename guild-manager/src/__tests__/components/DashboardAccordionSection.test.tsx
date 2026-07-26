@@ -23,6 +23,17 @@ describe("DashboardAccordionSection", () => {
     );
 
     expect(openHtml).toContain("Visible body");
-    expect(closedHtml).not.toContain("Hidden body");
+    expect(closedHtml).toContain("Hidden body");
+    expect(closedHtml).toContain("hidden");
+    expect(openHtml).toContain('aria-expanded="true"');
+    expect(closedHtml).toContain('aria-expanded="false"');
+
+    const controlsId = openHtml.match(/aria-controls="([^"]+)"/)?.[1];
+    expect(controlsId).toBeTruthy();
+    expect(openHtml).toContain(`id="${controlsId}"`);
+
+    const triggerId = openHtml.match(/id="([^"]+-trigger)"/)?.[1];
+    expect(triggerId).toBeTruthy();
+    expect(openHtml).toContain(`aria-labelledby="${triggerId}"`);
   });
 });

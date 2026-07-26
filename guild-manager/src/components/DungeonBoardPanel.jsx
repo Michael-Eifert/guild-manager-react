@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useState } from "react";
 
 import ActiveMissionCard from "./ActiveMissionCard";
+import LfgSearchCard from "./dungeons/LfgSearchCard";
 import { DB_CLASSES } from "../constants";
 import {
   buildDungeonAttunementTargets,
@@ -15,7 +16,10 @@ import {
   getRoleIcon,
   getWowIconUrl,
 } from "../utils";
-import { getActiveDungeonRunMissions } from "../dungeons/dungeonBoardUtils";
+import {
+  getActiveDungeonRunMissions,
+  getFormingDungeonSearches,
+} from "../dungeons/dungeonBoardUtils";
 
 const DUNGEON_BOARD_TABS = Object.freeze({
   RUNS: "Dungeon Runs",
@@ -77,6 +81,7 @@ export default function DungeonBoardPanel({
   roster = [],
   missionList = [],
   activeMissions = [],
+  socialState,
   gameTimeMs,
   onManualFinish,
   onQueueAdventureGoal,
@@ -94,6 +99,10 @@ export default function DungeonBoardPanel({
   const activeRuns = useMemo(
     () => getActiveDungeonRunMissions(activeMissions),
     [activeMissions],
+  );
+  const formingDungeonSearches = useMemo(
+    () => getFormingDungeonSearches(socialState),
+    [socialState],
   );
   const activeRaidCount = activeRuns.filter((mission) => mission?.isRaid).length;
   const activeDungeonCount = activeRuns.length - activeRaidCount;
@@ -238,9 +247,10 @@ export default function DungeonBoardPanel({
               }`}
             >
               {tab}
-              {tab === DUNGEON_BOARD_TABS.RUNS && activeRuns.length > 0 && (
+              {tab === DUNGEON_BOARD_TABS.RUNS &&
+                activeRuns.length + formingDungeonSearches.length > 0 && (
                 <span className="ml-2 rounded-full border border-cyan-300/60 bg-cyan-400/15 px-1.5 py-0.5 text-[10px] text-cyan-100">
-                  {activeRuns.length}
+                  {activeRuns.length + formingDungeonSearches.length}
                 </span>
               )}
             </button>
@@ -252,6 +262,7 @@ export default function DungeonBoardPanel({
         <DungeonRunsView
           roster={roster}
           activeRuns={activeRuns}
+          formingDungeonSearches={formingDungeonSearches}
           activeDungeonCount={activeDungeonCount}
           activeRaidCount={activeRaidCount}
           queuedGoalCount={queuedGoalCount}
@@ -290,6 +301,7 @@ export default function DungeonBoardPanel({
 function DungeonRunsView({
   roster,
   activeRuns,
+  formingDungeonSearches,
   activeDungeonCount,
   activeRaidCount,
   queuedGoalCount,
@@ -298,11 +310,29 @@ function DungeonRunsView({
 }) {
   return (
     <section className="rounded-lg border border-cyan-900/50 bg-slate-950/75 p-3">
-      <div className="grid grid-cols-2 gap-2 md:grid-cols-4">
+      <div className="grid grid-cols-2 gap-2 md:grid-cols-5">
         <Stat label="Active Runs" value={activeRuns.length} />
+        <Stat label="Forming" value={formingDungeonSearches.length} />
         <Stat label="Dungeons" value={activeDungeonCount} />
         <Stat label="Raids" value={activeRaidCount} />
         <Stat label="Queued Goals" value={queuedGoalCount} />
+      </div>
+
+      <SectionTitle title="Groups Forming" />
+      <div className="rounded border border-cyan-900/60 bg-cyan-950/10 p-3">
+        {formingDungeonSearches.length === 0 ? (
+          <EmptyText>No dungeon groups are looking for members right now.</EmptyText>
+        ) : (
+          <div className="grid grid-cols-1 gap-3 xl:grid-cols-2">
+            {formingDungeonSearches.map((search) => (
+              <LfgSearchCard
+                key={search.id}
+                search={search}
+                gameTimeMs={gameTimeMs}
+              />
+            ))}
+          </div>
+        )}
       </div>
 
       <SectionTitle title="Current Dungeon And Raid Runs" />

@@ -5,6 +5,7 @@ import CharacterCard from "../../components/CharacterCard";
 import CharacterEquipCheckCard from "../../components/CharacterEquipCheckCard";
 import CharacterPersonalityCard from "../../components/CharacterPersonalityCard";
 import DashboardAccordionSection from "../../components/DashboardAccordionSection";
+import ActivityPanelLayout from "../../components/dashboard/ActivityPanelLayout";
 import GuildStatistics from "../../components/dashboard/GuildStatistics";
 import GameButton from "../../components/ui/GameButton";
 import SegmentedControl from "../../components/ui/SegmentedControl";
@@ -56,6 +57,7 @@ export default function DashboardPage({
   guildActivityModeSummary,
   dashboardSectionsOpen,
   onToggleDashboardSection,
+  onSetAllDashboardSectionsOpen,
   onGuildModeChange,
   guildSetup,
   guildRelationships,
@@ -111,8 +113,11 @@ export default function DashboardPage({
 
       {chatPreview}
 
-      <div className="grid gap-3 xl:grid-cols-2">
-        <DashboardAccordionSection
+      <ActivityPanelLayout
+        sectionsOpen={dashboardSectionsOpen}
+        onSetAllOpen={onSetAllDashboardSectionsOpen}
+        guildActivity={
+          <DashboardAccordionSection
           title="Guild Activity"
           summary={`Current: ${guildActivityModeSummary || "None"}`}
           isOpen={dashboardSectionsOpen.guildActivity}
@@ -143,9 +148,10 @@ export default function DashboardPage({
               }
             />
           </div>
-        </DashboardAccordionSection>
-
-        <DashboardAccordionSection
+          </DashboardAccordionSection>
+        }
+        pvpActivity={
+          <DashboardAccordionSection
           title="PvP Activity"
           summary={`Current: ${getPvpActivityConfig(guildSetup.pvpActivityFocus).label}`}
           isOpen={dashboardSectionsOpen.pvpActivity}
@@ -167,9 +173,10 @@ export default function DashboardPage({
             Controls automatic Warsong Gulch queues. Active heroes are never pulled
             out of missions, dungeons, raids, or other battlegrounds.
           </p>
-        </DashboardAccordionSection>
-
-        <DashboardAccordionSection
+          </DashboardAccordionSection>
+        }
+        dungeonGroups={
+          <DashboardAccordionSection
           title="Dungeon Groups"
           summary={`Current: ${
             guildSetup.dungeonActivity || GUILD_DUNGEON_ACTIVITY.NONE
@@ -200,9 +207,10 @@ export default function DashboardPage({
               }
             />
           </div>
-        </DashboardAccordionSection>
-
-        <DashboardAccordionSection
+          </DashboardAccordionSection>
+        }
+        guildComposition={
+          <DashboardAccordionSection
           title="Guild Composition"
           summary={`${guildRoleSummary.total} members`}
           isOpen={dashboardSectionsOpen.guildComposition}
@@ -271,8 +279,9 @@ export default function DashboardPage({
               <p className="text-xs text-gray-500">No class data yet.</p>
             )}
           </div>
-        </DashboardAccordionSection>
-      </div>
+          </DashboardAccordionSection>
+        }
+      />
 
       <section className="rounded-xl border border-slate-700 bg-slate-900/70 p-3 shadow-lg md:p-4">
         <div className="mb-3 flex items-center justify-between gap-3">

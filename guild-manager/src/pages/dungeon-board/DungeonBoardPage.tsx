@@ -3,6 +3,7 @@ import type { ComponentType } from "react";
 import DungeonBoardPanel from "../../components/DungeonBoardPanel";
 import type { Character } from "../../types/characterTypes";
 import type { Mission } from "../../types/missionTypes";
+import type { SocialState } from "../../social/chatTypes";
 
 type ForwardedCallback = (...args: never[]) => unknown;
 
@@ -10,6 +11,7 @@ type DungeonBoardPageProps = {
   roster: Character[];
   missionList: Mission[];
   activeMissions: Mission[];
+  socialState: SocialState;
   gameTimeMs: number;
   onManualFinish: ForwardedCallback;
   onQueueAdventureGoal: ForwardedCallback;
@@ -23,6 +25,7 @@ export default function DungeonBoardPage({
   roster,
   missionList,
   activeMissions,
+  socialState,
   gameTimeMs,
   onManualFinish,
   onQueueAdventureGoal,
@@ -35,7 +38,7 @@ export default function DungeonBoardPage({
           Dungeon Board
         </h2>
         <p className="truncate text-xs text-cyan-100/60 md:text-sm">
-          Active dungeon runs, raids, and attunement planning
+          Forming groups, active runs, raids, and attunement planning
         </p>
       </header>
       <div className="p-3 md:p-4">
@@ -43,6 +46,7 @@ export default function DungeonBoardPage({
           roster={roster}
           missionList={missionList}
           activeMissions={activeMissions}
+          socialState={socialState}
           gameTimeMs={gameTimeMs}
           onManualFinish={onManualFinish}
           onQueueAdventureGoal={onQueueAdventureGoal}
