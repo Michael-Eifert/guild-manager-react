@@ -6,6 +6,7 @@ import {
   Hammer,
   Home,
   Map,
+  MessageCircle,
   ScrollText,
   Shield,
   Swords,
@@ -20,12 +21,14 @@ type HomeNavigationOptions = {
   applicationCount: number;
   activeDungeonCount: number;
   activeBattlefieldCount: number;
+  unreadChatCount: number;
 };
 
 export const buildHomeNavigation = ({
   applicationCount,
   activeDungeonCount,
   activeBattlefieldCount,
+  unreadChatCount,
 }: HomeNavigationOptions): NavigationItem[] => [
   {
     id: "home",
@@ -46,6 +49,16 @@ export const buildHomeNavigation = ({
     mobileOrder: 2,
     kind: "route",
     to: ROUTES.GUILD,
+  },
+  {
+    id: "chat",
+    label: "Chat",
+    icon: MessageCircle,
+    group: "overview",
+    kind: "route",
+    to: ROUTES.CHAT,
+    badge: unreadChatCount,
+    badgeTone: "amber",
   },
   {
     id: "recruit",

@@ -51,6 +51,7 @@ const SuccessRateSlider = ({ label, value, onChange }) => {
 };
 
 export default function DashboardPage({
+  chatPreview,
   guildActivityModeSummary,
   dashboardSectionsOpen,
   onToggleDashboardSection,
@@ -99,6 +100,8 @@ export default function DashboardPage({
           roster.
         </p>
       </div>
+
+      {chatPreview}
 
       <div className="grid gap-3 xl:grid-cols-2">
         <DashboardAccordionSection

@@ -1,5 +1,6 @@
 import http from "node:http";
 import { pathToFileURL } from "node:url";
+import { loadLocalEnvironment } from "./load-local-env.js";
 import type { IncomingMessage, OutgoingHttpHeaders, ServerResponse } from "node:http";
 
 const parseOrigins = (value: unknown, isProduction: boolean) => {
@@ -11,7 +12,7 @@ const parseOrigins = (value: unknown, isProduction: boolean) => {
 export const createProxyConfig = (environment: NodeJS.ProcessEnv = process.env) => {
   const isProduction = environment.NODE_ENV === "production";
   return {
-    port: Number(environment.PORT) || 8787,
+    port: Number(environment.GEMINI_PROXY_PORT || environment.PORT) || 8787,
     apiKey: environment.GEMINI_API_KEY || "",
     model: environment.GEMINI_MODEL || "gemini-2.5-flash",
     allowedOrigins: parseOrigins(environment.ALLOWED_ORIGINS || environment.ALLOWED_ORIGIN, isProduction),
@@ -228,6 +229,7 @@ export const createGeminiProxyServer = ({
 
 const isEntrypoint = process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href;
 if (isEntrypoint) {
+  loadLocalEnvironment();
   const config = createProxyConfig();
   const server = createGeminiProxyServer({ config });
   server.listen(config.port, () => console.log(JSON.stringify({ event: "proxy_started", port: config.port, model: config.model })));

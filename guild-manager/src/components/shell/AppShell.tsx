@@ -1,7 +1,14 @@
-import { Check, Menu, RotateCcw, SlidersHorizontal, X } from "lucide-react";
-import { useState } from "react";
+import {
+  Check,
+  Menu,
+  MessageCircle,
+  RotateCcw,
+  SlidersHorizontal,
+  X,
+} from "lucide-react";
+import { useEffect, useState } from "react";
 import type { ReactNode } from "react";
-import { NavLink } from "react-router-dom";
+import { NavLink, useLocation } from "react-router-dom";
 
 import BaseModal from "../modals/BaseModal";
 import Badge from "../ui/Badge";
@@ -10,6 +17,8 @@ import type { NavigationGroup, NavigationItem } from "./navigationTypes";
 type AppShellProps = {
   header: ReactNode;
   navigationItems: NavigationItem[];
+  chatPanel?: ReactNode;
+  chatUnreadCount?: number;
   children: ReactNode;
 };
 
@@ -24,6 +33,7 @@ const navigationGroups: Array<{
 ];
 
 const MOBILE_QUICK_NAVIGATION_COUNT = 3;
+const WIDE_CHAT_DOCK_QUERY = "(min-width: 1600px)";
 export const MOBILE_QUICK_NAVIGATION_STORAGE_KEY =
   "guild-manager.mobileQuickNavigation.v1";
 
@@ -389,10 +399,20 @@ function QuickNavigationCustomizer({
 export default function AppShell({
   header,
   navigationItems,
+  chatPanel,
+  chatUnreadCount = 0,
   children,
 }: AppShellProps) {
+  const location = useLocation();
   const [moreOpen, setMoreOpen] = useState(false);
   const [customizerOpen, setCustomizerOpen] = useState(false);
+  const [chatOverlayOpen, setChatOverlayOpen] = useState(false);
+  const [wideChatDock, setWideChatDock] = useState(
+    () =>
+      typeof window !== "undefined" &&
+      typeof window.matchMedia === "function" &&
+      window.matchMedia(WIDE_CHAT_DOCK_QUERY).matches,
+  );
   const [quickNavigationIds, setQuickNavigationIds] = useState(() =>
     loadQuickNavigationIds(navigationItems),
   );
@@ -411,6 +431,32 @@ export default function AppShell({
     (item) => !mobileItemIds.has(item.id) && !item.sidebarHidden,
   );
   const customizableItems = getCustomizableItems(navigationItems);
+  const chatRouteActive = navigationItems.some(
+    (item) =>
+      item.id === "chat" &&
+      item.kind === "route" &&
+      item.to === location.pathname,
+  );
+  const showSupplementalChat = Boolean(chatPanel) && !chatRouteActive;
+
+  useEffect(() => {
+    if (
+      typeof window === "undefined" ||
+      typeof window.matchMedia !== "function"
+    ) {
+      return undefined;
+    }
+    const mediaQuery = window.matchMedia(WIDE_CHAT_DOCK_QUERY);
+    const updateWideChatDock = () => setWideChatDock(mediaQuery.matches);
+    updateWideChatDock();
+    mediaQuery.addEventListener?.("change", updateWideChatDock);
+    return () =>
+      mediaQuery.removeEventListener?.("change", updateWideChatDock);
+  }, []);
+
+  useEffect(() => {
+    if (wideChatDock) setChatOverlayOpen(false);
+  }, [wideChatDock]);
 
   const closeMoreNavigation = () => {
     setMoreOpen(false);
@@ -458,7 +504,11 @@ export default function AppShell({
   };
 
   return (
-    <div className="app-shell">
+    <div
+      className={`app-shell ${
+        showSupplementalChat ? "app-shell-with-chat" : ""
+      }`}
+    >
       <DesktopSidebar items={navigationItems} />
       <div className="app-shell-main">
         {header}
@@ -466,6 +516,50 @@ export default function AppShell({
           <div className="mx-auto w-full max-w-[1600px]">{children}</div>
         </main>
       </div>
+      {showSupplementalChat ? (
+        <>
+          {wideChatDock ? (
+            <aside
+              className="app-chat-dock"
+              aria-label="Desktop character chat"
+            >
+              {chatPanel}
+            </aside>
+          ) : null}
+          <button
+            type="button"
+            aria-label="Open character chat"
+            aria-expanded={chatOverlayOpen}
+            onClick={() => setChatOverlayOpen(true)}
+            className="app-chat-launcher"
+          >
+            <MessageCircle size={22} aria-hidden="true" />
+            {chatUnreadCount > 0 ? (
+              <span className="absolute -right-1 -top-1 rounded-full bg-amber-400 px-1.5 py-0.5 text-[9px] font-bold text-slate-950">
+                {Math.min(chatUnreadCount, 99)}
+              </span>
+            ) : null}
+          </button>
+          {chatOverlayOpen ? (
+            <div className="app-chat-overlay" role="dialog" aria-label="Character chat">
+              <div className="flex items-center justify-between border-b border-slate-800 bg-slate-950 px-3 py-2">
+                <span className="fantasy-font text-sm font-bold text-amber-100">
+                  Character Chat
+                </span>
+                <button
+                  type="button"
+                  aria-label="Close character chat"
+                  onClick={() => setChatOverlayOpen(false)}
+                  className="grid h-11 w-11 place-items-center rounded-lg border border-slate-700 bg-slate-900 text-slate-300 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-amber-300"
+                >
+                  <X size={18} aria-hidden="true" />
+                </button>
+              </div>
+              <div className="flex min-h-0 flex-1">{chatPanel}</div>
+            </div>
+          ) : null}
+        </>
+      ) : null}
 
       <MobileNavigation
         items={mobileItems}

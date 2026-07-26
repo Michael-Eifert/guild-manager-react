@@ -8,7 +8,7 @@ import futureFixture from "./fixtures/sessions/future-v999.json";
 import malformedFixture from "./fixtures/sessions/malformed.json";
 
 describe("session migrations", () => {
-  it("migrates unwrapped legacy saves through version 8", () => {
+  it("migrates unwrapped legacy saves through version 9", () => {
     const data = parseSessionPayload(JSON.stringify(legacyFixture));
     expect(data.roster[0]).toMatchObject({ id: "legacy", charClass: "Warrior" });
     expect(data.progression.gameSpeed).toBe(2);
@@ -21,7 +21,7 @@ describe("session migrations", () => {
   });
 
   it("provides a migration path for every historical wrapped version", () => {
-    for (let version = 1; version < 8; version += 1) {
+    for (let version = 1; version < 9; version += 1) {
       const data = parseSessionPayload(JSON.stringify({
         format: "guild-manager-session",
         version,

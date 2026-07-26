@@ -6,7 +6,8 @@ professions, send parties into zones, dungeons, raids, and PvP, then grow the
 guild through loot, renown, talents, calendar planning, and realm simulation.
 
 The app is intentionally static-first: the main game runs fully in the browser,
-with optional server-side support only for Oracle/Gemini text generation.
+with optional server-side support for Oracle/Gemini and character-chat text
+generation.
 
 ## Quick Start
 
@@ -76,6 +77,7 @@ longer required.
   recruitment market behavior.
 - Session import/export so browser-only saves can be backed up as JSON files.
 - Optional Oracle/Gemini backstory generation through a proxy.
+- Simulated Guild/General character chat with automatic same-faction LFG groups.
 
 ## Project Structure
 
@@ -121,6 +123,7 @@ Routes are declared in `src/routes.js`:
 - `/home/realm` for realm overview.
 - `/home/mission-board` for missions, dungeons, and raids.
 - `/home/adventure-board` for world map and zone activity.
+- `/home/chat` for the simulated Guild and General channels.
 
 Page components generally adapt existing modal-style tools into full route
 views. The route constants should be used instead of hard-coded path strings.
@@ -168,33 +171,26 @@ actions, run the server-side proxy and expose only the proxy URL to Vite.
 The proxy is optional and is only needed for Oracle/Gemini-generated text. The
 game itself still starts with just `npm run dev`.
 
-On PowerShell, start the proxy in terminal 1:
+Create a local environment file once:
 
 ```powershell
-$env:GEMINI_API_KEY="your_key_here"
+Copy-Item .env.example .env
+```
+
+Fill `GEMINI_API_KEY` in `.env`, then start the proxy and app in separate
+terminals:
+
+```powershell
 npm run proxy:gemini
 ```
 
-Then start the app in terminal 2:
-
 ```powershell
-$env:VITE_GEMINI_PROXY_URL="http://localhost:8787/api/gemini"
 npm run dev
 ```
 
-On macOS, Linux, Git Bash, or another POSIX-compatible shell, use:
-
-```bash
-GEMINI_API_KEY=your_key_here npm run proxy:gemini
-```
-
-```bash
-VITE_GEMINI_PROXY_URL=http://localhost:8787/api/gemini npm run dev
-```
-
 The proxy listens on port `8787` by default and exposes a health endpoint at
-`http://localhost:8787/health`. Set `PORT` to use a different port and update
-`VITE_GEMINI_PROXY_URL` accordingly.
+`http://localhost:8787/health`. Set `GEMINI_PROXY_PORT` to use a different port
+and update `VITE_GEMINI_PROXY_URL` accordingly.
 
 For a hosted proxy, set `NODE_ENV=production` and an explicit comma-separated
 `ALLOWED_ORIGINS` list. Optional controls include `MAX_CONCURRENT_REQUESTS`,
@@ -205,6 +201,36 @@ by authenticated access or an API gateway.
 
 Without `VITE_GEMINI_PROXY_URL`, the game still runs. Oracle actions will show
 an error message instead of generating text.
+
+## Optional Character Chat AI
+
+Character chat uses deterministic templates by default. Settings can switch
+only the wording to an OpenAI-compatible server proxy or a local Ollama model;
+group membership, mission starts, rewards, and every other state change remain
+deterministic.
+
+For an OpenAI-compatible endpoint, copy `.env.example` to `.env` if needed,
+fill `AI_API_KEY`, and adjust `AI_BASE_URL` and `AI_MODEL` for the provider.
+Then start the included proxy:
+
+```powershell
+npm run proxy:ai
+```
+
+The API key exists only in the proxy process and is never sent to or stored by
+the browser. Production deployments must set `NODE_ENV=production` and an
+explicit comma-separated `ALLOWED_ORIGINS` value. A GitHub Pages deployment
+needs this proxy hosted separately.
+
+Only variables prefixed with `VITE_` are exposed to the browser bundle. Keep
+API keys in the unprefixed `AI_API_KEY` and `GEMINI_API_KEY` variables. Local
+`.env` files are ignored by Git; `.env.example` intentionally contains no
+credentials and documents the supported configuration.
+
+For Ollama, select Ollama in Settings and configure its device-local address
+and model. The default address is `http://localhost:11434`; Ollama must allow
+the app origin through `OLLAMA_ORIGINS`. If either provider is unavailable,
+times out, or becomes overloaded, the game immediately falls back to templates.
 
 ## Testing
 

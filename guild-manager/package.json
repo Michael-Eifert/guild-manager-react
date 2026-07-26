@@ -16,6 +16,7 @@
     "check": "npm run migration:check && npm run lint && npm run typecheck && npm run test && npm run build && npm run bundle:check",
     "test": "vitest run",
     "proxy:gemini": "tsx server/gemini-proxy.ts",
+    "proxy:ai": "tsx server/ai-proxy.ts",
     "preview": "vite preview"
   },
   "dependencies": {

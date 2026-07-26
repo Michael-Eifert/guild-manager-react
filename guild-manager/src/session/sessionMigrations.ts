@@ -1,7 +1,7 @@
 import { z } from "zod";
 
 export const SESSION_FORMAT_VALUE = "guild-manager-session" as const;
-export const CURRENT_SESSION_VERSION = 8;
+export const CURRENT_SESSION_VERSION = 9;
 
 const dataSchema = z.record(z.string(), z.unknown());
 const recognizedKeys = new Set([
@@ -50,6 +50,7 @@ export const SESSION_MIGRATIONS: ReadonlyArray<Migration> = [
   (data) => ({ ...data, guildInventory: data.guildInventory || null, stashPolicy: data.stashPolicy || null }),
   (data) => ({ ...data, missionBoardState: data.missionBoardState || {}, battlefieldState: data.battlefieldState || {} }),
   (data) => ({ ...data, roster: Array.isArray(data.roster) ? data.roster : [] }),
+  (data) => ({ ...data, socialState: data.socialState || null }),
 ];
 
 export const migrateSessionPayload = (input: unknown) => {

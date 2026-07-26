@@ -450,11 +450,15 @@ export const getCharacterSetBonus = (char) =>
   getEquipmentSetBonus(char?.equipment);
 
 export const getCharacterAverageItemLevel = (char) =>
-  getEquipmentAverageItemLevel(char?.equipment);
+  char?.equipment
+    ? getEquipmentAverageItemLevel(char.equipment)
+    : Math.max(0, Number(char?.itemLevel) || 0);
 
 export const getCharacterPowerScore = (char) => {
   const level = Number(char?.level) || 1;
-  const baseItemLevel = getEquipmentBaseAverageItemLevel(char?.equipment);
+  const baseItemLevel = char?.equipment
+    ? getEquipmentBaseAverageItemLevel(char.equipment)
+    : Math.max(0, Number(char?.itemLevel) || 0);
   const setBonus = getEquipmentSetBonus(char?.equipment);
   return level * 0.6 + baseItemLevel * 0.4 + setBonus;
 };

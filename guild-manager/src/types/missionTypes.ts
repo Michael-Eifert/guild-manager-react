@@ -1,4 +1,5 @@
 import type { CharacterId } from "./characterTypes";
+import type { PartyParticipant } from "../social/chatTypes";
 
 export type MissionId = string | number;
 export type MissionType = "quest" | "elite" | "dungeon" | "raid" | "zone" | string;
@@ -33,6 +34,8 @@ export interface Mission {
   finishTime?: number;
   level?: number;
   recommended?: number | string;
+  requiredPartySize?: number;
+  minPartySize?: number;
   minLevel?: number;
   entryLevel?: number;
   isRaid?: boolean;
@@ -76,6 +79,8 @@ export interface Mission {
   requiresKeyForAllMembers?: boolean;
   dungeonBossCount?: number;
   missionSuccess?: boolean;
+  partyParticipants?: PartyParticipant[];
+  lfgSearchId?: string;
 }
 
 export type MissionInput = Partial<Mission>;

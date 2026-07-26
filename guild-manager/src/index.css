@@ -576,6 +576,48 @@ body::after {
   backdrop-filter: blur(14px);
 }
 
+.app-chat-dock {
+  display: none;
+  min-width: 0;
+  min-height: 0;
+  overflow: hidden;
+  border-left: 1px solid rgb(108 80 36 / 55%);
+  background: rgb(10 13 19 / 96%);
+}
+
+.app-chat-launcher {
+  position: fixed;
+  right: 1.25rem;
+  bottom: 1.25rem;
+  z-index: 55;
+  display: none;
+  height: 3rem;
+  width: 3rem;
+  place-items: center;
+  border: 1px solid rgb(217 169 75 / 72%);
+  border-radius: 999px;
+  background: linear-gradient(180deg, #765322, #3c260f);
+  color: #fff1c7;
+  box-shadow: 0 12px 28px rgb(0 0 0 / 45%);
+}
+
+.app-chat-overlay {
+  position: fixed;
+  top: 5rem;
+  right: 1rem;
+  bottom: 1rem;
+  z-index: 70;
+  display: none;
+  width: min(360px, calc(100vw - 2rem));
+  min-height: 0;
+  flex-direction: column;
+  overflow: hidden;
+  border: 1px solid rgb(120 87 40 / 75%);
+  border-radius: 0.85rem;
+  background: rgb(8 12 19 / 98%);
+  box-shadow: 0 24px 55px rgb(0 0 0 / 62%);
+}
+
 .game-button {
   isolation: isolate;
 }
@@ -612,6 +654,32 @@ body::after {
   .app-sidebar .app-nav-item {
     justify-content: flex-start;
     padding-inline: 0.75rem;
+  }
+
+  .app-chat-launcher {
+    display: grid;
+  }
+
+  .app-chat-overlay {
+    display: flex;
+  }
+}
+
+@media (min-width: 1600px) {
+  .app-shell-with-chat {
+    grid-template-columns:
+      var(--app-sidebar-width)
+      minmax(0, 1fr)
+      360px;
+  }
+
+  .app-chat-dock {
+    display: flex;
+  }
+
+  .app-chat-launcher,
+  .app-chat-overlay {
+    display: none;
   }
 }
 

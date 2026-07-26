@@ -20,6 +20,9 @@ describe("OptionsModal", () => {
     expect(html).toContain("Save Session");
     expect(html).toContain("Load Session");
     expect(html).toContain("Debug Menu");
+    expect(html).toContain("Templates");
+    expect(html).toContain("OpenAI-compatible");
+    expect(html).toContain("Ollama");
     expect(html).not.toContain("Guild Talents");
   });
 });

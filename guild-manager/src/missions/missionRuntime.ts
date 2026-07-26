@@ -139,7 +139,12 @@ export const buildMissionRun = ({
   services: GameServices;
   getSuccessPreview: (mission: AnyRecord, members: Character[]) => AnyRecord;
 }) => {
-  const selectedMembers = roster.filter((character) => memberIds.includes(character.id));
+  const selectedGuildMembers = roster.filter((character) =>
+    memberIds.includes(character.id),
+  );
+  const selectedMembers = Array.isArray(runOptions?.partyMembers)
+    ? runOptions.partyMembers
+    : selectedGuildMembers;
   const missionPreview = getSuccessPreview(quest, selectedMembers);
   const consumableModifiers = runOptions?.consumableModifiers || null;
   const consumableSuccessBonus = Number(consumableModifiers?.successBonusPercent) || 0;
@@ -196,6 +201,12 @@ export const buildMissionRun = ({
     totalDuration: adjustedTotalDuration,
     dungeonProgress: resumedDungeonProgress,
     memberIds: [...memberIds],
+    partyParticipants: Array.isArray(runOptions?.partyParticipants)
+      ? runOptions.partyParticipants.map((participant: AnyRecord) => ({
+          ...participant,
+        }))
+      : undefined,
+    lfgSearchId: runOptions?.lfgSearchId || undefined,
     chainContext: chainContext
       ? {
           ...chainContext,

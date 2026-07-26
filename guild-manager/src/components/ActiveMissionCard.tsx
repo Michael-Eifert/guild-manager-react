@@ -6,6 +6,7 @@ import {
 import { getRacePortraitUrl, getRoleIcon, getWowIconUrl } from "../utils";
 import type { Character } from "../types/characterTypes";
 import type { Mission } from "../types/missionTypes";
+import type { PartyParticipant } from "../social/chatTypes";
 
 type DungeonStepResult = { step?: number; outcome?: string };
 type ActiveMission = Mission & {
@@ -69,7 +70,7 @@ const ActiveMissionCard = ({
     Math.floor(Number(dungeonProgress?.maxAttempts) || 0),
   );
   const wipeCost = getMissionWipeCost(mission);
-  const partyMembers =
+  const legacyPartyMembers =
     mission.type === "dungeon" && mission.isRaid !== true
       ? (Array.isArray(mission.memberIds) ? mission.memberIds : [])
           .map((memberId) =>
@@ -79,6 +80,27 @@ const ActiveMissionCard = ({
           )
           .filter((member): member is Character => Boolean(member))
       : [];
+  const partyMembers: Array<PartyParticipant & Partial<Character>> =
+    Array.isArray(mission.partyParticipants) &&
+    mission.partyParticipants.length > 0
+      ? mission.partyParticipants.map((participant) => {
+          if (participant.source !== "guild") return participant;
+          const liveMember = roster.find(
+            (member) => String(member.id) === String(participant.id),
+          );
+          return { ...participant, ...(liveMember || {}) };
+        })
+      : legacyPartyMembers.map((member) => ({
+          ...member,
+          id: member.id,
+          source: "guild" as const,
+          name: member.name || "Unknown Hero",
+          level: member.level || 1,
+        }));
+  const guildPartyCount = partyMembers.filter(
+    (member) => member.source === "guild",
+  ).length;
+  const realmPartyCount = Math.max(0, partyMembers.length - guildPartyCount);
   return (
     <div
       className={`wow-card rounded flex flex-col gap-2 shadow-lg relative overflow-hidden border border-gray-600 bg-gray-800 ${
@@ -107,6 +129,51 @@ const ActiveMissionCard = ({
           {Math.max(1, chainPosition)}/{chainTotal})
         </div>
       )}
+      {mission.type !== "dungeon" &&
+        partyMembers.length > 0 &&
+        !compact && (
+          <div className="rounded border border-gray-700 bg-gray-900/60 p-2">
+            <div className="mb-2 text-[10px] font-bold uppercase tracking-wider text-gray-400">
+              Quest Party · {guildPartyCount} Guild / {realmPartyCount} Realm
+            </div>
+            <div className="grid grid-cols-1 gap-2 sm:grid-cols-2">
+              {partyMembers.map((member) => (
+                <div
+                  key={`${mission.instanceId || mission.id}-${member.id}`}
+                  className={`flex min-w-0 items-center gap-2 rounded border px-2 py-1.5 ${
+                    member.source === "guild"
+                      ? "border-amber-500/70 bg-amber-950/25"
+                      : "border-slate-700 bg-black/25"
+                  }`}
+                >
+                  <div className="min-w-0 flex-1">
+                    <div className="truncate text-xs font-bold text-slate-100">
+                      {member.name}
+                    </div>
+                    <div className="truncate text-[10px] text-gray-400">
+                      Level {member.level} {member.charClass}
+                      {member.source === "realm"
+                        ? ` · ${member.guildName || "Free Agent"}`
+                        : ""}
+                    </div>
+                  </div>
+                  <span
+                    className={`flex-none rounded border px-1.5 py-0.5 text-[9px] font-bold uppercase ${
+                      member.source === "guild"
+                        ? "border-amber-600/70 bg-amber-950/60 text-amber-200"
+                        : "border-slate-600 bg-slate-900 text-slate-300"
+                    }`}
+                  >
+                    {member.source === "guild" ? "Guild" : "Realm"}
+                  </span>
+                  <span className="flex-none text-[10px] text-gray-300">
+                    {getRoleIcon(member.role)} {member.role}
+                  </span>
+                </div>
+              ))}
+            </div>
+          </div>
+        )}
       {mission.type === "dungeon" && (
         <>
           <div className="text-[11px] text-gray-300">
@@ -116,7 +183,7 @@ const ActiveMissionCard = ({
           {mission.isRaid !== true && partyMembers.length > 0 && !compact && (
             <div className="rounded border border-gray-700 bg-gray-900/60 p-2">
               <div className="text-[10px] uppercase tracking-wider text-gray-400 font-bold mb-2">
-                Dungeon Party
+                Dungeon Party · {guildPartyCount} Guild / {realmPartyCount} Realm
               </div>
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
                 {partyMembers.map((member) => {
@@ -125,7 +192,11 @@ const ActiveMissionCard = ({
                   return (
                     <div
                       key={`${mission.instanceId || mission.id}-${member.id}`}
-                      className="flex items-center gap-2 min-w-0 rounded border border-gray-700 bg-black/25 px-2 py-1.5"
+                      className={`flex min-w-0 items-center gap-2 rounded border px-2 py-1.5 ${
+                        member.source === "guild"
+                          ? "border-amber-500/70 bg-amber-950/25 shadow-sm shadow-amber-950/40"
+                          : "border-slate-700 bg-black/25"
+                      }`}
                     >
                       <img
                         src={getRacePortraitUrl(member.race, member.gender)}
@@ -156,8 +227,20 @@ const ActiveMissionCard = ({
                         </div>
                         <div className="text-[10px] text-gray-400 truncate">
                           {member.race} {member.charClass}
+                          {member.source === "realm"
+                            ? ` · ${member.guildName || "Free Agent"}`
+                            : ""}
                         </div>
                       </div>
+                      <span
+                        className={`flex-none rounded border px-1.5 py-0.5 text-[9px] font-bold uppercase ${
+                          member.source === "guild"
+                            ? "border-amber-600/70 bg-amber-950/60 text-amber-200"
+                            : "border-slate-600 bg-slate-900 text-slate-300"
+                        }`}
+                      >
+                        {member.source === "guild" ? "Guild" : "Realm"}
+                      </span>
                       <div className="flex-none inline-flex items-center gap-1 rounded border border-gray-700 bg-gray-950/60 px-2 py-1 text-[10px] text-gray-200">
                         <span>{getRoleIcon(member.role)}</span>
                         <span>{member.role}</span>

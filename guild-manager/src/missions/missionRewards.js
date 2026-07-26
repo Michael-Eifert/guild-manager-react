@@ -22,7 +22,6 @@ const DEFAULT_DUNGEON_BONUS_DROPS = Object.freeze([
 
 export const createMissionRewardProcessor = ({
   dbItems,
-  dbClasses,
   getClassArmorTypes,
   isItemUsableByClass,
   getKeyLabel,
@@ -95,39 +94,6 @@ export const createMissionRewardProcessor = ({
     return itemWingKey === normalizeDungeonKey(mission?.dungeonWing);
   };
 
-  const getMissionLootCandidatesForCharacter = (mission, char, quality) => {
-    const classInfo = dbClasses?.[char?.charClass];
-    if (!classInfo) return [];
-
-    const allowedTypes = getClassArmorTypes(char.charClass, char.level);
-    const { minLevel, maxLevel } = getMissionLootLevelRange(mission);
-
-    return dbItems.filter((item) => {
-      if (item.quality !== quality) return false;
-      if (item.minLevel < minLevel || item.minLevel > maxLevel) return false;
-
-      if (!isItemUsableByClass(item, char?.charClass)) return false;
-
-      const typeOK = item.type === "Generic" || allowedTypes.includes(item.type);
-      if (!typeOK) return false;
-
-      const itemDungeonKeys = getItemDungeonKeys(item);
-      if (mission.type === "dungeon") {
-        if (itemDungeonKeys.length > 0) {
-          const missionKeys = new Set(getMissionDungeonKeys(mission));
-          const isMatchingDungeonLoot = itemDungeonKeys.some((key) =>
-            missionKeys.has(key),
-          );
-          if (!isMatchingDungeonLoot) return false;
-          if (!isMatchingDungeonWing(item, mission)) return false;
-        }
-        return true;
-      }
-
-      return itemDungeonKeys.length === 0;
-    });
-  };
-
   const getMissionLootCandidatesForQuality = (mission, quality, options = {}) => {
     const includeWorldDrops = options.includeWorldDrops === true;
     const dungeonOnly = options.dungeonOnly === true;
@@ -168,22 +134,6 @@ export const createMissionRewardProcessor = ({
   const getItemUpgradeGainForCharacter = (char, item) => {
     const currentItemLevel = getItemEffectiveLevel(char?.equipment?.[item.slot]);
     return getItemEffectiveLevel(item) - currentItemLevel;
-  };
-
-  const pickMissionLootForCharacter = (mission, char, quality, preferUpgrade = true) => {
-    let candidates = getMissionLootCandidatesForCharacter(mission, char, quality);
-    if (candidates.length === 0) return null;
-
-    if (preferUpgrade) {
-      const upgrades = candidates.filter(
-        (item) =>
-          getItemEffectiveLevel(item) >
-          getItemEffectiveLevel(char.equipment?.[item.slot]),
-      );
-      if (upgrades.length > 0) candidates = upgrades;
-    }
-
-    return candidates[Math.floor(Math.random() * candidates.length)];
   };
 
   const pickDungeonDropForParty = (mission, partyMembers, qualityPriority, options = {}) => {
@@ -278,19 +228,25 @@ export const createMissionRewardProcessor = ({
     if (partyMembers.length === 0) return { lootMap, discardedDrops: 0 };
 
     const rewardQualities = resolveMissionRewardQualities(mission);
-    partyMembers.forEach((member) => {
+    let discardedDrops = 0;
+    partyMembers.forEach(() => {
       const quality =
         rewardQualities[Math.floor(Math.random() * rewardQualities.length)] || 1;
-      const item = pickMissionLootForCharacter(mission, member, quality, true);
-      if (!item) return;
-      lootMap.get(member.id)?.push({
-        item,
+      const drop = pickDungeonDropForParty(mission, partyMembers, [quality], {
+        includeWorldDrops: true,
+      });
+      if (!drop?.item || drop.discarded || !drop.winnerId) {
+        discardedDrops += 1;
+        return;
+      }
+      lootMap.get(drop.winnerId)?.push({
+        item: drop.item,
         sourceBossName: null,
         sourceBossStep: null,
       });
     });
 
-    return { lootMap, discardedDrops: 0 };
+    return { lootMap, discardedDrops };
   };
 
   const getAwardedDungeonLootSteps = (mission) =>
@@ -513,7 +469,20 @@ export const createMissionRewardProcessor = ({
     failedMissionExpFactor,
   }) => {
     const memberIds = Array.isArray(mission?.memberIds) ? mission.memberIds : [];
-    const partyMembers = currentRoster.filter((c) => memberIds.includes(c.id));
+    const guildPartyMembers = currentRoster.filter((c) => memberIds.includes(c.id));
+    const externalPartyMembers = (
+      Array.isArray(mission?.partyParticipants)
+        ? mission.partyParticipants
+        : []
+    ).filter(
+      (participant) =>
+        participant?.source === "realm" &&
+        !guildPartyMembers.some(
+          (member) => String(member.id) === String(participant.id),
+        ),
+    );
+    const partyMembers = [...guildPartyMembers, ...externalPartyMembers];
+    const totalParticipantCount = Math.max(memberIds.length, partyMembers.length);
     const isDungeon = mission.type === "dungeon";
     const isZoneElite = mission?.isZoneElite === true;
     const dungeonBossCount = isDungeon ? getDungeonBossCount(mission) : 0;
@@ -544,12 +513,21 @@ export const createMissionRewardProcessor = ({
         ? Math.max(0, mission.payoutGold)
         : getMissionGoldReward(mission);
     const fullPartySocialBonus =
-      memberIds.length >= 5 ? activeFocusBonuses.fullPartyGoldMultiplier : 1;
+      totalParticipantCount >= 5
+        ? activeFocusBonuses.fullPartyGoldMultiplier
+        : 1;
+    const guildGoldShare =
+      totalParticipantCount > 0
+        ? Math.max(0, Math.min(1, memberIds.length / totalParticipantCount))
+        : 0;
     const missionGold = missionSucceeded
       ? Math.max(
           0,
           Math.floor(
-            baseMissionGold * activeGuildStats.goldMultiplier * fullPartySocialBonus,
+            baseMissionGold *
+              activeGuildStats.goldMultiplier *
+              fullPartySocialBonus *
+              guildGoldShare,
           ),
         )
       : 0;
@@ -580,7 +558,9 @@ export const createMissionRewardProcessor = ({
         successChance:
           typeof mission.successChance === "number" ? mission.successChance : null,
         failChance: typeof mission.failChance === "number" ? mission.failChance : null,
-        memberCount: memberIds.length,
+        memberCount: totalParticipantCount,
+        guildMemberCount: memberIds.length,
+        realmMemberCount: Math.max(0, totalParticipantCount - memberIds.length),
         bossesCleared: isDungeon ? dungeonClearedSteps : null,
         totalBosses: isDungeon ? dungeonBossCount : null,
       },
@@ -783,7 +763,21 @@ export const createMissionRewardProcessor = ({
     }
 
     const memberIds = Array.isArray(mission?.memberIds) ? mission.memberIds : [];
-    const partyMembers = currentRoster.filter((char) => memberIds.includes(char.id));
+    const guildPartyMembers = currentRoster.filter((char) =>
+      memberIds.includes(char.id),
+    );
+    const externalPartyMembers = (
+      Array.isArray(mission?.partyParticipants)
+        ? mission.partyParticipants
+        : []
+    ).filter(
+      (participant) =>
+        participant?.source === "realm" &&
+        !guildPartyMembers.some(
+          (member) => String(member.id) === String(participant.id),
+        ),
+    );
+    const partyMembers = [...guildPartyMembers, ...externalPartyMembers];
     const { lootMap, discardedDrops } = buildDungeonBossLootMap(
       mission,
       partyMembers,

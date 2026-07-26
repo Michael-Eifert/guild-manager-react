@@ -1,5 +1,6 @@
 import type { StashPolicy } from "../inventory/itemEvaluation";
 import type { GuildInventory } from "../types/itemTypes";
+import type { SocialState } from "../social/chatTypes";
 
 type StateRef<T> = { current: T };
 type UnknownRecord = Record<string, unknown>;
@@ -18,6 +19,7 @@ export type LoadedSession = {
   loadedGuildInventory: GuildInventory;
   loadedStashPolicy: StashPolicy;
   loadedMissionBoardState: Record<string, unknown>;
+  loadedSocialState: SocialState;
   loadedProgression: {
     gameTimeMs: number;
     isPaused: boolean;
@@ -41,6 +43,7 @@ export type SessionRefs = {
   stashPolicy?: StateRef<StashPolicy>;
   calendarState: StateRef<Record<string, unknown>>;
   raidLockouts?: StateRef<Record<string, unknown>>;
+  socialState?: StateRef<SocialState>;
   gameTime: StateRef<number>;
   lastRealTime: StateRef<number>;
   sessionFileInput: StateRef<HTMLInputElement | null>;
@@ -63,6 +66,7 @@ export type SessionSetters = {
   setMissionBoardState?: StateSetter;
   setCalendarState: StateSetter;
   setRaidLockouts?: StateSetter;
+  setSocialState?: StateSetter;
   setIsPaused: StateSetter;
   setGameSpeed: StateSetter;
   setGameTimeMs: StateSetter;
@@ -108,6 +112,7 @@ export const applyLoadedSessionToApp = ({
     loadedGuildInventory,
     loadedStashPolicy,
     loadedMissionBoardState,
+    loadedSocialState,
     loadedProgression,
     loadedCalendarState,
     loadedRaidLockouts,
@@ -131,6 +136,7 @@ export const applyLoadedSessionToApp = ({
   if (refs.stashPolicy) refs.stashPolicy.current = loadedStashPolicy || {};
   refs.calendarState.current = loadedCalendarState;
   if (refs.raidLockouts) refs.raidLockouts.current = loadedRaidLockouts || {};
+  if (refs.socialState) refs.socialState.current = loadedSocialState;
   refs.gameTime.current = loadedProgression.gameTimeMs;
   refs.lastRealTime.current = getCurrentTime();
 
@@ -160,6 +166,9 @@ export const applyLoadedSessionToApp = ({
   }
   setters.setCalendarState(loadedCalendarState);
   if (setters.setRaidLockouts) setters.setRaidLockouts(loadedRaidLockouts || {});
+  if (setters.setSocialState) {
+    setters.setSocialState(loadedSocialState || {});
+  }
   setters.setIsPaused(loadedProgression.isPaused);
   setters.setGameSpeed(clampGameSpeed(loadedProgression.gameSpeed));
   setters.setGameTimeMs(loadedProgression.gameTimeMs);

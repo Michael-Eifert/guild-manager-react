@@ -6,6 +6,8 @@ import AppErrorBoundary from "../../components/AppErrorBoundary";
 import LoadingFallback from "../../components/LoadingFallback";
 import AppShell from "../../components/shell/AppShell";
 import GameHeader from "../../components/shell/GameHeader";
+import ChatPanel from "../../components/chat/ChatPanel";
+import ChatPreview from "../../components/chat/ChatPreview";
 import { buildHomeNavigation } from "../../components/shell/homeNavigation";
 import { useGame } from "../../app/useGame";
 import { GUILD_POINT_LABEL } from "../../guildProgression";
@@ -19,6 +21,7 @@ import { ROUTES } from "../../routes";
 const AdventureBoardPage = lazy(() => import("../adventure-board/AdventureBoardPage"));
 const BattlefieldsPage = lazy(() => import("../battlefields/BattlefieldsPage"));
 const CalendarPage = lazy(() => import("../calendar/CalendarPage"));
+const ChatPage = lazy(() => import("../chat/ChatPage"));
 const DatabasePage = lazy(() => import("../database/DatabasePage"));
 const DashboardPage = lazy(() => import("../dashboard/DashboardPage"));
 const DungeonBoardPage = lazy(() => import("../dungeon-board/DungeonBoardPage"));
@@ -52,6 +55,7 @@ const HOME_ROUTE_PATHS = Object.freeze({
   PROFESSIONS: "professions",
   DATABASE: "database",
   GUILD_LOG: "guild-log",
+  CHAT: "chat",
 });
 
 export default function HomeRoot() {
@@ -62,6 +66,7 @@ export default function HomeRoot() {
     battlefieldState,
     bestGuildMemberSearchMatchId,
     calendarState,
+    chatAiSettings,
     currentCalendarDate,
     currentCalendarDayIndex,
     currentCalendarDayProgressPercent,
@@ -93,6 +98,7 @@ export default function HomeRoot() {
     handleCancelCalendarEvent,
     handleCancelCalendarSeries,
     handleChangeGuildFocus,
+    handleChatAiSettingsChange,
     handleClearAdventureGoal,
     handleCreateCalendarEvent,
     handleCreateCalendarSeries,
@@ -107,6 +113,7 @@ export default function HomeRoot() {
     handleLoadButtonClick,
     handleLoadSessionFile,
     handleLockCalendarEventRoster,
+    handleMarkChatRead,
     handleManualFinish,
     handleModeChange,
     handleProfChange,
@@ -120,6 +127,7 @@ export default function HomeRoot() {
     handleSellStashItem,
     handleStartCalendarEvent,
     handleTryAutoEquipFromGuildStash,
+    handleTestChatProvider,
     handleUpdateBackstory,
     handleUpdateCalendarEventRoster,
     handleUpgradeGuildTalent,
@@ -141,6 +149,7 @@ export default function HomeRoot() {
     realmApplicationCandidates,
     realmRecruitmentMarketStats,
     realmState,
+    socialState,
     roster,
     sessionFileInputRef,
     showDebug,
@@ -153,6 +162,7 @@ export default function HomeRoot() {
     stashPolicy,
     toggleDashboardSection,
     worldPvpState,
+    unreadChatCount,
   } = game;
   const {
     closeCharacterDetail,
@@ -188,6 +198,7 @@ export default function HomeRoot() {
     applicationCount: openRealmApplicationCount,
     activeDungeonCount: activeDungeonRunCount,
     activeBattlefieldCount,
+    unreadChatCount,
   });
   const guildName =
     guildSetup.name || getFactionFallbackManagerName(guildSetup.faction);
@@ -196,6 +207,15 @@ export default function HomeRoot() {
   return (
     <AppShell
       navigationItems={navigationItems}
+      chatUnreadCount={unreadChatCount}
+      chatPanel={
+        <ChatPanel
+          socialState={socialState}
+          guildName={guildName}
+          onMarkRead={handleMarkChatRead}
+          compact
+        />
+      }
       header={
         <GameHeader
           guildName={guildName}
@@ -234,6 +254,12 @@ export default function HomeRoot() {
             index
             element={
               <DashboardPage
+                chatPreview={
+                  <ChatPreview
+                    socialState={socialState}
+                    unreadCount={unreadChatCount}
+                  />
+                }
                 guildActivityModeSummary={guildActivityModeSummary}
                 dashboardSectionsOpen={dashboardSectionsOpen}
                 onToggleDashboardSection={toggleDashboardSection}
@@ -267,6 +293,16 @@ export default function HomeRoot() {
                 hasGuildMemberSearchMatch={hasGuildMemberSearchMatch}
                 bestGuildMemberSearchMatchId={bestGuildMemberSearchMatchId}
                 onSelectCharacter={selectCharacter}
+              />
+            }
+          />
+          <Route
+            path={HOME_ROUTE_PATHS.CHAT}
+            element={
+              <ChatPage
+                socialState={socialState}
+                guildName={guildName}
+                onMarkRead={handleMarkChatRead}
               />
             }
           />
@@ -460,6 +496,9 @@ export default function HomeRoot() {
             onSaveSession={handleSaveSession}
             onLoadSession={handleLoadButtonClick}
             onOpenDebug={openDebug}
+            chatAiSettings={chatAiSettings}
+            onChatAiSettingsChange={handleChatAiSettingsChange}
+            onTestChatProvider={handleTestChatProvider}
           />
         )}
 

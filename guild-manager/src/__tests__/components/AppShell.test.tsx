@@ -5,6 +5,7 @@ import {
   Castle,
   Home,
   Map,
+  MessageCircle,
   ScrollText,
   Shield,
   UserPlus,
@@ -25,6 +26,15 @@ afterEach(() => {
 });
 
 const createNavigationItems = (): NavigationItem[] => [
+  {
+    id: "chat",
+    label: "Chat",
+    icon: MessageCircle,
+    group: "overview",
+    kind: "route",
+    to: "/home/chat",
+    badge: 4,
+  },
   {
     id: "home",
     label: "Home",
@@ -181,7 +191,7 @@ describe("AppShell", () => {
       ),
     ).toBe("true");
     await user.click(within(dialog).getByRole("button", { name: "Guild" }));
-    await user.click(within(dialog).getByRole("button", { name: "Database" }));
+    await user.click(within(dialog).getByRole("button", { name: "Chat" }));
     await user.click(within(dialog).getByRole("button", { name: "Save" }));
 
     expect(screen.queryByRole("dialog", { name: "More navigation" })).toBeNull();
@@ -189,14 +199,14 @@ describe("AppShell", () => {
       within(screen.getByTestId("mobile-navigation"))
         .getAllByRole("link")
         .map((link) => link.getAttribute("aria-label")),
-    ).toEqual(["Home", "Realm", "Recruit", "Database"]);
+    ).toEqual(["Home", "Realm", "Recruit", "Chat"]);
     expect(
       JSON.parse(
         window.localStorage.getItem(
           MOBILE_QUICK_NAVIGATION_STORAGE_KEY,
         ) || "[]",
       ),
-    ).toEqual(["realm", "recruit", "database"]);
+    ).toEqual(["realm", "recruit", "chat"]);
   });
 
   it("restores the saved shortcut order from local storage", () => {
@@ -212,5 +222,57 @@ describe("AppShell", () => {
         .getAllByRole("link")
         .map((link) => link.getAttribute("aria-label")),
     ).toEqual(["Home", "Database", "Missions", "Realm"]);
+  });
+
+  it("opens the medium-desktop chat overlay and shows unread messages", async () => {
+    const user = userEvent.setup();
+    render(
+      <MemoryRouter>
+        <AppShell
+          header={<div>Guild status</div>}
+          navigationItems={createNavigationItems()}
+          chatPanel={<div>Chat content</div>}
+          chatUnreadCount={7}
+        >
+          <div>Page content</div>
+        </AppShell>
+      </MemoryRouter>,
+    );
+
+    const launcher = screen.getByRole("button", {
+      name: "Open character chat",
+    });
+    expect(within(launcher).getByText("7")).toBeTruthy();
+    await user.click(launcher);
+    expect(
+      screen.getByRole("dialog", { name: "Character chat" }),
+    ).toBeTruthy();
+    await user.click(
+      screen.getByRole("button", { name: "Close character chat" }),
+    );
+    expect(
+      screen.queryByRole("dialog", { name: "Character chat" }),
+    ).toBeNull();
+  });
+
+  it("does not duplicate supplemental chat UI on the full chat route", () => {
+    render(
+      <MemoryRouter initialEntries={["/home/chat"]}>
+        <AppShell
+          header={<div>Guild status</div>}
+          navigationItems={createNavigationItems()}
+          chatPanel={<div>Dock chat content</div>}
+          chatUnreadCount={7}
+        >
+          <div>Full chat page</div>
+        </AppShell>
+      </MemoryRouter>,
+    );
+
+    expect(
+      screen.queryByRole("button", { name: "Open character chat" }),
+    ).toBeNull();
+    expect(screen.queryByText("Dock chat content")).toBeNull();
+    expect(screen.getByText("Full chat page")).toBeTruthy();
   });
 });

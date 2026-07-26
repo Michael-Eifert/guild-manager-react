@@ -7,6 +7,7 @@ import {
 import { normalizeAdventureGoalQueue } from "../automation/adventureGoals";
 import { normalizeRaidLockouts } from "../raids/raidLockouts";
 import { normalizeGuildRelationships } from "../social/relationshipSystem";
+import { ensureSocialState } from "../social/socialSimulation";
 import { ensureRealmState } from "../server/realmGeneration";
 import { normalizeCharacterPersonalityTraits } from "../game/characterPersonality";
 import { ensureCharacterPvpData } from "../pvp/pvpCharacterUtils";
@@ -42,6 +43,23 @@ const DEFAULT_MISSION_BOARD_STATE = Object.freeze({
   consumableMode: "none",
 });
 const MISSION_CONSUMABLE_MODES = new Set(["none", "basic", "best"]);
+
+export const normalizePersistedSocialState = (socialState) => {
+  const normalized = ensureSocialState(socialState);
+  return ensureSocialState({
+    ...normalized,
+    messages: normalized.messages.map((message) =>
+      message.generationStatus === "pending"
+        ? {
+            ...message,
+            text: message.fallbackText,
+            textSource: "template",
+            generationStatus: "ready",
+          }
+        : message,
+    ),
+  });
+};
 
 const toObject = (value) =>
   value && typeof value === "object" ? value : {};
@@ -235,6 +253,7 @@ export const buildSessionPayload = ({
   calendarState,
   raidLockouts,
   missionBoardState,
+  socialState,
   gameSpeed,
   isPaused,
   gameTimeMs,
@@ -274,6 +293,7 @@ export const buildSessionPayload = ({
         now,
       ),
       missionBoardState: normalizeMissionBoardState(missionBoardState),
+      socialState: normalizePersistedSocialState(socialState),
       raidLockouts: normalizeRaidLockouts(
         raidLockouts,
         Math.max(
@@ -406,6 +426,9 @@ export const hydrateSessionData = ({
   );
   const loadedMissionBoardState = normalizeMissionBoardState(
     safePayload.missionBoardState,
+  );
+  const loadedSocialState = normalizePersistedSocialState(
+    safePayload.socialState,
   );
 
   const loadedActiveMissions = Array.isArray(safePayload.activeMissions)
@@ -547,6 +570,7 @@ export const hydrateSessionData = ({
     loadedGuildInventory,
     loadedStashPolicy,
     loadedMissionBoardState,
+    loadedSocialState,
     loadedProgression,
     loadedCalendarState,
     loadedRaidLockouts,

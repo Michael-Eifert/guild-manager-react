@@ -15,4 +15,5 @@ export const ROUTES = Object.freeze({
   PROFESSIONS: "/home/professions",
   DATABASE: "/home/database",
   GUILD_LOG: "/home/guild-log",
+  CHAT: "/home/chat",
 });

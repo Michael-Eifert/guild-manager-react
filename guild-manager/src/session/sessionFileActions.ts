@@ -1,5 +1,6 @@
 import type { ChangeEvent, RefObject } from "react";
 import type { MissionInput } from "../types/missionTypes";
+import type { SocialState } from "../social/chatTypes";
 
 import {
   buildSessionPayload,
@@ -25,6 +26,7 @@ export type SessionState = {
   calendarState: Record<string, unknown>;
   raidLockouts: Record<string, unknown>;
   missionBoardState: Record<string, unknown>;
+  socialState: SocialState;
   gameSpeed: number;
   isPaused: boolean;
   gameTimeMs: number;

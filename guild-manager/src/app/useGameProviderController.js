@@ -132,6 +132,24 @@ import {
   updateRelationshipsForSharedActivity,
 } from "../social/relationshipSystem";
 import {
+  advanceSocialSimulation,
+  completeLfgMission,
+  createInitialSocialState,
+  ensureSocialState,
+  getUnreadChatCount,
+  markChatChannelRead,
+  markLfgSearchStarted,
+  resolveChatMessageText,
+} from "../social/socialSimulation";
+import {
+  CHAT_AI_MAX_QUEUE_SIZE,
+  createChatTextProvider,
+  generateChatTextWithTimeout,
+  loadChatAiSettings,
+  saveChatAiSettings,
+  testChatProviderConnection,
+} from "../social/chatProviders";
+import {
   ZONE_PROGRESS_CHECKPOINTS,
   getZoneById,
   getZoneExpMultiplier,
@@ -336,6 +354,13 @@ export const useGameProviderController = () => {
   const [battlefieldState, setBattlefieldState, battlefieldStateRef] = useSynchronizedState(() =>
     ensureBattlefieldState(null),
   );
+  const [socialState, setSocialState, socialStateRef] = useSynchronizedState(() =>
+    createInitialSocialState(),
+  );
+  const [chatAiSettings, setChatAiSettings] = useState(loadChatAiSettings);
+  const chatAiSettingsRef = useRef(chatAiSettings);
+  const chatGenerationBusyRef = useRef(false);
+  const chatGenerationTokenRef = useRef(0);
   const [guildInventory, setGuildInventory, guildInventoryRef] = useSynchronizedState(() =>
     ensureGuildInventory(null),
   );
@@ -415,6 +440,101 @@ export const useGameProviderController = () => {
   useEffect(() => {
     lastRealTimeRef.current = services.now();
   }, [isPaused, gameSpeed]);
+  useEffect(() => {
+    chatAiSettingsRef.current = chatAiSettings;
+  }, [chatAiSettings]);
+
+  const pendingChatMessageId =
+    socialState.messages.find(
+      (message) => message.generationStatus === "pending",
+    )?.id || null;
+  useEffect(() => {
+    if (isPaused) return undefined;
+    if (chatGenerationBusyRef.current) return undefined;
+    const currentMessages = socialStateRef.current.messages;
+    const pendingMessages = currentMessages.filter(
+      (message) => message.generationStatus === "pending",
+    );
+    if (pendingMessages.length === 0) return undefined;
+
+    const provider = createChatTextProvider({ settings: chatAiSettings });
+    const shouldUseFallback =
+      !provider ||
+      gameSpeed > 4 ||
+      pendingMessages.length > CHAT_AI_MAX_QUEUE_SIZE;
+    const message = pendingMessages[0];
+    if (shouldUseFallback) {
+      const nextState = resolveChatMessageText({
+        socialState: socialStateRef.current,
+        messageId: message.id,
+        text: message.fallbackText,
+        source: "template",
+      });
+      socialStateRef.current = nextState;
+      setSocialState(nextState);
+      return undefined;
+    }
+
+    let cancelled = false;
+    const generationToken = chatGenerationTokenRef.current + 1;
+    chatGenerationTokenRef.current = generationToken;
+    chatGenerationBusyRef.current = true;
+    const recentMessages = currentMessages
+      .filter(
+        (entry) =>
+          entry.sequence < message.sequence &&
+          entry.generationStatus === "ready",
+      )
+      .slice(-4);
+    generateChatTextWithTimeout({
+      provider,
+      message,
+      recentMessages,
+    })
+      .then((text) => {
+        if (
+          cancelled ||
+          generationToken !== chatGenerationTokenRef.current
+        ) {
+          return;
+        }
+        chatGenerationBusyRef.current = false;
+        const nextState = resolveChatMessageText({
+          socialState: socialStateRef.current,
+          messageId: message.id,
+          text: text || message.fallbackText,
+          source: chatAiSettings.provider,
+        });
+        socialStateRef.current = nextState;
+        setSocialState(nextState);
+      })
+      .catch(() => {
+        if (
+          cancelled ||
+          generationToken !== chatGenerationTokenRef.current
+        ) {
+          return;
+        }
+        chatGenerationBusyRef.current = false;
+        const nextState = resolveChatMessageText({
+          socialState: socialStateRef.current,
+          messageId: message.id,
+          text: message.fallbackText,
+          source: "template",
+        });
+        socialStateRef.current = nextState;
+        setSocialState(nextState);
+      })
+      .finally(() => {
+        if (generationToken === chatGenerationTokenRef.current) {
+          chatGenerationBusyRef.current = false;
+        }
+      });
+    return () => {
+      cancelled = true;
+      chatGenerationBusyRef.current = false;
+    };
+  }, [chatAiSettings, gameSpeed, isPaused, pendingChatMessageId]);
   const normalizeRosterZones = useCallback(
     (
       rosterSnapshot,
@@ -930,6 +1050,7 @@ export const useGameProviderController = () => {
       let currentBattlefieldState = ensureBattlefieldState(
         battlefieldStateRef.current,
       );
+      let currentSocialState = ensureSocialState(socialStateRef.current);
       let nextGuildInventory = ensureGuildInventory(guildInventoryRef.current);
 
       const playerMarket = resolvePlayerGuildDeparturesForDay({
@@ -1098,6 +1219,15 @@ export const useGameProviderController = () => {
         rewardedMissionIdsRef.current.add(missionInstanceId);
 
         const result = processMissionRewards(m, newRoster);
+        currentSocialState = completeLfgMission({
+          socialState: currentSocialState,
+          mission: m,
+          succeeded: result.missionSucceeded,
+          now,
+          deferText:
+            chatAiSettingsRef.current.provider !== "templates" &&
+            gameSpeed <= 4,
+        });
         recordMissionRelationships(m, result.missionSucceeded);
         if (m?.isRaid === true) {
           const nextRaidLockouts = updateRaidLockoutProgress({
@@ -1440,6 +1570,90 @@ export const useGameProviderController = () => {
         });
       });
 
+      const socialAdvance = advanceSocialSimulation({
+        socialState: currentSocialState,
+        now,
+        roster: newRoster,
+        realmState: realmStateRef.current,
+        activeMissions: newMissions,
+        missionList: missionListRef.current,
+        guildSetup: guildSetupRef.current,
+        deferText:
+          chatAiSettingsRef.current.provider !== "templates" &&
+          gameSpeed <= 4,
+      });
+      currentSocialState = socialAdvance.socialState;
+      newRoster = socialAdvance.roster;
+      socialAdvance.readyGroups.forEach((group) => {
+        const busyMemberIds = getActiveMissionMemberIdSet(newMissions);
+        if (
+          group.guildMemberIds.length === 0 ||
+          group.guildMemberIds.some((memberId) =>
+            busyMemberIds.has(String(memberId)),
+          )
+        ) {
+          return;
+        }
+        const partyMembers = group.participants.map((participant) => {
+          if (participant.source !== "guild") return participant;
+          return (
+            newRoster.find(
+              (member) => String(member.id) === String(participant.id),
+            ) || participant
+          );
+        });
+        const missionRun = buildMissionRun(
+          group.mission,
+          group.guildMemberIds,
+          now,
+          newRoster,
+          null,
+          {
+            partyMembers,
+            partyParticipants: group.participants,
+            lfgSearchId: group.searchId,
+          },
+        );
+        newRoster = newRoster.map((member) =>
+          group.guildMemberIds.includes(member.id)
+            ? {
+                ...member,
+                status: "Questing",
+                statusText: `LFG: ${
+                  group.mission.dungeonWing ||
+                  group.mission.name ||
+                  "Group Mission"
+                }`,
+                autoDungeonLastStartedAt: now,
+                autoDungeonLastMissionId: String(group.mission.id ?? ""),
+              }
+            : member,
+        );
+        newMissions.push(missionRun);
+        currentSocialState = markLfgSearchStarted({
+          socialState: currentSocialState,
+          searchId: group.searchId,
+          missionInstanceId: missionRun.instanceId,
+          now,
+          deferText:
+            chatAiSettingsRef.current.provider !== "templates" &&
+            gameSpeed <= 4,
+        });
+        newLogs.push({
+          type: "lfg",
+          missionName: group.mission.name,
+          message: `${group.guildMemberIds.length} guild member${
+            group.guildMemberIds.length === 1 ? "" : "s"
+          } joined ${
+            group.participants.length - group.guildMemberIds.length
+          } realm adventurer${
+            group.participants.length - group.guildMemberIds.length === 1
+              ? ""
+              : "s"
+          } for ${group.mission.dungeonWing || group.mission.name}.`,
+        });
+      });
+
       const conservativePvpQueue = resolveAutoBattlefieldQueue({
         battlefieldState: currentBattlefieldState,
         roster: newRoster,
@@ -1488,6 +1702,7 @@ export const useGameProviderController = () => {
         );
         if (
           normalizedChar.status === "Questing" ||
+          normalizedChar.status === "LFG" ||
           normalizedChar.status === BATTLEFIELD_CHARACTER_STATUS
         ) {
           return normalizedChar;
@@ -1850,8 +2065,10 @@ export const useGameProviderController = () => {
 
       rosterRef.current = newRoster;
       missionsRef.current = newMissions;
+      socialStateRef.current = currentSocialState;
       setRoster(newRoster);
       setActiveMissions(newMissions);
+      setSocialState(currentSocialState);
       setWorldPvpState(nextWorldPvpState);
       setBattlefieldState(currentBattlefieldState);
       if (
@@ -1927,7 +2144,10 @@ export const useGameProviderController = () => {
       faction: guildSetupRef.current?.faction || GUILD_FACTION.ALLIANCE,
       tier,
       count: scoutCount,
-      excludedPlayerIds: [...applicationPlayerIds],
+      excludedPlayerIds: [
+        ...applicationPlayerIds,
+        ...ensureSocialState(socialStateRef.current).reservedRealmPlayerIds,
+      ],
       excludedNames: [...usedNameSet],
       random: services.random,
     })
@@ -1995,7 +2215,10 @@ export const useGameProviderController = () => {
     })
       .filter(
         ({ player }) =>
-          !usedNameSet.has(String(player?.name || "").trim().toLowerCase()),
+          !usedNameSet.has(String(player?.name || "").trim().toLowerCase()) &&
+          !ensureSocialState(socialState).reservedRealmPlayerIds.includes(
+            String(player?.id || ""),
+          ),
       )
       .map(buildRealmRecruitmentCandidate);
   }, [
@@ -2003,6 +2226,7 @@ export const useGameProviderController = () => {
     guildSetup.faction,
     realmState,
     roster,
+    socialState,
   ]);
 
   const realmRecruitmentMarketStats = useMemo(
@@ -2016,6 +2240,9 @@ export const useGameProviderController = () => {
 
   const handleRecruit = (chars, tier = {}) => {
     const recruitCostGold = Math.max(1, Number(tier?.recruitCostGold) || 1);
+    const reservedRealmPlayerIds = new Set(
+      ensureSocialState(socialStateRef.current).reservedRealmPlayerIds,
+    );
     const {
       recruits,
       skippedDuplicateCount,
@@ -2026,7 +2253,10 @@ export const useGameProviderController = () => {
       resolveRecruitmentResult({
         currentRoster: rosterRef.current,
         currentGold: goldRef.current,
-        selectedCandidates: chars,
+        selectedCandidates: (Array.isArray(chars) ? chars : []).filter(
+          (candidate) =>
+            !reservedRealmPlayerIds.has(String(candidate?.realmPlayerId || "")),
+        ),
         maxRoster: guildDerivedStats.maxRoster,
         recruitCostGold,
       });
@@ -2078,9 +2308,15 @@ export const useGameProviderController = () => {
       0,
       guildDerivedStats.maxRoster - rosterRef.current.length,
     );
+    const reservedRealmPlayerIds = new Set(
+      ensureSocialState(socialStateRef.current).reservedRealmPlayerIds,
+    );
     const uniqueCandidates = filterUniqueRecruitmentCandidates({
       currentRoster: rosterRef.current,
-      selectedCandidates: chars,
+      selectedCandidates: (Array.isArray(chars) ? chars : []).filter(
+        (candidate) =>
+          !reservedRealmPlayerIds.has(String(candidate?.realmPlayerId || "")),
+      ),
     });
     const recruits = uniqueCandidates
       .slice(0, openSlots)
@@ -2402,6 +2638,7 @@ export const useGameProviderController = () => {
     );
     const starterGold = STARTING_GUILD_GOLD;
     const calendarStart = createInitialCalendarState(gameTimeRef.current);
+    const starterSocialState = createInitialSocialState();
 
     rewardedMissionIdsRef.current = new Set();
     autoDungeonStateRef.current = { nextAttemptAt: 0 };
@@ -2411,6 +2648,7 @@ export const useGameProviderController = () => {
     guildRelationshipsRef.current = {};
     calendarStateRef.current = calendarStart;
     raidLockoutsRef.current = {};
+    socialStateRef.current = starterSocialState;
     const starterRealmState = ensureRealmState(null, guildSetup, 0);
     realmStateRef.current = starterRealmState;
     setRoster(starterRoster);
@@ -2418,6 +2656,7 @@ export const useGameProviderController = () => {
     setCalendarState(calendarStart);
     setRaidLockouts({});
     setRealmState(starterRealmState);
+    setSocialState(starterSocialState);
     setMissionList(
       getMissionListWithZones(INITIAL_MISSIONS.map(cloneMissionTemplate)),
     );
@@ -3648,7 +3887,7 @@ export const useGameProviderController = () => {
       roster, activeMissions, missionList, guildLog, guildGold, guildProgress,
       guildSetup, guildRelationships, realmState, worldPvpState, battlefieldState,
       guildInventory, stashPolicy, calendarState, raidLockouts, missionBoardState,
-      gameSpeed, isPaused,
+      socialState, gameSpeed, isPaused,
     },
     refs: {
       rewardedMissionIds: rewardedMissionIdsRef, roster: rosterRef,
@@ -3658,6 +3897,7 @@ export const useGameProviderController = () => {
       battlefieldState: battlefieldStateRef, guildInventory: guildInventoryRef,
       stashPolicy: stashPolicyRef, calendarState: calendarStateRef,
       raidLockouts: raidLockoutsRef, gameTime: gameTimeRef,
+      socialState: socialStateRef,
       lastRealTime: lastRealTimeRef, sessionFileInput: sessionFileInputRef,
     },
     setters: {
@@ -3665,7 +3905,7 @@ export const useGameProviderController = () => {
       setGuildProgress, setGuildSetup, setGuildRelationships, setRealmState,
       setWorldPvpState, setBattlefieldState, setGuildInventory, setStashPolicy,
       setMissionBoardState, setCalendarState, setRaidLockouts, setIsPaused,
-      setGameSpeed, setGameTimeMs, setDetailCharId,
+      setSocialState, setGameSpeed, setGameTimeMs, setDetailCharId,
     },
     closeOverlays: () => {
       setShowRecruit(false);
@@ -3723,6 +3963,26 @@ export const useGameProviderController = () => {
   );
   const openRecruitSlots = Math.max(0, guildDerivedStats.maxRoster - roster.length);
   const openRealmApplicationCount = realmApplicationCandidates.length;
+  const unreadChatCount = getUnreadChatCount(socialState);
+  const handleChatAiSettingsChange = useCallback((nextSettings) => {
+    const savedSettings = saveChatAiSettings(nextSettings);
+    chatAiSettingsRef.current = savedSettings;
+    setChatAiSettings(savedSettings);
+    return savedSettings;
+  }, []);
+  const handleTestChatProvider = useCallback(
+    (settings = chatAiSettingsRef.current) =>
+      testChatProviderConnection({ settings }),
+    [],
+  );
+  const handleMarkChatRead = useCallback((channel) => {
+    const nextSocialState = markChatChannelRead(
+      socialStateRef.current,
+      channel,
+    );
+    socialStateRef.current = nextSocialState;
+    setSocialState(nextSocialState);
+  }, []);
 
   const actionsRef = useRef({});
   Object.assign(actionsRef.current, {
@@ -3852,6 +4112,12 @@ export const useGameProviderController = () => {
     realmApplicationCandidates,
     realmRecruitmentMarketStats,
     realmState,
+    socialState,
+    chatAiSettings,
+    handleChatAiSettingsChange,
+    handleTestChatProvider,
+    unreadChatCount,
+    handleMarkChatRead,
     roster,
     sessionFileInputRef,
     showDebug,
