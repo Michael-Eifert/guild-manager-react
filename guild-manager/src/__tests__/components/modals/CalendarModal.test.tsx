@@ -11,6 +11,35 @@ import {
 } from "../componentTestUtils";
 
 describe("CalendarModal", () => {
+  it("renders an empty calendar before raid missions or events are available", () => {
+    const html = render(
+      <CalendarModal
+        isOpen
+        variant="page"
+        onClose={noop}
+        calendarState={{
+          calendarEvents: [],
+          calendarSeries: [],
+        }}
+        currentDayIndex={0}
+        missionList={[]}
+        roster={roster}
+        activeMissions={[]}
+        raidLockouts={{}}
+        onCreateEvent={noop}
+        onCreateSeries={noop}
+        onUpdateEventRoster={noop}
+        onLockEventRoster={noop}
+        onCancelEvent={noop}
+        onCancelSeries={noop}
+        onStartEvent={noop}
+      />,
+    );
+
+    expect(html).toContain("Guild Calendar");
+    expect(html).toContain("No raid events planned.");
+  });
+
   it("renders raid scheduling controls", () => {
     const html = render(
       <CalendarModal

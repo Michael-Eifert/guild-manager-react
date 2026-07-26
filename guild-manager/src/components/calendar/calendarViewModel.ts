@@ -25,10 +25,12 @@ export const CALENDAR_AUTO_SELECT_MODE_LABEL = Object.fromEntries(
   CALENDAR_AUTO_SELECT_MODE_OPTIONS.map((option) => [option.value, option.label]),
 );
 
-export const getMissionRoleRequirement = (mission: Mission): RoleCounts => ({
-  Tank: Math.max(0, Math.floor(Number((mission.raidRoleRequirement as Partial<RoleCounts>)?.Tank) || 0)),
-  Healer: Math.max(0, Math.floor(Number((mission.raidRoleRequirement as Partial<RoleCounts>)?.Healer) || 0)),
-  DPS: Math.max(0, Math.floor(Number((mission.raidRoleRequirement as Partial<RoleCounts>)?.DPS) || 0)),
+export const getMissionRoleRequirement = (
+  mission: Mission | null | undefined,
+): RoleCounts => ({
+  Tank: Math.max(0, Math.floor(Number((mission?.raidRoleRequirement as Partial<RoleCounts>)?.Tank) || 0)),
+  Healer: Math.max(0, Math.floor(Number((mission?.raidRoleRequirement as Partial<RoleCounts>)?.Healer) || 0)),
+  DPS: Math.max(0, Math.floor(Number((mission?.raidRoleRequirement as Partial<RoleCounts>)?.DPS) || 0)),
 });
 export const getRoleCounts = (members: readonly Character[]): RoleCounts =>
   (Array.isArray(members) ? members : []).reduce(
