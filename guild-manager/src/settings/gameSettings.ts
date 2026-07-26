@@ -21,3 +21,20 @@ export const normalizeGameSettings = (
         : DEFAULT_GAME_SETTINGS.offlineSimulationEnabled,
   };
 };
+
+export const clearPersistedOfflineStatuses = <
+  T extends { status?: unknown; statusText?: unknown },
+>(
+  characters: T[],
+): T[] =>
+  characters.map((character) => {
+    if (character.status !== "Offline") return character;
+    const staleScheduleText = String(character.statusText || "").startsWith(
+      "Next login:",
+    );
+    return {
+      ...character,
+      status: "Idle",
+      ...(staleScheduleText ? { statusText: "Awaiting Orders" } : {}),
+    };
+  });

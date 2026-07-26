@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 
 import {
+  clearPersistedOfflineStatuses,
   DEFAULT_GAME_SETTINGS,
   normalizeGameSettings,
 } from "../settings/gameSettings";
@@ -32,5 +33,21 @@ describe("game settings", () => {
     expect(payload.data.gameSettings).toEqual({
       offlineSimulationEnabled: false,
     });
+  });
+
+  it("clears stale display-only offline statuses without touching activities", () => {
+    const roster = clearPersistedOfflineStatuses([
+      {
+        id: "stale",
+        status: "Offline",
+        statusText: "Next login: Day 2, 08:00 · Regular",
+      },
+      { id: "mission", status: "Questing", statusText: "On Mission" },
+    ]);
+
+    expect(roster).toEqual([
+      { id: "stale", status: "Idle", statusText: "Awaiting Orders" },
+      { id: "mission", status: "Questing", statusText: "On Mission" },
+    ]);
   });
 });

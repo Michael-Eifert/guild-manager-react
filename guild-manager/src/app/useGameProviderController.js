@@ -98,6 +98,7 @@ import {
   shouldUseAutoFastForward,
 } from "../activity/characterOnline";
 import {
+  clearPersistedOfflineStatuses,
   DEFAULT_GAME_SETTINGS,
   normalizeGameSettings,
 } from "../settings/gameSettings";
@@ -4619,6 +4620,9 @@ export const useGameProviderController = () => {
     });
     gameSettingsRef.current = normalized;
     setGameSettings(normalized);
+    if (!normalized.offlineSimulationEnabled) {
+      setRoster(clearPersistedOfflineStatuses);
+    }
     return normalized;
   }, []);
   const handleTestChatProvider = useCallback(

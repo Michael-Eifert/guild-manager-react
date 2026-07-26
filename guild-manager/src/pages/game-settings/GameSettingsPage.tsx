@@ -153,6 +153,9 @@ export default function GameSettingsPage({
             onPrepareNaxxramasTestGuild={
               debugActions.prepareNaxxramasTestGuild
             }
+            onTurnEveryoneOnline={() =>
+              onGameSettingsChange({ offlineSimulationEnabled: false })
+            }
             onReloadDatabase={debugActions.reloadDatabase}
           />
         </div>

@@ -1,5 +1,12 @@
 import { useState } from "react";
-import { Bug, Coins, Database, ShieldPlus, Users } from "lucide-react";
+import {
+  Bug,
+  Coins,
+  Database,
+  ShieldPlus,
+  UserCheck,
+  Users,
+} from "lucide-react";
 
 import {
   DEBUG_PRESET_OPTIONS,
@@ -36,6 +43,7 @@ type Props = {
   onPrepareMoltenCoreTestGuild?: () => void;
   onPrepareBlackwingLairTestGuild?: () => void;
   onPrepareNaxxramasTestGuild?: () => void;
+  onTurnEveryoneOnline: () => void;
   onReloadDatabase: () => void;
 };
 
@@ -52,6 +60,7 @@ export default function DebugSettingsPanel({
   onPrepareMoltenCoreTestGuild,
   onPrepareBlackwingLairTestGuild,
   onPrepareNaxxramasTestGuild,
+  onTurnEveryoneOnline,
   onReloadDatabase,
 }: Props) {
   const [selectedPreset, setSelectedPreset] = useState(
@@ -126,6 +135,29 @@ export default function DebugSettingsPanel({
               +10 Renown
             </GameButton>
           </div>
+        </section>
+
+        <section className={panel}>
+          <h3 className="flex items-center gap-2 text-sm font-bold text-slate-100">
+            <UserCheck
+              size={17}
+              className="text-emerald-300"
+              aria-hidden="true"
+            />
+            Online Status
+          </h3>
+          <p className="mt-2 text-xs leading-relaxed text-slate-400">
+            Disable offline schedules and make every available character
+            immediately count as online.
+          </p>
+          <GameButton
+            tone="success"
+            fullWidth
+            className="mt-3"
+            onClick={onTurnEveryoneOnline}
+          >
+            Turn Everyone Online
+          </GameButton>
         </section>
 
         <section className={panel}>

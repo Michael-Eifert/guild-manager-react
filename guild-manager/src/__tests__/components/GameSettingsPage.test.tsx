@@ -49,5 +49,12 @@ describe("GameSettingsPage", () => {
     fireEvent.click(screen.getByRole("button", { name: "Debug" }));
     expect(screen.getByText("Debug Tools")).toBeTruthy();
     expect(screen.getByRole("button", { name: "+10 Gold" })).toBeTruthy();
+
+    fireEvent.click(
+      screen.getByRole("button", { name: "Turn Everyone Online" }),
+    );
+    expect(onGameSettingsChange).toHaveBeenLastCalledWith({
+      offlineSimulationEnabled: false,
+    });
   });
 });

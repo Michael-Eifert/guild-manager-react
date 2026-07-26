@@ -223,7 +223,6 @@ export default function HomeRoot() {
       nextLoginHour: online.nextLoginHour,
       ...(online.status === "Offline"
         ? {
-            status: "Offline",
             statusText: `Next login: Day ${online.nextLoginDayIndex + 1}, ${String(
               Math.floor(online.nextLoginHour),
             ).padStart(2, "0")}:00 · ${online.profileLabel}`,
