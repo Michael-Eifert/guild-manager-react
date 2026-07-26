@@ -10,6 +10,11 @@ import {
   getRecruitmentCapacity,
   getRecruitmentTierOptions,
 } from "../../recruitment/recruitmentLogic";
+import {
+  DEFAULT_RECRUITMENT_SCOUT_FOCUS,
+  RECRUITMENT_SCOUT_FOCUS_OPTIONS,
+} from "../../recruitment/scoutingFocus";
+import SegmentedControl from "../ui/SegmentedControl";
 import BaseModal from "./BaseModal";
 
 const SCOUT_COUNT_MIN = 5;
@@ -47,6 +52,9 @@ const RecruitModal = ({
   const [selectedTierId, setSelectedTierId] = useState("level_1_10");
   const [activeTier, setActiveTier] = useState(null);
   const [scoutCount, setScoutCount] = useState(SCOUT_COUNT_MIN);
+  const [scoutFocus, setScoutFocus] = useState(
+    DEFAULT_RECRUITMENT_SCOUT_FOCUS,
+  );
   const [scoutMessage, setScoutMessage] = useState("");
 
   const recruitmentTierOptions = useMemo(
@@ -85,6 +93,7 @@ const RecruitModal = ({
     setLimitWarning(false);
     setActiveTier(null);
     setScoutCount(SCOUT_COUNT_MIN);
+    setScoutFocus(DEFAULT_RECRUITMENT_SCOUT_FOCUS);
     setScoutMessage("");
     setSelectedTierId("level_1_10");
   }, [isOpen]);
@@ -112,6 +121,7 @@ const RecruitModal = ({
     window.setTimeout(() => {
       const scoutedCandidates = onScoutTier(tier, {
         count: scoutCount,
+        focus: scoutFocus,
         scoutCostGold: selectedScoutCostGold,
       });
       setActiveTier(tier);
@@ -290,6 +300,25 @@ const RecruitModal = ({
               </button>
             );
           })}
+        </div>
+
+        <div className="mb-3 rounded border border-gray-700 bg-gray-800/50 p-3">
+          <div className="mb-2">
+            <div className="text-xs font-bold uppercase tracking-wide text-yellow-200">
+              Scouting Focus
+            </div>
+            <p className="mt-1 text-[11px] text-gray-400">
+              Choose which roles the scouts should prioritize on their next search.
+            </p>
+          </div>
+          <SegmentedControl
+            ariaLabel="Scouting focus"
+            options={RECRUITMENT_SCOUT_FOCUS_OPTIONS}
+            value={scoutFocus}
+            onChange={setScoutFocus}
+            disabled={isLoading}
+            tone="amber"
+          />
         </div>
 
         <div className="grid grid-cols-1 gap-3 mb-6 rounded border border-gray-700 bg-gray-800/50 p-3 md:grid-cols-[1fr_auto] md:items-center">

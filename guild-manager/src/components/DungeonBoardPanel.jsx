@@ -17,6 +17,7 @@ import {
   getWowIconUrl,
 } from "../utils";
 import {
+  getActiveEliteQuestMissions,
   getActiveDungeonRunMissions,
   getFormingDungeonSearches,
 } from "../dungeons/dungeonBoardUtils";
@@ -98,6 +99,10 @@ export default function DungeonBoardPanel({
 
   const activeRuns = useMemo(
     () => getActiveDungeonRunMissions(activeMissions),
+    [activeMissions],
+  );
+  const activeEliteQuests = useMemo(
+    () => getActiveEliteQuestMissions(activeMissions),
     [activeMissions],
   );
   const formingDungeonSearches = useMemo(
@@ -262,6 +267,7 @@ export default function DungeonBoardPanel({
         <DungeonRunsView
           roster={roster}
           activeRuns={activeRuns}
+          activeEliteQuests={activeEliteQuests}
           formingDungeonSearches={formingDungeonSearches}
           activeDungeonCount={activeDungeonCount}
           activeRaidCount={activeRaidCount}
@@ -301,6 +307,7 @@ export default function DungeonBoardPanel({
 function DungeonRunsView({
   roster,
   activeRuns,
+  activeEliteQuests,
   formingDungeonSearches,
   activeDungeonCount,
   activeRaidCount,
@@ -310,11 +317,12 @@ function DungeonRunsView({
 }) {
   return (
     <section className="rounded-lg border border-cyan-900/50 bg-slate-950/75 p-3">
-      <div className="grid grid-cols-2 gap-2 md:grid-cols-5">
+      <div className="grid grid-cols-2 gap-2 md:grid-cols-3 xl:grid-cols-6">
         <Stat label="Active Runs" value={activeRuns.length} />
         <Stat label="Forming" value={formingDungeonSearches.length} />
         <Stat label="Dungeons" value={activeDungeonCount} />
         <Stat label="Raids" value={activeRaidCount} />
+        <Stat label="Elite Quests" value={activeEliteQuests.length} />
         <Stat label="Queued Goals" value={queuedGoalCount} />
       </div>
 
@@ -342,6 +350,29 @@ function DungeonRunsView({
         ) : (
           <div className="grid grid-cols-1 gap-3 xl:grid-cols-2">
             {activeRuns.map((mission) => (
+              <ActiveMissionCard
+                key={mission.instanceId || mission.id}
+                mission={mission}
+                onFinish={onManualFinish}
+                gameTimeMs={gameTimeMs}
+                roster={roster}
+                showFinishAction={!!onManualFinish}
+              />
+            ))}
+          </div>
+        )}
+      </div>
+
+      <SectionTitle
+        title="Guild Elite Quests"
+        hint="secondary field activity"
+      />
+      <div className="rounded border border-amber-900/45 bg-amber-950/10 p-3">
+        {activeEliteQuests.length === 0 ? (
+          <EmptyText>No guild members are on an elite quest right now.</EmptyText>
+        ) : (
+          <div className="grid grid-cols-1 gap-3 xl:grid-cols-2">
+            {activeEliteQuests.map((mission) => (
               <ActiveMissionCard
                 key={mission.instanceId || mission.id}
                 mission={mission}

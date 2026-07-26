@@ -6,6 +6,10 @@ import {
   GUILD_FACTION,
   GUILD_SERVER_POPULATION,
 } from "../constants";
+import {
+  RECRUITMENT_SCOUT_FOCUS,
+  normalizeRecruitmentScoutFocus,
+} from "../recruitment/scoutingFocus";
 import { getCharacterMorale } from "../game/characterMorale";
 import {
   buildCharacterNamePool,
@@ -1199,12 +1203,14 @@ export const selectRealmRecruitmentCandidates = ({
   count = 5,
   excludedPlayerIds = [],
   excludedNames = [],
+  focus,
   random = Math.random,
 } = {}) => {
   const minLevel = Math.max(1, Number(tier?.minLevel) || 1);
   const maxLevel = Math.max(minLevel, Number(tier?.maxLevel) || minLevel);
   const safeCount = Math.max(0, Math.floor(Number(count) || 0));
   const safeRandom = typeof random === "function" ? random : Math.random;
+  const safeFocus = normalizeRecruitmentScoutFocus(focus);
   const excludedIdSet = new Set(
     (Array.isArray(excludedPlayerIds) ? excludedPlayerIds : [])
       .map((id) => String(id || "").trim())
@@ -1240,19 +1246,44 @@ export const selectRealmRecruitmentCandidates = ({
     ];
   }
 
+  const classSupportsRole = (player, role) =>
+    (DB_CLASSES?.[player?.charClass]?.allowedRoles || []).includes(role);
+  const specializeForRole = (player, role) => ({ ...player, role });
+
+  if (safeFocus === RECRUITMENT_SCOUT_FOCUS.RANDOM) {
+    return shuffledPlayers.slice(0, safeCount);
+  }
+
+  const focusedRole =
+    safeFocus === RECRUITMENT_SCOUT_FOCUS.TANK
+      ? "Tank"
+      : safeFocus === RECRUITMENT_SCOUT_FOCUS.HEALER
+        ? "Healer"
+        : safeFocus === RECRUITMENT_SCOUT_FOCUS.DPS
+          ? "DPS"
+          : null;
+  if (focusedRole) {
+    return shuffledPlayers
+      .filter((player) => classSupportsRole(player, focusedRole))
+      .slice(0, safeCount)
+      .map((player) => specializeForRole(player, focusedRole));
+  }
+
   const selected = [];
   const remaining = [...shuffledPlayers];
-  ["Tank", "Healer", "DPS"].forEach((requiredRole) => {
-    if (selected.length >= safeCount) return;
-    const roleIndex = remaining.findIndex(
-      (player) => player.role === requiredRole,
+  const desiredRoles = Array.from({ length: safeCount }, (_, index) =>
+    index === 0 ? "Tank" : index === 1 ? "Healer" : "DPS",
+  );
+  desiredRoles.forEach((role) => {
+    const roleIndex = remaining.findIndex((player) =>
+      classSupportsRole(player, role),
     );
     if (roleIndex < 0) return;
-    selected.push(remaining[roleIndex]);
+    selected.push(specializeForRole(remaining[roleIndex], role));
     remaining.splice(roleIndex, 1);
   });
 
-  return [...selected, ...remaining].slice(0, safeCount);
+  return selected;
 };
 
 export const getRealmRecruitmentMarketStats = ({

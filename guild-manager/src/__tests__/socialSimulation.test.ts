@@ -4,6 +4,7 @@ import { GUILD_DUNGEON_ACTIVITY } from "../constants";
 import {
   LFG_GUILD_SEARCH_DURATION_MS,
   advanceSocialSimulation,
+  completeMissionSocialActivity,
   createInitialSocialState,
   ensureSocialState,
 } from "../social/socialSimulation";
@@ -220,6 +221,70 @@ describe("social LFG simulation", () => {
     expect(state.messages).toHaveLength(200);
     expect(state.messages[0]?.sequence).toBe(41);
     expect(state.reservedRealmPlayerIds).toEqual([]);
+  });
+
+  it("posts a disappointed guild message when a regular mission fails", () => {
+    const failedMission: Mission = {
+      id: "elite-failure",
+      instanceId: "elite-failure:1",
+      name: "Wanted: Hogger",
+      type: "quest",
+      elite: true,
+      memberIds: ["guild-tank"],
+    };
+
+    const state = completeMissionSocialActivity({
+      socialState: createInitialSocialState(),
+      mission: failedMission,
+      succeeded: false,
+      now: 42_000,
+      roster: [member("guild-tank", "Tank")],
+    });
+
+    expect(state.messages).toHaveLength(1);
+    expect(state.messages[0]).toMatchObject({
+      channel: "guild",
+      intent: "mission-failed",
+      gameTimeMs: 42_000,
+      speaker: {
+        id: "guild-tank",
+        source: "guild",
+      },
+    });
+    expect(state.messages[0]?.fallbackText).toContain("Wanted: Hogger");
+    expect(state.messages[0]?.searchId).toBeUndefined();
+  });
+
+  it("celebrates a successful regular mission in guild chat", () => {
+    const successfulMission: Mission = {
+      id: "elite-success",
+      instanceId: "elite-success:1",
+      name: "Wanted: Hogger",
+      type: "quest",
+      elite: true,
+      memberIds: ["guild-tank"],
+    };
+
+    const state = completeMissionSocialActivity({
+      socialState: createInitialSocialState(),
+      mission: successfulMission,
+      succeeded: true,
+      now: 43_000,
+      roster: [member("guild-tank", "Tank")],
+    });
+
+    expect(state.messages).toHaveLength(1);
+    expect(state.messages[0]).toMatchObject({
+      channel: "guild",
+      intent: "mission-success",
+      gameTimeMs: 43_000,
+      speaker: {
+        id: "guild-tank",
+        source: "guild",
+      },
+    });
+    expect(state.messages[0]?.fallbackText).toContain("Wanted: Hogger");
+    expect(state.messages[0]?.searchId).toBeUndefined();
   });
 
   it("excludes non-five-player dungeons and requires an available key holder", () => {

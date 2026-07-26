@@ -248,7 +248,7 @@ const appendMessage = ({
     generationStatus: deferText ? "pending" : "ready",
     gameTimeMs: now,
     speaker,
-    searchId: search.id,
+    ...(search.id ? { searchId: search.id } : {}),
   };
   return {
     ...state,
@@ -750,43 +750,88 @@ export const markLfgSearchStarted = ({
   });
 };
 
-export const completeLfgMission = ({
+export const completeMissionSocialActivity = ({
   socialState,
   mission,
   succeeded,
   now,
   deferText = false,
+  roster = [],
 }: {
   socialState: unknown;
   mission: Mission;
   succeeded: boolean;
   now: number;
   deferText?: boolean;
+  roster?: readonly Character[];
 }) => {
   let state = ensureSocialState(socialState);
   const searchId = mission.lfgSearchId;
-  if (!searchId) return state;
-  const search = state.searches.find((entry) => entry.id === searchId);
-  if (!search) return state;
-  const completedSearch = { ...search, phase: "completed" as const };
-  state = {
-    ...state,
-    searches: state.searches.map((entry) =>
-      entry.id === searchId ? completedSearch : entry,
-    ),
-    reservedRealmPlayerIds: state.reservedRealmPlayerIds.filter(
-      (id) =>
-        !search.participants.some(
-          (participant) =>
-            participant.source === "realm" && participant.id === id,
+  const search = searchId
+    ? state.searches.find((entry) => entry.id === searchId)
+    : null;
+  let completedSearch: LfgSearch | null = null;
+
+  if (search) {
+    completedSearch = { ...search, phase: "completed" as const };
+    state = {
+      ...state,
+      searches: state.searches.map((entry) =>
+        entry.id === searchId ? completedSearch! : entry,
+      ),
+      reservedRealmPlayerIds: state.reservedRealmPlayerIds.filter(
+        (id) =>
+          !search.participants.some(
+            (participant) =>
+              participant.source === "realm" && participant.id === id,
+          ),
+      ),
+    };
+  } else {
+    const memberIds = new Set(
+      (Array.isArray(mission.memberIds) ? mission.memberIds : []).map(String),
+    );
+    const guildParticipants = (Array.isArray(roster) ? roster : [])
+      .filter((member) => memberIds.has(String(member.id)))
+      .map((member) =>
+        toParticipant(
+          member as Character & Record<string, unknown>,
+          "guild",
         ),
-    ),
-  };
+      );
+    const participants =
+      Array.isArray(mission.partyParticipants) &&
+      mission.partyParticipants.length > 0
+        ? mission.partyParticipants
+        : guildParticipants;
+    completedSearch = {
+      id: "",
+      missionId: mission.id,
+      missionName: mission.name || "the mission",
+      missionType: mission.type === "dungeon" ? "dungeon" : "elite",
+      targetSize: Math.max(1, participants.length),
+      phase: "completed",
+      createdAt: now,
+      guildSearchEndsAt: now,
+      expiresAt: now,
+      nextResponseAt: now,
+      participantIds: participants.map((participant) => participant.id),
+      participants,
+      initiatorId: participants[0]?.id || "",
+      missionInstanceId: mission.instanceId,
+    };
+  }
+
   return appendMessage({
     state,
     channel: "guild",
     intent: succeeded ? "mission-success" : "mission-failed",
-    speaker: search.participants[0] || null,
+    speaker:
+      completedSearch.participants.find(
+        (participant) => participant.source === "guild",
+      ) ||
+      completedSearch.participants[0] ||
+      null,
     search: completedSearch,
     now,
     deferText,

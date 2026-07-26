@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
 
-import { fireEvent, render, screen } from "@testing-library/react";
+import { fireEvent, render, screen, within } from "@testing-library/react";
 import { describe, expect, it, vi } from "vitest";
 
 import ChatPanel from "../../components/chat/ChatPanel";
@@ -67,5 +67,72 @@ describe("ChatPanel", () => {
     expect(screen.getByText("Borin")).toBeTruthy();
     expect(screen.getByText("Realm Regulars")).toBeTruthy();
     expect(onMarkRead).toHaveBeenCalledWith("general");
+  });
+
+  it("labels failed mission messages next to the guild identity", () => {
+    render(
+      <ChatPanel
+        socialState={{
+          ...socialState,
+          nextSequence: 4,
+          messages: [
+            {
+              ...socialState.messages[0],
+              id: "chat:3",
+              sequence: 3,
+              intent: "mission-failed",
+              text: "Damn, we did not get them. Hogger beat us this time.",
+              fallbackText:
+                "Damn, we did not get them. Hogger beat us this time.",
+            },
+          ],
+        }}
+        guildName="Test Guild"
+        onMarkRead={vi.fn()}
+      />,
+    );
+
+    const messageText = screen.getByText(
+      "Damn, we did not get them. Hogger beat us this time.",
+    );
+    const messageCard = messageText.closest("article");
+
+    expect(messageCard).toBeTruthy();
+    expect(within(messageCard!).getByText("Guild")).toBeTruthy();
+    expect(within(messageCard!).getByText("Mission Failed")).toBeTruthy();
+  });
+
+  it("labels successful mission messages and celebrates the result", () => {
+    render(
+      <ChatPanel
+        socialState={{
+          ...socialState,
+          nextSequence: 5,
+          messages: [
+            {
+              ...socialState.messages[0],
+              id: "chat:4",
+              sequence: 4,
+              intent: "mission-success",
+              text: "Yes! We did it. Hogger is defeated!",
+              fallbackText: "Yes! We did it. Hogger is defeated!",
+            },
+          ],
+        }}
+        guildName="Test Guild"
+        onMarkRead={vi.fn()}
+      />,
+    );
+
+    const messageText = screen.getByText(
+      "Yes! We did it. Hogger is defeated!",
+    );
+    const messageCard = messageText.closest("article");
+
+    expect(messageCard).toBeTruthy();
+    expect(within(messageCard!).getByText("Guild")).toBeTruthy();
+    expect(
+      within(messageCard!).getByText("Mission Accomplished"),
+    ).toBeTruthy();
   });
 });

@@ -71,7 +71,7 @@ const ActiveMissionCard = ({
   );
   const wipeCost = getMissionWipeCost(mission);
   const legacyPartyMembers =
-    mission.type === "dungeon" && mission.isRaid !== true
+    mission.isRaid !== true
       ? (Array.isArray(mission.memberIds) ? mission.memberIds : [])
           .map((memberId) =>
             (Array.isArray(roster) ? roster : []).find(

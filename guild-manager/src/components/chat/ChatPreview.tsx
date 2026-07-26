@@ -49,8 +49,20 @@ export default function ChatPreview({
                   : "border-slate-800 bg-slate-900/60"
               }`}
             >
-              <div className="truncate text-[10px] font-bold uppercase text-slate-500">
-                {message.channel} · {message.speaker?.name || "System"}
+              <div className="flex items-center gap-1.5 text-[10px] font-bold uppercase text-slate-500">
+                <span className="min-w-0 truncate">
+                  {message.channel} · {message.speaker?.name || "System"}
+                </span>
+                {message.intent === "mission-failed" ? (
+                  <span className="flex-none rounded border border-rose-800 bg-rose-950/70 px-1.5 py-0.5 text-[8px] text-rose-200">
+                    Mission Failed
+                  </span>
+                ) : null}
+                {message.intent === "mission-success" ? (
+                  <span className="flex-none rounded border border-emerald-800 bg-emerald-950/70 px-1.5 py-0.5 text-[8px] text-emerald-200">
+                    Mission Accomplished
+                  </span>
+                ) : null}
               </div>
               <p className="mt-1 line-clamp-2 text-xs text-slate-300">
                 {message.text || message.fallbackText}

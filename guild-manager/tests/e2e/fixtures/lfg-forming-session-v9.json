@@ -1,0 +1,116 @@
+{
+  "format": "guild-manager-session",
+  "version": 9,
+  "savedAt": "2026-01-01T00:00:00.000Z",
+  "data": {
+    "roster": [
+      {
+        "id": "guild-tank",
+        "name": "Guild Tank",
+        "level": 20,
+        "race": "Human",
+        "gender": "Male",
+        "charClass": "Warrior",
+        "role": "Tank",
+        "status": "LFG",
+        "faction": "Alliance",
+        "equipment": {},
+        "professions": {},
+        "keys": [],
+        "history": []
+      }
+    ],
+    "activeMissions": [],
+    "missionList": [
+      {
+        "id": "deadmines",
+        "name": "The Deadmines",
+        "type": "dungeon",
+        "level": 20,
+        "minLevel": 15,
+        "recommended": "15 - 20",
+        "requiredPartySize": 5,
+        "duration": 60,
+        "dungeonBosses": ["Rhahk'Zor", "Edwin VanCleef"]
+      }
+    ],
+    "guildLog": [],
+    "guildGold": 10,
+    "guildProgress": {},
+    "guildSetup": {
+      "hasStarted": true,
+      "name": "LFG Fixture Guild",
+      "faction": "Alliance",
+      "focus": "Leveling",
+      "server": "Everlook",
+      "serverStyle": "PvE",
+      "dungeonActivity": "Balanced",
+      "pvpActivityFocus": "25%"
+    },
+    "guildRelationships": {},
+    "realmState": null,
+    "worldPvpState": {},
+    "battlefieldState": {},
+    "guildInventory": null,
+    "stashPolicy": null,
+    "calendarState": null,
+    "raidLockouts": {},
+    "missionBoardState": {},
+    "socialState": {
+      "messages": [],
+      "searches": [
+        {
+          "id": "lfg:fixture",
+          "missionId": "deadmines",
+          "missionName": "The Deadmines",
+          "missionType": "dungeon",
+          "targetSize": 5,
+          "phase": "general",
+          "createdAt": 0,
+          "guildSearchEndsAt": 15000,
+          "expiresAt": 75000,
+          "nextResponseAt": 35000,
+          "participantIds": ["guild-tank", "realm-healer"],
+          "participants": [
+            {
+              "id": "guild-tank",
+              "source": "guild",
+              "name": "Guild Tank",
+              "level": 20,
+              "race": "Human",
+              "gender": "Male",
+              "charClass": "Warrior",
+              "role": "Tank",
+              "faction": "Alliance"
+            },
+            {
+              "id": "realm-healer",
+              "source": "realm",
+              "name": "Realm Healer",
+              "level": 20,
+              "race": "Dwarf",
+              "gender": "Female",
+              "charClass": "Priest",
+              "role": "Healer",
+              "faction": "Alliance",
+              "guildName": null
+            }
+          ],
+          "initiatorId": "guild-tank"
+        }
+      ],
+      "reservedRealmPlayerIds": ["realm-healer"],
+      "nextSequence": 1,
+      "lastSearchCheckpoint": 1,
+      "lastReadSequenceByChannel": {
+        "guild": 0,
+        "general": 0
+      }
+    },
+    "progression": {
+      "gameSpeed": 1,
+      "isPaused": true,
+      "gameTimeMs": 30000
+    }
+  }
+}

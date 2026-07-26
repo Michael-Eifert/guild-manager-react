@@ -11,6 +11,26 @@ export const getActiveDungeonRunMissions = (activeMissions: readonly Mission[] =
 export const getActiveDungeonRunCount = (activeMissions: readonly Mission[] = []) =>
   getActiveDungeonRunMissions(activeMissions).length;
 
+export const getActiveEliteQuestMissions = (
+  activeMissions: readonly Mission[] = [],
+) =>
+  (Array.isArray(activeMissions) ? activeMissions : []).filter((mission) => {
+    if (
+      mission?.type === "dungeon" ||
+      mission?.type === "raid" ||
+      mission?.isRaid === true
+    ) {
+      return false;
+    }
+
+    return (
+      mission?.elite === true ||
+      mission?.isZoneElite === true ||
+      mission?.type === "elite" ||
+      String(mission?.typeLabel || "").trim().toLowerCase() === "elite quest"
+    );
+  });
+
 export const getFormingDungeonSearches = (
   socialState: Pick<SocialState, "searches"> | null | undefined,
 ): LfgSearch[] =>

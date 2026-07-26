@@ -11,10 +11,15 @@
     "typecheck:app": "tsc --noEmit -p tsconfig.app.json",
     "typecheck:test": "tsc --noEmit -p tsconfig.test.json",
     "typecheck:node": "tsc --noEmit -p tsconfig.node.json",
+    "typecheck:extended": "tsc --noEmit -p tsconfig.extended.json",
     "migration:check": "tsx scripts/check-typescript-migration.ts",
     "bundle:check": "tsx scripts/check-bundle-size.ts",
     "check": "npm run migration:check && npm run lint && npm run typecheck && npm run test && npm run build && npm run bundle:check",
     "test": "vitest run",
+    "test:e2e": "playwright test",
+    "test:e2e:ui": "playwright test --ui",
+    "test:soak": "vitest run --config vitest.soak.config.ts",
+    "test:extended": "npm run typecheck:extended && npm run test:soak && npm run test:e2e",
     "proxy:gemini": "tsx server/gemini-proxy.ts",
     "proxy:ai": "tsx server/ai-proxy.ts",
     "preview": "vite preview"
@@ -30,6 +35,7 @@
   },
   "devDependencies": {
     "@eslint/js": "^9.39.1",
+    "@playwright/test": "^1.62.0",
     "@testing-library/dom": "^10.4.1",
     "@testing-library/react": "^16.3.2",
     "@testing-library/user-event": "^14.6.1",

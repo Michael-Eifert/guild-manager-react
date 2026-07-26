@@ -50,4 +50,47 @@ describe("DungeonBoardPanel", () => {
     expect(html).toContain("Group Forming · 1/5");
     expect(html).toContain("Forming");
   });
+
+  it("shows active elite quests and their guild members below dungeon runs", () => {
+    const html = render(
+      <DungeonBoardPanel
+        roster={[
+          {
+            id: "hero-1",
+            name: "Guild Hero",
+            level: 24,
+            charClass: "Warrior",
+            role: "Tank",
+          },
+        ]}
+        missionList={[]}
+        activeMissions={[
+          {
+            id: "elite-quest",
+            instanceId: "elite-quest-run",
+            name: "The Stockade Riots",
+            type: "quest",
+            typeLabel: "Elite Quest",
+            elite: true,
+            memberIds: ["hero-1"],
+            startTime: 0,
+            finishTime: 20_000,
+            totalDuration: 20_000,
+            successChance: 80,
+          },
+        ]}
+        socialState={{ searches: [] }}
+        gameTimeMs={5_000}
+        onManualFinish={noop}
+        onQueueAdventureGoal={noop}
+        onClearAdventureGoal={noop}
+      />,
+    );
+
+    expect(html).toContain("Guild Elite Quests");
+    expect(html).toContain("The Stockade Riots");
+    expect(html).toContain("Guild Hero");
+    expect(html).toContain("Quest Party");
+    expect(html).toContain("1 Guild / 0 Realm");
+  });
 });

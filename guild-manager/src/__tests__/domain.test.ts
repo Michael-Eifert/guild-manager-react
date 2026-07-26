@@ -31,6 +31,7 @@ import {
   getRecruitmentTierOptions,
   resolveRecruitmentResult,
 } from "../recruitment/recruitmentLogic";
+import { RECRUITMENT_SCOUT_FOCUS } from "../recruitment/scoutingFocus";
 import {
   hydrateSessionData,
   buildSessionPayload,
@@ -5557,7 +5558,7 @@ describe("realm overview domain", () => {
     ).toBe(false);
   });
 
-  it("randomizes recruitment candidates while guaranteeing the core roles", () => {
+  it("randomizes group-composition candidates while guaranteeing the core roles", () => {
     const players = [
       ["tank-1", "Tank", "Warrior"],
       ["tank-2", "Tank", "Warrior"],
@@ -5583,6 +5584,7 @@ describe("realm overview domain", () => {
         faction: GUILD_FACTION.ALLIANCE,
         tier: { minLevel: 1, maxLevel: 10 },
         count: 5,
+        focus: RECRUITMENT_SCOUT_FOCUS.GROUP_COMPOSITION,
         random,
       });
 
@@ -5594,10 +5596,83 @@ describe("realm overview domain", () => {
       expect(new Set(candidates.map((candidate) => candidate.role))).toEqual(
         new Set(["Tank", "Healer", "DPS"]),
       );
+      expect(candidates.filter((candidate) => candidate.role === "Tank")).toHaveLength(1);
+      expect(candidates.filter((candidate) => candidate.role === "Healer")).toHaveLength(1);
+      expect(candidates.filter((candidate) => candidate.role === "DPS")).toHaveLength(3);
     }
     expect(first.map((candidate) => candidate.id)).not.toEqual(
       second.map((candidate) => candidate.id),
     );
+  });
+
+  it("scouts role-capable classes and specializes them for the selected focus", () => {
+    const players = [
+      ["warrior", "Human", "Warrior", "Tank"],
+      ["paladin", "Human", "Paladin", "Healer"],
+      ["druid", "Night Elf", "Druid", "Healer"],
+      ["priest", "Human", "Priest", "Healer"],
+      ["mage", "Human", "Mage", "DPS"],
+    ].map(([id, race, charClass, role]) =>
+      createRealmPlayer({
+        id,
+        name: id,
+        faction: GUILD_FACTION.ALLIANCE,
+        race,
+        charClass,
+        role,
+      }),
+    );
+    const realmState = { population: { players } };
+    const scout = (focus) =>
+      selectRealmRecruitmentCandidates({
+        realmState,
+        faction: GUILD_FACTION.ALLIANCE,
+        tier: { minLevel: 1, maxLevel: 10 },
+        count: 10,
+        focus,
+        random: () => 0,
+      });
+
+    const tanks = scout(RECRUITMENT_SCOUT_FOCUS.TANK);
+    expect(new Set(tanks.map((candidate) => candidate.charClass))).toEqual(
+      new Set(["Warrior", "Paladin", "Druid"]),
+    );
+    expect(tanks.every((candidate) => candidate.role === "Tank")).toBe(true);
+
+    const healers = scout(RECRUITMENT_SCOUT_FOCUS.HEALER);
+    expect(new Set(healers.map((candidate) => candidate.charClass))).toEqual(
+      new Set(["Paladin", "Druid", "Priest"]),
+    );
+    expect(healers.every((candidate) => candidate.role === "Healer")).toBe(true);
+
+    const damageDealers = scout(RECRUITMENT_SCOUT_FOCUS.DPS);
+    expect(damageDealers).toHaveLength(players.length);
+    expect(damageDealers.every((candidate) => candidate.role === "DPS")).toBe(true);
+  });
+
+  it("keeps random scouting unfocused instead of forcing support roles", () => {
+    const players = Array.from({ length: 5 }, (_, index) =>
+      createRealmPlayer({
+        id: `healer-${index}`,
+        name: `healer-${index}`,
+        faction: GUILD_FACTION.ALLIANCE,
+        race: "Human",
+        charClass: "Priest",
+        role: "Healer",
+      }),
+    );
+
+    const candidates = selectRealmRecruitmentCandidates({
+      realmState: { population: { players } },
+      faction: GUILD_FACTION.ALLIANCE,
+      tier: { minLevel: 1, maxLevel: 10 },
+      count: 5,
+      focus: RECRUITMENT_SCOUT_FOCUS.RANDOM,
+      random: () => 0,
+    });
+
+    expect(candidates).toHaveLength(5);
+    expect(candidates.every((candidate) => candidate.role === "Healer")).toBe(true);
   });
 
   it("balances roles after excluding applications and existing roster names", () => {

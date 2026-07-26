@@ -27,6 +27,9 @@ pids
 # Testing
 /.jest
 /test-results
+/guild-manager/test-results
+/guild-manager/playwright-report
+/guild-manager/blob-report
 
 # Environment variables
 .env*

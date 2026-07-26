@@ -46,8 +46,32 @@ describe("guild statistics", () => {
     ).toEqual(["bravo", "charlie", "alpha"]);
     expect(statistics.equipmentLeaders[0]).toMatchObject({
       itemLevel: 55,
-      gearScore: 5500,
+      gearScore: 55,
     });
+  });
+
+  it("uses the average item level directly as gear score", () => {
+    const statistics = buildGuildStatistics({
+      roster: [
+        character("alpha", { itemLevel: 5 }),
+        character("bravo", { itemLevel: 6 }),
+      ],
+      relationships: {},
+    });
+
+    expect(statistics.equipmentLeaders).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          character: expect.objectContaining({ id: "alpha" }),
+          gearScore: 5,
+        }),
+        expect.objectContaining({
+          character: expect.objectContaining({ id: "bravo" }),
+          gearScore: 6,
+        }),
+      ]),
+    );
+    expect(statistics.averageGearScore).toBe(5.5);
   });
 
   it("counts only positive relationship points for popularity", () => {

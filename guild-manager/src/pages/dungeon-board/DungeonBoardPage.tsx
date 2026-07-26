@@ -38,7 +38,7 @@ export default function DungeonBoardPage({
           Dungeon Board
         </h2>
         <p className="truncate text-xs text-cyan-100/60 md:text-sm">
-          Forming groups, active runs, raids, and attunement planning
+          Forming groups, active runs, elite quests, raids, and attunement planning
         </p>
       </header>
       <div className="p-3 md:p-4">

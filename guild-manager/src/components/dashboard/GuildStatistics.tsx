@@ -135,7 +135,7 @@ export default function GuildStatistics({
   const pulse = [
     {
       label: "Average GS",
-      value: statistics.averageGearScore.toLocaleString(),
+      value: statistics.averageGearScore.toFixed(1),
       icon: ShieldCheck,
       tone: "text-amber-300",
     },
@@ -203,11 +203,11 @@ export default function GuildStatistics({
       <div className="mt-3 grid gap-3 lg:grid-cols-2 xl:grid-cols-3">
         <Leaderboard<EquipmentRankingEntry>
           title="Best Equipped"
-          description="Ranked by item level; GS equals average iLvl × 100."
+          description="Ranked by item level; GS equals average iLvl."
           icon={<ShieldCheck size={15} aria-hidden="true" />}
           entries={statistics.equipmentLeaders}
           getCharacter={(entry) => entry.character}
-          getValue={(entry) => `GS ${entry.gearScore.toLocaleString()}`}
+          getValue={(entry) => `GS ${entry.gearScore.toFixed(1)}`}
           getDetail={(entry) =>
             `iLvl ${entry.itemLevel.toFixed(1)} · Power ${entry.powerScore.toFixed(1)}`
           }

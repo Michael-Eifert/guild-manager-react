@@ -1,4 +1,10 @@
-import { MessageCircle, Shield, Users } from "lucide-react";
+import {
+  CircleCheck,
+  CircleX,
+  MessageCircle,
+  Shield,
+  Users,
+} from "lucide-react";
 import { useEffect, useMemo, useRef, useState } from "react";
 
 import type { ChatChannel, SocialState } from "../../social/chatTypes";
@@ -163,6 +169,18 @@ export default function ChatPanel({
                       ) : (
                         message.speaker.guildName || "Free Agent"
                       )}
+                    </span>
+                  ) : null}
+                  {message.intent === "mission-failed" ? (
+                    <span className="inline-flex flex-none items-center gap-1 rounded border border-rose-700/80 bg-rose-950/70 px-1.5 py-0.5 text-[8px] font-bold uppercase tracking-wide text-rose-200">
+                      <CircleX size={10} aria-hidden="true" />
+                      Mission Failed
+                    </span>
+                  ) : null}
+                  {message.intent === "mission-success" ? (
+                    <span className="inline-flex flex-none items-center gap-1 rounded border border-emerald-700/80 bg-emerald-950/70 px-1.5 py-0.5 text-[8px] font-bold uppercase tracking-wide text-emerald-200">
+                      <CircleCheck size={10} aria-hidden="true" />
+                      Mission Accomplished
                     </span>
                   ) : null}
                 </div>

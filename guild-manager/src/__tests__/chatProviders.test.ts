@@ -49,6 +49,25 @@ describe("chat text providers", () => {
     expect(text).toContain("The Deadmines");
   });
 
+  it("offers varied celebratory fallback lines for mission success", () => {
+    const lines = Array.from({ length: 20 }, (_, index) =>
+      renderChatTemplate({
+        channel: "guild",
+        intent: "mission-success",
+        speaker: {
+          id: `hero-${index}`,
+          source: "guild",
+          name: `Hero ${index}`,
+          level: 20,
+        },
+        missionName: "The Deadmines",
+      }),
+    );
+
+    expect(new Set(lines).size).toBeGreaterThanOrEqual(5);
+    expect(lines.every((line) => line.includes("The Deadmines"))).toBe(true);
+  });
+
   it("sanitizes generated text to a single bounded chat line", () => {
     const text = sanitizeGeneratedChatText(
       `"Ready!\nI can heal.\t${"x".repeat(300)}"`,

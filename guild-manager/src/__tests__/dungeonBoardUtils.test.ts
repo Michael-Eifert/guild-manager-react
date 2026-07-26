@@ -1,6 +1,9 @@
 import { describe, expect, it } from "vitest";
 
-import { getFormingDungeonSearches } from "../dungeons/dungeonBoardUtils";
+import {
+  getActiveEliteQuestMissions,
+  getFormingDungeonSearches,
+} from "../dungeons/dungeonBoardUtils";
 import type { LfgSearch, SocialState } from "../social/chatTypes";
 
 const makeSearch = (
@@ -48,5 +51,21 @@ describe("dungeon board LFG searches", () => {
     expect(
       getFormingDungeonSearches(socialState).map((search) => search.id),
     ).toEqual(["guild", "general", "ready"]);
+  });
+
+  it("returns active elite quests without mixing in normal quests or instances", () => {
+    const activeMissions = [
+      { id: "elite-flag", type: "quest", elite: true },
+      { id: "zone-elite", type: "quest", isZoneElite: true },
+      { id: "elite-type", type: "elite" },
+      { id: "elite-label", type: "quest", typeLabel: "Elite Quest" },
+      { id: "normal", type: "quest" },
+      { id: "dungeon", type: "dungeon", elite: true },
+      { id: "raid", type: "raid", elite: true },
+    ];
+
+    expect(
+      getActiveEliteQuestMissions(activeMissions).map((mission) => mission.id),
+    ).toEqual(["elite-flag", "zone-elite", "elite-type", "elite-label"]);
   });
 });

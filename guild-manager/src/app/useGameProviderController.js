@@ -133,7 +133,7 @@ import {
 } from "../social/relationshipSystem";
 import {
   advanceSocialSimulation,
-  completeLfgMission,
+  completeMissionSocialActivity,
   createInitialSocialState,
   ensureSocialState,
   getUnreadChatCount,
@@ -1219,11 +1219,12 @@ export const useGameProviderController = () => {
         rewardedMissionIdsRef.current.add(missionInstanceId);
 
         const result = processMissionRewards(m, newRoster);
-        currentSocialState = completeLfgMission({
+        currentSocialState = completeMissionSocialActivity({
           socialState: currentSocialState,
           mission: m,
           succeeded: result.missionSucceeded,
           now,
+          roster: result.updatedRoster,
           deferText:
             chatAiSettingsRef.current.provider !== "templates" &&
             gameSpeed <= 4,
@@ -2144,6 +2145,7 @@ export const useGameProviderController = () => {
       faction: guildSetupRef.current?.faction || GUILD_FACTION.ALLIANCE,
       tier,
       count: scoutCount,
+      focus: options?.focus,
       excludedPlayerIds: [
         ...applicationPlayerIds,
         ...ensureSocialState(socialStateRef.current).reservedRealmPlayerIds,
@@ -3660,6 +3662,17 @@ export const useGameProviderController = () => {
     const rosterAfterMission = chainResolution.updatedRoster;
     rosterRef.current = rosterAfterMission;
     setRoster(rosterAfterMission);
+    const nextSocialState = completeMissionSocialActivity({
+      socialState: socialStateRef.current,
+      mission: missionWithStepLoot,
+      succeeded: result.missionSucceeded,
+      now,
+      roster: rosterAfterMission,
+      deferText:
+        chatAiSettingsRef.current.provider !== "templates" && gameSpeed <= 4,
+    });
+    socialStateRef.current = nextSocialState;
+    setSocialState(nextSocialState);
     if (chainResolution.queuedMission) {
       setActiveMissions((prev) => [...prev, chainResolution.queuedMission]);
     }

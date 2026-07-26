@@ -34,6 +34,12 @@ describe("RecruitModal", () => {
 
     expect(html).toContain("Recruitment");
     expect(html).toContain("Guild Applications");
+    expect(html).toContain("Scouting Focus");
+    expect(html).toContain("Random");
+    expect(html).toContain("Tanks");
+    expect(html).toContain("Healers");
+    expect(html).toContain("Damage");
+    expect(html).toContain("Group Composition");
     expect(html).toContain("Cora");
     expect(html).not.toContain('role="dialog"');
   });

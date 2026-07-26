@@ -75,7 +75,8 @@ const getBossesCleared = (character: StatisticsCharacter) =>
 const getHonorableKills = (character: StatisticsCharacter) =>
   Math.max(0, Math.floor(Number(character?.pvp?.honorableKills) || 0));
 
-const GEAR_SCORE_MULTIPLIER = 100;
+const toGearScore = (itemLevel: number) =>
+  Math.round(Math.max(0, itemLevel) * 10) / 10;
 
 const isCharacterActive = (character: StatisticsCharacter) => {
   const status = String(character?.status || "").trim().toLowerCase();
@@ -131,7 +132,7 @@ export const buildGuildStatistics = ({
     return {
       character,
       itemLevel,
-      gearScore: Math.round(itemLevel * GEAR_SCORE_MULTIPLIER),
+      gearScore: toGearScore(itemLevel),
       powerScore: Math.max(0, getCharacterPowerScore(character)),
     };
   });
@@ -188,7 +189,7 @@ export const buildGuildStatistics = ({
   return {
     averageGearScore:
       equipmentRows.length > 0
-        ? Math.round(
+        ? toGearScore(
             equipmentRows.reduce(
               (total, entry) => total + entry.gearScore,
               0,
