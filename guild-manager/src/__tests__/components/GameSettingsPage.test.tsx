@@ -76,10 +76,13 @@ describe("GameSettingsPage", () => {
 
     fireEvent.click(screen.getByRole("button", { name: "Start New Game" }));
     expect(
-      screen.getByText("Start a new game in Save Slot 3?"),
+      screen.getByRole("dialog", {
+        name: "Start a new game in Save Slot 3?",
+      }),
     ).toBeTruthy();
     fireEvent.click(screen.getByRole("button", { name: "Confirm New Game" }));
     expect(onStartNewBrowserGame).toHaveBeenCalledWith(3);
+    expect(screen.queryByRole("dialog")).toBeNull();
 
     fireEvent.click(screen.getByRole("button", { name: "Chat & AI" }));
     expect(

@@ -31,7 +31,7 @@ const message: ChatMessage = {
 
 describe("chat text providers", () => {
   it("uses personality-specific deterministic fallback lines", () => {
-    const text = renderChatTemplate({
+    const context = {
       channel: "guild",
       intent: "lfg-request",
       speaker: {
@@ -44,9 +44,32 @@ describe("chat text providers", () => {
       missionName: "The Deadmines",
       currentSize: 2,
       targetSize: 5,
-    });
-    expect(text).toContain("clean route");
+    } as const;
+    const text = renderChatTemplate(context);
+    expect(renderChatTemplate(context)).toBe(text);
+    expect(text).toMatch(/route|lead/i);
     expect(text).toContain("The Deadmines");
+  });
+
+  it("offers varied fallback lines for LFG searches", () => {
+    const lines = Array.from({ length: 30 }, (_, index) =>
+      renderChatTemplate({
+        channel: "guild",
+        intent: "lfg-request",
+        speaker: {
+          id: `searcher-${index}`,
+          source: "guild",
+          name: `Searcher ${index}`,
+          level: 20,
+        },
+        missionName: "The Deadmines",
+        currentSize: 1,
+        targetSize: 5,
+      }),
+    );
+
+    expect(new Set(lines).size).toBeGreaterThanOrEqual(5);
+    expect(lines.every((line) => line.includes("The Deadmines"))).toBe(true);
   });
 
   it("offers varied celebratory fallback lines for mission success", () => {

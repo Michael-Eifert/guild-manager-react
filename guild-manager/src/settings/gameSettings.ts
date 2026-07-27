@@ -3,7 +3,7 @@ export type GameSettingsState = {
 };
 
 export const DEFAULT_GAME_SETTINGS: Readonly<GameSettingsState> = Object.freeze({
-  offlineSimulationEnabled: true,
+  offlineSimulationEnabled: false,
 });
 
 export const normalizeGameSettings = (

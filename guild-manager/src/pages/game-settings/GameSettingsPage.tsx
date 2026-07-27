@@ -8,6 +8,7 @@ import {
 } from "lucide-react";
 import { useState } from "react";
 
+import BaseModal from "../../components/modals/BaseModal";
 import ChatAiSettingsPanel from "../../components/settings/ChatAiSettingsPanel";
 import DebugSettingsPanel from "../../components/settings/DebugSettingsPanel";
 import GameButton from "../../components/ui/GameButton";
@@ -66,6 +67,13 @@ export default function GameSettingsPage({
   const [activeTab, setActiveTab] = useState<SettingsTab>("gameplay");
   const [pendingNewSlot, setPendingNewSlot] =
     useState<BrowserSaveSlotSummary | null>(null);
+
+  const handleConfirmNewGame = () => {
+    if (!pendingNewSlot) return;
+    const slotId = pendingNewSlot.id;
+    setPendingNewSlot(null);
+    onStartNewBrowserGame(slotId);
+  };
 
   return (
     <div className="space-y-4">
@@ -236,39 +244,6 @@ export default function GameSettingsPage({
             ))}
           </div>
 
-          {pendingNewSlot ? (
-            <div
-              role="alert"
-              className="mt-4 rounded-lg border border-red-800 bg-red-950/35 p-4"
-            >
-              <p className="font-bold text-red-100">
-                Start a new game in Save Slot {pendingNewSlot.id}?
-              </p>
-              <p className="mt-1 text-xs leading-relaxed text-red-200/75">
-                {pendingNewSlot.hasSave
-                  ? `${pendingNewSlot.guildName} will be permanently replaced. Export it first if you want to keep a backup.`
-                  : "You will return to guild creation and this slot will become the active autosave."}
-              </p>
-              <div className="mt-3 flex flex-wrap gap-2">
-                <GameButton
-                  size="sm"
-                  tone="danger"
-                  onClick={() =>
-                    onStartNewBrowserGame(pendingNewSlot.id)
-                  }
-                >
-                  Confirm New Game
-                </GameButton>
-                <GameButton
-                  size="sm"
-                  tone="neutral"
-                  onClick={() => setPendingNewSlot(null)}
-                >
-                  Cancel
-                </GameButton>
-              </div>
-            </div>
-          ) : null}
         </section>
         </div>
       ) : null}
@@ -306,6 +281,46 @@ export default function GameSettingsPage({
           />
         </div>
       ) : null}
+
+      <BaseModal
+        isOpen={pendingNewSlot !== null}
+        onClose={() => setPendingNewSlot(null)}
+        labelledBy="new-game-confirmation-title"
+        overlayClassName="bg-black/80 p-4 backdrop-blur-sm"
+        panelClassName="w-full max-w-md rounded-xl border border-red-800 bg-slate-950 p-5 shadow-2xl"
+      >
+        {pendingNewSlot ? (
+          <>
+            <h2
+              id="new-game-confirmation-title"
+              className="fantasy-font text-xl font-bold text-red-100"
+            >
+              Start a new game in Save Slot {pendingNewSlot.id}?
+            </h2>
+            <p className="mt-3 text-sm leading-relaxed text-slate-300">
+              {pendingNewSlot.hasSave
+                ? `${pendingNewSlot.guildName} will be permanently replaced. Export it first if you want to keep a backup.`
+                : "You will return to guild creation and this slot will become the active autosave."}
+            </p>
+            <div className="mt-5 flex flex-col-reverse gap-2 sm:flex-row sm:justify-end">
+              <GameButton
+                size="sm"
+                tone="neutral"
+                onClick={() => setPendingNewSlot(null)}
+              >
+                Cancel
+              </GameButton>
+              <GameButton
+                size="sm"
+                tone="danger"
+                onClick={handleConfirmNewGame}
+              >
+                Confirm New Game
+              </GameButton>
+            </div>
+          </>
+        ) : null}
+      </BaseModal>
     </div>
   );
 }

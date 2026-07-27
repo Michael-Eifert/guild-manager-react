@@ -1771,6 +1771,8 @@ export const useGameProviderController = () => {
         onlineGuildMemberIds: tickOnlineSnapshot.onlineIds,
         onlineRealmPlayerIds: realmOnlineSnapshot.onlineIds,
         currentDayIndex: calendarDayIndex,
+        itemDatabase,
+        relationships: guildRelationshipsRef.current,
         deferText:
           chatAiSettingsRef.current.provider !== "templates" &&
           gameSpeed <= 4,

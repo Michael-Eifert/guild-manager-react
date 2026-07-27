@@ -124,7 +124,7 @@ describe("GameProvider integration", () => {
       });
       expect(autosave.data.roster.length).toBeGreaterThan(0);
       expect(autosave.data.gameSettings).toEqual({
-        offlineSimulationEnabled: true,
+        offlineSimulationEnabled: false,
       });
     });
   });

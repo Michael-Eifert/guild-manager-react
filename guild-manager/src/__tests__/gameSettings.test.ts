@@ -8,7 +8,8 @@ import {
 import { buildSessionPayload } from "../session/sessionPersistence";
 
 describe("game settings", () => {
-  it("defaults invalid and missing settings to enabled offline simulation", () => {
+  it("defaults invalid and missing settings to disabled offline simulation", () => {
+    expect(DEFAULT_GAME_SETTINGS.offlineSimulationEnabled).toBe(false);
     expect(normalizeGameSettings(null)).toEqual(DEFAULT_GAME_SETTINGS);
     expect(
       normalizeGameSettings({ offlineSimulationEnabled: "no" }),

@@ -5,8 +5,20 @@ import {
   getCharacterOwnedKeys,
 } from "../missions/missionHelpers";
 import type { Character } from "../types/characterTypes";
+import type { ItemDefinition } from "../types/itemTypes";
 import type { Mission } from "../types/missionTypes";
 import { getDeterministicResponseDelayMs, renderChatTemplate } from "./chatTemplates";
+import {
+  getLfgCandidateKind,
+  getLfgHelperInterest,
+  hasDungeonEquipmentUpgrade,
+  MAX_LFG_HELPERS,
+  passesDeterministicLfgChance,
+} from "./dungeonLfgInterest";
+import {
+  getRelationshipPairKey,
+  normalizeGuildRelationships,
+} from "./relationshipSystem";
 import {
   advanceRpScenes,
   enqueueMissionRpScene,
@@ -164,36 +176,6 @@ export const toParticipant = (
     : [],
 });
 
-const getMissionLevelRange = (mission: Mission) => {
-  const recommendedValues = String(mission.recommended || "")
-    .match(/\d+/g)
-    ?.map(Number)
-    .filter((value) => Number.isFinite(value));
-  const minimum = Math.max(
-    1,
-    Math.floor(
-      Number(
-        mission.entryLevel ??
-          mission.minLevel ??
-          recommendedValues?.[0] ??
-          mission.level ??
-          1,
-      ) || 1,
-    ),
-  );
-  const maximum = Math.max(
-    minimum,
-    Math.floor(
-      Number(
-        recommendedValues?.[recommendedValues.length - 1] ??
-          mission.level ??
-          minimum + 5,
-      ) || minimum + 5,
-    ),
-  );
-  return { minimum, maximum };
-};
-
 const getMissionTargetSize = (mission: Mission) =>
   Math.max(
     2,
@@ -213,10 +195,36 @@ const isSupportedLfgMission = (mission: Mission) =>
 const isCharacterEligible = (
   character: Record<string, unknown>,
   mission: Mission,
-) => {
-  const level = Math.max(1, Number(character.level) || 1);
-  const range = getMissionLevelRange(mission);
-  return level >= range.minimum && level <= range.maximum;
+) => getLfgCandidateKind(character, mission) === "core";
+
+const getHelperCount = (search: LfgSearch, mission: Mission) =>
+  search.participants.filter(
+    (participant) =>
+      getLfgCandidateKind(
+        participant as unknown as Record<string, unknown>,
+        mission,
+      ) === "helper",
+  ).length;
+
+const getBestRelationshipPoints = ({
+  candidateId,
+  search,
+  relationships,
+}: {
+  candidateId: unknown;
+  search: LfgSearch;
+  relationships: unknown;
+}) => {
+  const normalized = normalizeGuildRelationships(relationships) as Record<
+    string,
+    { points?: number }
+  >;
+  return search.participants
+    .filter((participant) => participant.source === "guild")
+    .reduce((best, participant) => {
+      const pairKey = getRelationshipPairKey(candidateId, participant.id);
+      return Math.max(best, Number(normalized[pairKey]?.points) || 0);
+    }, 0);
 };
 
 const getNeededRole = (participants: PartyParticipant[], mission: Mission) => {
@@ -309,6 +317,100 @@ const getBusyGuildMemberIds = (activeMissions: Mission[]) =>
     ),
   );
 
+const selectLfgCandidate = <T extends Record<string, any>>({
+  candidates,
+  search,
+  mission,
+  itemDatabase,
+  relationships,
+  source,
+}: {
+  candidates: T[];
+  search: LfgSearch;
+  mission: Mission;
+  itemDatabase: readonly ItemDefinition[];
+  relationships: unknown;
+  source: "guild" | "realm";
+}) => {
+  const neededRole = getNeededRole(search.participants, mission);
+  const finalSlotRole = getRequiredRoleForRemainingSlots(search, mission);
+  const helperSlotsAvailable =
+    getHelperCount(search, mission) < MAX_LFG_HELPERS;
+  const eligible = candidates.filter((candidate) => {
+    const kind = getLfgCandidateKind(candidate, mission);
+    if (kind === "below-range") return false;
+    if (kind === "helper" && !helperSlotsAvailable) return false;
+    return !finalSlotRole || candidate.role === finalSlotRole;
+  });
+
+  const selectFromPool = (pool: T[], seedSuffix: string) => {
+    const coreCandidate = pool
+      .filter((candidate) => getLfgCandidateKind(candidate, mission) === "core")
+      .sort(
+        (left, right) =>
+          (Number(right.level) || 1) - (Number(left.level) || 1) ||
+          String(left.id).localeCompare(String(right.id)),
+      )[0];
+    const helperCandidates = pool
+      .filter(
+        (candidate) =>
+          getLfgCandidateKind(candidate, mission) === "helper",
+      )
+      .map((candidate) => {
+        const relationshipPoints =
+          source === "guild"
+            ? getBestRelationshipPoints({
+                candidateId: candidate.id,
+                search,
+                relationships,
+              })
+            : 0;
+        return {
+          candidate,
+          interest: getLfgHelperInterest({
+            character: candidate,
+            mission,
+            itemDatabase,
+            relationshipPoints,
+          }),
+        };
+      })
+      .sort(
+        (left, right) =>
+          right.interest.chance - left.interest.chance ||
+          left.interest.overlevelDelta - right.interest.overlevelDelta ||
+          String(left.candidate.id).localeCompare(
+            String(right.candidate.id),
+          ),
+      );
+    const helper = helperCandidates[0];
+    if (
+      helper &&
+      passesDeterministicLfgChance(
+        `${search.id}:${search.nextResponseAt}:${source}:${seedSuffix}:${helper.candidate.id}:${search.participants.length}`,
+        helper.interest.chance,
+      )
+    ) {
+      return helper.candidate;
+    }
+    return coreCandidate || null;
+  };
+
+  if (neededRole && !finalSlotRole) {
+    const neededCandidates = eligible.filter(
+      (candidate) => candidate.role === neededRole,
+    );
+    const selectedNeeded = selectFromPool(neededCandidates, neededRole);
+    if (selectedNeeded) return selectedNeeded;
+    return selectFromPool(
+      eligible.filter((candidate) => candidate.role !== neededRole),
+      "fallback",
+    );
+  }
+
+  return selectFromPool(eligible, finalSlotRole || "open");
+};
+
 const selectGuildCandidate = ({
   roster,
   search,
@@ -316,6 +418,8 @@ const selectGuildCandidate = ({
   activeMissions,
   reservedGuildIds,
   onlineGuildMemberIds,
+  itemDatabase,
+  relationships,
 }: {
   roster: Character[];
   search: LfgSearch;
@@ -323,12 +427,12 @@ const selectGuildCandidate = ({
   activeMissions: Mission[];
   reservedGuildIds: Set<string>;
   onlineGuildMemberIds?: Set<string> | null;
+  itemDatabase: readonly ItemDefinition[];
+  relationships: unknown;
 }) => {
   const participantIds = new Set(search.participantIds.map(String));
   const busyIds = getBusyGuildMemberIds(activeMissions);
-  const neededRole = getNeededRole(search.participants, mission);
-  const finalSlotRole = getRequiredRoleForRemainingSlots(search, mission);
-  return roster
+  const candidates = roster
     .filter(
       (member) =>
         member?.id &&
@@ -337,16 +441,16 @@ const selectGuildCandidate = ({
         !reservedGuildIds.has(String(member.id)) &&
         (!onlineGuildMemberIds ||
           onlineGuildMemberIds.has(String(member.id))) &&
-        isMissionBoardAvailableStatus(member.status) &&
-        (!finalSlotRole || member.role === finalSlotRole) &&
-        isCharacterEligible(member as unknown as Record<string, unknown>, mission),
-    )
-    .sort((left, right) => {
-      const leftMatches = left.role === neededRole ? 1 : 0;
-      const rightMatches = right.role === neededRole ? 1 : 0;
-      if (leftMatches !== rightMatches) return rightMatches - leftMatches;
-      return (Number(right.level) || 1) - (Number(left.level) || 1);
-    })[0];
+        isMissionBoardAvailableStatus(member.status),
+    );
+  return selectLfgCandidate({
+    candidates,
+    search,
+    mission,
+    itemDatabase,
+    relationships,
+    source: "guild",
+  });
 };
 
 const selectRealmCandidate = ({
@@ -356,6 +460,7 @@ const selectRealmCandidate = ({
   guildFaction,
   reservedRealmIds,
   onlineRealmPlayerIds,
+  itemDatabase,
 }: {
   realmState: Record<string, any>;
   search: LfgSearch;
@@ -363,16 +468,15 @@ const selectRealmCandidate = ({
   guildFaction: string;
   reservedRealmIds: Set<string>;
   onlineRealmPlayerIds?: Set<string> | null;
+  itemDatabase: readonly ItemDefinition[];
 }) => {
   const participantIds = new Set(search.participantIds.map(String));
-  const neededRole = getNeededRole(search.participants, mission);
-  const finalSlotRole = getRequiredRoleForRemainingSlots(search, mission);
   const guildNames = new Map(
     (Array.isArray(realmState?.npcGuilds) ? realmState.npcGuilds : []).map(
       (guild: Record<string, unknown>) => [String(guild.id || ""), String(guild.name || "")],
     ),
   );
-  const candidate = (
+  const candidates = (
     Array.isArray(realmState?.population?.players)
       ? realmState.population.players
       : []
@@ -384,16 +488,16 @@ const selectRealmCandidate = ({
         !participantIds.has(String(player.id)) &&
         !reservedRealmIds.has(String(player.id)) &&
         (!onlineRealmPlayerIds ||
-          onlineRealmPlayerIds.has(String(player.id))) &&
-        (!finalSlotRole || player.role === finalSlotRole) &&
-        isCharacterEligible(player, mission),
-    )
-    .sort((left: Record<string, unknown>, right: Record<string, unknown>) => {
-      const leftMatches = left.role === neededRole ? 1 : 0;
-      const rightMatches = right.role === neededRole ? 1 : 0;
-      if (leftMatches !== rightMatches) return rightMatches - leftMatches;
-      return (Number(right.level) || 1) - (Number(left.level) || 1);
-    })[0];
+          onlineRealmPlayerIds.has(String(player.id))),
+    );
+  const candidate = selectLfgCandidate({
+    candidates,
+    search,
+    mission,
+    itemDatabase,
+    relationships: {},
+    source: "realm",
+  });
   if (!candidate) return null;
   return toParticipant(
     candidate,
@@ -410,6 +514,7 @@ const createSearch = ({
   activeMissions,
   guildFaction,
   deferText,
+  itemDatabase,
 }: {
   state: SocialState;
   now: number;
@@ -418,6 +523,7 @@ const createSearch = ({
   activeMissions: Mission[];
   guildFaction: string;
   deferText: boolean;
+  itemDatabase: readonly ItemDefinition[];
 }) => {
   const busyIds = getBusyGuildMemberIds(activeMissions);
   const reservedGuildIds = new Set(
@@ -441,28 +547,70 @@ const createSearch = ({
     .sort((left, right) => (Number(left.level) || 1) - (Number(right.level) || 1));
 
   for (const mission of missions) {
-    const eligible = availableRoster.filter((member) =>
+    const coreEligible = availableRoster.filter((member) =>
       isCharacterEligible(member as unknown as Record<string, unknown>, mission),
     );
     const targetSize = getMissionTargetSize(mission);
-    if (eligible.length === 0 || eligible.length >= targetSize) continue;
+    if (coreEligible.length >= targetSize) continue;
+    const requiredKeyId = mission.requiresKey
+      ? String(mission.keyId || "")
+      : "";
+    let initiator: Character | null =
+      (requiredKeyId
+        ? coreEligible.find((member) =>
+            getCharacterOwnedKeys(member).includes(requiredKeyId),
+          )
+        : null) || coreEligible[0] || null;
+    if (!initiator && mission.type === "dungeon") {
+      const helperCandidates = availableRoster
+        .filter(
+          (member) =>
+            getLfgCandidateKind(
+              member as unknown as Record<string, unknown>,
+              mission,
+            ) === "helper" &&
+            (!requiredKeyId ||
+              getCharacterOwnedKeys(member).includes(requiredKeyId)) &&
+            hasDungeonEquipmentUpgrade({
+              character: member as unknown as Record<string, unknown>,
+              mission,
+              itemDatabase,
+            }),
+        )
+        .map((member) => ({
+          member,
+          interest: getLfgHelperInterest({
+            character: member as unknown as Record<string, unknown>,
+            mission,
+            itemDatabase,
+          }),
+        }))
+        .sort(
+          (left, right) =>
+            right.interest.chance - left.interest.chance ||
+            left.interest.overlevelDelta - right.interest.overlevelDelta ||
+            String(left.member.id).localeCompare(String(right.member.id)),
+        );
+      initiator =
+        helperCandidates.find(({ member, interest }) =>
+          passesDeterministicLfgChance(
+            `lfg:${state.nextSequence}:init:${mission.id}:${member.id}:${now}`,
+            interest.chance,
+          ),
+        )?.member || null;
+    }
+    if (!initiator) continue;
+    const accessMembers = coreEligible.includes(initiator)
+      ? coreEligible
+      : [initiator];
     if (
       !evaluateMissionKeyAccess({
         missions: [mission],
-        partyMembers: eligible,
+        partyMembers: accessMembers,
       }).canEnter
     ) {
       continue;
     }
-    const requiredKeyId = mission.requiresKey
-      ? String(mission.keyId || "")
-      : "";
-    const initiator =
-      (requiredKeyId
-        ? eligible.find((member) =>
-            getCharacterOwnedKeys(member).includes(requiredKeyId),
-          )
-        : null) || eligible[0];
     if (
       mission.isZoneElite === true &&
       Array.isArray((initiator as any).clearedMissionIds) &&
@@ -528,6 +676,8 @@ export const advanceSocialSimulation = ({
   onlineGuildMemberIds = null,
   onlineRealmPlayerIds = null,
   currentDayIndex = 0,
+  itemDatabase = [],
+  relationships = {},
 }: {
   socialState: unknown;
   now: number;
@@ -540,6 +690,8 @@ export const advanceSocialSimulation = ({
   onlineGuildMemberIds?: Set<string> | null;
   onlineRealmPlayerIds?: Set<string> | null;
   currentDayIndex?: number;
+  itemDatabase?: readonly ItemDefinition[];
+  relationships?: unknown;
 }) => {
   let state = ensureSocialState(socialState);
   let nextRoster = [...roster];
@@ -613,6 +765,8 @@ export const advanceSocialSimulation = ({
         activeMissions,
         reservedGuildIds,
         onlineGuildMemberIds,
+        itemDatabase,
+        relationships,
       });
       if (member) {
         participant = toParticipant(
@@ -629,6 +783,7 @@ export const advanceSocialSimulation = ({
         guildFaction: guildSetup.faction,
         reservedRealmIds,
         onlineRealmPlayerIds,
+        itemDatabase,
       });
       if (participant) reservedRealmIds.add(participant.id);
     }
@@ -731,6 +886,7 @@ export const advanceSocialSimulation = ({
       activeMissions,
       guildFaction: guildSetup.faction,
       deferText,
+      itemDatabase,
     });
   }
 

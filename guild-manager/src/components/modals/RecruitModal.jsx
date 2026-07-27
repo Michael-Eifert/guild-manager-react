@@ -78,6 +78,12 @@ const RecruitModal = ({
     guildGold,
     recruitCostGold: activeRecruitCostGold,
   });
+  const maxCandidateSelection = Math.min(
+    candidates.length,
+    currentCapacity.availableSlots,
+  );
+  const hasMaxCandidateSelection =
+    maxCandidateSelection > 0 && selectedIds.length === maxCandidateSelection;
   const applicationList = Array.isArray(applications) ? applications : [];
   const safeMarketStats = marketStats && typeof marketStats === "object"
     ? marketStats
@@ -155,6 +161,18 @@ const RecruitModal = ({
       setLimitWarning(false);
       return [...prev, candidateId];
     });
+  };
+
+  const toggleMaxCandidates = () => {
+    if (!activeTier || maxCandidateSelection <= 0) return;
+    setSelectedIds(
+      hasMaxCandidateSelection
+        ? []
+        : candidates
+            .slice(0, maxCandidateSelection)
+            .map((candidate) => candidate.id),
+    );
+    setLimitWarning(false);
   };
 
   const toggleApplication = (candidateId) => {
@@ -393,9 +411,21 @@ const RecruitModal = ({
           </div>
         ) : (
           <div>
-            <h3 className="text-lg text-center mb-4 fantasy-font text-yellow-100">
-              Applicants Found - {activeTier?.label}
-            </h3>
+            <div className="mb-4 flex flex-col items-center justify-center gap-3 sm:flex-row">
+              <h3 className="text-lg text-center fantasy-font text-yellow-100">
+                Applicants Found - {activeTier?.label}
+              </h3>
+              <button
+                type="button"
+                onClick={toggleMaxCandidates}
+                disabled={maxCandidateSelection <= 0}
+                className="rounded border border-cyan-700 px-3 py-2 text-xs uppercase tracking-wider text-cyan-200 hover:bg-cyan-900/40 disabled:cursor-not-allowed disabled:opacity-50"
+              >
+                {hasMaxCandidateSelection
+                  ? "Clear Selection"
+                  : `Select Max (${maxCandidateSelection})`}
+              </button>
+            </div>
             <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-5 gap-3 mb-6">
               {candidates.map((char) => (
                 <div
