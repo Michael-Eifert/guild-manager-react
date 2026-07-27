@@ -50,6 +50,7 @@ import {
   getPlayerRealmRanking,
 } from "../server/realmRankings";
 import { getRealmRaidProgressList } from "../server/realmRaidProgress";
+import { simulateRealmDungeonActivity } from "../server/realmDungeons";
 import {
   getRealmMaxLevelCount,
   getRealmRosterCap,
@@ -5215,49 +5216,52 @@ describe("realm overview domain", () => {
   });
 
   it("raises NPC dungeon score only from simulated dungeon clears", () => {
-    const realm = ensureRealmState(
-      null,
-      { server: "Everlook", serverStyle: GUILD_SERVER_STYLE.PVE },
-      0,
-    );
-    const playerGuildSnapshot = {
-      id: "player:guild",
-      name: "Player Guild",
+    const guild = {
+      id: "npc:dungeon-test",
+      name: "Dungeon Testers",
       faction: GUILD_FACTION.ALLIANCE,
-      isPlayerGuild: true,
-      rosterSize: 20,
-      averageLevel: 35,
-      averageGearScore: 20,
-      pveScore: 500,
-      raidProgress: 0,
-      dungeonScore: 100,
-      archetype: "Player Guild",
+      archetype: "Dungeon Runners",
+      activityLevel: 100,
+      dungeonScore: 0,
+      dungeonRunCount: 0,
+      dungeonClearCount: 0,
+      dungeonWipeCount: 0,
+      clearedDungeonMissions: [],
     };
-    const advanced = advanceRealmSimulation({
-      realmState: realm,
-      currentDayIndex: 12,
-      playerGuildSnapshot,
-      guildSetup: {
-        faction: GUILD_FACTION.ALLIANCE,
-        server: "Everlook",
-        serverStyle: GUILD_SERVER_STYLE.PVE,
-      },
-    });
-    const guildsWithScore = advanced.npcGuilds.filter(
-      (guild) => Number(guild.dungeonScore) > 0,
-    );
+    const players = Array.from({ length: 14 }, (_, index) => ({
+      id: `dungeon-player:${index}`,
+      name: `Dungeon Player ${index}`,
+      guildId: guild.id,
+      level: 30,
+      itemLevel: 30,
+      role: index === 0 ? "Tank" : index === 1 ? "Healer" : "DPS",
+      personalityTraits: [],
+    }));
 
-    expect(advanced.population.dailyStats.guildDungeonRuns).toBeGreaterThan(0);
-    expect(advanced.population.dailyStats.guildDungeonClears).toBeGreaterThan(0);
-    expect(guildsWithScore.length).toBeGreaterThan(0);
-    expect(
-      guildsWithScore.every(
-        (guild) =>
-          Number(guild.dungeonClearCount) > 0 &&
-          Array.isArray(guild.clearedDungeonMissions) &&
-          guild.clearedDungeonMissions.length > 0,
-      ),
-    ).toBe(true);
+    const cleared = simulateRealmDungeonActivity({
+      npcGuilds: [guild],
+      players,
+      dayIndex: 1,
+      dayFraction: 1,
+      random: () => 0.5,
+    });
+    const failed = simulateRealmDungeonActivity({
+      npcGuilds: [guild],
+      players,
+      dayIndex: 1,
+      dayFraction: 1,
+      random: () => 0.999,
+    });
+
+    expect(cleared.stats.guildDungeonRuns).toBeGreaterThan(0);
+    expect(cleared.stats.guildDungeonClears).toBeGreaterThan(0);
+    expect(cleared.npcGuilds[0].dungeonScore).toBeGreaterThan(0);
+    expect(cleared.npcGuilds[0].dungeonClearCount).toBeGreaterThan(0);
+    expect(cleared.npcGuilds[0].clearedDungeonMissions.length).toBeGreaterThan(0);
+    expect(failed.stats.guildDungeonRuns).toBeGreaterThan(0);
+    expect(failed.stats.guildDungeonClears).toBe(0);
+    expect(failed.npcGuilds[0].dungeonScore).toBe(0);
+    expect(failed.npcGuilds[0].clearedDungeonMissions).toEqual([]);
   });
 
   it("keeps realm cadence deterministic between direct day jumps and quarter steps", () => {
