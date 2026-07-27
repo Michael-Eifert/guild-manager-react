@@ -50,6 +50,12 @@ const socialState = {
   ],
 };
 
+const formatExpectedTimestamp = (timestamp: number) =>
+  new Date(timestamp).toLocaleTimeString([], {
+    hour: "2-digit",
+    minute: "2-digit",
+  });
+
 describe("ChatPanel", () => {
   it("switches channels and clearly distinguishes guild and realm speakers", () => {
     const onMarkRead = vi.fn();
@@ -62,9 +68,11 @@ describe("ChatPanel", () => {
     );
 
     expect(screen.getByText("Aria")).toBeTruthy();
+    expect(screen.getByText(formatExpectedTimestamp(10))).toBeTruthy();
     expect(screen.getAllByText("Guild").length).toBeGreaterThan(1);
     fireEvent.click(screen.getByRole("tab", { name: /General/ }));
     expect(screen.getByText("Borin")).toBeTruthy();
+    expect(screen.getByText(formatExpectedTimestamp(20))).toBeTruthy();
     expect(screen.getByText("Realm Regulars")).toBeTruthy();
     expect(onMarkRead).toHaveBeenCalledWith("general");
   });

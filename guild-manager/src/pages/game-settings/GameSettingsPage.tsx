@@ -17,7 +17,12 @@ import type {
   BrowserSaveSlotId,
   BrowserSaveSlotSummary,
 } from "../../session/browserSessionPersistence";
-import type { GameSettingsState } from "../../settings/gameSettings";
+import {
+  REALM_GUILD_DENSITY_OPTIONS,
+  REALM_GUILD_DYNAMICS_OPTIONS,
+  normalizeGameSettings,
+  type GameSettingsState,
+} from "../../settings/gameSettings";
 import type { ChatAiSettings } from "../../social/chatProviders";
 
 type SettingsTab = "gameplay" | "chat" | "debug";
@@ -34,7 +39,7 @@ type DebugActions = {
 };
 
 type Props = {
-  gameSettings: GameSettingsState;
+  gameSettings: Partial<GameSettingsState>;
   onGameSettingsChange: (settings: Partial<GameSettingsState>) => void;
   chatAiSettings: ChatAiSettings;
   onChatAiSettingsChange: (settings: ChatAiSettings) => void;
@@ -67,6 +72,7 @@ export default function GameSettingsPage({
   const [activeTab, setActiveTab] = useState<SettingsTab>("gameplay");
   const [pendingNewSlot, setPendingNewSlot] =
     useState<BrowserSaveSlotSummary | null>(null);
+  const normalizedGameSettings = normalizeGameSettings(gameSettings);
 
   const handleConfirmNewGame = () => {
     if (!pendingNewSlot) return;
@@ -131,12 +137,12 @@ export default function GameSettingsPage({
               </span>
               <span
                 className={`mt-2 inline-flex rounded-full border px-2 py-1 text-[10px] font-bold uppercase tracking-wide ${
-                  gameSettings.offlineSimulationEnabled
+                  normalizedGameSettings.offlineSimulationEnabled
                     ? "border-cyan-800 bg-cyan-950/45 text-cyan-200"
                     : "border-emerald-800 bg-emerald-950/45 text-emerald-200"
                 }`}
               >
-                {gameSettings.offlineSimulationEnabled
+                {normalizedGameSettings.offlineSimulationEnabled
                   ? "Simulation enabled"
                   : "Everyone always online"}
               </span>
@@ -144,7 +150,7 @@ export default function GameSettingsPage({
             <input
               type="checkbox"
               aria-label="Offline Simulation"
-              checked={gameSettings.offlineSimulationEnabled}
+              checked={normalizedGameSettings.offlineSimulationEnabled}
               onChange={(event) =>
                 onGameSettingsChange({
                   offlineSimulationEnabled: event.target.checked,
@@ -153,6 +159,46 @@ export default function GameSettingsPage({
               className="mt-0.5 h-6 w-6 shrink-0 rounded border-slate-600 bg-slate-950 accent-cyan-500"
             />
           </label>
+
+          <div className="mt-4 grid gap-4 lg:grid-cols-2">
+            <div className="rounded-lg border border-amber-900/60 bg-amber-950/15 p-4">
+              <h3 className="text-sm font-bold text-amber-100">
+                Guild Density
+              </h3>
+              <p className="mt-1 min-h-10 text-xs leading-relaxed text-slate-400">
+                Guides how many NPC guilds the realm supports. Existing guilds
+                are never removed immediately when this changes.
+              </p>
+              <SegmentedControl
+                ariaLabel="Guild Density"
+                options={REALM_GUILD_DENSITY_OPTIONS}
+                value={normalizedGameSettings.realmGuildDensity}
+                onChange={(realmGuildDensity) =>
+                  onGameSettingsChange({ realmGuildDensity })
+                }
+                className="mt-3"
+              />
+            </div>
+            <div className="rounded-lg border border-violet-900/60 bg-violet-950/15 p-4">
+              <h3 className="text-sm font-bold text-violet-100">
+                Guild Dynamics
+              </h3>
+              <p className="mt-1 min-h-10 text-xs leading-relaxed text-slate-400">
+                Guides the future pace of founding, mergers, acquisitions,
+                disbands, and member transfers.
+              </p>
+              <SegmentedControl
+                ariaLabel="Guild Dynamics"
+                options={REALM_GUILD_DYNAMICS_OPTIONS}
+                value={normalizedGameSettings.realmGuildDynamics}
+                onChange={(realmGuildDynamics) =>
+                  onGameSettingsChange({ realmGuildDynamics })
+                }
+                tone="sky"
+                className="mt-3"
+              />
+            </div>
+          </div>
         </section>
 
         <section className="rounded-xl border border-slate-700 bg-slate-900/70 p-4 shadow-lg md:p-5">

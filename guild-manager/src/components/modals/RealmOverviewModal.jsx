@@ -66,6 +66,10 @@ const REALM_NEWS_CATEGORY = Object.freeze({
   "realm-retirement": ["Retirement", "border-slate-700 bg-slate-900 text-slate-300"],
   "guild-applications": ["Application", "border-blue-800/70 bg-blue-950/40 text-blue-200"],
   "applications-expired": ["Expired", "border-rose-900/70 bg-rose-950/30 text-rose-200"],
+  "npc-guild-founded": ["Founded", "border-emerald-800/70 bg-emerald-950/40 text-emerald-200"],
+  "npc-guild-acquisition": ["Acquired", "border-violet-800/70 bg-violet-950/40 text-violet-200"],
+  "npc-guild-merger": ["Merged", "border-blue-800/70 bg-blue-950/40 text-blue-200"],
+  "npc-guild-dissolution": ["Disbanded", "border-rose-800/70 bg-rose-950/40 text-rose-200"],
 });
 
 function RealmNewsCategory({ type }) {
@@ -223,7 +227,8 @@ function GuildRosterPreview({ guild }) {
             Guild Roster
           </h3>
           <p className="mt-1 text-sm text-slate-400">
-            {guild?.name || "Selected Guild"} - {roster.length}/{getRealmRosterCap()} members,{" "}
+            {guild?.name || "Selected Guild"} - {roster.length}/
+            {guild?.targetRosterSize || getRealmRosterCap()} target members,{" "}
             {guild?.maxLevelCount || 0} at level 60
           </p>
         </div>
@@ -351,6 +356,14 @@ export default function RealmOverviewModal({
   const news = Array.isArray(realmState?.news) ? realmState.news : [];
   const populationStats = getRealmPopulationStats(realmState, roster);
   const dailyStats = populationStats.dailyStats || {};
+  const unguildedPercent =
+    populationStats.realmPlayers > 0
+      ? Math.round(
+          (Number(populationStats.freeAgents || 0) /
+            populationStats.realmPlayers) *
+            100,
+        )
+      : 0;
 
   if (!isPage && !isOpen) return null;
 
@@ -400,6 +413,31 @@ export default function RealmOverviewModal({
                 label="Arrivals"
                 value={dailyStats.arrivals || 0}
               />
+            </div>
+            <div className="mt-2 grid grid-cols-2 md:grid-cols-4 gap-2">
+              <RealmStat
+                label="Guild Density"
+                value={
+                  String(realmState?.guildDensity || "medium")
+                    .charAt(0)
+                    .toUpperCase() +
+                  String(realmState?.guildDensity || "medium").slice(1)
+                }
+              />
+              <RealmStat
+                label="Guild Dynamics"
+                value={
+                  String(realmState?.guildDynamics || "medium")
+                    .charAt(0)
+                    .toUpperCase() +
+                  String(realmState?.guildDynamics || "medium").slice(1)
+                }
+              />
+              <RealmStat
+                label="NPC Guild Target"
+                value={`${realmState?.npcGuilds?.length || 0}/${realmState?.desiredGuildCount || realmState?.npcGuilds?.length || 0}`}
+              />
+              <RealmStat label="Guildless" value={`${unguildedPercent}%`} />
             </div>
             <div className="mt-2 grid grid-cols-2 md:grid-cols-4 gap-2">
               <RealmStat

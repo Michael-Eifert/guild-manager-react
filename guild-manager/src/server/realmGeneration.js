@@ -1,11 +1,13 @@
 import {
-  DEFAULT_NPC_GUILD_COUNT,
   NPC_GUILD_ARCHETYPE_ORDER,
   NPC_GUILD_ARCHETYPE_PROFILE,
   NPC_GUILD_NAME_POOL,
   REALM_NPC_GUILD_INITIAL_RANGE,
   REALM_FACTION_ORDER,
   REALM_TYPES,
+  REALM_GUILD_ROSTER_CAP,
+  normalizeRealmGuildDensity,
+  normalizeRealmGuildDynamics,
   getRealmPopulationProfile,
 } from "./realmDefinitions";
 import { capRealmNews } from "./realmNews";
@@ -79,24 +81,53 @@ export const generateNpcGuilds = ({
   realmName = DEFAULT_GUILD_SETUP.server,
   realmType = REALM_TYPES.PVE,
   count,
+  guildDensity = "medium",
 } = {}) => {
   const random = createRandom(hashRealmSeed(`${realmName}:${realmType}:guilds`));
   const names = [...NPC_GUILD_NAME_POOL];
   const usedNameKeys = new Set();
+  const density = normalizeRealmGuildDensity(guildDensity);
+  const populationProfile = getRealmPopulationProfile(
+    GUILD_SERVER_POPULATION.MEDIUM,
+    density,
+  );
   const guildCount = Math.max(
     1,
     Math.floor(
       Number.isFinite(Number(count))
         ? Number(count)
-        : pickRangeCount(random, REALM_NPC_GUILD_INITIAL_RANGE),
+        : pickRangeCount(random, populationProfile.guildInitialRange),
     ),
   );
+  const archetypeSequence = [
+    NPC_GUILD_ARCHETYPE_ORDER[0],
+    NPC_GUILD_ARCHETYPE_ORDER[1],
+    NPC_GUILD_ARCHETYPE_ORDER[2],
+    NPC_GUILD_ARCHETYPE_ORDER[3],
+    NPC_GUILD_ARCHETYPE_ORDER[4],
+    NPC_GUILD_ARCHETYPE_ORDER[4],
+    NPC_GUILD_ARCHETYPE_ORDER[3],
+    NPC_GUILD_ARCHETYPE_ORDER[1],
+    NPC_GUILD_ARCHETYPE_ORDER[2],
+    NPC_GUILD_ARCHETYPE_ORDER[4],
+    NPC_GUILD_ARCHETYPE_ORDER[3],
+    NPC_GUILD_ARCHETYPE_ORDER[1],
+    NPC_GUILD_ARCHETYPE_ORDER[2],
+    NPC_GUILD_ARCHETYPE_ORDER[4],
+    NPC_GUILD_ARCHETYPE_ORDER[3],
+    NPC_GUILD_ARCHETYPE_ORDER[0],
+    NPC_GUILD_ARCHETYPE_ORDER[1],
+    NPC_GUILD_ARCHETYPE_ORDER[2],
+    NPC_GUILD_ARCHETYPE_ORDER[4],
+    NPC_GUILD_ARCHETYPE_ORDER[3],
+  ];
+  const starterRosterAverage = 140 / guildCount;
+  const baseTargetAverage = 40;
 
   return Array.from({ length: guildCount }, (_, index) => {
     const nameIndex = Math.floor(random() * names.length) % names.length;
     const name = names.splice(nameIndex, 1)[0] || `Realm Guild ${index + 1}`;
-    const archetype =
-      NPC_GUILD_ARCHETYPE_ORDER[index % NPC_GUILD_ARCHETYPE_ORDER.length];
+    const archetype = archetypeSequence[index % archetypeSequence.length];
     const profile = NPC_GUILD_ARCHETYPE_PROFILE[archetype];
     const faction = REALM_FACTION_ORDER[index % REALM_FACTION_ORDER.length];
     const activityLevel = pickNumber(random, profile.activityLevel);
@@ -105,7 +136,25 @@ export const generateNpcGuilds = ({
     const dungeonScore = pickNumber(random, profile.dungeonScore);
     const raidProgress = pickNumber(random, profile.raidProgress);
     const id = `npc:${hashRealmSeed(`${realmName}:${name}`).toString(36)}`;
-    const rosterSize = pickNumber(random, profile.rosterSize);
+    const targetRosterSize = Math.min(
+      REALM_GUILD_ROSTER_CAP,
+      Math.max(
+        6,
+        Math.round(
+          pickNumber(random, profile.rosterSize) *
+            populationProfile.rosterMultiplier,
+        ),
+      ),
+    );
+    const targetMidpoint =
+      (Number(profile.rosterSize[0]) + Number(profile.rosterSize[1])) / 2;
+    const rosterSize = Math.min(
+      targetRosterSize,
+      Math.max(
+        6,
+        Math.round(starterRosterAverage * (targetMidpoint / baseTargetAverage)),
+      ),
+    );
     const guildRoster = generateNpcGuildRoster({
       guildId: id,
       guildName: name,
@@ -114,6 +163,7 @@ export const generateNpcGuilds = ({
       averageLevel,
       averageGearScore,
       archetype,
+      targetRosterSize,
       random,
       usedNameKeys,
     });
@@ -130,6 +180,7 @@ export const generateNpcGuilds = ({
       faction,
       archetype,
       rosterSize,
+      targetRosterSize,
       maxLevelCount: getRealmMaxLevelCount(guildRoster),
       roster: guildRoster,
       averageLevel,
@@ -147,11 +198,30 @@ export const generateNpcGuilds = ({
   });
 };
 
-export const normalizeNpcGuild = (guild, fallbackGuild) => {
+export const normalizeNpcGuild = (
+  guild,
+  fallbackGuild,
+  guildDensity = "medium",
+) => {
   const archetype = NPC_GUILD_ARCHETYPE_ORDER.includes(guild?.archetype)
     ? guild.archetype
     : fallbackGuild?.archetype || NPC_GUILD_ARCHETYPE_ORDER[0];
   const roster = normalizeRealmGuildRoster(guild?.roster, fallbackGuild?.roster);
+  const densityProfile = getRealmPopulationProfile(
+    GUILD_SERVER_POPULATION.MEDIUM,
+    guildDensity,
+  );
+  const targetRange = NPC_GUILD_ARCHETYPE_PROFILE[archetype].rosterSize;
+  const fallbackTarget = Math.min(
+    REALM_GUILD_ROSTER_CAP,
+    Math.max(
+      6,
+      Math.round(
+        ((Number(targetRange[0]) + Number(targetRange[1])) / 2) *
+          densityProfile.rosterMultiplier,
+      ),
+    ),
+  );
   return {
     ...fallbackGuild,
     ...guild,
@@ -161,6 +231,25 @@ export const normalizeNpcGuild = (guild, fallbackGuild) => {
       ? guild.faction
       : fallbackGuild?.faction || REALM_FACTION_ORDER[0],
     archetype,
+    targetRosterSize: Math.min(
+      REALM_GUILD_ROSTER_CAP,
+      Math.max(
+        6,
+        Math.round(
+          Number(guild?.targetRosterSize) ||
+            Number(fallbackGuild?.targetRosterSize) ||
+            fallbackTarget,
+        ),
+      ),
+    ),
+    foundedAtDayIndex: Number.isFinite(Number(guild?.foundedAtDayIndex))
+      ? Math.max(0, Math.floor(Number(guild.foundedAtDayIndex)))
+      : 0,
+    understrengthSinceDayIndex:
+      guild?.understrengthSinceDayIndex != null &&
+      Number.isFinite(Number(guild.understrengthSinceDayIndex))
+      ? Math.max(0, Math.floor(Number(guild.understrengthSinceDayIndex)))
+      : null,
     rosterSize: Math.min(
       getRealmRosterCap(),
       Math.max(
@@ -203,16 +292,30 @@ export const ensureRealmState = (
   guildSetup = DEFAULT_GUILD_SETUP,
   currentDayIndex = 0,
   playerRosterSize = 0,
+  gameSettings = {},
 ) => {
   const realmName = getRealmNameFromSetup(guildSetup);
   const realmType = getRealmTypeFromSetup(guildSetup);
   const realmPopulation = getRealmPopulationFromSetup(guildSetup);
-  const populationProfile = getRealmPopulationProfile(realmPopulation);
+  const guildDensity = normalizeRealmGuildDensity(
+    gameSettings?.realmGuildDensity || existingRealmState?.guildDensity,
+  );
+  const guildDynamics = normalizeRealmGuildDynamics(
+    gameSettings?.realmGuildDynamics || existingRealmState?.guildDynamics,
+  );
+  const populationProfile = getRealmPopulationProfile(
+    realmPopulation,
+    guildDensity,
+  );
   const safeCurrentDay = Math.max(0, Math.floor(Number(currentDayIndex) || 0));
   const generatedGuilds = generateNpcGuilds({
     realmName,
     realmType,
-    count: DEFAULT_NPC_GUILD_COUNT,
+    count: pickRangeCount(
+      createRandom(hashRealmSeed(`${realmName}:${realmType}:${guildDensity}`)),
+      populationProfile.guildInitialRange,
+    ),
+    guildDensity,
   });
   const safe = existingRealmState && typeof existingRealmState === "object"
     ? existingRealmState
@@ -221,8 +324,9 @@ export const ensureRealmState = (
     Array.isArray(safe.npcGuilds) && safe.npcGuilds.length > 0;
   const npcGuilds = hasExistingState
     ? safe.npcGuilds
-        .map((guild, index) => normalizeNpcGuild(guild, generatedGuilds[index]))
-        .slice(0, populationProfile.guildTargetRange[1])
+        .map((guild, index) =>
+          normalizeNpcGuild(guild, generatedGuilds[index], guildDensity),
+        )
     : generatedGuilds;
   const realmId =
     String(safe.id || "").trim() ||
@@ -241,6 +345,8 @@ export const ensureRealmState = (
     name: realmName,
     type: realmType,
     populationLabel: realmPopulation,
+    guildDensity,
+    guildDynamics,
     ageDays: Math.max(
       0,
       Math.floor(
@@ -252,6 +358,19 @@ export const ensureRealmState = (
     npcGuilds,
     population,
     news: capRealmNews(safe.news),
+    desiredGuildCount: Number.isFinite(Number(safe.desiredGuildCount))
+      ? Math.max(1, Math.floor(Number(safe.desiredGuildCount)))
+      : npcGuilds.length,
+    lastGuildFoundingDayIndex:
+      safe.lastGuildFoundingDayIndex != null &&
+      Number.isFinite(Number(safe.lastGuildFoundingDayIndex))
+      ? Math.max(0, Math.floor(Number(safe.lastGuildFoundingDayIndex)))
+      : null,
+    lastGuildStructureEventDayIndex:
+      safe.lastGuildStructureEventDayIndex != null &&
+      Number.isFinite(Number(safe.lastGuildStructureEventDayIndex))
+      ? Math.max(0, Math.floor(Number(safe.lastGuildStructureEventDayIndex)))
+      : null,
     lastSimulatedDayIndex: Number.isFinite(Number(safe.lastSimulatedDayIndex))
       ? Math.max(0, Math.floor(Number(safe.lastSimulatedDayIndex)))
       : safeCurrentDay,

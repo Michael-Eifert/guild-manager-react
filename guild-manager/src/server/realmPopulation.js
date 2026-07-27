@@ -31,6 +31,7 @@ import {
 } from "../zones/zoneDefinitions";
 import {
   NPC_GUILD_ARCHETYPES,
+  NPC_GUILD_ARCHETYPE_PROFILE,
   REALM_DAILY_ARRIVAL_RANGE,
   REALM_DAILY_DEPARTURE_CAP,
   REALM_DAILY_NPC_GUILD_EXIT_CAP,
@@ -45,6 +46,7 @@ import {
   REALM_POPULATION_SOFT_CAP_VARIANCE,
   REALM_POPULATION_START,
   REALM_RETURN_MINIMUM_DAYS,
+  getRealmGuildDynamicsProfile,
   getRealmPopulationProfile,
 } from "./realmDefinitions";
 import { simulateRealmDungeonActivity } from "./realmDungeons";
@@ -883,6 +885,98 @@ const syncGuildRostersFromPopulation = (npcGuilds, players) =>
     });
   })();
 
+export const getRealmGuildFitScore = ({
+  player,
+  guild,
+  guildMembers = [],
+} = {}) => {
+  if (!player || !guild) return 0;
+  const traits = normalizeCharacterPersonalityTraits(
+    player.personalityTraits,
+  );
+  const traitAffinity = {
+    raider: {
+      [NPC_GUILD_ARCHETYPES.HARDCORE_RAIDERS]: 35,
+      [NPC_GUILD_ARCHETYPES.DUNGEON_RUNNERS]: 10,
+    },
+    dungeon_expert: {
+      [NPC_GUILD_ARCHETYPES.DUNGEON_RUNNERS]: 35,
+      [NPC_GUILD_ARCHETYPES.CASUAL_ADVENTURERS]: 10,
+    },
+    power_leveler: {
+      [NPC_GUILD_ARCHETYPES.LEVELING_GUILD]: 35,
+      [NPC_GUILD_ARCHETYPES.HARDCORE_RAIDERS]: 10,
+    },
+    casual_gamer: {
+      [NPC_GUILD_ARCHETYPES.SOCIAL_GUILD]: 30,
+      [NPC_GUILD_ARCHETYPES.CASUAL_ADVENTURERS]: 25,
+    },
+  };
+  const traitScore = traits.reduce(
+    (score, trait) =>
+      score + Number(traitAffinity[trait]?.[guild.archetype] || 0),
+    traits.length === 0 &&
+      (guild.archetype === NPC_GUILD_ARCHETYPES.CASUAL_ADVENTURERS ||
+        guild.archetype === NPC_GUILD_ARCHETYPES.SOCIAL_GUILD)
+      ? 10
+      : 0,
+  );
+  const activityRange =
+    NPC_GUILD_ARCHETYPE_PROFILE[guild.archetype]?.activityLevel || [40, 70];
+  const activityMidpoint =
+    (Number(activityRange[0]) + Number(activityRange[1])) / 2;
+  const activityScore = Math.max(
+    0,
+    25 - Math.abs((Number(player.activityLevel) || 50) - activityMidpoint) / 2,
+  );
+  let levelScore = 8;
+  if (
+    guild.archetype === NPC_GUILD_ARCHETYPES.HARDCORE_RAIDERS &&
+    Number(player.level) >= 50
+  ) levelScore = 20;
+  if (
+    guild.archetype === NPC_GUILD_ARCHETYPES.LEVELING_GUILD &&
+    Number(player.level) < 50
+  ) levelScore = 20;
+  const roleCounts = (Array.isArray(guildMembers) ? guildMembers : []).reduce(
+    (counts, member) => ({
+      ...counts,
+      [member.role]: (counts[member.role] || 0) + 1,
+    }),
+    {},
+  );
+  const memberCount = Math.max(1, guildMembers.length);
+  const desiredRoleShare =
+    player.role === "Tank" ? 0.2 : player.role === "Healer" ? 0.2 : 0.6;
+  const roleNeedScore = Math.max(
+    0,
+    20 -
+      Math.max(
+        0,
+        (Number(roleCounts[player.role]) || 0) / memberCount -
+          desiredRoleShare,
+      ) *
+        40,
+  );
+  const reputationScore = Math.min(
+    15,
+    Math.max(0, Number(guild.reputation) || 0) * 0.15,
+  );
+  const targetSize = Math.max(1, Number(guild.targetRosterSize) || 1);
+  const vacancyScore = Math.max(
+    0,
+    Math.min(20, (1 - guildMembers.length / targetSize) * 20),
+  );
+  return Math.round(
+    traitScore +
+      activityScore +
+      levelScore +
+      roleNeedScore +
+      reputationScore +
+      vacancyScore,
+  );
+};
+
 const recruitNpcGuilds = ({
   npcGuilds,
   players,
@@ -894,6 +988,11 @@ const recruitNpcGuilds = ({
   const nextPlayers = [...players];
   const safeDayIndex = Math.max(0, Math.floor(Number(dayIndex) || 0));
   const safeDayFraction = clampNumber(dayFraction, 0.05, 1);
+  const freeAgentRatio =
+    nextPlayers.length > 0
+      ? nextPlayers.filter((player) => !player.guildId).length /
+        nextPlayers.length
+      : 0;
   const guilds = [...npcGuilds]
     .sort((left, right) => {
       const leftIsFoundingDay =
@@ -910,7 +1009,11 @@ const recruitNpcGuilds = ({
 
   guilds.forEach((guild) => {
     const currentSize = nextPlayers.filter((player) => player.guildId === guild.id).length;
-    const openSlots = Math.max(0, REALM_GUILD_ROSTER_CAP - currentSize);
+    const targetRosterSize = Math.min(
+      REALM_GUILD_ROSTER_CAP,
+      Math.max(1, Number(guild.targetRosterSize) || REALM_GUILD_ROSTER_CAP),
+    );
+    const openSlots = Math.max(0, targetRosterSize - currentSize);
     if (openSlots <= 0) return;
     const foundedRosterSize = Math.max(
       0,
@@ -924,12 +1027,20 @@ const recruitNpcGuilds = ({
       ? Math.max(0, foundedRosterSize - currentSize)
       : 0;
     if (isFoundingDay && foundingOpenings <= 0) return;
-    const dailyAttempts = random() < 0.6 ? 2 : 1;
+    const dailyAttemptCap =
+      freeAgentRatio > 0.3 ? 4 : freeAgentRatio < 0.2 ? 1 : 2;
+    const dailyAttempts =
+      freeAgentRatio < 0.2 && random() > 0.35
+        ? 0
+        : Math.max(1, Math.ceil(random() * dailyAttemptCap));
     const scaledAttempts = Math.floor(dailyAttempts * safeDayFraction + random());
     const attempts = isFoundingDay
       ? Math.min(openSlots, foundingOpenings)
       : Math.min(openSlots, scaledAttempts);
     for (let attempt = 0; attempt < attempts; attempt += 1) {
+      const guildMembers = nextPlayers.filter(
+        (candidate) => candidate.guildId === guild.id,
+      );
       const candidates = nextPlayers
         .map((player, index) => ({ player, index }))
         .filter(({ player }) =>
@@ -940,16 +1051,23 @@ const recruitNpcGuilds = ({
             Number(player.arrivalDayIndex) < safeDayIndex),
         )
         .sort((left, right) => {
-          if (isFoundingDay && (right.player.level || 0) !== (left.player.level || 0)) {
-            return (right.player.level || 0) - (left.player.level || 0);
-          }
-          if ((right.player.activityLevel || 0) !== (left.player.activityLevel || 0)) {
-            return (right.player.activityLevel || 0) - (left.player.activityLevel || 0);
-          }
-          if ((right.player.level || 0) !== (left.player.level || 0)) {
-            return (right.player.level || 0) - (left.player.level || 0);
-          }
-          return String(left.player.id || "").localeCompare(String(right.player.id || ""));
+          const scoreDifference =
+            getRealmGuildFitScore({
+              player: right.player,
+              guild,
+              guildMembers,
+            }) -
+            getRealmGuildFitScore({
+              player: left.player,
+              guild,
+              guildMembers,
+            });
+          return (
+            scoreDifference ||
+            String(left.player.id || "").localeCompare(
+              String(right.player.id || ""),
+            )
+          );
         });
       const candidateWindow = isFoundingDay
         ? candidates.slice(0, Math.max(foundedRosterSize * 2, attempts))
@@ -970,35 +1088,97 @@ const recruitNpcGuilds = ({
   return { players: nextPlayers, recruited };
 };
 
-const poachNpcGuildMembers = ({ npcGuilds, players, random }) => {
+const poachNpcGuildMembers = ({
+  npcGuilds,
+  players,
+  dayIndex,
+  guildDynamics,
+  random,
+}) => {
   const nextPlayers = [...players];
   let poached = 0;
-  if (random() > 0.28) return { players: nextPlayers, poached };
+  const dynamicsProfile = getRealmGuildDynamicsProfile(guildDynamics);
+  if (
+    Math.max(0, Math.floor(Number(dayIndex) || 0)) %
+      dynamicsProfile.transferIntervalDays !==
+    0
+  ) return { players: nextPlayers, poached };
 
-  const candidates = nextPlayers
-    .map((player, index) => ({ player, index }))
-    .filter(({ player }) => player.guildId && player.marketStatus === REALM_MARKET_STATUS.OPEN_TO_OFFERS);
-  if (candidates.length === 0) return { players: nextPlayers, poached };
-  const { player, index } = candidates[Math.floor(random() * candidates.length)];
-  const currentGuild = npcGuilds.find((guild) => guild.id === player.guildId);
-  const targets = npcGuilds.filter(
-    (guild) =>
-      guild.id !== player.guildId &&
-      guild.faction === player.faction &&
-      (guild.reputation || 0) > (currentGuild?.reputation || 0) &&
-      nextPlayers.filter((candidate) => candidate.guildId === guild.id).length <
-        REALM_GUILD_ROSTER_CAP,
-  );
-  if (targets.length === 0) return { players: nextPlayers, poached };
-  const target = targets[Math.floor(random() * targets.length)];
-  nextPlayers[index] = {
-    ...player,
-    guildId: target.id,
-    sourceGuildName: target.name,
-    marketStatus: REALM_MARKET_STATUS.GUILDED,
-    loyalty: Math.max(45, player.loyalty + 20),
-  };
-  poached = 1;
+  for (
+    let attempt = 0;
+    attempt < dynamicsProfile.maxTransfers;
+    attempt += 1
+  ) {
+    if (random() > 0.28) continue;
+    const candidates = nextPlayers
+      .map((player, index) => ({ player, index }))
+      .filter(
+        ({ player }) =>
+          player.guildId &&
+          player.marketStatus === REALM_MARKET_STATUS.OPEN_TO_OFFERS,
+      );
+    if (candidates.length === 0) break;
+    const { player, index } =
+      candidates[Math.floor(random() * candidates.length)];
+    const currentGuild = npcGuilds.find(
+      (guild) => guild.id === player.guildId,
+    );
+    const currentMembers = nextPlayers.filter(
+      (candidate) => candidate.guildId === currentGuild?.id,
+    );
+    const currentScore = getRealmGuildFitScore({
+      player,
+      guild: currentGuild,
+      guildMembers: currentMembers,
+    });
+    const targets = npcGuilds
+      .filter((guild) => {
+        const members = nextPlayers.filter(
+          (candidate) => candidate.guildId === guild.id,
+        );
+        return (
+          guild.id !== player.guildId &&
+          guild.faction === player.faction &&
+          members.length <
+            Math.min(
+              REALM_GUILD_ROSTER_CAP,
+              Number(guild.targetRosterSize) || REALM_GUILD_ROSTER_CAP,
+            ) &&
+          getRealmGuildFitScore({ player, guild, guildMembers: members }) >=
+            currentScore + 15
+        );
+      })
+      .sort((left, right) => {
+        const leftMembers = nextPlayers.filter(
+          (candidate) => candidate.guildId === left.id,
+        );
+        const rightMembers = nextPlayers.filter(
+          (candidate) => candidate.guildId === right.id,
+        );
+        return (
+          getRealmGuildFitScore({
+            player,
+            guild: right,
+            guildMembers: rightMembers,
+          }) -
+          getRealmGuildFitScore({
+            player,
+            guild: left,
+            guildMembers: leftMembers,
+          })
+        );
+      });
+    const target = targets[0];
+    if (!target) continue;
+    nextPlayers[index] = {
+      ...player,
+      guildId: target.id,
+      sourceGuildName: target.name,
+      marketStatus: REALM_MARKET_STATUS.GUILDED,
+      loyalty: Math.max(45, player.loyalty + 20),
+    };
+    poached += 1;
+  }
   return { players: nextPlayers, poached };
 };
 
@@ -1059,13 +1239,23 @@ export const advanceRealmPopulationLifecycle = ({
     }
     const guild = guildById.get(String(player.guildId));
     const stability = getLifecycleGuildStability(guild);
+    const guildMembers = population.players.filter(
+      (candidate) => String(candidate.guildId || "") === String(guild?.id),
+    );
+    const guildFit = getRealmGuildFitScore({
+      player,
+      guild,
+      guildMembers,
+    });
     const negativeChance =
       0.08 +
       Math.max(0, 50 - (Number(player.activityLevel) || 50)) / 220 +
-      Math.max(0, 55 - stability) / 260;
+      Math.max(0, 55 - stability) / 260 +
+      Math.max(0, 65 - guildFit) / 500;
     const positiveChance =
       0.1 +
-      Math.max(0, stability - 55) / 260;
+      Math.max(0, stability - 55) / 260 +
+      Math.max(0, guildFit - 85) / 500;
     const roll = safeRandom();
     let loyaltyDelta = 0;
     if (roll < negativeChance) {
@@ -1457,6 +1647,7 @@ export const advanceRealmPopulationActivity = ({
   difficultyProfile,
   random,
   onlinePlayerIds = null,
+  guildDynamics = "medium",
 } = {}) => {
   const safeRandom = typeof random === "function" ? random : Math.random;
   const safeDayFraction = clampNumber(dayFraction, 0.05, 1);
@@ -1555,6 +1746,8 @@ export const advanceRealmPopulationActivity = ({
   const poachResult = poachNpcGuildMembers({
     npcGuilds: activeNpcGuilds,
     players,
+    dayIndex: safeDayIndex,
+    guildDynamics,
     random: safeRandom,
   });
   players = poachResult.players;
@@ -1990,7 +2183,11 @@ export const resolvePlayerGuildDeparturesForDay = ({
   const openGuilds = npcGuilds.filter(
     (guild) =>
       guild.faction === guildFaction &&
-      (Array.isArray(guild.roster) ? guild.roster.length : 0) < REALM_GUILD_ROSTER_CAP,
+      (Array.isArray(guild.roster) ? guild.roster.length : 0) <
+        Math.min(
+          REALM_GUILD_ROSTER_CAP,
+          Number(guild.targetRosterSize) || REALM_GUILD_ROSTER_CAP,
+        ),
   );
   let nextRoster = [...roster];
   let players = [...population.players];
@@ -2004,11 +2201,32 @@ export const resolvePlayerGuildDeparturesForDay = ({
   });
 
   if (departingMember && openGuilds.length > 0) {
-    const targetGuild =
-      openGuilds[
-        hashPopulationSeed(`${realmState?.id}:${safeDay}:${departingMember.id}`) %
-          openGuilds.length
-      ];
+    const targetGuild = [...openGuilds].sort((left, right) => {
+      const leftMembers = players.filter(
+        (player) => String(player.guildId || "") === String(left.id),
+      );
+      const rightMembers = players.filter(
+        (player) => String(player.guildId || "") === String(right.id),
+      );
+      return (
+        getRealmGuildFitScore({
+          player: departingMember,
+          guild: right,
+          guildMembers: rightMembers,
+        }) -
+          getRealmGuildFitScore({
+            player: departingMember,
+            guild: left,
+            guildMembers: leftMembers,
+          }) ||
+        hashPopulationSeed(
+          `${realmState?.id}:${safeDay}:${departingMember.id}:${left.id}`,
+        ) -
+          hashPopulationSeed(
+            `${realmState?.id}:${safeDay}:${departingMember.id}:${right.id}`,
+          )
+      );
+    })[0];
     nextRoster = nextRoster.filter((member) => member.id !== departingMember.id);
     players.push(convertCharacterToRealmPlayer({
       character: departingMember,

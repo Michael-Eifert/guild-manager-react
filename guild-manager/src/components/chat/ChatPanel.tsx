@@ -25,6 +25,22 @@ const CHANNELS: Array<{
   { id: "tavern", label: "Tavern RP", icon: Wine },
 ];
 
+const getChatTimestampDate = (gameTimeMs: unknown) => {
+  const timestamp = Number(gameTimeMs);
+  return Number.isFinite(timestamp) && timestamp >= 0
+    ? new Date(timestamp)
+    : null;
+};
+
+const formatChatTimestamp = (gameTimeMs: unknown) => {
+  const date = getChatTimestampDate(gameTimeMs);
+  if (!date) return "--:--";
+  return date.toLocaleTimeString([], {
+    hour: "2-digit",
+    minute: "2-digit",
+  });
+};
+
 export default function ChatPanel({
   socialState,
   guildName,
@@ -169,6 +185,7 @@ export default function ChatPanel({
               incident?.status === "pending" &&
               isLastSceneMessage &&
               Boolean(onResolveIncident);
+            const messageDate = getChatTimestampDate(message.gameTimeMs);
             return (
               <article
                 key={message.id}
@@ -180,50 +197,59 @@ export default function ChatPanel({
                     : "border-slate-800 bg-slate-900/65"
                 }`}
               >
-                <div className="mb-1 flex items-center gap-2">
-                  <span
-                    className={`truncate text-xs font-bold ${
-                      isGuildMember ? "text-amber-200" : "text-cyan-200"
-                    }`}
-                  >
-                    {message.speaker?.name || "System"}
-                  </span>
-                  {message.speaker ? (
+                <div className="mb-1 flex items-start justify-between gap-3">
+                  <div className="flex min-w-0 flex-wrap items-center gap-2">
                     <span
-                      className={`inline-flex items-center gap-1 rounded border px-1.5 py-0.5 text-[8px] font-bold uppercase tracking-wide ${
-                        isGuildMember
-                          ? "border-amber-700 bg-amber-950/70 text-amber-300"
-                          : "border-slate-700 bg-slate-950 text-slate-400"
+                      className={`truncate text-xs font-bold ${
+                        isGuildMember ? "text-amber-200" : "text-cyan-200"
                       }`}
                     >
-                      {isGuildMember ? (
-                        <>
-                          <Shield size={10} aria-hidden="true" />
-                          Guild
-                        </>
-                      ) : (
-                        message.speaker.guildName || "Free Agent"
-                      )}
+                      {message.speaker?.name || "System"}
                     </span>
-                  ) : null}
-                  {message.sceneTag ? (
-                    <span className="inline-flex flex-none items-center gap-1 rounded border border-violet-700/80 bg-violet-950/70 px-1.5 py-0.5 text-[8px] font-bold uppercase tracking-wide text-violet-200">
-                      <Wine size={10} aria-hidden="true" />
-                      {message.sceneTag}
-                    </span>
-                  ) : null}
-                  {message.intent === "mission-failed" ? (
-                    <span className="inline-flex flex-none items-center gap-1 rounded border border-rose-700/80 bg-rose-950/70 px-1.5 py-0.5 text-[8px] font-bold uppercase tracking-wide text-rose-200">
-                      <CircleX size={10} aria-hidden="true" />
-                      Mission Failed
-                    </span>
-                  ) : null}
-                  {message.intent === "mission-success" ? (
-                    <span className="inline-flex flex-none items-center gap-1 rounded border border-emerald-700/80 bg-emerald-950/70 px-1.5 py-0.5 text-[8px] font-bold uppercase tracking-wide text-emerald-200">
-                      <CircleCheck size={10} aria-hidden="true" />
-                      Mission Accomplished
-                    </span>
-                  ) : null}
+                    {message.speaker ? (
+                      <span
+                        className={`inline-flex items-center gap-1 rounded border px-1.5 py-0.5 text-[8px] font-bold uppercase tracking-wide ${
+                          isGuildMember
+                            ? "border-amber-700 bg-amber-950/70 text-amber-300"
+                            : "border-slate-700 bg-slate-950 text-slate-400"
+                        }`}
+                      >
+                        {isGuildMember ? (
+                          <>
+                            <Shield size={10} aria-hidden="true" />
+                            Guild
+                          </>
+                        ) : (
+                          message.speaker.guildName || "Free Agent"
+                        )}
+                      </span>
+                    ) : null}
+                    {message.sceneTag ? (
+                      <span className="inline-flex flex-none items-center gap-1 rounded border border-violet-700/80 bg-violet-950/70 px-1.5 py-0.5 text-[8px] font-bold uppercase tracking-wide text-violet-200">
+                        <Wine size={10} aria-hidden="true" />
+                        {message.sceneTag}
+                      </span>
+                    ) : null}
+                    {message.intent === "mission-failed" ? (
+                      <span className="inline-flex flex-none items-center gap-1 rounded border border-rose-700/80 bg-rose-950/70 px-1.5 py-0.5 text-[8px] font-bold uppercase tracking-wide text-rose-200">
+                        <CircleX size={10} aria-hidden="true" />
+                        Mission Failed
+                      </span>
+                    ) : null}
+                    {message.intent === "mission-success" ? (
+                      <span className="inline-flex flex-none items-center gap-1 rounded border border-emerald-700/80 bg-emerald-950/70 px-1.5 py-0.5 text-[8px] font-bold uppercase tracking-wide text-emerald-200">
+                        <CircleCheck size={10} aria-hidden="true" />
+                        Mission Accomplished
+                      </span>
+                    ) : null}
+                  </div>
+                  <time
+                    dateTime={messageDate?.toISOString()}
+                    title={messageDate?.toLocaleString()}
+                    className="shrink-0 text-[10px] tabular-nums text-slate-500"
+                  >
+                    {formatChatTimestamp(message.gameTimeMs)}
+                  </time>
                 </div>
                 <p className="text-xs leading-relaxed text-slate-200">
                   {message.generationStatus === "pending"

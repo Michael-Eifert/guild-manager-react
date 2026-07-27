@@ -941,12 +941,29 @@ export const advanceSocialSimulation = ({
     "guild-exit",
     "npc-guild-exit",
     "transfer",
+    "npc-guild-founded",
+    "npc-guild-merger",
+    "npc-guild-acquisition",
+    "npc-guild-dissolution",
   ]);
+  const structuralRealmNewsTypes = new Set([
+    "npc-guild-founded",
+    "npc-guild-merger",
+    "npc-guild-acquisition",
+    "npc-guild-dissolution",
+  ]);
+  const safeCurrentDayIndex = Math.max(
+    0,
+    Math.floor(currentDayIndex),
+  );
   const realmNews = (Array.isArray(realmState?.news) ? realmState.news : [])
     .filter(
       (entry: Record<string, unknown>) =>
         entry?.message &&
-        Number(entry.dayIndex) === Math.max(0, Math.floor(currentDayIndex)) &&
+        (Number(entry.dayIndex) === safeCurrentDayIndex ||
+          (structuralRealmNewsTypes.has(String(entry.type || "")) &&
+            safeCurrentDayIndex - Number(entry.dayIndex) >= 0 &&
+            safeCurrentDayIndex - Number(entry.dayIndex) <= 3)) &&
         eligibleRealmNewsTypes.has(String(entry.type || "")) &&
         !state.processedRpEventIds.includes(
           `realm:${String(entry.id || `${entry.dayIndex}:${entry.message}`)}`,

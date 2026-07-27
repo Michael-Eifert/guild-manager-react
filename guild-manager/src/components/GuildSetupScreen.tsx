@@ -16,9 +16,12 @@ import { PVP_ACTIVITY_FOCUS_OPTIONS } from "../pvp/battlefields/battlefieldDefin
 import type { GuildSetupState } from "../app/gameTypes";
 import {
   DEFAULT_GAME_SETTINGS,
+  REALM_GUILD_DENSITY_OPTIONS,
+  REALM_GUILD_DYNAMICS_OPTIONS,
   normalizeGameSettings,
   type GameSettingsState,
 } from "../settings/gameSettings";
+import SegmentedControl from "./ui/SegmentedControl";
 import {
   PERSONALITY_TRAIT_DEFINITIONS,
   type PersonalityTraitId,
@@ -570,6 +573,44 @@ const GuildSetupScreen = ({
                 className="mt-0.5 h-5 w-5 shrink-0 rounded border-slate-600 bg-slate-950 accent-cyan-500"
               />
             </label>
+
+            <div className="grid gap-3 md:grid-cols-2">
+              <div className="rounded-lg border border-amber-900/60 bg-amber-950/15 p-4">
+                <span className="block text-sm font-bold text-amber-100">
+                  Guild Density
+                </span>
+                <span className="mt-1 block min-h-10 text-xs leading-relaxed text-slate-400">
+                  Sets how many NPC guilds the realm will gradually support.
+                </span>
+                <SegmentedControl
+                  ariaLabel="Guild Density"
+                  options={REALM_GUILD_DENSITY_OPTIONS}
+                  value={normalizedGameSettings.realmGuildDensity}
+                  onChange={(realmGuildDensity) =>
+                    onGameSettingsChange?.({ realmGuildDensity })
+                  }
+                  className="mt-3"
+                />
+              </div>
+              <div className="rounded-lg border border-violet-900/60 bg-violet-950/15 p-4">
+                <span className="block text-sm font-bold text-violet-100">
+                  Guild Dynamics
+                </span>
+                <span className="mt-1 block min-h-10 text-xs leading-relaxed text-slate-400">
+                  Sets the pace of founding, mergers, disbands, and transfers.
+                </span>
+                <SegmentedControl
+                  ariaLabel="Guild Dynamics"
+                  options={REALM_GUILD_DYNAMICS_OPTIONS}
+                  value={normalizedGameSettings.realmGuildDynamics}
+                  onChange={(realmGuildDynamics) =>
+                    onGameSettingsChange?.({ realmGuildDynamics })
+                  }
+                  tone="sky"
+                  className="mt-3"
+                />
+              </div>
+            </div>
 
             <label className="block space-y-2">
               <span className="text-xs uppercase tracking-wider text-gray-300 font-bold">

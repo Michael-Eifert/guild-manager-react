@@ -173,6 +173,30 @@ const TEMPLATES: Record<ChatIntent, string[]> = {
     "Rumor has it that {claim}",
     "The tavern is buzzing tonight. {claim}",
   ],
+  "rp-guild-founded": [
+    "A new banner is flying on the realm: {claim}",
+    "Fresh tabards in the streets today. {claim}",
+    "Looks like the recruitment boards gained a new name. {claim}",
+    "New guild, new promises. Let us see whether they last: {claim}",
+  ],
+  "rp-guild-merger": [
+    "Two banners became one overnight: {claim}",
+    "That merger will shake up the rankings. {claim}",
+    "I heard both guild halls are moving under one roof: {claim}",
+    "Fewer rivals, but a much larger roster now. {claim}",
+  ],
+  "rp-guild-acquisition": [
+    "One guild just swallowed another whole: {claim}",
+    "That was less a partnership and more a takeover: {claim}",
+    "The stronger banner won out this time. {claim}",
+    "A lot of tabards changed hands today: {claim}",
+  ],
+  "rp-guild-dissolution": [
+    "Another guild hall has gone quiet: {claim}",
+    "There will be plenty of free agents after this news: {claim}",
+    "Not every banner survives the realm. {claim}",
+    "I knew they were struggling, but this is the end: {claim}",
+  ],
   "rp-leadership": [
     "Leadership has decided to {choice}. Let us move forward together.",
     "The guild's answer is clear: {choice}.",

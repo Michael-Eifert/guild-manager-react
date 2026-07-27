@@ -1123,6 +1123,7 @@ export const useGameProviderController = () => {
         guildSetup: guildSetupRef.current,
         offlineSimulationEnabled:
           gameSettingsRef.current.offlineSimulationEnabled,
+        gameSettings: gameSettingsRef.current,
       });
       if (
         JSON.stringify(nextRealmState) !== JSON.stringify(realmStateRef.current)
@@ -3152,7 +3153,13 @@ export const useGameProviderController = () => {
     socialStateRef.current = starterSocialState;
     guildRelationsStateRef.current = starterGuildRelationsState;
     guildActivityStatsRef.current = starterGuildActivityStats;
-    const starterRealmState = ensureRealmState(null, guildSetup, 0);
+    const starterRealmState = ensureRealmState(
+      null,
+      guildSetup,
+      0,
+      starterRoster.length,
+      gameSettingsRef.current,
+    );
     realmStateRef.current = starterRealmState;
     setRoster(starterRoster);
     setActiveMissions([]);

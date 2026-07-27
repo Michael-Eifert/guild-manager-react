@@ -23,6 +23,10 @@ export type ChatIntent =
   | "rp-morale"
   | "rp-reconciliation"
   | "rp-world-rumor"
+  | "rp-guild-founded"
+  | "rp-guild-merger"
+  | "rp-guild-acquisition"
+  | "rp-guild-dissolution"
   | "rp-leadership";
 
 export type ParticipantSource = "guild" | "realm";

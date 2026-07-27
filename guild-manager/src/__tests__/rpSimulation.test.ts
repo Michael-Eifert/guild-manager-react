@@ -147,6 +147,25 @@ describe("Tavern RP simulation", () => {
     expect(state.rpScenes.filter((scene) => scene.status === "queued")).toHaveLength(1);
   });
 
+  it("turns guild structure news into event-specific Tavern rumors", () => {
+    const state = enqueueRealmNewsRpScene({
+      state: createInitialSocialState(),
+      news: {
+        id: "news-merger",
+        type: "npc-guild-merger",
+        message: "Dawnspire and Night Oath formed a new guild.",
+      },
+      participants: [member("guild", "DPS"), member("realm", "DPS", "realm")],
+      now: 0,
+      dayIndex: 4,
+    });
+
+    expect(state.rpScenes[0]?.turns.map((turn) => turn.intent)).toEqual([
+      "rp-guild-merger",
+      "rp-guild-merger",
+    ]);
+  });
+
   it("links a manual incident to its scene and resumes after one resolution", () => {
     let state = enqueueMissionRpScene({
       state: createInitialSocialState(),

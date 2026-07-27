@@ -26,9 +26,79 @@ export const NPC_GUILD_ARCHETYPE_ORDER = Object.freeze([
 ]);
 
 export const REALM_NEWS_LIMIT = 25;
-export const REALM_NPC_GUILD_INITIAL_RANGE = Object.freeze([4, 6]);
-export const REALM_NPC_GUILD_TARGET_RANGE = Object.freeze([15, 22]);
-export const REALM_NPC_GUILD_HIGH_POP_TARGET_RANGE = Object.freeze([22, 30]);
+export const REALM_GUILD_DENSITY_PROFILE = Object.freeze({
+  few: Object.freeze({
+    initialRange: Object.freeze([5, 6]),
+    mediumTargetRange: Object.freeze([16, 20]),
+    highTargetRange: Object.freeze([22, 28]),
+    rosterMultiplier: 1.55,
+  }),
+  medium: Object.freeze({
+    initialRange: Object.freeze([8, 10]),
+    mediumTargetRange: Object.freeze([24, 32]),
+    highTargetRange: Object.freeze([32, 44]),
+    rosterMultiplier: 1,
+  }),
+  many: Object.freeze({
+    initialRange: Object.freeze([11, 14]),
+    mediumTargetRange: Object.freeze([36, 46]),
+    highTargetRange: Object.freeze([48, 60]),
+    rosterMultiplier: 0.72,
+  }),
+});
+export const REALM_GUILD_DYNAMICS_PROFILE = Object.freeze({
+  low: Object.freeze({
+    foundingIntervalDays: 5,
+    foundingChance: 0.35,
+    fusionWeakDays: 14,
+    dissolutionWeakDays: 28,
+    structureCooldownDays: 10,
+    transferIntervalDays: 3,
+    maxTransfers: 1,
+  }),
+  medium: Object.freeze({
+    foundingIntervalDays: 2,
+    foundingChance: 0.6,
+    fusionWeakDays: 7,
+    dissolutionWeakDays: 14,
+    structureCooldownDays: 5,
+    transferIntervalDays: 1,
+    maxTransfers: 1,
+  }),
+  high: Object.freeze({
+    foundingIntervalDays: 1,
+    foundingChance: 0.85,
+    fusionWeakDays: 4,
+    dissolutionWeakDays: 8,
+    structureCooldownDays: 2,
+    transferIntervalDays: 1,
+    maxTransfers: 2,
+  }),
+});
+export const normalizeRealmGuildDensity = (value: unknown) =>
+  Object.prototype.hasOwnProperty.call(
+    REALM_GUILD_DENSITY_PROFILE,
+    String(value),
+  )
+    ? (value as keyof typeof REALM_GUILD_DENSITY_PROFILE)
+    : "medium";
+export const normalizeRealmGuildDynamics = (value: unknown) =>
+  Object.prototype.hasOwnProperty.call(
+    REALM_GUILD_DYNAMICS_PROFILE,
+    String(value),
+  )
+    ? (value as keyof typeof REALM_GUILD_DYNAMICS_PROFILE)
+    : "medium";
+export const getRealmGuildDensityProfile = (density: unknown) =>
+  REALM_GUILD_DENSITY_PROFILE[normalizeRealmGuildDensity(density)];
+export const getRealmGuildDynamicsProfile = (dynamics: unknown) =>
+  REALM_GUILD_DYNAMICS_PROFILE[normalizeRealmGuildDynamics(dynamics)];
+export const REALM_NPC_GUILD_INITIAL_RANGE =
+  REALM_GUILD_DENSITY_PROFILE.medium.initialRange;
+export const REALM_NPC_GUILD_TARGET_RANGE =
+  REALM_GUILD_DENSITY_PROFILE.medium.mediumTargetRange;
+export const REALM_NPC_GUILD_HIGH_POP_TARGET_RANGE =
+  REALM_GUILD_DENSITY_PROFILE.medium.highTargetRange;
 export const REALM_NPC_GUILD_FOUNDED_ROSTER_RANGE = Object.freeze([6, 10]);
 export const DEFAULT_NPC_GUILD_COUNT = REALM_NPC_GUILD_INITIAL_RANGE[1];
 export const REALM_GUILD_ROSTER_CAP = 80;
@@ -46,8 +116,12 @@ export const REALM_HIGH_POPULATION_SOFT_CAP = 2000;
 export const REALM_POPULATION_SOFT_CAP_VARIANCE = 100;
 export const REALM_DAILY_ARRIVAL_RANGE = Object.freeze([50, 100]);
 
-export const getRealmPopulationProfile = (serverPopulation: string) => {
+export const getRealmPopulationProfile = (
+  serverPopulation: string,
+  guildDensity: unknown = "medium",
+) => {
   const isHighPopulation = serverPopulation === GUILD_SERVER_POPULATION.HIGH;
+  const densityProfile = getRealmGuildDensityProfile(guildDensity);
   return {
     populationLabel: isHighPopulation
       ? GUILD_SERVER_POPULATION.HIGH
@@ -56,8 +130,10 @@ export const getRealmPopulationProfile = (serverPopulation: string) => {
       ? REALM_HIGH_POPULATION_SOFT_CAP
       : REALM_POPULATION_SOFT_CAP,
     guildTargetRange: isHighPopulation
-      ? REALM_NPC_GUILD_HIGH_POP_TARGET_RANGE
-      : REALM_NPC_GUILD_TARGET_RANGE,
+      ? densityProfile.highTargetRange
+      : densityProfile.mediumTargetRange,
+    guildInitialRange: densityProfile.initialRange,
+    rosterMultiplier: densityProfile.rosterMultiplier,
   };
 };
 
@@ -157,7 +233,7 @@ export const NPC_GUILD_NAME_POOL = Object.freeze([
 
 export const NPC_GUILD_ARCHETYPE_PROFILE = Object.freeze({
   [NPC_GUILD_ARCHETYPES.HARDCORE_RAIDERS]: Object.freeze({
-    rosterSize: [8, 14],
+    rosterSize: [28, 44],
     averageLevel: [1, 1],
     averageGearScore: [1, 3],
     activityLevel: [74, 98],
@@ -166,7 +242,7 @@ export const NPC_GUILD_ARCHETYPE_PROFILE = Object.freeze({
     reputation: [48, 76],
   }),
   [NPC_GUILD_ARCHETYPES.CASUAL_ADVENTURERS]: Object.freeze({
-    rosterSize: [8, 15],
+    rosterSize: [24, 40],
     averageLevel: [1, 1],
     averageGearScore: [1, 2],
     activityLevel: [30, 62],
@@ -175,7 +251,7 @@ export const NPC_GUILD_ARCHETYPE_PROFILE = Object.freeze({
     reputation: [50, 82],
   }),
   [NPC_GUILD_ARCHETYPES.DUNGEON_RUNNERS]: Object.freeze({
-    rosterSize: [7, 13],
+    rosterSize: [20, 34],
     averageLevel: [1, 1],
     averageGearScore: [1, 3],
     activityLevel: [58, 88],
@@ -184,7 +260,7 @@ export const NPC_GUILD_ARCHETYPE_PROFILE = Object.freeze({
     reputation: [42, 70],
   }),
   [NPC_GUILD_ARCHETYPES.LEVELING_GUILD]: Object.freeze({
-    rosterSize: [9, 15],
+    rosterSize: [36, 56],
     averageLevel: [1, 1],
     averageGearScore: [1, 2],
     activityLevel: [50, 82],
@@ -193,7 +269,7 @@ export const NPC_GUILD_ARCHETYPE_PROFILE = Object.freeze({
     reputation: [46, 76],
   }),
   [NPC_GUILD_ARCHETYPES.SOCIAL_GUILD]: Object.freeze({
-    rosterSize: [10, 15],
+    rosterSize: [48, 70],
     averageLevel: [1, 1],
     averageGearScore: [1, 2],
     activityLevel: [36, 66],

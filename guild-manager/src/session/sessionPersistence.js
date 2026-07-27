@@ -432,6 +432,7 @@ export const hydrateSessionData = ({
     loadedGuildSetup,
     loadedCalendarDayIndex,
     loadedRoster.length,
+    normalizeGameSettings(safePayload.gameSettings),
   );
   const loadedWorldPvpState = ensureWorldPvpState(
     safePayload.worldPvpState,

@@ -33,6 +33,25 @@ describe("game settings", () => {
 
     expect(payload.data.gameSettings).toEqual({
       offlineSimulationEnabled: false,
+      realmGuildDensity: "medium",
+      realmGuildDynamics: "medium",
+    });
+  });
+
+  it("normalizes guild landscape settings for new and legacy saves", () => {
+    expect(normalizeGameSettings({ offlineSimulationEnabled: true })).toEqual({
+      offlineSimulationEnabled: true,
+      realmGuildDensity: "medium",
+      realmGuildDynamics: "medium",
+    });
+    expect(
+      normalizeGameSettings({
+        realmGuildDensity: "many",
+        realmGuildDynamics: "high",
+      }),
+    ).toMatchObject({
+      realmGuildDensity: "many",
+      realmGuildDynamics: "high",
     });
   });
 

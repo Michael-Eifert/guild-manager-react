@@ -1,9 +1,31 @@
 export type GameSettingsState = {
   offlineSimulationEnabled: boolean;
+  realmGuildDensity: RealmGuildDensity;
+  realmGuildDynamics: RealmGuildDynamics;
 };
+
+export const REALM_GUILD_DENSITIES = ["few", "medium", "many"] as const;
+export type RealmGuildDensity = typeof REALM_GUILD_DENSITIES[number];
+
+export const REALM_GUILD_DYNAMICS = ["low", "medium", "high"] as const;
+export type RealmGuildDynamics = typeof REALM_GUILD_DYNAMICS[number];
+
+export const REALM_GUILD_DENSITY_OPTIONS = Object.freeze([
+  Object.freeze({ value: "few" as const, label: "Few" }),
+  Object.freeze({ value: "medium" as const, label: "Medium" }),
+  Object.freeze({ value: "many" as const, label: "Many" }),
+]);
+
+export const REALM_GUILD_DYNAMICS_OPTIONS = Object.freeze([
+  Object.freeze({ value: "low" as const, label: "Low" }),
+  Object.freeze({ value: "medium" as const, label: "Medium" }),
+  Object.freeze({ value: "high" as const, label: "High" }),
+]);
 
 export const DEFAULT_GAME_SETTINGS: Readonly<GameSettingsState> = Object.freeze({
   offlineSimulationEnabled: false,
+  realmGuildDensity: "medium",
+  realmGuildDynamics: "medium",
 });
 
 export const normalizeGameSettings = (
@@ -19,6 +41,16 @@ export const normalizeGameSettings = (
       typeof input.offlineSimulationEnabled === "boolean"
         ? input.offlineSimulationEnabled
         : DEFAULT_GAME_SETTINGS.offlineSimulationEnabled,
+    realmGuildDensity: REALM_GUILD_DENSITIES.includes(
+      input.realmGuildDensity as RealmGuildDensity,
+    )
+      ? (input.realmGuildDensity as RealmGuildDensity)
+      : DEFAULT_GAME_SETTINGS.realmGuildDensity,
+    realmGuildDynamics: REALM_GUILD_DYNAMICS.includes(
+      input.realmGuildDynamics as RealmGuildDynamics,
+    )
+      ? (input.realmGuildDynamics as RealmGuildDynamics)
+      : DEFAULT_GAME_SETTINGS.realmGuildDynamics,
   };
 };
 

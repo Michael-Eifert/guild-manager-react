@@ -419,6 +419,15 @@ export const enqueueRealmNewsRpScene = ({
   const message = String(news.message || "").trim();
   if (!message || participants.length < 2) return state;
   const sourceEventId = `realm:${news.id || `${dayIndex}:${message}`}`;
+  const intentByNewsType = {
+    "npc-guild-founded": "rp-guild-founded",
+    "npc-guild-merger": "rp-guild-merger",
+    "npc-guild-acquisition": "rp-guild-acquisition",
+    "npc-guild-dissolution": "rp-guild-dissolution",
+  } as const;
+  const newsIntent =
+    intentByNewsType[news.type as keyof typeof intentByNewsType] ||
+    "rp-world-rumor";
   return enqueueScene({
     state,
     dayIndex,
@@ -434,7 +443,7 @@ export const enqueueRealmNewsRpScene = ({
       participants: participants.slice(0, 2),
       turns: participants.slice(0, 2).map((participant) => ({
         speakerId: participant.id,
-        intent: "rp-world-rumor" as const,
+        intent: newsIntent,
         subjectiveClaim: message,
       })),
       nextTurnIndex: 0,

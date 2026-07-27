@@ -125,6 +125,8 @@ describe("GameProvider integration", () => {
       expect(autosave.data.roster.length).toBeGreaterThan(0);
       expect(autosave.data.gameSettings).toEqual({
         offlineSimulationEnabled: false,
+        realmGuildDensity: "medium",
+        realmGuildDynamics: "medium",
       });
     });
   });

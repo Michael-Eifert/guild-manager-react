@@ -68,6 +68,18 @@ describe("GameSettingsPage", () => {
     expect(onGameSettingsChange).toHaveBeenCalledWith({
       offlineSimulationEnabled: false,
     });
+    fireEvent.click(
+      screen.getByRole("button", { name: "Many" }),
+    );
+    expect(onGameSettingsChange).toHaveBeenCalledWith({
+      realmGuildDensity: "many",
+    });
+    fireEvent.click(
+      screen.getByRole("button", { name: "High" }),
+    );
+    expect(onGameSettingsChange).toHaveBeenCalledWith({
+      realmGuildDynamics: "high",
+    });
 
     expect(screen.getByText("Current Guild")).toBeTruthy();
     expect(screen.getByText("Other Guild")).toBeTruthy();

@@ -4893,8 +4893,8 @@ describe("realm overview domain", () => {
     });
 
     expect(first).toEqual(second);
-    expect(first.length).toBeGreaterThanOrEqual(4);
-    expect(first.length).toBeLessThanOrEqual(6);
+    expect(first.length).toBeGreaterThanOrEqual(8);
+    expect(first.length).toBeLessThanOrEqual(10);
   });
 
   it("keeps realm NPC guild rosters on valid Classic race/class combinations", () => {
@@ -4936,8 +4936,8 @@ describe("realm overview domain", () => {
       ageDays: 12,
       lastSimulatedDayIndex: 12,
     });
-    expect(realm.npcGuilds.length).toBeGreaterThanOrEqual(4);
-    expect(realm.npcGuilds.length).toBeLessThanOrEqual(6);
+    expect(realm.npcGuilds.length).toBeGreaterThanOrEqual(8);
+    expect(realm.npcGuilds.length).toBeLessThanOrEqual(10);
   });
 
   it("initializes a fresh medium-pop realm around 200 population with a 1.5k soft cap", () => {
@@ -4988,10 +4988,14 @@ describe("realm overview domain", () => {
       0,
     );
 
-    expect(realm.npcGuilds.length).toBeGreaterThanOrEqual(4);
-    expect(realm.npcGuilds.length).toBeLessThanOrEqual(6);
+    expect(realm.npcGuilds.length).toBeGreaterThanOrEqual(8);
+    expect(realm.npcGuilds.length).toBeLessThanOrEqual(10);
     expect(realm.npcGuilds.every((guild) => guild.roster.length >= 6)).toBe(true);
-    expect(realm.npcGuilds.every((guild) => guild.roster.length <= 15)).toBe(true);
+    expect(
+      realm.npcGuilds.every(
+        (guild) => guild.roster.length <= guild.targetRosterSize,
+      ),
+    ).toBe(true);
     expect(npcMembers.length).toBeGreaterThan(0);
     expect(npcMembers.every((member) => member.level === 1)).toBe(true);
     expect(realm.population.players.every((player) => player.level === 1)).toBe(true);
@@ -5231,7 +5235,7 @@ describe("realm overview domain", () => {
     };
     const advanced = advanceRealmSimulation({
       realmState: realm,
-      currentDayIndex: 8,
+      currentDayIndex: 12,
       playerGuildSnapshot,
       guildSetup: {
         faction: GUILD_FACTION.ALLIANCE,
@@ -5493,8 +5497,8 @@ describe("realm overview domain", () => {
     });
 
     expect(desiredGuildCount).toBeGreaterThan(realm.npcGuilds.length);
-    expect(desiredGuildCount).toBeGreaterThanOrEqual(10);
-    expect(desiredGuildCount).toBeLessThanOrEqual(15);
+    expect(desiredGuildCount).toBeGreaterThanOrEqual(16);
+    expect(desiredGuildCount).toBeLessThanOrEqual(24);
   });
 
   it("seeds newly founded NPC guilds with existing realm players", () => {
@@ -5552,8 +5556,8 @@ describe("realm overview domain", () => {
     });
 
     expect(desiredGuildCount).toBeGreaterThan(realm.npcGuilds.length);
-    expect(desiredGuildCount).toBeGreaterThanOrEqual(22);
-    expect(desiredGuildCount).toBeLessThanOrEqual(30);
+    expect(desiredGuildCount).toBeGreaterThanOrEqual(32);
+    expect(desiredGuildCount).toBeLessThanOrEqual(44);
   });
 
   it("keeps realm guild leveling near the player guild pace", () => {
