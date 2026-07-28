@@ -21,7 +21,7 @@ export default function ChatPage({
   onResolveIncident?: (incidentId: string, choiceId: string) => void;
 }) {
   return (
-    <div className="flex min-h-[calc(100dvh-180px)] flex-col">
+    <div className="flex h-[calc(100dvh-180px)] max-h-[760px] min-h-0 flex-col overflow-hidden">
       <ChatPanel
         socialState={socialState}
         guildName={guildName}

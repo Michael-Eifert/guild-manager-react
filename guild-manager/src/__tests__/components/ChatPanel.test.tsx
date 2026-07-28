@@ -62,11 +62,17 @@ const formatExpectedTimestamp = (timestamp: number) =>
     minute: "2-digit",
   });
 
-afterEach(cleanup);
+afterEach(() => {
+  cleanup();
+  vi.restoreAllMocks();
+});
 
 describe("ChatPanel", () => {
   it("follows new messages while idle and pauses while the player reads older chat", () => {
     let scrollHeight = 480;
+    vi.spyOn(HTMLElement.prototype, "scrollHeight", "get").mockImplementation(
+      () => scrollHeight,
+    );
     const view = render(
       <ChatPanel
         socialState={socialState}
@@ -77,10 +83,7 @@ describe("ChatPanel", () => {
     );
     const chat = screen.getByLabelText("Character chat");
     const messageList = screen.getByRole("log");
-    Object.defineProperty(messageList, "scrollHeight", {
-      configurable: true,
-      get: () => scrollHeight,
-    });
+    expect(messageList.scrollTop).toBe(480);
 
     view.rerender(
       <ChatPanel

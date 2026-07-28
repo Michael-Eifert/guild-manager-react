@@ -689,17 +689,15 @@ body::after {
 }
 
 @media (min-width: 1600px) {
+  .app-shell-with-chat {
+    grid-template-columns:
+      var(--app-sidebar-width)
+      minmax(0, 1fr)
+      360px;
+  }
+
   .app-chat-dock {
     display: flex;
-    position: fixed;
-    right: max(0px, calc((100vw - 1920px) / 2));
-    bottom: 1rem;
-    z-index: 55;
-    width: 320px;
-    height: min(480px, calc(100dvh - 5.5rem));
-    border: 1px solid rgb(108 80 36 / 70%);
-    border-radius: 0.85rem 0 0 0.85rem;
-    box-shadow: 0 18px 48px rgb(0 0 0 / 48%);
   }
 
   .app-chat-launcher,
