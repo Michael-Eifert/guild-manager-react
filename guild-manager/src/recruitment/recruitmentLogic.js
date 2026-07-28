@@ -68,13 +68,21 @@ const getRecruitmentGearBand = (level) => {
   return RECRUITMENT_GEAR_BANDS[RECRUITMENT_GEAR_BANDS.length - 1];
 };
 
-const getRecruitmentQualityWeights = (level, epicBudget = 0) => {
+const getRecruitmentQualityWeights = (
+  level,
+  epicBudget = 0,
+  epicWeight = 15,
+) => {
   const safeLevel = Math.max(1, Math.floor(Number(level) || 1));
   if (safeLevel >= 60 && epicBudget > 0) {
+    const normalizedEpicWeight = Math.max(
+      0,
+      Math.min(90, Number(epicWeight) || 15),
+    );
     return [
-      { quality: 4, weight: 15 },
-      { quality: 3, weight: 55 },
-      { quality: 2, weight: 30 },
+      { quality: 4, weight: normalizedEpicWeight },
+      { quality: 3, weight: Math.max(5, 70 - normalizedEpicWeight * 0.5) },
+      { quality: 2, weight: Math.max(5, 30 - normalizedEpicWeight * 0.5) },
     ];
   }
   if (safeLevel >= 60) {
@@ -107,13 +115,13 @@ const getRecruitmentQualityWeights = (level, epicBudget = 0) => {
   ];
 };
 
-const pickWeightedQuality = (weights) => {
+const pickWeightedQuality = (weights, random = Math.random) => {
   const totalWeight = weights.reduce(
     (sum, entry) => sum + Math.max(0, Number(entry.weight) || 0),
     0,
   );
   if (totalWeight <= 0) return 1;
-  let roll = Math.random() * totalWeight;
+  let roll = random() * totalWeight;
   for (const entry of weights) {
     roll -= Math.max(0, Number(entry.weight) || 0);
     if (roll <= 0) return entry.quality;
@@ -121,9 +129,9 @@ const pickWeightedQuality = (weights) => {
   return weights[weights.length - 1]?.quality || 1;
 };
 
-const pickRandom = (entries) => {
+const pickRandom = (entries, random = Math.random) => {
   if (!Array.isArray(entries) || entries.length === 0) return null;
-  return entries[Math.floor(Math.random() * entries.length)] || null;
+  return entries[Math.floor(random() * entries.length)] || null;
 };
 
 const createFallbackRecruitmentItem = ({
@@ -133,8 +141,9 @@ const createFallbackRecruitmentItem = ({
   itemLevel,
   level,
   character,
+  random = Math.random,
 }) => ({
-  id: `recruit_${slot}_${level}_${quality}_${Math.floor(Math.random() * 100000)}`,
+  id: `recruit_${slot}_${level}_${quality}_${Math.floor(random() * 100000)}`,
   name: `Recruit's ${SLOT_LABELS[slot] || "Gear"}`,
   slot,
   quality,
@@ -194,11 +203,17 @@ const chooseRecruitmentItemForSlot = ({
   slot,
   band,
   epicBudget,
+  random = Math.random,
+  epicWeight = 15,
 }) => {
   const safeLevel = Math.max(1, Math.floor(Number(character?.level) || 1));
-  const weights = getRecruitmentQualityWeights(safeLevel, epicBudget);
+  const weights = getRecruitmentQualityWeights(
+    safeLevel,
+    epicBudget,
+    epicWeight,
+  );
   const qualities = [
-    pickWeightedQuality(weights),
+    pickWeightedQuality(weights, random),
     ...weights.map((entry) => entry.quality),
     ...(safeLevel >= 11 ? [2] : [1]),
   ].filter((quality, index, arr) => arr.indexOf(quality) === index);
@@ -213,7 +228,7 @@ const chooseRecruitmentItemForSlot = ({
       band,
       allowEpicOverflow,
     });
-    const pickedItem = pickRandom(candidates);
+    const pickedItem = pickRandom(candidates, random);
     if (pickedItem) {
       return { item: { ...pickedItem }, usedEpic: quality === 4 };
     }
@@ -229,7 +244,7 @@ const chooseRecruitmentItemForSlot = ({
       ? "Generic"
       : getClassArmorTypes(character?.charClass, safeLevel)[0] || "Cloth";
   const fallbackItemLevel =
-    band.min + Math.floor(Math.random() * Math.max(1, band.max - band.min + 1));
+    band.min + Math.floor(random() * Math.max(1, band.max - band.min + 1));
   if (slot === "offHand") {
     return { item: null, usedEpic: false };
   }
@@ -247,18 +262,51 @@ const chooseRecruitmentItemForSlot = ({
       itemLevel: fallbackItemLevel,
       level: safeLevel,
       character,
+      random,
     }),
     usedEpic: false,
   };
 };
 
-export const buildRecruitmentEquipment = ({ character, itemDatabase }) => {
+/**
+ * @param {{
+ *   character: Record<string, any>,
+ *   itemDatabase: Array<Record<string, any>>,
+ *   random?: () => number,
+ *   gearBand?: { min: number, max: number } | null,
+ *   epicBudget?: number | null,
+ *   epicWeight?: number,
+ * }} options
+ */
+export const buildRecruitmentEquipment = ({
+  character,
+  itemDatabase,
+  random = Math.random,
+  gearBand = null,
+  epicBudget: requestedEpicBudget = null,
+  epicWeight = 15,
+}) => {
   const safeCharacter = character && typeof character === "object" ? character : {};
   const safeLevel = Math.max(1, Math.floor(Number(safeCharacter.level) || 1));
-  const band = getRecruitmentGearBand(safeLevel);
-  let epicBudget = safeLevel >= 60 && Math.random() < 0.05
-    ? 1 + Math.floor(Math.random() * 2)
-    : 0;
+  const defaultBand = getRecruitmentGearBand(safeLevel);
+  const band =
+    gearBand &&
+    Number.isFinite(Number(gearBand.min)) &&
+    Number.isFinite(Number(gearBand.max))
+      ? {
+          min: Math.max(1, Math.floor(Number(gearBand.min))),
+          max: Math.max(
+            Math.max(1, Math.floor(Number(gearBand.min))),
+            Math.floor(Number(gearBand.max)),
+          ),
+        }
+      : defaultBand;
+  const safeRandom = typeof random === "function" ? random : Math.random;
+  let epicBudget = Number.isFinite(Number(requestedEpicBudget))
+    ? Math.max(0, Math.floor(Number(requestedEpicBudget)))
+    : safeLevel >= 60 && safeRandom() < 0.05
+      ? 1 + Math.floor(safeRandom() * 2)
+      : 0;
 
   const generatedEquipment = RECRUITMENT_GEAR_SLOTS.reduce((equipment, slot) => {
     const result = chooseRecruitmentItemForSlot({
@@ -267,6 +315,8 @@ export const buildRecruitmentEquipment = ({ character, itemDatabase }) => {
       slot,
       band,
       epicBudget,
+      random: safeRandom,
+      epicWeight,
     });
     if (result.item) {
       equipment[slot] = result.item;

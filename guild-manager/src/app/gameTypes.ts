@@ -129,6 +129,8 @@ export type GuildSetupState = {
   server?: string;
   serverStyle?: string;
   serverPopulation?: string;
+  realmAgeMonths?: number;
+  startingGuildProgress?: string;
   lastFocusChangeDayIndex?: number | null;
   founder?: {
     name?: string;
@@ -149,6 +151,7 @@ export interface GameActions {
   startGuild: () => void;
   loadBrowserSave: (slotId: BrowserSaveSlotId) => void;
   startNewBrowserGame: (slotId: BrowserSaveSlotId) => void;
+  deleteBrowserSave: (slotId: BrowserSaveSlotId) => void;
   updateGameSettings: (
     settings: Partial<GameSettingsState>,
   ) => GameSettingsState;

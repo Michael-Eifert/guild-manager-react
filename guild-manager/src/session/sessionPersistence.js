@@ -33,6 +33,7 @@ import {
   migrateSessionPayload,
   SESSION_FORMAT_VALUE,
 } from "./sessionMigrations";
+import { getSessionDownloadFilename } from "./sessionExportFilename";
 import { normalizeGuildActivityStats } from "../guild/guildActivityStats";
 import { normalizeGameSettings } from "../settings/gameSettings";
 
@@ -343,10 +344,9 @@ export const buildSessionPayload = ({
 
 export const downloadSessionPayload = (
   payload,
-  filenamePrefix = "guild-session",
+  preferredFilename = "",
 ) => {
-  const timestamp = new Date().toISOString().replace(/[:.]/g, "-");
-  const filename = `${filenamePrefix}-${timestamp}.json`;
+  const filename = getSessionDownloadFilename(preferredFilename);
   const blob = new Blob([JSON.stringify(payload, null, 2)], {
     type: "application/json",
   });

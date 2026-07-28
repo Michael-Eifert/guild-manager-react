@@ -54,6 +54,14 @@ const RuntimeProbe = () => {
   const guildStarted = useGameSelector((game) => game.guildSetup.hasStarted);
   const guildName = useGameSelector((game) => game.guildSetup.name);
   const rosterSize = useGameSelector((game) => game.roster.length);
+  const founderLevel = useGameSelector((game) => game.roster[0]?.level || 0);
+  const realmAgeDays = useGameSelector((game) => game.realmState?.ageDays || 0);
+  const startingGuildProgress = useGameSelector(
+    (game) => game.guildSetup.startingGuildProgress,
+  );
+  const raidAttunement = useGameSelector(
+    (game) => game.guildProgress?.talents?.raidAttunement || 0,
+  );
   const actions = useGameActions();
   return (
     <div>
@@ -61,7 +69,13 @@ const RuntimeProbe = () => {
       <output data-testid="roster-size">{rosterSize}</output>
       <output data-testid="started">{String(guildStarted)}</output>
       <output data-testid="guild-name">{guildName}</output>
+      <output data-testid="founder-level">{founderLevel}</output>
+      <output data-testid="realm-age-days">{realmAgeDays}</output>
+      <output data-testid="starting-progress">{startingGuildProgress}</output>
+      <output data-testid="raid-attunement">{raidAttunement}</output>
       <button type="button" onClick={() => actions.changeGuildSetup("name", "Runtime Guild")}>Name</button>
+      <button type="button" onClick={() => actions.changeGuildSetup("realmAgeMonths", 10)}>Age 10</button>
+      <button type="button" onClick={() => actions.changeGuildSetup("startingGuildProgress", "bwl_ready")}>BWL Ready</button>
       <button type="button" onClick={() => actions.startGuild()}>Start</button>
     </div>
   );
@@ -100,6 +114,27 @@ describe("GameProvider integration", () => {
     act(() => screen.getByRole("button", { name: "Start" }).click());
     expect(screen.getByTestId("started").textContent).toBe("true");
     expect(Number(screen.getByTestId("roster-size").textContent)).toBeGreaterThan(0);
+  });
+
+  it("starts a correlated mature realm and raid-ready player guild", () => {
+    render(
+      <MemoryRouter>
+        <GameProvider><RuntimeProbe /></GameProvider>
+      </MemoryRouter>,
+    );
+
+    act(() => screen.getByRole("button", { name: "Name" }).click());
+    act(() => screen.getByRole("button", { name: "Age 10" }).click());
+    act(() => screen.getByRole("button", { name: "BWL Ready" }).click());
+    act(() => screen.getByRole("button", { name: "Start" }).click());
+
+    expect(screen.getByTestId("starting-progress").textContent).toBe(
+      "bwl_ready",
+    );
+    expect(screen.getByTestId("roster-size").textContent).toBe("50");
+    expect(screen.getByTestId("founder-level").textContent).toBe("60");
+    expect(screen.getByTestId("realm-age-days").textContent).toBe("300");
+    expect(screen.getByTestId("raid-attunement").textContent).toBe("1");
   });
 
   it("writes a browser autosave when a guild starts", async () => {

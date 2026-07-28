@@ -47,7 +47,7 @@ describe("browser session persistence", () => {
     window.localStorage.setItem("unrelated-setting", "keep");
     writeBrowserSession({ data: { roster: [] } });
 
-    clearBrowserSession();
+    expect(clearBrowserSession()).toBe(true);
 
     expect(readBrowserSession()).toBeNull();
     expect(window.localStorage.getItem("unrelated-setting")).toBe("keep");

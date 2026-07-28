@@ -1,5 +1,11 @@
 // @vitest-environment jsdom
-import { cleanup, fireEvent, render, screen } from "@testing-library/react";
+import {
+  cleanup,
+  fireEvent,
+  render,
+  screen,
+  within,
+} from "@testing-library/react";
 import { afterEach, describe, expect, it, vi } from "vitest";
 
 import GameSettingsPage from "../../pages/game-settings/GameSettingsPage";
@@ -23,6 +29,7 @@ describe("GameSettingsPage", () => {
     const onGameSettingsChange = vi.fn();
     const onLoadBrowserSave = vi.fn();
     const onStartNewBrowserGame = vi.fn();
+    const onDeleteBrowserSave = vi.fn();
     render(
       <GameSettingsPage
         gameSettings={{ offlineSimulationEnabled: true }}
@@ -59,6 +66,7 @@ describe("GameSettingsPage", () => {
         ]}
         onLoadBrowserSave={onLoadBrowserSave}
         onStartNewBrowserGame={onStartNewBrowserGame}
+        onDeleteBrowserSave={onDeleteBrowserSave}
       />,
     );
 
@@ -86,6 +94,31 @@ describe("GameSettingsPage", () => {
     fireEvent.click(screen.getByRole("button", { name: "Load Save" }));
     expect(onLoadBrowserSave).toHaveBeenCalledWith(2);
 
+    const otherGuildCard = screen.getByText("Other Guild").closest("article");
+    expect(otherGuildCard).toBeTruthy();
+    fireEvent.click(
+      within(otherGuildCard as HTMLElement).getByRole("button", {
+        name: "Restart Slot",
+      }),
+    );
+    fireEvent.click(screen.getByRole("button", { name: "Confirm New Game" }));
+    expect(onStartNewBrowserGame).toHaveBeenCalledWith(2);
+
+    fireEvent.click(
+      within(otherGuildCard as HTMLElement).getByRole("button", {
+        name: "Delete Save",
+      }),
+    );
+    expect(
+      screen.getByRole("dialog", { name: "Delete Save Slot 2?" }),
+    ).toBeTruthy();
+    fireEvent.click(
+      within(screen.getByRole("dialog")).getByRole("button", {
+        name: "Delete Save",
+      }),
+    );
+    expect(onDeleteBrowserSave).toHaveBeenCalledWith(2);
+
     fireEvent.click(screen.getByRole("button", { name: "Start New Game" }));
     expect(
       screen.getByRole("dialog", {
@@ -93,7 +126,7 @@ describe("GameSettingsPage", () => {
       }),
     ).toBeTruthy();
     fireEvent.click(screen.getByRole("button", { name: "Confirm New Game" }));
-    expect(onStartNewBrowserGame).toHaveBeenCalledWith(3);
+    expect(onStartNewBrowserGame).toHaveBeenLastCalledWith(3);
     expect(screen.queryByRole("dialog")).toBeNull();
 
     fireEvent.click(screen.getByRole("button", { name: "Chat & AI" }));

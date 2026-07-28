@@ -11,6 +11,10 @@ import {
 } from "../constants";
 import { normalizePvpActivityFocus } from "../pvp/battlefields/battlefieldUtils";
 import { normalizeFounderConfig } from "../guildRelations/founderCreation";
+import {
+  normalizeRealmAgeMonths,
+  normalizeStartingGuildProgress,
+} from "./startProgression";
 
 type GuildSetupInput = Record<string, unknown>;
 type SessionSetupPayload = {
@@ -99,6 +103,7 @@ export const normalizeGuildSetup = (
   const hasStarted = Boolean(
     safe.hasStarted || normalizedName || hasLegacyGameData,
   );
+  const realmAgeMonths = normalizeRealmAgeMonths(safe.realmAgeMonths);
 
   return {
     ...DEFAULT_GUILD_SETUP,
@@ -125,6 +130,11 @@ export const normalizeGuildSetup = (
     ),
     dungeonMinSuccessChance: normalizeAutoGroupSuccessRate(
       safe.dungeonMinSuccessChance,
+    ),
+    realmAgeMonths,
+    startingGuildProgress: normalizeStartingGuildProgress(
+      safe.startingGuildProgress,
+      realmAgeMonths,
     ),
     founder: normalizeFounderConfig(safe.founder, normalizedFaction),
     hasStarted,

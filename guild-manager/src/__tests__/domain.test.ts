@@ -204,6 +204,7 @@ import {
 } from "../pvp/pvpProgression";
 import { getUnlockedPvpGearForCharacter } from "../pvp/pvpGearUnlocks";
 import { DB_ITEMS } from "../data/items";
+import { CANONICAL_ITEM_ICON_BY_WOWHEAD_ID } from "../data/generated/canonicalItemIcons";
 import {
   DIRE_MAUL_ACTIVE_LOOT_MANIFEST,
   DIRE_MAUL_ITEMS,
@@ -3279,6 +3280,51 @@ describe("Tier 2 raid integration", () => {
         .map((item) => item.icon),
     );
     expect(supportedTierTwoIcons.size).toBeGreaterThan(10);
+  });
+
+  it("uses the canonical class-specific icons for Tier 2 shoulders", () => {
+    const expectedIcons = new Map([
+      ["Stormrage Pauldrons", "inv_shoulder_07"],
+      ["Pauldrons of Wrath", "inv_shoulder_34"],
+    ]);
+
+    expectedIcons.forEach((iconCode, itemName) => {
+      const item = blackwingLairItems.find(
+        (candidate) => candidate.name === itemName,
+      );
+      expect(item?.icon).toBe(
+        `https://wow.zamimg.com/images/wow/icons/large/${iconCode}.jpg`,
+      );
+    });
+  });
+});
+
+describe("item icon integrity", () => {
+  it("does not expose question-mark fallback icons in the item catalog", () => {
+    expect(
+      DB_ITEMS.filter((item) =>
+        String(item.icon || "").toLowerCase().includes("questionmark"),
+      ),
+    ).toEqual([]);
+  });
+
+  it("covers every raid item with a synced canonical Wowhead icon", () => {
+    const raidSourceIds = new Set([
+      "molten_core",
+      "zul_gurub",
+      "ahn_qiraj_ruins",
+      "onyxias_lair",
+      "blackwing_lair",
+      "ahn_qiraj_temple",
+      "naxxramas",
+    ]);
+    const uncoveredRaidItems = DB_ITEMS.filter(
+      (item) =>
+        raidSourceIds.has(String(item.dungeonSetId || "")) &&
+        !CANONICAL_ITEM_ICON_BY_WOWHEAD_ID[Number(item.wowheadId)],
+    );
+
+    expect(uncoveredRaidItems).toEqual([]);
   });
 });
 

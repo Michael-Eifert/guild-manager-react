@@ -338,6 +338,8 @@ export const DEFAULT_GUILD_SETUP = Object.freeze({
   pvpActivityFocus: "25",
   eliteQuestMinSuccessChance: AUTO_GROUP_SUCCESS_RATE.DEFAULT,
   dungeonMinSuccessChance: AUTO_GROUP_SUCCESS_RATE.DEFAULT,
+  realmAgeMonths: 0,
+  startingGuildProgress: "fresh",
   founder: Object.freeze({
     name: "",
     race: "Human",

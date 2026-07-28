@@ -84,6 +84,7 @@ export const loadSessionFile = ({
   onLoaded?: (
     loadedSession: HydratedSession,
     rawSession: string,
+    sourceFile: File,
   ) => void;
   onInvalidSession?: (error: unknown) => void;
   onReadError?: () => void;
@@ -101,7 +102,7 @@ export const loadSessionFile = ({
         payloadData,
         ...hydrateOptions,
       });
-      onLoaded?.(loadedSession, rawSession);
+      onLoaded?.(loadedSession, rawSession, file);
     } catch (error) {
       onInvalidSession?.(error);
     }

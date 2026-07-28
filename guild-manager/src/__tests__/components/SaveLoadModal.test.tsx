@@ -4,10 +4,13 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 
 import SaveLoadModal from "../../components/modals/SaveLoadModal";
 
-afterEach(cleanup);
+afterEach(() => {
+  cleanup();
+  window.localStorage.clear();
+});
 
 describe("SaveLoadModal", () => {
-  it("contains only the session save and load actions", () => {
+  it("remembers an optional export filename and passes it to save", () => {
     const onClose = vi.fn();
     const onSaveSession = vi.fn();
     const onLoadSession = vi.fn();
@@ -20,10 +23,26 @@ describe("SaveLoadModal", () => {
       />,
     );
 
+    fireEvent.change(screen.getByRole("textbox", { name: "Save file name" }), {
+      target: { value: "Vanilla Oath Progress" },
+    });
     fireEvent.click(screen.getByRole("button", { name: "Save Session" }));
-    expect(onSaveSession).toHaveBeenCalledTimes(1);
+    expect(onSaveSession).toHaveBeenCalledWith("Vanilla Oath Progress");
     expect(onClose).toHaveBeenCalledTimes(1);
     expect(screen.queryByText("Ollama")).toBeNull();
     expect(screen.queryByText("Debug Menu")).toBeNull();
+
+    cleanup();
+    render(
+      <SaveLoadModal
+        isOpen
+        onClose={vi.fn()}
+        onSaveSession={vi.fn()}
+        onLoadSession={vi.fn()}
+      />,
+    );
+    expect(
+      screen.getByRole("textbox", { name: "Save file name" }),
+    ).toHaveProperty("value", "Vanilla Oath Progress");
   });
 });

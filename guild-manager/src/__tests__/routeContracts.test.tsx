@@ -63,6 +63,25 @@ describe("route contracts", () => {
     });
   });
 
+  it("uses Guild Relations instead of Realm in the default mobile shortcuts", () => {
+    const mobileDefaults = buildHomeNavigation({
+      applicationCount: 0,
+      activeDungeonCount: 0,
+      activeBattlefieldCount: 0,
+      unreadChatCount: 0,
+    })
+      .filter((item) => item.mobileFixed || item.mobileDefault)
+      .sort((left, right) => (left.mobileOrder ?? 0) - (right.mobileOrder ?? 0))
+      .map((item) => item.id);
+
+    expect(mobileDefaults).toEqual([
+      "home",
+      "guild",
+      "guild-relations",
+      "recruit",
+    ]);
+  });
+
   it("renders setup on /start before a guild exists", () => {
     const html = renderWithGame(<StartPage />, {
       dismissNotification: noop,

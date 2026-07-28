@@ -38,6 +38,14 @@ import {
   generateRandomCharacterName,
   generateRandomGuildName,
 } from "../guild/nameGenerators";
+import {
+  getRealmAgeSummary,
+  getStartingGuildProgressProfile,
+  normalizeRealmAgeMonths,
+  normalizeStartingGuildProgress,
+  REALM_AGE_MONTHS,
+  STARTING_GUILD_PROGRESS_PROFILES,
+} from "../guild/startProgression";
 import { getRacePortraitUrl, getRoleIcon, getWowIconUrl } from "../utils";
 
 const GUILD_FOCUS_COPY = {
@@ -103,6 +111,19 @@ const GuildSetupScreen = ({
     guildSetup?.pvpActivityFocus || DEFAULT_GUILD_SETUP.pvpActivityFocus;
   const selectedRealmDifficulty = normalizeRealmDifficulty(
     guildSetup?.realmDifficulty,
+  );
+  const selectedRealmAgeMonths = normalizeRealmAgeMonths(
+    guildSetup?.realmAgeMonths,
+  );
+  const selectedStartingGuildProgress = normalizeStartingGuildProgress(
+    guildSetup?.startingGuildProgress,
+    selectedRealmAgeMonths,
+  );
+  const selectedStartingGuildProfile = getStartingGuildProgressProfile(
+    selectedStartingGuildProgress,
+  );
+  const selectedStartingGuildIndex = STARTING_GUILD_PROGRESS_PROFILES.findIndex(
+    (profile) => profile.id === selectedStartingGuildProgress,
   );
   const normalizedGameSettings = normalizeGameSettings(gameSettings);
   const handleSubmit = (event: FormEvent<HTMLFormElement>) => {
@@ -610,6 +631,128 @@ const GuildSetupScreen = ({
                   className="mt-3"
                 />
               </div>
+            </div>
+
+            <div className="rounded-lg border border-cyan-900/70 bg-cyan-950/15 p-4">
+              <div className="flex flex-wrap items-start justify-between gap-3">
+                <span>
+                  <span className="block text-sm font-bold text-cyan-100">
+                    Realm Age
+                  </span>
+                  <span className="mt-1 block text-xs leading-relaxed text-slate-400">
+                    Start on a fresh realm or enter an already established world.
+                  </span>
+                </span>
+                <span className="rounded border border-cyan-800/70 bg-slate-950/70 px-3 py-1.5 text-right">
+                  <span className="block text-sm font-bold text-cyan-100">
+                    {selectedRealmAgeMonths === 0
+                      ? "0 months"
+                      : `${selectedRealmAgeMonths} month${
+                          selectedRealmAgeMonths === 1 ? "" : "s"
+                        }`}
+                  </span>
+                  <span className="block text-[10px] uppercase tracking-wide text-cyan-300/70">
+                    {getRealmAgeSummary(selectedRealmAgeMonths)}
+                  </span>
+                </span>
+              </div>
+              <div className="mt-4 grid grid-cols-[auto_1fr_auto] items-center gap-3 text-[10px] font-bold uppercase tracking-wide text-slate-500">
+                <span>New</span>
+                <input
+                  aria-label="Realm Age"
+                  type="range"
+                  min={REALM_AGE_MONTHS.MIN}
+                  max={REALM_AGE_MONTHS.MAX}
+                  step="1"
+                  value={selectedRealmAgeMonths}
+                  onChange={(event) =>
+                    onChange("realmAgeMonths", event.target.value)
+                  }
+                  className="w-full accent-cyan-500"
+                />
+                <span>12 mo.</span>
+              </div>
+            </div>
+
+            <div className="rounded-lg border border-emerald-900/70 bg-emerald-950/15 p-4">
+              <div className="flex flex-wrap items-start justify-between gap-3">
+                <span>
+                  <span className="block text-sm font-bold text-emerald-100">
+                    Starting Guild Progress
+                  </span>
+                  <span className="mt-1 block text-xs leading-relaxed text-slate-400">
+                    Older realms unlock stronger starts. Your guild always remains
+                    behind the realm.
+                  </span>
+                </span>
+                <span className="rounded border border-emerald-800/70 bg-slate-950/70 px-3 py-1.5 text-sm font-bold text-emerald-100">
+                  {selectedStartingGuildProfile.label}
+                </span>
+              </div>
+              <input
+                aria-label="Starting Guild Progress"
+                type="range"
+                min="0"
+                max={STARTING_GUILD_PROGRESS_PROFILES.length - 1}
+                step="1"
+                value={selectedStartingGuildIndex}
+                onChange={(event) => {
+                  const profile =
+                    STARTING_GUILD_PROGRESS_PROFILES[
+                      Number(event.target.value)
+                    ];
+                  if (
+                    profile &&
+                    profile.requiredRealmAgeMonths <= selectedRealmAgeMonths
+                  ) {
+                    onChange("startingGuildProgress", profile.id);
+                  }
+                }}
+                className="mt-4 w-full accent-emerald-500"
+              />
+              <div className="mt-2 grid grid-cols-2 gap-1 sm:grid-cols-4 lg:grid-cols-7">
+                {STARTING_GUILD_PROGRESS_PROFILES.map((profile) => {
+                  const available =
+                    profile.requiredRealmAgeMonths <= selectedRealmAgeMonths;
+                  const selected = profile.id === selectedStartingGuildProgress;
+                  return (
+                    <button
+                      key={profile.id}
+                      type="button"
+                      disabled={!available}
+                      onClick={() =>
+                        onChange("startingGuildProgress", profile.id)
+                      }
+                      title={
+                        available
+                          ? profile.description
+                          : `Requires a realm age of ${profile.requiredRealmAgeMonths} months.`
+                      }
+                      className={`rounded border px-1 py-2 text-[9px] font-bold uppercase leading-tight transition-colors ${
+                        selected
+                          ? "border-emerald-400 bg-emerald-950/65 text-emerald-100"
+                          : available
+                            ? "border-slate-700 bg-slate-900 text-slate-300 hover:border-emerald-700"
+                            : "cursor-not-allowed border-slate-800 bg-slate-950/50 text-slate-600"
+                      }`}
+                    >
+                      {profile.shortLabel}
+                      <span className="mt-1 block text-[8px] font-normal normal-case text-slate-500">
+                        {profile.requiredRealmAgeMonths === 0
+                          ? "Always"
+                          : `${profile.requiredRealmAgeMonths}+ mo.`}
+                      </span>
+                    </button>
+                  );
+                })}
+              </div>
+              <p className="mt-3 text-xs leading-relaxed text-slate-400">
+                {selectedStartingGuildProfile.description} Guild master level:{" "}
+                <span className="font-bold text-emerald-200">
+                  {selectedStartingGuildProfile.founderLevel}
+                </span>
+                .
+              </p>
             </div>
 
             <label className="block space-y-2">

@@ -19,6 +19,7 @@ import {
   clearBrowserSession,
   listBrowserSaveSlots,
   prepareNewBrowserSession,
+  setActiveBrowserSaveSlot,
 } from "../session/browserSessionPersistence";
 import {
   autoEquipGuildStashItem,
@@ -75,10 +76,13 @@ import {
   getKeyLabel,
   getWowIconUrl,
 } from "../utils";
+import { normalizeFounderConfig } from "../guildRelations/founderCreation";
+import { buildStartingGuild } from "../guild/startingGuild";
 import {
-  buildFounderRoster,
-  normalizeFounderConfig,
-} from "../guildRelations/founderCreation";
+  normalizeRealmAgeMonths,
+  normalizeStartingGuildProgress,
+  STARTING_GUILD_PROGRESS,
+} from "../guild/startProgression";
 import {
   GUILD_RANK,
   assignGuildRank,
@@ -324,7 +328,6 @@ const {
 } = GAMEPLAY_TUNING;
 const {
   MEMBER_COUNT: STARTING_GUILD_MEMBERS,
-  GOLD: STARTING_GUILD_GOLD,
 } = GUILD_STARTING_CONFIG;
 const {
   COMMON_DROP_CHANCE: WORLD_TICK_COMMON_DROP_CHANCE,
@@ -3091,6 +3094,26 @@ export const useGameProviderController = () => {
           realmDifficulty: normalizeRealmDifficulty(value),
         };
       }
+      if (field === "realmAgeMonths" && !prev.hasStarted) {
+        const realmAgeMonths = normalizeRealmAgeMonths(value);
+        return {
+          ...prev,
+          realmAgeMonths,
+          startingGuildProgress: normalizeStartingGuildProgress(
+            prev.startingGuildProgress,
+            realmAgeMonths,
+          ),
+        };
+      }
+      if (field === "startingGuildProgress" && !prev.hasStarted) {
+        return {
+          ...prev,
+          startingGuildProgress: normalizeStartingGuildProgress(
+            value,
+            prev.realmAgeMonths,
+          ),
+        };
+      }
       if (
         field === "eliteQuestMinSuccessChance" ||
         field === "dungeonMinSuccessChance"
@@ -3128,26 +3151,44 @@ export const useGameProviderController = () => {
       ...normalizedFounder,
       name: normalizedFounder.name || `${normalizedName} Founder`.slice(0, 24),
     };
+    const realmAgeMonths = normalizeRealmAgeMonths(guildSetup.realmAgeMonths);
+    const startingGuildProgress = normalizeStartingGuildProgress(
+      guildSetup.startingGuildProgress,
+      realmAgeMonths,
+    );
+    const starterGuild = buildStartingGuild({
+      founder: founderForStart,
+      faction: guildSetup.faction,
+      guildName: normalizedName,
+      realmName: guildSetup.server,
+      realmAgeMonths,
+      startingGuildProgress,
+      itemDatabase,
+    });
     const starterRoster = normalizeRosterZones(
-      buildFounderRoster({
-        founder: founderForStart,
-        faction: guildSetup.faction,
-      }),
+      starterGuild.roster,
       guildSetup.faction,
     );
-    const starterGold = STARTING_GUILD_GOLD;
+    const starterGold = starterGuild.gold;
     const calendarStart = createInitialCalendarState(gameTimeRef.current);
     const starterSocialState = createInitialSocialState();
-    const starterGuildRelationsState =
-      createInitialGuildRelationsState(starterRoster);
+    const starterGuildRelationsState = starterGuild.guildRelationsState;
     const starterGuildActivityStats = createInitialGuildActivityStats(0);
+    const starterSetup = {
+      ...guildSetup,
+      name: normalizedName,
+      founder: founderForStart,
+      realmAgeMonths,
+      startingGuildProgress,
+    };
 
     rewardedMissionIdsRef.current = new Set();
     autoDungeonStateRef.current = { nextAttemptAt: 0 };
     rosterRef.current = starterRoster;
     missionsRef.current = [];
     goldRef.current = starterGold;
-    guildRelationshipsRef.current = {};
+    guildProgressRef.current = starterGuild.guildProgress;
+    guildRelationshipsRef.current = starterGuild.relationships;
     calendarStateRef.current = calendarStart;
     raidLockoutsRef.current = {};
     socialStateRef.current = starterSocialState;
@@ -3155,7 +3196,7 @@ export const useGameProviderController = () => {
     guildActivityStatsRef.current = starterGuildActivityStats;
     const starterRealmState = ensureRealmState(
       null,
-      guildSetup,
+      starterSetup,
       0,
       starterRoster.length,
       gameSettingsRef.current,
@@ -3174,18 +3215,27 @@ export const useGameProviderController = () => {
     );
     setGuildLog([]);
     setGuildGold(starterGold);
-    setGuildRelationships({});
+    setGuildProgress(starterGuild.guildProgress);
+    setGuildRelationships(starterGuild.relationships);
     setGuildSetup((prev) => ({
       ...prev,
       name: normalizedName,
       founder: founderForStart,
+      realmAgeMonths,
+      startingGuildProgress,
       hasStarted: true,
     }));
     navigate(ROUTES.DASHBOARD);
     pushNotification({
       type: "info",
-      title: "Guild Founded",
-      message: `${normalizedName} enters Azeroth with ${STARTING_GUILD_MEMBERS} heroes and ${starterGold}g.`,
+      title:
+        startingGuildProgress === STARTING_GUILD_PROGRESS.FRESH
+          ? "Guild Founded"
+          : "Guild Leadership Begins",
+      message:
+        startingGuildProgress === STARTING_GUILD_PROGRESS.FRESH
+          ? `${normalizedName} enters Azeroth with ${STARTING_GUILD_MEMBERS} heroes and ${starterGold}g.`
+          : `${normalizedName} begins on a ${realmAgeMonths}-month-old realm as a ${starterGuild.profile.label.toLowerCase()} with ${starterRoster.length} members and ${starterGold}g.`,
     });
   };
 
@@ -4680,6 +4730,40 @@ export const useGameProviderController = () => {
       });
     }
   };
+  const handleDeleteBrowserSave = (slotId) => {
+    runBrowserAutosave();
+    const deletingActiveSlot = browserSaveSlots.some(
+      (slot) => slot.id === slotId && slot.active,
+    );
+    try {
+      if (!clearBrowserSession(slotId)) {
+        throw new Error("Browser storage is unavailable.");
+      }
+      if (deletingActiveSlot) {
+        browserSessionReadyRef.current = false;
+        setActiveBrowserSaveSlot(slotId);
+        const basePath = import.meta.env.BASE_URL.endsWith("/")
+          ? import.meta.env.BASE_URL
+          : `${import.meta.env.BASE_URL}/`;
+        window.location.assign(`${basePath}start`);
+        return;
+      }
+      pushNotification({
+        type: "success",
+        title: "Browser Save Deleted",
+        message: `Save Slot ${slotId} is now empty.`,
+      });
+    } catch (error) {
+      console.error("Failed to delete browser save:", error);
+      pushNotification({
+        type: "error",
+        title: "Browser Save Could Not Be Deleted",
+        message:
+          (error instanceof Error ? error.message : "") ||
+          "The selected browser save could not be deleted.",
+      });
+    }
+  };
 
   const guildActivityModeSummary = getGuildActivityModeSummary(roster);
   const dungeonActivityInfoText = getDungeonActivityInfoText(
@@ -4984,6 +5068,7 @@ export const useGameProviderController = () => {
     updateGameSettings: handleGameSettingsChange,
     loadBrowserSave: handleLoadBrowserSave,
     startNewBrowserGame: handleStartNewBrowserGame,
+    deleteBrowserSave: handleDeleteBrowserSave,
     selectCharacter: setDetailCharId,
     closeCharacterDetail: () => setDetailCharId(null),
     togglePause: () => setIsPaused((current) => !current),

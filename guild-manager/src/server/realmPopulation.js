@@ -52,6 +52,10 @@ import {
 import { simulateRealmDungeonActivity } from "./realmDungeons";
 import { capRealmNews } from "./realmNews";
 import { getRealmMaxLevelCount } from "./realmRosters";
+import {
+  generateMatureRealmItemLevel,
+  generateMatureRealmLevel,
+} from "./realmMaturity";
 
 export const hashPopulationSeed = (value) => {
   const input = String(value || "realm-population");
@@ -392,6 +396,7 @@ const generateFreeAgent = ({
   random,
   usedNameKeys,
   arrivalDayIndex = null,
+  realmAgeMonths = 0,
 }) => {
   const faction = random() < 0.5 ? GUILD_FACTION.ALLIANCE : GUILD_FACTION.HORDE;
   const { race, charClass } = pickValidRaceClassCombination({
@@ -399,8 +404,21 @@ const generateFreeAgent = ({
     random,
   });
   const gender = random() > 0.5 ? "Male" : "Female";
-  const level = 1;
-  const itemLevel = 1;
+  const strength = 0.2 + random() * 0.45;
+  const level =
+    Number(realmAgeMonths) === 1
+      ? (Math.max(0, Math.floor(Number(index) || 0)) % 55) + 1
+      : generateMatureRealmLevel({
+          realmAgeMonths,
+          random,
+          strength,
+        });
+  const itemLevel = generateMatureRealmItemLevel({
+    level,
+    realmAgeMonths,
+    random,
+    strength,
+  });
   return createRealmPlayer({
     id: `realm-player:${hashPopulationSeed(`${realmId}:free:${index}`).toString(36)}`,
     name: pickUniqueCharacterName({
@@ -499,6 +517,8 @@ export const normalizeRealmPopulation = ({
   currentDayIndex = 0,
   playerRosterSize = 0,
   serverPopulation = null,
+  realmAgeMonths = 0,
+  targetRealmPlayers = null,
 } = {}) => {
   const safePopulation = population && typeof population === "object" ? population : {};
   const normalizedServerPopulation = normalizeServerPopulation(
@@ -531,12 +551,24 @@ export const normalizeRealmPopulation = ({
       .map((player) => String(player?.name || "").trim().toLocaleLowerCase())
       .filter(Boolean),
   );
-  const targetRealmPlayers = Math.max(0, REALM_POPULATION_START - playerRosterSize);
-  while (players.length < targetRealmPlayers) {
+  const requestedRealmPlayers = Number(targetRealmPlayers);
+  const targetPlayerCount = Math.max(
+    0,
+    (Number.isFinite(requestedRealmPlayers) && requestedRealmPlayers > 0
+      ? Math.floor(requestedRealmPlayers)
+      : REALM_POPULATION_START) - playerRosterSize,
+  );
+  while (players.length < targetPlayerCount) {
     const index = players.length;
     players.push(
       ensureRealmPlayerZone(
-        generateFreeAgent({ realmId, index, random, usedNameKeys }),
+        generateFreeAgent({
+          realmId,
+          index,
+          random,
+          usedNameKeys,
+          realmAgeMonths,
+        }),
       ),
     );
   }

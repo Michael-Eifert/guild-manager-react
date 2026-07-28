@@ -561,6 +561,7 @@ export default function HomeRoot() {
                 browserSaveSlots={browserSaveSlots}
                 onLoadBrowserSave={actions.loadBrowserSave}
                 onStartNewBrowserGame={actions.startNewBrowserGame}
+                onDeleteBrowserSave={actions.deleteBrowserSave}
               />
             }
           />

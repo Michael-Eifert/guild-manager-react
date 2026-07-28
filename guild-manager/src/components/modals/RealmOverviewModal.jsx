@@ -21,6 +21,10 @@ import {
   normalizeRealmDifficulty,
 } from "../../constants";
 import { getRacePortraitUrl, getWowIconUrl } from "../../utils";
+import {
+  getRealmAgeSummary,
+  getStartingGuildProgressProfile,
+} from "../../guild/startProgression";
 
 const formatNumber = (value) =>
   Math.round(Number(value) || 0).toLocaleString("en-US");
@@ -364,6 +368,14 @@ export default function RealmOverviewModal({
             100,
         )
       : 0;
+  const realmAgeDays = Math.max(0, Number(realmState?.ageDays) || 0);
+  const initialRealmAgeMonths = Math.max(
+    0,
+    Math.min(12, Number(guildSetup?.realmAgeMonths) || 0),
+  );
+  const startingGuildProfile = getStartingGuildProgressProfile(
+    guildSetup?.startingGuildProgress,
+  );
 
   if (!isPage && !isOpen) return null;
 
@@ -398,7 +410,11 @@ export default function RealmOverviewModal({
               <RealmStat label="Type" value={realmState?.type || "PvE"} />
               <RealmStat
                 label="Age"
-                value={`${Math.max(1, (Number(realmState?.ageDays) || 0) + 1)} days`}
+                value={
+                  initialRealmAgeMonths > 0
+                    ? `${Math.floor(realmAgeDays / 30)} mo. · ${realmAgeDays + 1} days`
+                    : `${realmAgeDays + 1} days`
+                }
               />
               <RealmStat label="Guilds" value={rankings.length} />
             </div>
@@ -440,6 +456,14 @@ export default function RealmOverviewModal({
               <RealmStat label="Guildless" value={`${unguildedPercent}%`} />
             </div>
             <div className="mt-2 grid grid-cols-2 md:grid-cols-4 gap-2">
+              <RealmStat
+                label="Starting Era"
+                value={getRealmAgeSummary(initialRealmAgeMonths)}
+              />
+              <RealmStat
+                label="Guild Start"
+                value={startingGuildProfile.shortLabel}
+              />
               <RealmStat
                 label="Open to Offers"
                 value={populationStats.openToOffers || 0}

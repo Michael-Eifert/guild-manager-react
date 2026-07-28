@@ -27,6 +27,7 @@ import {
   setActiveBrowserSaveSlot,
   writeBrowserSession,
 } from "../session/browserSessionPersistence";
+import { writePreferredSessionFilename } from "../session/sessionExportFilename";
 import type { BrowserSaveSlotId } from "../session/browserSessionPersistence";
 import type { NotificationInput } from "./gameTypes";
 
@@ -112,7 +113,7 @@ export const createSessionActions = ({
     return true;
   };
 
-  const saveSession = () => {
+  const saveSession = (preferredFilename = "") => {
     const payload = buildCurrentSessionPayload();
     try {
       if (!writeBrowserSession(payload)) {
@@ -128,7 +129,7 @@ export const createSessionActions = ({
     }
 
     try {
-      downloadSessionPayload(payload);
+      downloadSessionPayload(payload, preferredFilename);
     } catch (error) {
       console.error("Failed to save session:", error);
       pushNotification({
@@ -145,8 +146,9 @@ export const createSessionActions = ({
     loadSessionFile({
       event,
       hydrateOptions,
-      onLoaded: (loadedSession, rawSession) => {
+      onLoaded: (loadedSession, rawSession, sourceFile) => {
         applySession(loadedSession);
+        writePreferredSessionFilename(sourceFile.name);
         try {
           if (!writeBrowserSession(rawSession, true)) {
             throw new Error("Browser storage is unavailable.");

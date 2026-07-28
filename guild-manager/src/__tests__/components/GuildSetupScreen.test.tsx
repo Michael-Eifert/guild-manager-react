@@ -44,6 +44,8 @@ describe("GuildSetupScreen", () => {
     expect(html).toContain("Play with Offline Simulation");
     expect(html).toContain("Guild Density");
     expect(html).toContain("Guild Dynamics");
+    expect(html).toContain("Realm Age");
+    expect(html).toContain("Starting Guild Progress");
     expect(html).not.toContain('checked=""');
     expect(html).toContain("Dungeon Groups");
     expect(html).toContain("PvP Activity");
@@ -52,6 +54,43 @@ describe("GuildSetupScreen", () => {
     expect(html).toContain("Normal");
     expect(html).toContain("Hard");
     expect(html).toContain("Start Game");
+  });
+
+  it("unlocks stronger guild starts only when the realm is old enough", () => {
+    const Harness = () => {
+      const [setup, setSetup] = React.useState(guildSetup);
+      return (
+        <GuildSetupScreen
+          guildSetup={setup}
+          onChange={(field, value) =>
+            setSetup((current) => ({ ...current, [field]: value }))
+          }
+          onStart={noop}
+          onLoadSession={noop}
+        />
+      );
+    };
+
+    renderScreen(<Harness />);
+
+    const bwlReady = screen.getByRole("button", { name: /BWL Ready/ });
+    expect((bwlReady as HTMLButtonElement).disabled).toBe(true);
+
+    fireEvent.change(screen.getByRole("slider", { name: "Realm Age" }), {
+      target: { value: "10" },
+    });
+    expect((bwlReady as HTMLButtonElement).disabled).toBe(false);
+    fireEvent.click(bwlReady);
+    expect(
+      screen.getByRole("slider", { name: "Starting Guild Progress" }),
+    ).toHaveProperty("value", "6");
+
+    fireEvent.change(screen.getByRole("slider", { name: "Realm Age" }), {
+      target: { value: "2" },
+    });
+    expect(
+      screen.getByRole("slider", { name: "Starting Guild Progress" }),
+    ).toHaveProperty("value", "2");
   });
 
   it("uses visual founder choices and updates race portraits with gender", () => {

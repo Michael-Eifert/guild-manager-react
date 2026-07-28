@@ -25,6 +25,8 @@ export interface Character {
   id: CharacterId;
   name?: string;
   level?: number;
+  exp?: number;
+  maxExp?: number;
   charClass?: string;
   class?: string;
   className?: string;
@@ -48,6 +50,7 @@ export interface Character {
   zoneProgressById?: Record<string, number>;
   zonesCleared?: string[];
   keys?: string[];
+  clearedMissionIds?: Array<string | number>;
   zoneManualOverride?: boolean;
   zoneProgress?: number;
 }

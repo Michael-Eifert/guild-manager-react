@@ -3,6 +3,7 @@ import {
   Gamepad2,
   HardDrive,
   Plus,
+  RefreshCcw,
   Settings2,
   Trash2,
 } from "lucide-react";
@@ -50,6 +51,7 @@ type Props = {
   browserSaveSlots: BrowserSaveSlotSummary[];
   onLoadBrowserSave: (slotId: BrowserSaveSlotId) => void;
   onStartNewBrowserGame: (slotId: BrowserSaveSlotId) => void;
+  onDeleteBrowserSave: (slotId: BrowserSaveSlotId) => void;
 };
 
 const tabs = [
@@ -68,9 +70,12 @@ export default function GameSettingsPage({
   browserSaveSlots,
   onLoadBrowserSave,
   onStartNewBrowserGame,
+  onDeleteBrowserSave,
 }: Props) {
   const [activeTab, setActiveTab] = useState<SettingsTab>("gameplay");
   const [pendingNewSlot, setPendingNewSlot] =
+    useState<BrowserSaveSlotSummary | null>(null);
+  const [pendingDeleteSlot, setPendingDeleteSlot] =
     useState<BrowserSaveSlotSummary | null>(null);
   const normalizedGameSettings = normalizeGameSettings(gameSettings);
 
@@ -79,6 +84,12 @@ export default function GameSettingsPage({
     const slotId = pendingNewSlot.id;
     setPendingNewSlot(null);
     onStartNewBrowserGame(slotId);
+  };
+  const handleConfirmDeleteSave = () => {
+    if (!pendingDeleteSlot) return;
+    const slotId = pendingDeleteSlot.id;
+    setPendingDeleteSlot(null);
+    onDeleteBrowserSave(slotId);
   };
 
   return (
@@ -258,12 +269,17 @@ export default function GameSettingsPage({
                   )}
                 </div>
 
-                <div className="mt-4 grid gap-2">
+                <div
+                  className={`mt-4 grid gap-2 ${
+                    slot.hasSave ? "grid-cols-2" : ""
+                  }`}
+                >
                   {slot.hasSave && !slot.active ? (
                     <GameButton
                       size="sm"
                       tone="quest"
                       fullWidth
+                      className="col-span-2"
                       icon={<FolderOpen size={16} aria-hidden="true" />}
                       onClick={() => onLoadBrowserSave(slot.id)}
                     >
@@ -272,11 +288,11 @@ export default function GameSettingsPage({
                   ) : null}
                   <GameButton
                     size="sm"
-                    tone={slot.hasSave ? "danger" : "success"}
+                    tone={slot.hasSave ? "neutral" : "success"}
                     fullWidth
                     icon={
                       slot.hasSave ? (
-                        <Trash2 size={16} aria-hidden="true" />
+                        <RefreshCcw size={16} aria-hidden="true" />
                       ) : (
                         <Plus size={16} aria-hidden="true" />
                       )
@@ -285,6 +301,17 @@ export default function GameSettingsPage({
                   >
                     {slot.hasSave ? "Restart Slot" : "Start New Game"}
                   </GameButton>
+                  {slot.hasSave ? (
+                    <GameButton
+                      size="sm"
+                      tone="danger"
+                      fullWidth
+                      icon={<Trash2 size={16} aria-hidden="true" />}
+                      onClick={() => setPendingDeleteSlot(slot)}
+                    >
+                      Delete Save
+                    </GameButton>
+                  ) : null}
                 </div>
               </article>
             ))}
@@ -333,13 +360,13 @@ export default function GameSettingsPage({
         onClose={() => setPendingNewSlot(null)}
         labelledBy="new-game-confirmation-title"
         overlayClassName="bg-black/80 p-4 backdrop-blur-sm"
-        panelClassName="w-full max-w-md rounded-xl border border-red-800 bg-slate-950 p-5 shadow-2xl"
+        panelClassName="w-full max-w-md rounded-xl border border-amber-700 bg-slate-950 p-5 shadow-2xl"
       >
         {pendingNewSlot ? (
           <>
             <h2
               id="new-game-confirmation-title"
-              className="fantasy-font text-xl font-bold text-red-100"
+              className="fantasy-font text-xl font-bold text-amber-100"
             >
               Start a new game in Save Slot {pendingNewSlot.id}?
             </h2>
@@ -358,10 +385,52 @@ export default function GameSettingsPage({
               </GameButton>
               <GameButton
                 size="sm"
-                tone="danger"
+                tone="primary"
                 onClick={handleConfirmNewGame}
               >
                 Confirm New Game
+              </GameButton>
+            </div>
+          </>
+        ) : null}
+      </BaseModal>
+
+      <BaseModal
+        isOpen={pendingDeleteSlot !== null}
+        onClose={() => setPendingDeleteSlot(null)}
+        labelledBy="delete-save-confirmation-title"
+        overlayClassName="bg-black/80 p-4 backdrop-blur-sm"
+        panelClassName="w-full max-w-md rounded-xl border border-red-800 bg-slate-950 p-5 shadow-2xl"
+      >
+        {pendingDeleteSlot ? (
+          <>
+            <h2
+              id="delete-save-confirmation-title"
+              className="fantasy-font text-xl font-bold text-red-100"
+            >
+              Delete Save Slot {pendingDeleteSlot.id}?
+            </h2>
+            <p className="mt-3 text-sm leading-relaxed text-slate-300">
+              {pendingDeleteSlot.guildName} will be permanently deleted.
+              {pendingDeleteSlot.active
+                ? " Because this is the active save, you will return to guild creation."
+                : " The active game and other browser saves will not be changed."}
+            </p>
+            <div className="mt-5 flex flex-col-reverse gap-2 sm:flex-row sm:justify-end">
+              <GameButton
+                size="sm"
+                tone="neutral"
+                onClick={() => setPendingDeleteSlot(null)}
+              >
+                Cancel
+              </GameButton>
+              <GameButton
+                size="sm"
+                tone="danger"
+                icon={<Trash2 size={16} aria-hidden="true" />}
+                onClick={handleConfirmDeleteSave}
+              >
+                Delete Save
               </GameButton>
             </div>
           </>

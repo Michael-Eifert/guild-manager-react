@@ -3,6 +3,7 @@
 import {
   BookOpen,
   Castle,
+  GitBranch,
   Home,
   Map,
   MessageCircle,
@@ -56,6 +57,17 @@ const createNavigationItems = (): NavigationItem[] => [
     mobileOrder: 2,
   },
   {
+    id: "guild-relations",
+    label: "Guild Relations",
+    shortLabel: "Relations",
+    icon: GitBranch,
+    group: "overview",
+    kind: "route",
+    to: "/home/guild-relations",
+    mobileDefault: true,
+    mobileOrder: 3,
+  },
+  {
     id: "missions",
     label: "Missions",
     icon: ScrollText,
@@ -91,8 +103,6 @@ const createNavigationItems = (): NavigationItem[] => [
     group: "world",
     kind: "route",
     to: "/home/realm",
-    mobileDefault: true,
-    mobileOrder: 3,
   },
   {
     id: "database",
@@ -130,7 +140,7 @@ describe("AppShell", () => {
     expect(within(desktopNavigation).getByText("2")).toBeTruthy();
   });
 
-  it("uses Home, Guild, Realm and Recruit as the default mobile navigation", () => {
+  it("uses Home, Guild, Guild Relations and Recruit as the default mobile navigation", () => {
     renderShell(createNavigationItems());
 
     const mobileNavigation = screen.getByTestId("mobile-navigation");
@@ -140,7 +150,7 @@ describe("AppShell", () => {
       within(mobileNavigation)
         .getAllByRole("link")
         .map((link) => link.getAttribute("aria-label")),
-    ).toEqual(["Home", "Guild", "Realm", "Recruit"]);
+    ).toEqual(["Home", "Guild", "Guild Relations", "Recruit"]);
     expect(
       within(mobileNavigation)
         .getByRole("button", { name: "More navigation" })
@@ -199,14 +209,14 @@ describe("AppShell", () => {
       within(screen.getByTestId("mobile-navigation"))
         .getAllByRole("link")
         .map((link) => link.getAttribute("aria-label")),
-    ).toEqual(["Home", "Realm", "Recruit", "Chat"]);
+    ).toEqual(["Home", "Guild Relations", "Recruit", "Chat"]);
     expect(
       JSON.parse(
         window.localStorage.getItem(
           MOBILE_QUICK_NAVIGATION_STORAGE_KEY,
         ) || "[]",
       ),
-    ).toEqual(["realm", "recruit", "chat"]);
+    ).toEqual(["guild-relations", "recruit", "chat"]);
   });
 
   it("restores the saved shortcut order from local storage", () => {

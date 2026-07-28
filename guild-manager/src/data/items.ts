@@ -12,12 +12,55 @@ import { BLACKWING_LAIR_ITEMS } from "./imports/blackwingLairLootManifest";
 import { NAXXRAMAS_ITEMS } from "./imports/naxxramasLootManifest";
 import { PVP_HONOR_SET_ITEMS } from "./imports/pvpHonorSetItems";
 import { DIRE_MAUL_ITEMS } from "./imports/direMaulLootManifest";
+import { CANONICAL_ITEM_ICON_BY_WOWHEAD_ID } from "./generated/canonicalItemIcons";
 import type { ItemDefinition } from "../types/itemTypes";
 
 type ItemLevelBand = { min: number; max: number };
 
 const wowItemIcon = (iconCode: string) =>
   `https://wow.zamimg.com/images/wow/icons/large/${iconCode.toLowerCase()}.jpg`;
+
+const FALLBACK_ICON_BY_WEAPON_TYPE = Object.freeze({
+  dagger: "inv_weapon_shortblade_05",
+  fist: "inv_gauntlets_04",
+  axe1h: "inv_axe_01",
+  axe2h: "inv_axe_09",
+  mace1h: "inv_mace_01",
+  mace2h: "inv_hammer_16",
+  sword1h: "inv_sword_04",
+  sword2h: "inv_sword_25",
+  polearm: "inv_spear_06",
+  staff: "inv_staff_08",
+  bow: "inv_weapon_bow_05",
+  crossbow: "inv_weapon_crossbow_04",
+  gun: "inv_weapon_rifle_03",
+  thrown: "inv_throwingknife_04",
+  wand: "inv_wand_07",
+  idol: "inv_relics_idolofrejuvenation",
+  libram: "inv_relics_libramofhope",
+  totem: "inv_relics_totemofrebirth",
+});
+
+const applyCanonicalItemIcon = (item: ItemDefinition): ItemDefinition => {
+  const canonicalIcon =
+    CANONICAL_ITEM_ICON_BY_WOWHEAD_ID[Number(item.wowheadId)];
+  if (canonicalIcon) {
+    return { ...item, icon: wowItemIcon(canonicalIcon) };
+  }
+  if (!String(item.icon || "").toLowerCase().includes("inv_misc_questionmark")) {
+    return item;
+  }
+  const fallbackIcon =
+    FALLBACK_ICON_BY_WEAPON_TYPE[
+      item.weaponType as keyof typeof FALLBACK_ICON_BY_WEAPON_TYPE
+    ] ||
+    (item.equipmentKind === "shield"
+      ? "inv_shield_04"
+      : item.equipmentKind === "offHandFrill"
+        ? "inv_misc_book_06"
+        : "inv_sword_04");
+  return { ...item, icon: wowItemIcon(fallbackIcon) };
+};
 
 const RANGED_WEAPON_NAMES = new Map<string, NonNullable<ItemDefinition["weaponType"]>>([
   ["Venomstrike", "bow"],
@@ -7716,5 +7759,6 @@ const RAW_DB_ITEMS = [
 export const DB_ITEMS = Object.freeze(
   RAW_DB_ITEMS
     .map(applyClassicWeaponMetadata)
-    .map(applyItemLevelTuning),
+    .map(applyItemLevelTuning)
+    .map(applyCanonicalItemIcon),
 );

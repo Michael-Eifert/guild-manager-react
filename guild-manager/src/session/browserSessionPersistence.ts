@@ -99,8 +99,14 @@ export const writeBrowserSession = (
   return true;
 };
 
-export const clearBrowserSession = (slotId = getActiveBrowserSaveSlot()) =>
-  getStorage()?.removeItem(SLOT_STORAGE_KEYS[slotId]);
+export const clearBrowserSession = (
+  slotId = getActiveBrowserSaveSlot(),
+) => {
+  const storage = getStorage();
+  if (!storage) return false;
+  storage.removeItem(SLOT_STORAGE_KEYS[slotId]);
+  return true;
+};
 
 export const prepareNewBrowserSession = (slotId: BrowserSaveSlotId) => {
   const storage = getStorage();

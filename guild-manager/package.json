@@ -5,6 +5,7 @@
   "type": "module",
   "scripts": {
     "generate:items": "tsx scripts/generate-item-catalog.ts",
+    "sync:item-icons": "tsx scripts/sync-item-icons.ts",
     "predev": "npm run generate:items",
     "dev": "vite",
     "prebuild": "npm run generate:items",

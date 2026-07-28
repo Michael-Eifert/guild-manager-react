@@ -28,6 +28,11 @@ import {
   GUILD_SERVER_OPTIONS,
   GUILD_SERVER_STYLE,
 } from "../constants";
+import {
+  normalizeRealmAgeMonths,
+  REALM_AGE_MONTHS,
+} from "../guild/startProgression";
+import { applyRealmMaturityToGuilds } from "./realmMaturity";
 
 export const hashRealmSeed = (value) => {
   const input = String(value || "realm");
@@ -82,13 +87,20 @@ export const generateNpcGuilds = ({
   realmType = REALM_TYPES.PVE,
   count,
   guildDensity = "medium",
+  serverPopulation = GUILD_SERVER_POPULATION.MEDIUM,
+  realmAgeMonths = 0,
 } = {}) => {
-  const random = createRandom(hashRealmSeed(`${realmName}:${realmType}:guilds`));
+  const normalizedRealmAgeMonths = normalizeRealmAgeMonths(realmAgeMonths);
+  const random = createRandom(
+    hashRealmSeed(
+      `${realmName}:${realmType}:guilds:${guildDensity}:${normalizedRealmAgeMonths}`,
+    ),
+  );
   const names = [...NPC_GUILD_NAME_POOL];
   const usedNameKeys = new Set();
   const density = normalizeRealmGuildDensity(guildDensity);
   const populationProfile = getRealmPopulationProfile(
-    GUILD_SERVER_POPULATION.MEDIUM,
+    serverPopulation,
     density,
   );
   const guildCount = Math.max(
@@ -124,7 +136,7 @@ export const generateNpcGuilds = ({
   const starterRosterAverage = 140 / guildCount;
   const baseTargetAverage = 40;
 
-  return Array.from({ length: guildCount }, (_, index) => {
+  const guilds = Array.from({ length: guildCount }, (_, index) => {
     const nameIndex = Math.floor(random() * names.length) % names.length;
     const name = names.splice(nameIndex, 1)[0] || `Realm Guild ${index + 1}`;
     const archetype = archetypeSequence[index % archetypeSequence.length];
@@ -148,13 +160,29 @@ export const generateNpcGuilds = ({
     );
     const targetMidpoint =
       (Number(profile.rosterSize[0]) + Number(profile.rosterSize[1])) / 2;
-    const rosterSize = Math.min(
-      targetRosterSize,
-      Math.max(
-        6,
-        Math.round(starterRosterAverage * (targetMidpoint / baseTargetAverage)),
-      ),
-    );
+    const rosterSize =
+      normalizedRealmAgeMonths > 0
+        ? Math.min(
+            targetRosterSize,
+            Math.max(
+              6,
+              Math.round(
+                targetRosterSize *
+                  (density === "few"
+                    ? 0.98 + random() * 0.02
+                    : 0.82 + random() * 0.18),
+              ),
+            ),
+          )
+        : Math.min(
+            targetRosterSize,
+            Math.max(
+              6,
+              Math.round(
+                starterRosterAverage * (targetMidpoint / baseTargetAverage),
+              ),
+            ),
+          );
     const guildRoster = generateNpcGuildRoster({
       guildId: id,
       guildName: name,
@@ -195,6 +223,15 @@ export const generateNpcGuilds = ({
       clearedDungeonMissions: [],
       reputation: pickNumber(random, profile.reputation),
     };
+  });
+  return applyRealmMaturityToGuilds({
+    guilds,
+    realmAgeMonths: normalizedRealmAgeMonths,
+    realmAgeDays:
+      normalizedRealmAgeMonths * REALM_AGE_MONTHS.DAYS_PER_MONTH,
+    seed: hashRealmSeed(
+      `${realmName}:${realmType}:${density}:${normalizedRealmAgeMonths}:maturity`,
+    ),
   });
 };
 
@@ -308,20 +345,34 @@ export const ensureRealmState = (
     guildDensity,
   );
   const safeCurrentDay = Math.max(0, Math.floor(Number(currentDayIndex) || 0));
-  const generatedGuilds = generateNpcGuilds({
-    realmName,
-    realmType,
-    count: pickRangeCount(
-      createRandom(hashRealmSeed(`${realmName}:${realmType}:${guildDensity}`)),
-      populationProfile.guildInitialRange,
-    ),
-    guildDensity,
-  });
   const safe = existingRealmState && typeof existingRealmState === "object"
     ? existingRealmState
     : {};
   const hasExistingState =
     Array.isArray(safe.npcGuilds) && safe.npcGuilds.length > 0;
+  const realmAgeMonths = hasExistingState
+    ? normalizeRealmAgeMonths(
+        guildSetup?.realmAgeMonths ??
+          Math.floor(
+            (Number(safe.ageDays) || 0) / REALM_AGE_MONTHS.DAYS_PER_MONTH,
+          ),
+      )
+    : normalizeRealmAgeMonths(guildSetup?.realmAgeMonths);
+  const initialGuildRange =
+    realmAgeMonths > 0
+      ? populationProfile.guildTargetRange
+      : populationProfile.guildInitialRange;
+  const generatedGuilds = generateNpcGuilds({
+    realmName,
+    realmType,
+    count: pickRangeCount(
+      createRandom(hashRealmSeed(`${realmName}:${realmType}:${guildDensity}`)),
+      initialGuildRange,
+    ),
+    guildDensity,
+    serverPopulation: realmPopulation,
+    realmAgeMonths,
+  });
   const npcGuilds = hasExistingState
     ? safe.npcGuilds
         .map((guild, index) =>
@@ -338,6 +389,11 @@ export const ensureRealmState = (
     currentDayIndex: safeCurrentDay,
     playerRosterSize,
     serverPopulation: realmPopulation,
+    realmAgeMonths: hasExistingState ? 0 : realmAgeMonths,
+    targetRealmPlayers:
+      !hasExistingState && realmAgeMonths > 0
+        ? populationProfile.softCap
+        : undefined,
   });
 
   return {
@@ -352,7 +408,11 @@ export const ensureRealmState = (
       Math.floor(
         Number.isFinite(Number(safe.ageDays))
           ? Number(safe.ageDays)
-          : safeCurrentDay,
+          : hasExistingState
+            ? safeCurrentDay
+            : realmAgeMonths > 0
+              ? realmAgeMonths * REALM_AGE_MONTHS.DAYS_PER_MONTH
+              : safeCurrentDay,
       ),
     ),
     npcGuilds,

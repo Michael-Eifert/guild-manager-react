@@ -1187,14 +1187,19 @@ export const generateCharacter = (
     options?.usedNameKeys instanceof Set
       ? options.usedNameKeys
       : buildUsedNameKeySet(options?.usedNames);
+  const random =
+    typeof options?.random === "function" ? options.random : Math.random;
+  const characterIdFactory =
+    typeof options?.createId === "function" ? options.createId : createId;
   const normalizedPreferredRole = normalizePreferredRole(preferredRole);
   const selectedCombination = pickValidRaceClassCombination({
     faction,
     preferredRole: normalizedPreferredRole,
+    random,
   });
   const selectedRace = selectedCombination.race;
   const charClass = selectedCombination.charClass;
-  const gender = Math.random() > 0.5 ? "Male" : "Female";
+  const gender = random() > 0.5 ? "Male" : "Female";
   const fallbackPool =
     DB_NAMES?.Human?.Male && DB_NAMES.Human.Male.length > 0
       ? DB_NAMES.Human.Male
@@ -1203,7 +1208,7 @@ export const generateCharacter = (
     Array.isArray(DB_FUNNY_NAMES) && DB_FUNNY_NAMES.length > 0
       ? DB_FUNNY_NAMES
       : null;
-  const useFunnyName = Boolean(funnyPool) && Math.random() < FUNNY_NAME_CHANCE;
+  const useFunnyName = Boolean(funnyPool) && random() < FUNNY_NAME_CHANCE;
   const selectedPool = buildCharacterNamePool({
     race: selectedRace,
     gender,
@@ -1216,6 +1221,7 @@ export const generateCharacter = (
     curatedPool: selectedPool.length > 0 ? selectedPool : fallbackPool,
     fallbackPool,
     usedNameKeys,
+    random,
   });
   const allowedRoles = Array.isArray(DB_CLASSES?.[charClass]?.allowedRoles)
     ? DB_CLASSES[charClass].allowedRoles
@@ -1223,13 +1229,13 @@ export const generateCharacter = (
   const role =
     normalizedPreferredRole && allowedRoles.includes(normalizedPreferredRole)
       ? normalizedPreferredRole
-      : allowedRoles[Math.floor(Math.random() * allowedRoles.length)];
+      : allowedRoles[Math.floor(random() * allowedRoles.length)];
 
   const starterProfs = PROF_PAIRS[charClass] || DEFAULT_PROF_PAIR;
   const professions = starterProfs.map((p) => ({ name: p, skill: 1 }));
 
   return {
-    id: createId(),
+    id: characterIdFactory(),
     name: firstName,
     race: selectedRace,
     gender,
@@ -1242,7 +1248,7 @@ export const generateCharacter = (
     statusText: "Waiting for orders...",
     activityMode: "Auto",
     morale: 50,
-    personalityTraits: rollCharacterPersonalityTraits(),
+    personalityTraits: rollCharacterPersonalityTraits({ random }),
     professions: professions,
     history: [],
     keys: [],
