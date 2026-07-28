@@ -6,7 +6,14 @@ import {
   Users,
   Wine,
 } from "lucide-react";
-import { useEffect, useMemo, useRef, useState } from "react";
+import {
+  useCallback,
+  useEffect,
+  useLayoutEffect,
+  useMemo,
+  useRef,
+  useState,
+} from "react";
 
 import type { ChatChannel, SocialState } from "../../social/chatTypes";
 import { ensureSocialState } from "../../social/socialSimulation";
@@ -61,6 +68,9 @@ export default function ChatPanel({
   const state = ensureSocialState(socialState);
   const [channel, setChannel] = useState<ChatChannel>("guild");
   const scrollRef = useRef<HTMLDivElement | null>(null);
+  const pointerInsideRef = useRef(false);
+  const messageListFocusedRef = useRef(false);
+  const previousChannelRef = useRef<ChatChannel | null>(null);
   const messages = useMemo(
     () =>
       state.messages
@@ -73,10 +83,21 @@ export default function ChatPanel({
     onMarkRead(channel);
   }, [channel, messages.length, onMarkRead]);
 
-  useEffect(() => {
+  const scrollToLatest = useCallback(() => {
     const node = scrollRef.current;
     if (node) node.scrollTop = node.scrollHeight;
-  }, [channel, messages.length]);
+  }, []);
+
+  useLayoutEffect(() => {
+    const channelChanged = previousChannelRef.current !== channel;
+    if (
+      channelChanged ||
+      (!pointerInsideRef.current && !messageListFocusedRef.current)
+    ) {
+      scrollToLatest();
+    }
+    previousChannelRef.current = channel;
+  }, [channel, messages, scrollToLatest]);
 
   const getUnreadCount = (targetChannel: ChatChannel) =>
     state.messages.filter(
@@ -92,23 +113,46 @@ export default function ChatPanel({
         compact ? "" : "rounded-xl border border-amber-900/60"
       }`}
       aria-label="Character chat"
+      onPointerEnter={() => {
+        pointerInsideRef.current = true;
+      }}
+      onPointerLeave={() => {
+        pointerInsideRef.current = false;
+        if (!messageListFocusedRef.current) scrollToLatest();
+      }}
     >
-      <header className="border-b border-slate-800 bg-gradient-to-r from-amber-950/35 to-slate-950 px-4 py-3">
+      <header
+        className={`border-b border-slate-800 bg-gradient-to-r from-amber-950/35 to-slate-950 ${
+          compact ? "px-3 py-2" : "px-4 py-3"
+        }`}
+      >
         <div className="flex items-center gap-2">
-          <MessageCircle size={18} className="text-amber-300" aria-hidden="true" />
+          <MessageCircle
+            size={compact ? 16 : 18}
+            className="text-amber-300"
+            aria-hidden="true"
+          />
           <div className="min-w-0">
-            <h2 className="fantasy-font truncate text-base font-bold text-amber-100">
+            <h2
+              className={`fantasy-font truncate font-bold text-amber-100 ${
+                compact ? "text-sm" : "text-base"
+              }`}
+            >
               Realm Chat
             </h2>
-            <p className="truncate text-[10px] uppercase tracking-wider text-slate-500">
-              {guildName} · characters speak automatically
-            </p>
+            {!compact ? (
+              <p className="truncate text-[10px] uppercase tracking-wider text-slate-500">
+                {guildName} · characters speak automatically
+              </p>
+            ) : null}
           </div>
         </div>
       </header>
 
       <div
-        className="sticky top-0 z-10 grid grid-cols-3 gap-1 border-b border-slate-800 bg-slate-950 p-2"
+        className={`sticky top-0 z-10 grid grid-cols-3 gap-1 border-b border-slate-800 bg-slate-950 ${
+          compact ? "p-1.5" : "p-2"
+        }`}
         role="tablist"
         aria-label="Chat channels"
       >
@@ -123,7 +167,11 @@ export default function ChatPanel({
               role="tab"
               aria-selected={selected}
               onClick={() => setChannel(entry.id)}
-              className={`flex min-h-11 items-center justify-center gap-2 rounded-lg border px-3 text-xs font-bold transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-amber-300 ${
+              className={`flex items-center justify-center rounded-lg border font-bold transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-amber-300 ${
+                compact
+                  ? "min-h-9 gap-1.5 px-2 text-[11px]"
+                  : "min-h-11 gap-2 px-3 text-xs"
+              } ${
                 selected
                   ? "border-amber-500/70 bg-amber-950/55 text-amber-100"
                   : "border-slate-800 bg-slate-900/70 text-slate-400 hover:border-slate-700"
@@ -145,7 +193,17 @@ export default function ChatPanel({
         ref={scrollRef}
         role="log"
         aria-live="polite"
-        className="min-h-0 flex-1 space-y-2 overflow-y-auto p-3"
+        tabIndex={0}
+        onFocus={() => {
+          messageListFocusedRef.current = true;
+        }}
+        onBlur={() => {
+          messageListFocusedRef.current = false;
+          if (!pointerInsideRef.current) scrollToLatest();
+        }}
+        className={`min-h-0 flex-1 space-y-2 overflow-y-auto focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-amber-300 ${
+          compact ? "p-2" : "p-3"
+        }`}
       >
         {messages.length === 0 ? (
           <div className="grid min-h-48 place-items-center px-6 text-center">
@@ -189,7 +247,7 @@ export default function ChatPanel({
             return (
               <article
                 key={message.id}
-                className={`rounded-lg border p-2.5 ${
+                className={`rounded-lg border ${compact ? "p-2" : "p-2.5"} ${
                   message.contentKind === "roleplay"
                     ? "border-violet-700/70 bg-violet-950/20"
                     : isGuildMember
@@ -293,7 +351,11 @@ export default function ChatPanel({
         )}
       </div>
 
-      <footer className="border-t border-slate-800 px-3 py-2 text-center text-[10px] text-slate-600">
+      <footer
+        className={`border-t border-slate-800 px-3 text-center text-[10px] text-slate-600 ${
+          compact ? "py-1.5" : "py-2"
+        }`}
+      >
         {channel === "tavern"
           ? "Scenes reflect real game events; AI changes wording only."
           : "Chat is simulated. You do not need to reply."}

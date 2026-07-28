@@ -1,7 +1,13 @@
 // @vitest-environment jsdom
 
-import { fireEvent, render, screen, within } from "@testing-library/react";
-import { describe, expect, it, vi } from "vitest";
+import {
+  cleanup,
+  fireEvent,
+  render,
+  screen,
+  within,
+} from "@testing-library/react";
+import { afterEach, describe, expect, it, vi } from "vitest";
 
 import ChatPanel from "../../components/chat/ChatPanel";
 import { createInitialSocialState } from "../../social/socialSimulation";
@@ -56,7 +62,129 @@ const formatExpectedTimestamp = (timestamp: number) =>
     minute: "2-digit",
   });
 
+afterEach(cleanup);
+
 describe("ChatPanel", () => {
+  it("follows new messages while idle and pauses while the player reads older chat", () => {
+    let scrollHeight = 480;
+    const view = render(
+      <ChatPanel
+        socialState={socialState}
+        guildName="Test Guild"
+        onMarkRead={vi.fn()}
+        compact
+      />,
+    );
+    const chat = screen.getByLabelText("Character chat");
+    const messageList = screen.getByRole("log");
+    Object.defineProperty(messageList, "scrollHeight", {
+      configurable: true,
+      get: () => scrollHeight,
+    });
+
+    view.rerender(
+      <ChatPanel
+        socialState={{
+          ...socialState,
+          nextSequence: 4,
+          messages: [
+            ...socialState.messages,
+            {
+              ...socialState.messages[0],
+              id: "chat:3",
+              sequence: 3,
+              text: "Newest guild message.",
+              fallbackText: "Newest guild message.",
+            },
+          ],
+        }}
+        guildName="Test Guild"
+        onMarkRead={vi.fn()}
+        compact
+      />,
+    );
+    expect(messageList.scrollTop).toBe(480);
+
+    fireEvent.pointerEnter(chat);
+    messageList.scrollTop = 120;
+    scrollHeight = 720;
+    view.rerender(
+      <ChatPanel
+        socialState={{
+          ...socialState,
+          nextSequence: 5,
+          messages: [
+            ...socialState.messages,
+            {
+              ...socialState.messages[0],
+              id: "chat:3",
+              sequence: 3,
+              text: "Newest guild message.",
+              fallbackText: "Newest guild message.",
+            },
+            {
+              ...socialState.messages[0],
+              id: "chat:4",
+              sequence: 4,
+              text: "Another guild message.",
+              fallbackText: "Another guild message.",
+            },
+          ],
+        }}
+        guildName="Test Guild"
+        onMarkRead={vi.fn()}
+        compact
+      />,
+    );
+    expect(messageList.scrollTop).toBe(120);
+
+    fireEvent.click(screen.getByRole("tab", { name: /General/ }));
+    expect(messageList.scrollTop).toBe(720);
+
+    fireEvent.pointerLeave(chat);
+    expect(messageList.scrollTop).toBe(720);
+  });
+
+  it("keeps the message position while the log has keyboard focus", () => {
+    const view = render(
+      <ChatPanel
+        socialState={socialState}
+        guildName="Test Guild"
+        onMarkRead={vi.fn()}
+      />,
+    );
+    const messageList = screen.getByRole("log");
+    Object.defineProperty(messageList, "scrollHeight", {
+      configurable: true,
+      value: 600,
+    });
+    messageList.scrollTop = 90;
+    fireEvent.focus(messageList);
+
+    view.rerender(
+      <ChatPanel
+        socialState={{
+          ...socialState,
+          nextSequence: 4,
+          messages: [
+            ...socialState.messages,
+            {
+              ...socialState.messages[0],
+              id: "chat:3",
+              sequence: 3,
+            },
+          ],
+        }}
+        guildName="Test Guild"
+        onMarkRead={vi.fn()}
+      />,
+    );
+
+    expect(messageList.scrollTop).toBe(90);
+    fireEvent.blur(messageList);
+    expect(messageList.scrollTop).toBe(600);
+  });
+
   it("switches channels and clearly distinguishes guild and realm speakers", () => {
     const onMarkRead = vi.fn();
     render(
