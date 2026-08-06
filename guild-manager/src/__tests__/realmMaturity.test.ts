@@ -1,10 +1,16 @@
 import { describe, expect, it } from "vitest";
 
 import { DEFAULT_GUILD_SETUP } from "../constants";
+import {
+  createInitialCalendarState,
+  formatCalendarDate,
+  getCalendarDayIndex,
+} from "../calendar/calendarLogic";
 import { DB_ITEMS } from "../data/items";
 import { normalizeGuildSetup } from "../guild/guildSetup";
 import { buildStartingGuild } from "../guild/startingGuild";
 import {
+  getRealmAgeStartDayIndex,
   getMaxStartingGuildProgress,
   normalizeStartingGuildProgress,
 } from "../guild/startProgression";
@@ -64,6 +70,51 @@ describe("realm maturity setup", () => {
       realmAgeMonths: 0,
       startingGuildProgress: "fresh",
     });
+  });
+
+  it.each([
+    [0, 0, "Monday, January 1, Year 1"],
+    [1, 30, "Wednesday, January 31, Year 1"],
+    [2, 60, "Friday, March 2, Year 1"],
+    [12, 360, "Thursday, December 27, Year 1"],
+  ])(
+    "starts a %s-month realm on calendar day %s",
+    (realmAgeMonths, expectedDayIndex, expectedDate) => {
+      const startTime = 1_000_000_000;
+      const dayIndex = getRealmAgeStartDayIndex(realmAgeMonths);
+      const calendarState = createInitialCalendarState(startTime, dayIndex);
+
+      expect(dayIndex).toBe(expectedDayIndex);
+      expect(
+        getCalendarDayIndex(
+          startTime,
+          calendarState.calendarEpochGameTimeMs,
+        ),
+      ).toBe(expectedDayIndex);
+      expect(formatCalendarDate(expectedDayIndex)).toBe(expectedDate);
+    },
+  );
+
+  it("aligns a mature realm simulation checkpoint with its starting calendar day", () => {
+    const realmAgeMonths = 2;
+    const startDayIndex = getRealmAgeStartDayIndex(realmAgeMonths);
+    const realm = ensureRealmState(
+      null,
+      {
+        ...DEFAULT_GUILD_SETUP,
+        realmAgeMonths,
+      },
+      startDayIndex,
+      15,
+      {
+        realmGuildDensity: "medium",
+        realmGuildDynamics: "medium",
+      },
+    );
+
+    expect(realm.ageDays).toBe(startDayIndex);
+    expect(realm.lastSimulatedDayIndex).toBe(startDayIndex);
+    expect(realm.lastSimulatedStepIndex).toBe(startDayIndex * 20);
   });
 
   it.each([

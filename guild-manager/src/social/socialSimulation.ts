@@ -9,9 +9,9 @@ import type { ItemDefinition } from "../types/itemTypes";
 import type { Mission } from "../types/missionTypes";
 import { getDeterministicResponseDelayMs, renderChatTemplate } from "./chatTemplates";
 import {
+  canInitiateDungeonAsHelper,
   getLfgCandidateKind,
   getLfgHelperInterest,
-  hasDungeonEquipmentUpgrade,
   MAX_LFG_HELPERS,
   passesDeterministicLfgChance,
 } from "./dungeonLfgInterest";
@@ -384,6 +384,7 @@ const selectLfgCandidate = <T extends Record<string, any>>({
           ),
       );
     const helper = helperCandidates[0];
+    if (coreCandidate) return coreCandidate;
     if (
       helper &&
       passesDeterministicLfgChance(
@@ -393,7 +394,7 @@ const selectLfgCandidate = <T extends Record<string, any>>({
     ) {
       return helper.candidate;
     }
-    return coreCandidate || null;
+    return null;
   };
 
   if (neededRole && !finalSlotRole) {
@@ -545,61 +546,36 @@ const createSearch = ({
   const missions = missionList
     .filter(isSupportedLfgMission)
     .sort((left, right) => (Number(left.level) || 1) - (Number(right.level) || 1));
+  const missionContexts = missions
+    .map((mission) => {
+      const coreEligible = availableRoster.filter((member) =>
+        isCharacterEligible(
+          member as unknown as Record<string, unknown>,
+          mission,
+        ),
+      );
+      return {
+        mission,
+        coreEligible,
+        targetSize: getMissionTargetSize(mission),
+        requiredKeyId: mission.requiresKey
+          ? String(mission.keyId || "")
+          : "",
+      };
+    })
+    .filter(({ coreEligible, targetSize }) => coreEligible.length < targetSize);
 
-  for (const mission of missions) {
-    const coreEligible = availableRoster.filter((member) =>
-      isCharacterEligible(member as unknown as Record<string, unknown>, mission),
-    );
-    const targetSize = getMissionTargetSize(mission);
-    if (coreEligible.length >= targetSize) continue;
-    const requiredKeyId = mission.requiresKey
-      ? String(mission.keyId || "")
-      : "";
-    let initiator: Character | null =
-      (requiredKeyId
-        ? coreEligible.find((member) =>
-            getCharacterOwnedKeys(member).includes(requiredKeyId),
-          )
-        : null) || coreEligible[0] || null;
-    if (!initiator && mission.type === "dungeon") {
-      const helperCandidates = availableRoster
-        .filter(
-          (member) =>
-            getLfgCandidateKind(
-              member as unknown as Record<string, unknown>,
-              mission,
-            ) === "helper" &&
-            (!requiredKeyId ||
-              getCharacterOwnedKeys(member).includes(requiredKeyId)) &&
-            hasDungeonEquipmentUpgrade({
-              character: member as unknown as Record<string, unknown>,
-              mission,
-              itemDatabase,
-            }),
-        )
-        .map((member) => ({
-          member,
-          interest: getLfgHelperInterest({
-            character: member as unknown as Record<string, unknown>,
-            mission,
-            itemDatabase,
-          }),
-        }))
-        .sort(
-          (left, right) =>
-            right.interest.chance - left.interest.chance ||
-            left.interest.overlevelDelta - right.interest.overlevelDelta ||
-            String(left.member.id).localeCompare(String(right.member.id)),
-        );
-      initiator =
-        helperCandidates.find(({ member, interest }) =>
-          passesDeterministicLfgChance(
-            `lfg:${state.nextSequence}:init:${mission.id}:${member.id}:${now}`,
-            interest.chance,
-          ),
-        )?.member || null;
-    }
-    if (!initiator) continue;
+  const startSearch = ({
+    mission,
+    coreEligible,
+    targetSize,
+    initiator,
+  }: {
+    mission: Mission;
+    coreEligible: Character[];
+    targetSize: number;
+    initiator: Character;
+  }) => {
     const accessMembers = coreEligible.includes(initiator)
       ? coreEligible
       : [initiator];
@@ -609,7 +585,7 @@ const createSearch = ({
         partyMembers: accessMembers,
       }).canEnter
     ) {
-      continue;
+      return null;
     }
     if (
       mission.isZoneElite === true &&
@@ -618,7 +594,7 @@ const createSearch = ({
         (id: unknown) => String(id) === String(mission.id),
       )
     ) {
-      continue;
+      return null;
     }
 
     const participant = toParticipant(
@@ -659,6 +635,81 @@ const createSearch = ({
       deferText,
     });
     return nextState;
+  };
+
+  for (const context of missionContexts) {
+    const initiator =
+      (context.requiredKeyId
+        ? context.coreEligible.find((member) =>
+            getCharacterOwnedKeys(member).includes(context.requiredKeyId),
+          )
+        : null) ||
+      context.coreEligible[0] ||
+      null;
+    if (!initiator) continue;
+    const nextState = startSearch({ ...context, initiator });
+    if (nextState) return nextState;
+  }
+
+  const helperOptions = missionContexts
+    .filter(({ mission }) => mission.type === "dungeon")
+    .flatMap((context) => {
+      const candidates = availableRoster
+        .filter(
+          (member) =>
+            getLfgCandidateKind(
+              member as unknown as Record<string, unknown>,
+              context.mission,
+            ) === "helper" &&
+            (!context.requiredKeyId ||
+              getCharacterOwnedKeys(member).includes(context.requiredKeyId)),
+        )
+        .map((member) => {
+          const interest = getLfgHelperInterest({
+            character: member as unknown as Record<string, unknown>,
+            mission: context.mission,
+            itemDatabase,
+          });
+          return { ...context, member, interest };
+        })
+        .filter(({ member, mission, interest }) =>
+          canInitiateDungeonAsHelper({
+            character: member as unknown as Record<string, unknown>,
+            mission,
+            interest,
+          }),
+        )
+        .sort(
+          (left, right) =>
+            right.interest.chance - left.interest.chance ||
+            left.interest.overlevelDelta - right.interest.overlevelDelta ||
+            String(left.member.id).localeCompare(String(right.member.id)),
+        );
+      return candidates.slice(0, 1);
+    })
+    .sort(
+      (left, right) =>
+        Number(right.interest.hasUpgrade) -
+          Number(left.interest.hasUpgrade) ||
+        left.interest.overlevelDelta - right.interest.overlevelDelta ||
+        (Number(right.mission.level) || 1) -
+          (Number(left.mission.level) || 1) ||
+        String(left.mission.id).localeCompare(String(right.mission.id)) ||
+        String(left.member.id).localeCompare(String(right.member.id)),
+    );
+  const helperOption = helperOptions[0];
+  if (
+    helperOption &&
+    passesDeterministicLfgChance(
+      `lfg:${state.nextSequence}:init:${helperOption.mission.id}:${helperOption.member.id}:${now}`,
+      helperOption.interest.chance,
+    )
+  ) {
+    const nextState = startSearch({
+      ...helperOption,
+      initiator: helperOption.member,
+    });
+    if (nextState) return nextState;
   }
 
   return state;

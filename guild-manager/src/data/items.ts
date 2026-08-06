@@ -80,6 +80,23 @@ const OFF_HAND_NAMES = new Set([
   "Thaurissan's Royal Scepter",
 ]);
 
+const CLASSIC_WEAPON_METADATA_BY_NAME = new Map<
+  string,
+  Pick<
+    ItemDefinition,
+    "wowheadId" | "weaponType" | "handedness"
+  >
+>([
+  [
+    "Mograine's Might",
+    {
+      wowheadId: 7723,
+      weaponType: "mace2h",
+      handedness: "twoHand",
+    },
+  ],
+]);
+
 const CLASSIC_WEAPON_WOWHEAD_IDS = new Map<string, number>([
   ["Venomstrike", 6469],
   ["Naga Heartpiercer", 3078],
@@ -139,6 +156,16 @@ const applyClassicWeaponMetadata = (item: ItemDefinition): ItemDefinition => {
       equipmentKind: "offHandFrill",
       handedness: "offHand",
       wowheadId: item.wowheadId ?? CLASSIC_WEAPON_WOWHEAD_IDS.get(item.name),
+    };
+  }
+  const explicitMetadata = CLASSIC_WEAPON_METADATA_BY_NAME.get(item.name);
+  if (explicitMetadata) {
+    return {
+      ...item,
+      ...explicitMetadata,
+      wowheadId: item.wowheadId ?? explicitMetadata.wowheadId,
+      icon: item.icon || wowItemIcon("inv_misc_questionmark"),
+      equipmentKind: "weapon",
     };
   }
   if (item.slot !== "mainHand" || item.equipmentKind) {

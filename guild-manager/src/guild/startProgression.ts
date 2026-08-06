@@ -142,6 +142,9 @@ export const normalizeRealmAgeMonths = (value: unknown) => {
   );
 };
 
+export const getRealmAgeStartDayIndex = (value: unknown) =>
+  normalizeRealmAgeMonths(value) * REALM_AGE_MONTHS.DAYS_PER_MONTH;
+
 export const getStartingGuildProgressProfile = (
   value: unknown,
 ): StartingGuildProgressProfile =>

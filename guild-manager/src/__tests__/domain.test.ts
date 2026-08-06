@@ -867,6 +867,27 @@ describe("recruitment", () => {
     expect(Math.min(...itemLevels)).toBeGreaterThanOrEqual(35);
     expect(Math.max(...itemLevels)).toBeLessThanOrEqual(42);
   });
+
+  it("generates a complete one-hand and off-hand starter loadout", () => {
+    const equipment = buildRecruitmentEquipment({
+      character: {
+        level: 40,
+        charClass: "Warrior",
+        role: "Tank",
+      },
+      itemDatabase: [],
+      random: () => 0.5,
+    });
+
+    expect(equipment.mainHand).toMatchObject({
+      equipmentKind: "weapon",
+      handedness: "oneHand",
+    });
+    expect(equipment.offHand).toMatchObject({
+      equipmentKind: "shield",
+      handedness: "offHand",
+    });
+  });
 });
 
 describe("guild progression", () => {

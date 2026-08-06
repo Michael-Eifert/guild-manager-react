@@ -65,6 +65,17 @@ const shadowfangUpgrade = {
   stats: { intellect: 8 },
 };
 
+const scarletMonastery: Mission = {
+  id: "scarlet-monastery",
+  name: "Scarlet Monastery",
+  type: "dungeon",
+  level: 32,
+  minLevel: 28,
+  recommended: "30 - 40",
+  requiredPartySize: 5,
+  duration: 60,
+};
+
 const guildSetup = {
   faction: "Alliance",
   dungeonActivity: GUILD_DUNGEON_ACTIVITY.BALANCED,
@@ -184,6 +195,108 @@ describe("social LFG simulation", () => {
     });
   });
 
+  it("checks every level-appropriate dungeon before considering a helper-only search", () => {
+    const result = advanceSocialSimulation({
+      socialState: createInitialSocialState(),
+      now: 0,
+      roster: [
+        {
+          ...member("level-31", "DPS"),
+          level: 31,
+          equipment: {},
+        },
+      ],
+      realmState,
+      activeMissions: [],
+      missionList: [shadowfangKeep, scarletMonastery],
+      guildSetup,
+      itemDatabase: [shadowfangUpgrade],
+    });
+
+    expect(result.socialState.searches[0]).toMatchObject({
+      missionId: scarletMonastery.id,
+      initiatorId: "level-31",
+    });
+  });
+
+  it("keeps level-50 characters focused on leveling instead of old dungeons", () => {
+    const fakeHighLevelDrop = {
+      ...shadowfangUpgrade,
+      id: "impossible-shadowfang-upgrade",
+      itemLevel: 55,
+    };
+    const result = advanceSocialSimulation({
+      socialState: createInitialSocialState(),
+      now: 0,
+      roster: [
+        {
+          ...member("level-50", "DPS"),
+          level: 50,
+          equipment: {},
+        },
+      ],
+      realmState,
+      activeMissions: [],
+      missionList: [dungeon, shadowfangKeep],
+      guildSetup,
+      itemDatabase: [fakeHighLevelDrop],
+    });
+
+    expect(result.socialState.searches).toEqual([]);
+  });
+
+  it("rolls only the single best helper candidate per checkpoint", () => {
+    const helperInterest = getLfgHelperInterest({
+      character: {
+        level: 31,
+        charClass: "Mage",
+        role: "DPS",
+        equipment: {},
+      },
+      mission: shadowfangKeep,
+      itemDatabase: [shadowfangUpgrade],
+    });
+    const failingId =
+      Array.from({ length: 500 }, (_, index) => `a-helper-${index}`).find(
+        (id) =>
+          !passesDeterministicLfgChance(
+            `lfg:1:init:${shadowfangKeep.id}:${id}:0`,
+            helperInterest.chance,
+          ),
+      ) || "a-helper-fails";
+    const passingId =
+      Array.from({ length: 500 }, (_, index) => `b-helper-${index}`).find(
+        (id) =>
+          passesDeterministicLfgChance(
+            `lfg:1:init:${shadowfangKeep.id}:${id}:0`,
+            helperInterest.chance,
+          ),
+      ) || "b-helper-passes";
+    const result = advanceSocialSimulation({
+      socialState: createInitialSocialState(),
+      now: 0,
+      roster: [
+        {
+          ...member(failingId, "DPS"),
+          level: 31,
+          equipment: {},
+        },
+        {
+          ...member(passingId, "DPS"),
+          level: 31,
+          equipment: {},
+        },
+      ],
+      realmState,
+      activeMissions: [],
+      missionList: [shadowfangKeep],
+      guildSetup,
+      itemDatabase: [shadowfangUpgrade],
+    });
+
+    expect(result.socialState.searches).toEqual([]);
+  });
+
   it("caps an existing LFG group at two overlevel helpers", () => {
     const search = {
       id: "lfg:helpers",
@@ -257,6 +370,86 @@ describe("social LFG simulation", () => {
     );
     expect(result.socialState.searches[0]?.participantIds).not.toContain(
       "third-helper",
+    );
+  });
+
+  it("prefers a level-appropriate joiner over an interested helper", () => {
+    const search = {
+      id: "lfg:core-priority",
+      missionId: shadowfangKeep.id,
+      missionName: shadowfangKeep.name,
+      missionType: "dungeon" as const,
+      targetSize: 5,
+      phase: "guild" as const,
+      createdAt: 0,
+      guildSearchEndsAt: 15_000,
+      expiresAt: 75_000,
+      nextResponseAt: 1_000,
+      participantIds: ["tank", "healer", "initiator"],
+      participants: [
+        {
+          id: "tank",
+          source: "guild" as const,
+          name: "tank",
+          role: "Tank",
+          level: 20,
+        },
+        {
+          id: "healer",
+          source: "guild" as const,
+          name: "healer",
+          role: "Healer",
+          level: 20,
+        },
+        {
+          id: "initiator",
+          source: "guild" as const,
+          name: "initiator",
+          role: "DPS",
+          level: 20,
+        },
+      ],
+      initiatorId: "initiator",
+    };
+    const result = advanceSocialSimulation({
+      socialState: {
+        ...createInitialSocialState(),
+        searches: [search],
+        nextSequence: 2,
+      },
+      now: search.nextResponseAt,
+      roster: [
+        { ...member("tank", "Tank"), level: 20 },
+        { ...member("healer", "Healer"), level: 20 },
+        { ...member("initiator", "DPS"), level: 20 },
+        { ...member("core-dps", "DPS"), level: 20 },
+        {
+          ...member("helpful-dps", "DPS"),
+          level: 31,
+          equipment: {},
+        },
+      ],
+      realmState,
+      activeMissions: [],
+      missionList: [shadowfangKeep],
+      guildSetup: {
+        ...guildSetup,
+        dungeonActivity: GUILD_DUNGEON_ACTIVITY.NONE,
+      },
+      itemDatabase: [shadowfangUpgrade],
+      relationships: {
+        "helpful-dps::initiator": {
+          memberIds: ["helpful-dps", "initiator"],
+          points: 100,
+        },
+      },
+    });
+
+    expect(result.socialState.searches[0]?.participantIds).toContain(
+      "core-dps",
+    );
+    expect(result.socialState.searches[0]?.participantIds).not.toContain(
+      "helpful-dps",
     );
   });
 

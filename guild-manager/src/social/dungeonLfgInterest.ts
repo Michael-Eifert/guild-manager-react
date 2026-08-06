@@ -6,6 +6,8 @@ import type { Mission } from "../types/missionTypes";
 
 export const MAX_LFG_HELPERS = 2;
 export const LFG_LEVEL_TOLERANCE = 2;
+export const LFG_UPGRADE_LEVEL_TOLERANCE = 10;
+export const MAX_NON_MAX_LEVEL_HELPER_INITIATOR_DELTA = 3;
 
 export type LfgCandidateKind = "below-range" | "core" | "helper";
 
@@ -116,6 +118,16 @@ const isItemUpgrade = (
   character: Record<string, unknown>,
   item: ItemDefinition,
 ) => {
+  const characterLevel = Math.max(
+    1,
+    Math.floor(Number(character.level) || 1),
+  );
+  if (
+    getItemEffectiveLevel(item) <
+    characterLevel - LFG_UPGRADE_LEVEL_TOLERANCE
+  ) {
+    return false;
+  }
   if (!hasDetailedEquipment(character)) {
     const summarizedItemLevel = Number(
       character.itemLevel ?? character.averageItemLevel,
@@ -130,6 +142,30 @@ const isItemUpgrade = (
     incomingItem: item,
   });
   return result.outcome === "equipped" && result.loadoutGain > 0;
+};
+
+export const canInitiateDungeonAsHelper = ({
+  character,
+  mission,
+  interest,
+}: {
+  character: Record<string, unknown>;
+  mission: Mission;
+  interest: LfgHelperInterest;
+}) => {
+  if (mission.type !== "dungeon") return false;
+  const level = Math.max(1, Math.floor(Number(character.level) || 1));
+  const clearedMissionIds = Array.isArray(character.clearedMissionIds)
+    ? character.clearedMissionIds
+    : [];
+  const hasClear = clearedMissionIds.some(
+    (missionId) => String(missionId) === String(mission.id),
+  );
+  if (level >= 60) return interest.hasUpgrade || !hasClear;
+  return (
+    interest.hasUpgrade &&
+    interest.overlevelDelta <= MAX_NON_MAX_LEVEL_HELPER_INITIATOR_DELTA
+  );
 };
 
 export const hasDungeonEquipmentUpgrade = ({

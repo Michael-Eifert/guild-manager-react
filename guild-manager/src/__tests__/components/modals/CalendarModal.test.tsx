@@ -80,6 +80,8 @@ describe("CalendarModal", () => {
     expect(html).toContain("Guild Calendar");
     expect(html).toContain("Molten Core Night");
     expect(html).toContain("Upcoming Events");
+    expect(html).toContain("Raid success rate");
+    expect(html).toMatch(/Success Rate \d+%/);
     expect(html).not.toContain('role="dialog"');
   });
 });

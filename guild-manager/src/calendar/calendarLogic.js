@@ -241,8 +241,13 @@ export const getCalendarMonthGrid = (year, monthIndex) => {
   return days;
 };
 
-export const createInitialCalendarState = (calendarEpochGameTimeMs = Date.now()) => ({
-  calendarEpochGameTimeMs,
+export const createInitialCalendarState = (
+  calendarStartGameTimeMs = Date.now(),
+  initialDayIndex = 0,
+) => ({
+  calendarEpochGameTimeMs:
+    calendarStartGameTimeMs -
+    Math.max(0, Math.floor(Number(initialDayIndex) || 0)) * CALENDAR_DAY_MS,
   calendarEvents: [],
   calendarSeries: [],
   calendarEventHistory: [],

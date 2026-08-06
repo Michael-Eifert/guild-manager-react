@@ -59,6 +59,33 @@ const FALLBACK_RANGED_WEAPONS = Object.freeze({
   Warlock: { weaponType: "wand", equipmentKind: "wand" },
 });
 
+const getFallbackOffHand = (character) => {
+  const className = String(character?.charClass || "");
+  const role = String(character?.role || "");
+  const level = Math.max(1, Math.floor(Number(character?.level) || 1));
+  if (
+    ["Warrior", "Paladin", "Shaman"].includes(className) &&
+    (role === "Tank" || !["Warrior", "Hunter"].includes(className))
+  ) {
+    return { equipmentKind: "shield", handedness: "offHand" };
+  }
+  const dualWieldLevel = { Rogue: 10, Warrior: 20, Hunter: 20 }[className];
+  if (Number.isFinite(dualWieldLevel) && level >= dualWieldLevel) {
+    return {
+      equipmentKind: "weapon",
+      ...FALLBACK_MAIN_WEAPONS[className],
+    };
+  }
+  if (
+    ["Druid", "Paladin", "Shaman", "Priest", "Mage", "Warlock"].includes(
+      className,
+    )
+  ) {
+    return { equipmentKind: "offHandFrill", handedness: "offHand" };
+  }
+  return null;
+};
+
 const getRecruitmentGearBand = (level) => {
   const safeLevel = Math.max(1, Math.floor(Number(level) || 1));
   const matchedBand = RECRUITMENT_GEAR_BANDS.find(
@@ -158,6 +185,9 @@ const createFallbackRecruitmentItem = ({
         ...FALLBACK_MAIN_WEAPONS[character?.charClass],
       }
     : {}),
+  ...(slot === "offHand"
+    ? getFallbackOffHand(character) || {}
+    : {}),
   ...(slot === "ranged"
     ? {
         handedness: "ranged",
@@ -237,6 +267,7 @@ const chooseRecruitmentItemForSlot = ({
   const fallbackQuality = safeLevel >= 11 ? 2 : 1;
   const fallbackType =
     slot === "mainHand" ||
+    slot === "offHand" ||
     slot === "neck" ||
     slot === "back" ||
     slot === "trinket" ||
@@ -245,7 +276,7 @@ const chooseRecruitmentItemForSlot = ({
       : getClassArmorTypes(character?.charClass, safeLevel)[0] || "Cloth";
   const fallbackItemLevel =
     band.min + Math.floor(random() * Math.max(1, band.max - band.min + 1));
-  if (slot === "offHand") {
+  if (slot === "offHand" && !getFallbackOffHand(character)) {
     return { item: null, usedEpic: false };
   }
   if (

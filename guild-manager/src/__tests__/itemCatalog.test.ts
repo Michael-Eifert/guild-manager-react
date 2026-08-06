@@ -93,4 +93,15 @@ describe("item catalog", () => {
       ).toBe(true);
     });
   });
+
+  it("keeps explicitly known two-handed dungeon weapons from becoming one-handed", () => {
+    expect(
+      DB_ITEMS.find((item) => item.name === "Mograine's Might"),
+    ).toMatchObject({
+      wowheadId: 7723,
+      equipmentKind: "weapon",
+      weaponType: "mace2h",
+      handedness: "twoHand",
+    });
+  });
 });

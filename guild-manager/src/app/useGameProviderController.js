@@ -79,6 +79,7 @@ import {
 import { normalizeFounderConfig } from "../guildRelations/founderCreation";
 import { buildStartingGuild } from "../guild/startingGuild";
 import {
+  getRealmAgeStartDayIndex,
   normalizeRealmAgeMonths,
   normalizeStartingGuildProgress,
   STARTING_GUILD_PROGRESS,
@@ -3170,10 +3171,20 @@ export const useGameProviderController = () => {
       guildSetup.faction,
     );
     const starterGold = starterGuild.gold;
-    const calendarStart = createInitialCalendarState(gameTimeRef.current);
+    const realmStartDayIndex = getRealmAgeStartDayIndex(realmAgeMonths);
+    const calendarStart = createInitialCalendarState(
+      gameTimeRef.current,
+      realmStartDayIndex,
+    );
     const starterSocialState = createInitialSocialState();
     const starterGuildRelationsState = starterGuild.guildRelationsState;
-    const starterGuildActivityStats = createInitialGuildActivityStats(0);
+    const starterGuildActivityStats =
+      createInitialGuildActivityStats(realmStartDayIndex);
+    const starterWorldPvpState = ensureWorldPvpState(
+      null,
+      realmStartDayIndex,
+    );
+    const starterBattlefieldState = ensureBattlefieldState(null);
     const starterSetup = {
       ...guildSetup,
       name: normalizedName,
@@ -3191,13 +3202,15 @@ export const useGameProviderController = () => {
     guildRelationshipsRef.current = starterGuild.relationships;
     calendarStateRef.current = calendarStart;
     raidLockoutsRef.current = {};
+    worldPvpStateRef.current = starterWorldPvpState;
+    battlefieldStateRef.current = starterBattlefieldState;
     socialStateRef.current = starterSocialState;
     guildRelationsStateRef.current = starterGuildRelationsState;
     guildActivityStatsRef.current = starterGuildActivityStats;
     const starterRealmState = ensureRealmState(
       null,
       starterSetup,
-      0,
+      realmStartDayIndex,
       starterRoster.length,
       gameSettingsRef.current,
     );
@@ -3207,6 +3220,8 @@ export const useGameProviderController = () => {
     setCalendarState(calendarStart);
     setRaidLockouts({});
     setRealmState(starterRealmState);
+    setWorldPvpState(starterWorldPvpState);
+    setBattlefieldState(starterBattlefieldState);
     setSocialState(starterSocialState);
     setGuildRelationsState(starterGuildRelationsState);
     setGuildActivityStats(starterGuildActivityStats);

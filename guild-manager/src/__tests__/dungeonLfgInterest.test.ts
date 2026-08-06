@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 
 import {
+  canInitiateDungeonAsHelper,
   getLfgCandidateKind,
   getLfgHelperInterest,
   getLfgLevelRange,
@@ -113,5 +114,69 @@ describe("dungeon LFG interest", () => {
     expect(passesDeterministicLfgChance("stable-seed", 37)).toBe(
       passesDeterministicLfgChance("stable-seed", 37),
     );
+  });
+
+  it("does not treat obsolete loot or distant sub-60 dungeons as helper goals", () => {
+    const levelFifty = {
+      ...helper,
+      level: 50,
+      equipment: {},
+    };
+    expect(
+      hasDungeonEquipmentUpgrade({
+        character: levelFifty,
+        mission: shadowfangKeep,
+        itemDatabase: [shadowfangUpgrade],
+      }),
+    ).toBe(false);
+
+    const artificialUpgrade = {
+      ...shadowfangUpgrade,
+      itemLevel: 55,
+    };
+    const interest = getLfgHelperInterest({
+      character: levelFifty,
+      mission: shadowfangKeep,
+      itemDatabase: [artificialUpgrade],
+    });
+    expect(interest.hasUpgrade).toBe(true);
+    expect(
+      canInitiateDungeonAsHelper({
+        character: levelFifty,
+        mission: shadowfangKeep,
+        interest,
+      }),
+    ).toBe(false);
+  });
+
+  it("lets max-level characters pursue a missing clear without inventing an upgrade", () => {
+    const character = {
+      ...helper,
+      level: 60,
+      clearedMissionIds: [],
+    };
+    const interest = getLfgHelperInterest({
+      character,
+      mission: shadowfangKeep,
+    });
+
+    expect(interest.hasUpgrade).toBe(false);
+    expect(
+      canInitiateDungeonAsHelper({
+        character,
+        mission: shadowfangKeep,
+        interest,
+      }),
+    ).toBe(true);
+    expect(
+      canInitiateDungeonAsHelper({
+        character: {
+          ...character,
+          clearedMissionIds: [shadowfangKeep.id],
+        },
+        mission: shadowfangKeep,
+        interest,
+      }),
+    ).toBe(false);
   });
 });

@@ -430,6 +430,20 @@ const CalendarModal = ({
       moraleSuccessBonus,
     };
   };
+  const approvedRosterPreview = selectedEventMission
+    ? getAdjustedCalendarMissionPreview(
+        selectedEventMission,
+        approvedMembers,
+      )
+    : null;
+  const approvedRosterSuccessChance =
+    approvedRosterPreview?.successChance ?? 0;
+  const approvedRosterSuccessClass =
+    approvedRosterSuccessChance >= 75
+      ? "text-emerald-300"
+      : approvedRosterSuccessChance >= 45
+        ? "text-amber-200"
+        : "text-red-300";
 
   const handleAutoSelectRoster = () => {
     if (!selectedEvent || !selectedEventMission || !isSelectedEventEditable) return;
@@ -975,7 +989,17 @@ const CalendarModal = ({
               )}
 
               <div className="mt-3 rounded border border-gray-700 bg-gray-900/70 p-2 text-xs">
-                <div className="text-gray-500 uppercase tracking-wide mb-1">Raid Comp</div>
+                <div className="mb-1 flex flex-wrap items-center justify-between gap-2">
+                  <div className="text-gray-500 uppercase tracking-wide">
+                    Raid Comp
+                  </div>
+                  <div
+                    aria-label="Raid success rate"
+                    className={`font-bold ${approvedRosterSuccessClass}`}
+                  >
+                    Success Rate {approvedRosterSuccessChance}%
+                  </div>
+                </div>
                 <div className={hasRoleCoverage ? "text-emerald-300" : "text-amber-200"}>
                   Tank {roleCounts.Tank}/{roleRequirement.Tank} - Healer{" "}
                   {roleCounts.Healer}/{roleRequirement.Healer} - DPS {roleCounts.DPS}/
