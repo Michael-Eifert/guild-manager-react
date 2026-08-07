@@ -138,6 +138,7 @@ import {
 import {
   buildDungeonAttunementTargets,
   getAttunementEligibleMembers,
+  getAttunementPlanningMembers,
 } from "../automation/adventureGoals";
 import {
   getGuildClassSummary,
@@ -159,11 +160,13 @@ import {
   CALENDAR_TIME_OF_DAY,
   buildCalendarEvent,
   buildCalendarSeries,
+  canStartCalendarEvent,
   cancelCalendarSeriesEvents,
   createInitialCalendarState,
   getCalendarDate,
   getCalendarDayIndex,
   getCalendarDayProgress,
+  getCalendarEventStartRosterIds,
   getCalendarTimeOfDayOption,
   getDungeonMissionPreemption,
   hasDuplicateCalendarEvent,
@@ -2288,6 +2291,32 @@ describe("calendar logic", () => {
     expect(event.approvedRosterIds).toEqual(["tank", "dps"]);
     expect(event.benchedIds).toEqual([]);
     expect(result.newlyReadyEvents).toHaveLength(1);
+  });
+
+  it("starts ready calendar raids from an approved roster without requiring a lock", () => {
+    const unlockedEvent = {
+      ...buildCalendarEvent({
+        id: "event-unlocked",
+        title: "Unlocked MC",
+        missionId: 62,
+        scheduledDayIndex: 2,
+        createdAtDayIndex: 0,
+      }),
+      status: CALENDAR_STATUS.READY,
+      approvedRosterIds: ["tank", "dps"],
+    };
+    const emptyEvent = {
+      ...unlockedEvent,
+      id: "event-empty",
+      approvedRosterIds: [],
+    };
+
+    expect(canStartCalendarEvent(unlockedEvent)).toBe(true);
+    expect(getCalendarEventStartRosterIds(unlockedEvent)).toEqual([
+      "tank",
+      "dps",
+    ]);
+    expect(canStartCalendarEvent(emptyEvent)).toBe(false);
   });
 
   it("allows raid calendar signups for busy characters", () => {
@@ -6280,6 +6309,38 @@ describe("auto dungeon activity", () => {
     });
 
     expect(eligibleMembers.map((member) => member.id)).toEqual(["ready"]);
+  });
+
+  it("lets the attunement planner queue every hero who still needs the attunement", () => {
+    const target = {
+      keyId: "molten_core_attunement",
+      sourceMission: {
+        id: "blackrock-depths-core-fragment",
+        type: "dungeon",
+        name: "Blackrock Depths - Core Fragment",
+        minLevel: 42,
+        entryLevel: 42,
+        rewardKeys: ["molten_core_attunement"],
+      },
+    };
+
+    const planningMembers = getAttunementPlanningMembers({
+      target,
+      members: [
+        makeMember("too-low", 20),
+        makeMember("busy", 52, "DPS", { status: "Raid" }),
+        makeMember("ready", 42),
+        makeMember("already-attuned", 60, "DPS", {
+          keys: ["molten_core_attunement"],
+        }),
+      ],
+    });
+
+    expect(planningMembers.map((member) => member.id)).toEqual([
+      "too-low",
+      "busy",
+      "ready",
+    ]);
   });
 
   it("uses calendar-day intervals for dungeon group search frequency", () => {

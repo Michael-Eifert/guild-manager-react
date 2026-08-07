@@ -104,6 +104,10 @@ import {
   registerStartedGuildRuns,
 } from "../guild/guildActivityStats";
 import {
+  clearGuildLogEntries,
+  retainGuildLogEntries,
+} from "../guild/guildLog";
+import {
   buildOnlineSnapshot,
   shouldUseAutoFastForward,
 } from "../activity/characterOnline";
@@ -258,8 +262,10 @@ import {
   getCalendarDate,
   getCalendarDayIndex,
   getCalendarDayProgress,
+  getCalendarEventStartRosterIds,
   hasDuplicateCalendarEvent,
   hasDuplicateCalendarSeries,
+  canStartCalendarEvent,
   normalizeCalendarState,
   refreshCalendarState,
   getMissionInstanceKey,
@@ -376,7 +382,7 @@ export const useGameProviderController = () => {
   const [missionList, setMissionList, missionListRef] = useSynchronizedState(() =>
     getMissionListWithZones(INITIAL_MISSIONS.map(cloneMissionTemplate)),
   );
-  const [guildLog, setGuildLog] = useState([]);
+  const [guildLog, setGuildLogState] = useState([]);
   const [guildGold, setGuildGold, goldRef] = useSynchronizedState(0);
   const [guildProgress, setGuildProgress, guildProgressRef] = useSynchronizedState(() =>
     createInitialGuildProgress(),
@@ -418,6 +424,20 @@ export const useGameProviderController = () => {
   const [stashPolicy, setStashPolicy, stashPolicyRef] = useSynchronizedState(() =>
     ensureStashPolicy(DEFAULT_STASH_POLICY),
   );
+  const setGuildLog = useCallback((nextValue) => {
+    setGuildLogState((currentLogs) => {
+      const nextLogs =
+        typeof nextValue === "function"
+          ? nextValue(currentLogs)
+          : nextValue;
+      return retainGuildLogEntries(nextLogs, missionListRef.current);
+    });
+  }, []);
+  const handleClearGuildLog = useCallback((filter = "all") => {
+    setGuildLog((currentLogs) =>
+      clearGuildLogEntries(currentLogs, missionListRef.current, filter),
+    );
+  }, []);
   const {
     dismissNotification,
     notifications,
@@ -703,7 +723,7 @@ export const useGameProviderController = () => {
   const appendGuildRenownLog = useCallback((message) => {
     const time = new Date().toLocaleTimeString();
     setGuildLog((prev) =>
-      [{ time, type: "guild-renown", message }, ...prev].slice(0, 50),
+      [{ time, type: "guild-renown", message }, ...prev],
     );
   }, []);
 
@@ -719,7 +739,7 @@ export const useGameProviderController = () => {
           context,
         },
         ...prev,
-      ].slice(0, 50),
+      ],
     );
   }, []);
 
@@ -1280,14 +1300,11 @@ export const useGameProviderController = () => {
       refreshedCalendar.state.calendarEvents
         .filter(
           (event) =>
-            event.status === CALENDAR_STATUS.READY &&
+            canStartCalendarEvent(event) &&
             event.autoStart !== false &&
-            event.rosterLocked === true &&
             event.scheduledDayIndex === calendarDayIndex &&
             getCalendarTimeOfDayOption(event.scheduledTimeOfDay).dayProgress <=
-              calendarDayProgress &&
-            Array.isArray(event.approvedRosterIds) &&
-            event.approvedRosterIds.length > 0,
+              calendarDayProgress,
         )
         .filter((event) => {
           const eventKey = event.seriesId
@@ -2421,7 +2438,7 @@ export const useGameProviderController = () => {
       if (newLogs.length > 0) {
         const time = new Date().toLocaleTimeString();
         setGuildLog((prev) =>
-          [...newLogs.map((log) => ({ time, ...log })), ...prev].slice(0, 50),
+          [...newLogs.map((log) => ({ time, ...log })), ...prev],
         );
       }
     },
@@ -2815,7 +2832,7 @@ export const useGameProviderController = () => {
                 "The guild has called an election for a new Guild Master.",
             },
             ...current,
-          ].slice(0, 50),
+          ],
         );
       }
     },
@@ -2955,7 +2972,7 @@ export const useGameProviderController = () => {
       setRoster(queued.roster);
       const time = new Date().toLocaleTimeString();
       setGuildLog((prev) =>
-        [...queued.logs.map((log) => ({ time, ...log })), ...prev].slice(0, 50),
+        [...queued.logs.map((log) => ({ time, ...log })), ...prev],
       );
       pushNotification({
         type: "info",
@@ -3302,7 +3319,7 @@ export const useGameProviderController = () => {
             message,
           },
           ...prev,
-        ].slice(0, 50),
+        ],
       );
       pushNotification({
         type: "info",
@@ -3389,7 +3406,7 @@ export const useGameProviderController = () => {
             message,
           },
           ...prev,
-        ].slice(0, 50),
+        ],
       );
 
       return {
@@ -3428,7 +3445,7 @@ export const useGameProviderController = () => {
         (memberId) =>
           !deployOnlineSnapshot.onlineIds.has(String(memberId)),
       );
-      if (offlineMembers.length > 0) {
+      if (offlineMembers.length > 0 && options?.ignoreOnlineStatus !== true) {
         const firstStatus =
           deployOnlineSnapshot.byId[String(offlineMembers[0])];
         pushNotification({
@@ -3482,7 +3499,10 @@ export const useGameProviderController = () => {
         1,
         Number(quest?.minPartySize) || (quest?.isRaid ? 5 : 1),
       );
-      if (memberIds.length < minimumPartySize) {
+      if (
+        memberIds.length < minimumPartySize &&
+        options?.allowPartialParty !== true
+      ) {
         pushNotification({
           type: "error",
           title: quest?.isRaid ? "Raid Setup Incomplete" : "Dungeon Group Incomplete",
@@ -3698,7 +3718,7 @@ export const useGameProviderController = () => {
               message: `Prepared consumables for ${openingMission.name}: ${formatConsumableUseSummary(consumableModifiers)}`,
             },
             ...prev,
-          ].slice(0, 50),
+          ],
         );
       }
 
@@ -4083,7 +4103,7 @@ export const useGameProviderController = () => {
     const event = calendarStateRef.current.calendarEvents.find(
       (entry) => entry.id === eventId,
     );
-    if (!event || event.status !== CALENDAR_STATUS.READY || event.rosterLocked !== true) return false;
+    if (!canStartCalendarEvent(event)) return false;
     if (calendarEventStartLocksRef.current.has(eventId)) return false;
 
     const mission = missionListRef.current.find(
@@ -4093,10 +4113,7 @@ export const useGameProviderController = () => {
 
     calendarEventStartLocksRef.current.add(eventId);
     try {
-      const approvedRosterIds = [...new Set(event.approvedRosterIds)].filter(
-        Boolean,
-      );
-      if (approvedRosterIds.length === 0) return false;
+      const approvedRosterIds = getCalendarEventStartRosterIds(event);
       const calendarMissionIds = Array.isArray(event.missionIds)
         ? event.missionIds
         : [];
@@ -4105,6 +4122,8 @@ export const useGameProviderController = () => {
 
       const deployed = handleDeploy(mission, approvedRosterIds, {
         calendarEventId: event.id,
+        allowPartialParty: true,
+        ignoreOnlineStatus: true,
         ...(chainMissionIds ? { chainMissionIds } : null),
       });
       if (!deployed) return false;
@@ -4139,7 +4158,7 @@ export const useGameProviderController = () => {
               source === "auto" && logAutoStart ? "auto-started" : "started",
             missionName: mission.name,
             dayIndex: currentDayIndex,
-            approvedRosterIds: [...event.approvedRosterIds],
+            approvedRosterIds: [...approvedRosterIds],
             benchedIds: [...event.benchedIds],
             ...(source === "auto" && logAutoStart
               ? { scheduledTimeOfDay: event.scheduledTimeOfDay }
@@ -4374,7 +4393,7 @@ export const useGameProviderController = () => {
             ...log,
           })),
           ...prev,
-        ].slice(0, 50),
+        ],
       );
     }
     if (missionWithStepLoot.calendarEventId && !chainResolution.queuedMission) {
@@ -4407,7 +4426,7 @@ export const useGameProviderController = () => {
           ...log,
         })),
         ...prev,
-      ].slice(0, 50),
+      ],
     );
   }, []);
 
@@ -5004,7 +5023,7 @@ export const useGameProviderController = () => {
             message: `${result.incident.title} was resolved by guild management.`,
           },
           ...current,
-        ].slice(0, 50),
+        ],
       );
     }
   }, []);
@@ -5047,7 +5066,7 @@ export const useGameProviderController = () => {
             message,
           },
           ...current,
-        ].slice(0, 50),
+        ],
       );
       const nextSocialState = appendGuildElectionMessage({
         socialState: socialStateRef.current,
@@ -5123,11 +5142,12 @@ export const useGameProviderController = () => {
                 soldGold,
               },
               ...previous,
-            ].slice(0, 50),
+            ],
           );
         }
         return updated;
       }),
+    clearGuildLog: handleClearGuildLog,
     openGuildLog: () => setShowGuildLog(true),
     closeGuildLog: () => setShowGuildLog(false),
     openLootTable: () => setShowLootTable(true),

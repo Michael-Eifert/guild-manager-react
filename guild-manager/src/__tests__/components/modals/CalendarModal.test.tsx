@@ -82,6 +82,9 @@ describe("CalendarModal", () => {
     expect(html).toContain("Upcoming Events");
     expect(html).toContain("Raid success rate");
     expect(html).toMatch(/Success Rate \d+%/);
+    expect(html).toContain(
+      "The currently approved roster will start automatically; locking remains optional.",
+    );
     expect(html).not.toContain('role="dialog"');
   });
 });

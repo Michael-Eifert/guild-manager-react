@@ -163,6 +163,7 @@ export interface GameActions {
   resolveGuildIncident: (incidentId: string, choiceId: string) => void;
   castGuildElectionVote: (candidateId: string) => void;
   finishGuildElection: () => void;
+  clearGuildLog: (filter: "all" | "world" | "dungeon" | "raid" | "pvp") => void;
 }
 
 /** Public provider value. Domain modules refine individual fields as they migrate. */

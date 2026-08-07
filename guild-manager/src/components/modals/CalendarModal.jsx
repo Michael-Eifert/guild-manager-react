@@ -255,15 +255,11 @@ const CalendarModal = ({
     : [];
   const roleCounts = getRoleCounts(approvedMembers);
   const roleRequirement = getMissionRoleRequirement(selectedEventMission);
-  const minPartySize = selectedEventMission?.isRaid
-    ? Math.max(1, Number(selectedEventMission?.minPartySize) || 5)
-    : 1;
   const maxPartySize = Math.max(
     1,
     Number(selectedEventMission?.requiredPartySize) ||
       (selectedEventMission?.isRaid ? 40 : 5),
   );
-  const hasMinimumRoster = approvedMembers.length >= minPartySize;
   const hasRoleCoverage =
     roleCounts.Tank >= roleRequirement.Tank &&
     roleCounts.Healer >= roleRequirement.Healer &&
@@ -971,7 +967,9 @@ const CalendarModal = ({
                 {selectedEvent.autoStart === false ? " disabled" : ""}.{" "}
                 {selectedEvent.rosterLocked
                   ? "Roster is locked and reserved for this raid."
-                  : "Lock the roster before that time and the raid will start automatically."}
+                  : approvedMembers.length > 0
+                    ? "The currently approved roster will start automatically; locking remains optional."
+                    : "Select at least one hero so the raid can start automatically."}
               </div>
               {selectedEventMission?.isRaid && (
                 <div className="mt-3 rounded border border-amber-900/60 bg-amber-950/20 p-2 text-xs text-amber-100/80">
@@ -1144,8 +1142,7 @@ const CalendarModal = ({
                   onClick={() => onStartEvent(selectedEvent.id)}
                   disabled={
                     selectedEvent.status !== CALENDAR_STATUS.READY ||
-                    !selectedEvent.rosterLocked ||
-                    !hasMinimumRoster ||
+                    approvedMembers.length === 0 ||
                     selectedEventLockoutStatus?.isCompletedLocked ||
                     selectedEventLockoutStatus?.hasLockoutConflict
                   }

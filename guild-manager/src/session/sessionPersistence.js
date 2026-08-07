@@ -35,11 +35,11 @@ import {
 } from "./sessionMigrations";
 import { getSessionDownloadFilename } from "./sessionExportFilename";
 import { normalizeGuildActivityStats } from "../guild/guildActivityStats";
+import { retainGuildLogEntries } from "../guild/guildLog";
 import { normalizeGameSettings } from "../settings/gameSettings";
 
 export const SESSION_FORMAT = SESSION_FORMAT_VALUE;
 export const SESSION_VERSION = CURRENT_SESSION_VERSION;
-const MAX_GUILD_LOG_ENTRIES = 50;
 const MIN_MISSION_DURATION_MS = 1000;
 const DEFAULT_DUNGEON_STEP_COUNT = 4;
 const DEFAULT_MISSION_BOARD_STATE = Object.freeze({
@@ -386,7 +386,7 @@ export const hydrateSessionData = ({
       ? safePayload.missionList
       : initialMissions;
   const loadedGuildLog = Array.isArray(safePayload.guildLog)
-    ? safePayload.guildLog.slice(0, MAX_GUILD_LOG_ENTRIES)
+    ? retainGuildLogEntries(safePayload.guildLog, loadedMissionList)
     : [];
 
   const rawGuildProgress = buildMergedGuildProgress(safePayload);

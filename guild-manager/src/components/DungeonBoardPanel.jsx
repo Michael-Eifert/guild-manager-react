@@ -5,8 +5,10 @@ import LfgSearchCard from "./dungeons/LfgSearchCard";
 import { DB_CLASSES } from "../constants";
 import {
   buildDungeonAttunementTargets,
+  canCharacterStartAttunementSource,
   getAdventureGoalQueue,
-  getAttunementEligibleMembers,
+  getAttunementPlanningMembers,
+  getAttunementSourceMinimumLevel,
 } from "../automation/adventureGoals";
 import {
   getKeyIconUrl,
@@ -116,6 +118,15 @@ export default function DungeonBoardPanel({
     activeMissions.forEach((mission) => {
       getMissionMemberIds(mission).forEach((memberId) => ids.add(memberId));
     });
+    return ids;
+  }, [activeMissions]);
+  const activeRaidMemberIds = useMemo(() => {
+    const ids = new Set();
+    activeMissions
+      .filter((mission) => mission?.isRaid === true)
+      .forEach((mission) => {
+        getMissionMemberIds(mission).forEach((memberId) => ids.add(memberId));
+      });
     return ids;
   }, [activeMissions]);
 
@@ -296,6 +307,7 @@ export default function DungeonBoardPanel({
           onDungeonBoardFilterChange={setDungeonBoardFilter}
           dungeonBoardFilterCounts={dungeonBoardFilterCounts}
           busyMemberIds={busyMemberIds}
+          activeRaidMemberIds={activeRaidMemberIds}
           queuedGoalCount={queuedGoalCount}
           blockedTargetCount={blockedTargetCount}
         />
@@ -405,6 +417,7 @@ function AttunementPlannerView({
   onDungeonBoardFilterChange,
   dungeonBoardFilterCounts,
   busyMemberIds,
+  activeRaidMemberIds,
   queuedGoalCount,
   blockedTargetCount,
 }) {
@@ -486,7 +499,7 @@ function AttunementPlannerView({
                 <div className="mt-3 flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
                   <SectionTitle
                     title="Queue Heroes"
-                    hint="busy heroes will queue this as their next mission"
+                    hint="all heroes who need it can queue; current raids and missions finish first"
                   />
                   <button
                     type="button"
@@ -506,6 +519,7 @@ function AttunementPlannerView({
                   target={selectedAttunementTarget}
                   selectedIds={selectedAttunementMemberIds}
                   busyMemberIds={busyMemberIds}
+                  activeRaidMemberIds={activeRaidMemberIds}
                   onToggle={onToggleAttunementMember}
                 />
                 <div className="mt-3 grid grid-cols-1 gap-2 sm:grid-cols-2">
@@ -660,28 +674,34 @@ function AttunementHeroPicker({
   target,
   selectedIds,
   busyMemberIds,
+  activeRaidMemberIds,
   onToggle,
 }) {
-  const sortedHeroes = getAttunementEligibleMembers({
+  const sortedHeroes = getAttunementPlanningMembers({
     members: heroes,
     target,
   }).sort((left, right) => {
-    const leftBusy = isHeroOnMission(left, busyMemberIds);
-    const rightBusy = isHeroOnMission(right, busyMemberIds);
-    if (leftBusy !== rightBusy) return leftBusy ? 1 : -1;
     const leftQueued = hasQueuedTargetGoal(left, target);
     const rightQueued = hasQueuedTargetGoal(right, target);
     if (leftQueued !== rightQueued) return leftQueued ? -1 : 1;
+    const leftInRaid = activeRaidMemberIds.has(getMemberId(left));
+    const rightInRaid = activeRaidMemberIds.has(getMemberId(right));
+    if (leftInRaid !== rightInRaid) return leftInRaid ? -1 : 1;
+    const leftBusy = isHeroOnMission(left, busyMemberIds);
+    const rightBusy = isHeroOnMission(right, busyMemberIds);
+    if (leftBusy !== rightBusy) return leftBusy ? 1 : -1;
     const levelDelta = getHeroLevel(right) - getHeroLevel(left);
     if (levelDelta !== 0) return levelDelta;
     return String(left?.name || "").localeCompare(String(right?.name || ""));
   });
 
   if (sortedHeroes.length === 0) {
-    return (
-      <EmptyText>No heroes can currently start this attunement source.</EmptyText>
-    );
+    return <EmptyText>Every guild member already has this attunement.</EmptyText>;
   }
+
+  const sourceMinimumLevel = target?.sourceMission
+    ? getAttunementSourceMinimumLevel(target.sourceMission)
+    : 1;
 
   return (
     <div className="grid grid-cols-1 gap-1.5 sm:grid-cols-2 2xl:grid-cols-3">
@@ -690,6 +710,12 @@ function AttunementHeroPicker({
         const selected = selectedIds.includes(memberId);
         const queued = hasQueuedTargetGoal(hero, target);
         const onMission = isHeroOnMission(hero, busyMemberIds);
+        const inRaid = activeRaidMemberIds.has(memberId);
+        const canStartNow = canCharacterStartAttunementSource({
+          character: hero,
+          target,
+        });
+        const belowSourceLevel = getHeroLevel(hero) < sourceMinimumLevel;
 
         return (
           <button
@@ -711,7 +737,19 @@ function AttunementHeroPicker({
             </span>
             <div className="mt-1 flex flex-wrap gap-1">
               {queued && <StatusPill tone="amber">Queued</StatusPill>}
-              {onMission && <StatusPill tone="slate">On Mission</StatusPill>}
+              {inRaid ? (
+                <StatusPill tone="amber">In Raid · Next</StatusPill>
+              ) : onMission ? (
+                <StatusPill tone="slate">Busy · Next</StatusPill>
+              ) : belowSourceLevel ? (
+                <StatusPill tone="slate">
+                  Ready at Lv {sourceMinimumLevel}
+                </StatusPill>
+              ) : canStartNow ? (
+                <StatusPill tone="emerald">Ready Now</StatusPill>
+              ) : (
+                <StatusPill tone="slate">Waiting for Access</StatusPill>
+              )}
             </div>
           </button>
         );
@@ -779,7 +817,7 @@ function getAttunementTargetLabel(target) {
 }
 
 function getSelectableAttunementMemberIds({ heroes, target }) {
-  return getAttunementEligibleMembers({ members: heroes, target })
+  return getAttunementPlanningMembers({ members: heroes, target })
     .map((hero) => getMemberId(hero))
     .filter(Boolean);
 }

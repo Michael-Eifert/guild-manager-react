@@ -175,6 +175,7 @@ export default function HomeRoot() {
     unreadChatCount,
   } = game;
   const {
+    clearGuildLog,
     closeCharacterDetail,
     closeGuildLog,
     closeLootTable,
@@ -546,7 +547,13 @@ export default function HomeRoot() {
           />
           <Route
             path={HOME_ROUTE_PATHS.GUILD_LOG}
-            element={<GuildLogPage logs={guildLog} missionList={missionList} />}
+            element={
+              <GuildLogPage
+                logs={guildLog}
+                missionList={missionList}
+                onClearLogs={clearGuildLog}
+              />
+            }
           />
           <Route
             path={HOME_ROUTE_PATHS.GAME_SETTINGS}
@@ -642,6 +649,7 @@ export default function HomeRoot() {
             onClose={closeGuildLog}
             logs={guildLog}
             missionList={missionList}
+            onClearLogs={clearGuildLog}
           />
         )}
         {detailCharId && (

@@ -112,7 +112,7 @@ export const createDebugActions = ({
           message: preset.logMessage || `Debug setup: ${preset.successTitle}.`,
         },
         ...prev,
-      ].slice(0, 50),
+      ],
     );
     notify({
       type: "info",

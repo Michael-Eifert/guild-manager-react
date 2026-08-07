@@ -94,6 +94,14 @@ export const getAttunementEligibleMembers = ({ members, target }) =>
     canCharacterStartAttunementSource({ character: member, target }),
   );
 
+export const getAttunementPlanningMembers = ({ members, target }) => {
+  const keyId = String(target?.keyId || "").trim();
+  if (!keyId) return [];
+  return (Array.isArray(members) ? members : []).filter(
+    (member) => !hasCharacterKey(member, keyId),
+  );
+};
+
 export const hasMatchingAdventureGoal = (character, goal) => {
   const keyId = String(goal?.keyId || "").trim();
   const sourceMissionId = String(goal?.sourceMissionId || "").trim();

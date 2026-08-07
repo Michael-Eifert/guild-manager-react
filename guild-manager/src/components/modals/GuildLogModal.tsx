@@ -1,10 +1,12 @@
 import { useMemo, useState } from "react";
+import {
+  getVisibleGuildLogEntries,
+  type GuildLogFilter,
+} from "../../guild/guildLog";
 import { getQualityClass } from "../../utils";
 import BaseModal from "./BaseModal";
 import type { Mission } from "../../types/missionTypes";
 
-type LogScenario = "world" | "dungeon" | "raid" | "pvp";
-type LogFilter = "all" | LogScenario;
 type GuildLogEntry = {
   time?: string;
   type?: string;
@@ -45,9 +47,9 @@ type GuildLogEntry = {
   disposition?: "equipped" | "stored" | "sold";
   soldGold?: number;
 };
-type FilterCounts = Record<LogFilter, number>;
+type FilterCounts = Record<GuildLogFilter, number>;
 
-const LOG_FILTERS: ReadonlyArray<{ id: LogFilter; label: string }> = Object.freeze([
+const LOG_FILTERS: ReadonlyArray<{ id: GuildLogFilter; label: string }> = Object.freeze([
   { id: "all", label: "All" },
   { id: "world", label: "World" },
   { id: "dungeon", label: "Dungeon" },
@@ -75,95 +77,38 @@ const getLootDispositionText = (log: GuildLogEntry, parenthesized = false) => {
   return parenthesized ? ` (${text}).` : ` — ${text}.`;
 };
 
-const normalizeLogSourceName = (value: unknown) =>
-  String(value || "")
-    .trim()
-    .replace(/^zone:\s*/i, "")
-    .toLowerCase();
-
-const getMissionScenario = (mission: Mission): LogScenario | null => {
-  if (!mission) return null;
-  if (mission.isRaid === true) return "raid";
-  if (mission.type === "dungeon") return "dungeon";
-  if (mission.type === "quest" || mission.type === "zone") return "world";
-  return null;
-};
-
-const buildMissionScenarioLookup = (missionList: Mission[]) =>
-  (Array.isArray(missionList) ? missionList : []).reduce<Map<string, LogScenario>>((lookup, mission) => {
-    const scenario = getMissionScenario(mission);
-    if (!scenario) return lookup;
-
-    const names = [mission.name];
-    if (mission.type === "zone" && mission.name?.startsWith("Zone: ")) {
-      names.push(mission.name.replace(/^Zone:\s*/i, ""));
-    }
-
-    names.forEach((name) => {
-      const key = normalizeLogSourceName(name);
-      if (key) lookup.set(key, scenario);
-    });
-
-    return lookup;
-  }, new Map());
-
-const getLogScenario = (
-  log: GuildLogEntry,
-  missionScenarioLookup: Map<string, LogScenario>,
-): LogScenario | null => {
-  if (log?.type === "calendar") return "raid";
-  if (log?.type === "pvp") return "pvp";
-  if (log?.type === "zone-clear" || log?.type === "zone-gold") return "world";
-  if (log?.missionName === "World Drop") return "world";
-
-  const missionKey = normalizeLogSourceName(log?.missionName);
-  return missionKey ? missionScenarioLookup.get(missionKey) || null : null;
-};
-
 const GuildLogModal = ({
   isOpen,
   onClose,
   variant = "modal",
   logs,
   missionList = [],
+  onClearLogs,
 }: {
   isOpen: boolean;
   onClose?: () => void;
   variant?: "modal" | "page";
   logs: GuildLogEntry[];
   missionList?: Mission[];
+  onClearLogs?: (filter: GuildLogFilter) => void;
 }) => {
-  const [activeFilter, setActiveFilter] = useState<LogFilter>("all");
-  const missionScenarioLookup = useMemo(
-    () => buildMissionScenarioLookup(missionList),
-    [missionList],
-  );
-  const logsWithScenario = useMemo(
-    () =>
-      logs.map((log) => ({
-        log,
-        scenario: getLogScenario(log, missionScenarioLookup),
-      })),
-    [logs, missionScenarioLookup],
-  );
+  const [activeFilter, setActiveFilter] = useState<GuildLogFilter>("all");
   const filterCounts = useMemo(
-    () =>
-      logsWithScenario.reduce<FilterCounts>(
-        (counts, entry) => {
-          counts.all += 1;
-          if (entry.scenario) counts[entry.scenario] += 1;
-          return counts;
-        },
-        { all: 0, world: 0, dungeon: 0, raid: 0, pvp: 0 },
-      ),
-    [logsWithScenario],
+    () => {
+      const counts: FilterCounts = {
+        all: getVisibleGuildLogEntries(logs, missionList, "all").length,
+        world: getVisibleGuildLogEntries(logs, missionList, "world").length,
+        dungeon: getVisibleGuildLogEntries(logs, missionList, "dungeon").length,
+        raid: getVisibleGuildLogEntries(logs, missionList, "raid").length,
+        pvp: getVisibleGuildLogEntries(logs, missionList, "pvp").length,
+      };
+      return counts;
+    },
+    [logs, missionList],
   );
   const visibleLogs = useMemo(
-    () =>
-      activeFilter === "all"
-        ? logsWithScenario
-        : logsWithScenario.filter((entry) => entry.scenario === activeFilter),
-    [activeFilter, logsWithScenario],
+    () => getVisibleGuildLogEntries(logs, missionList, activeFilter),
+    [activeFilter, logs, missionList],
   );
 
   return (
@@ -190,24 +135,39 @@ const GuildLogModal = ({
           )}
         </div>
         <div className="px-4 py-3 border-b border-gray-700 bg-gray-900/80">
-          <div className="flex items-center gap-2 flex-wrap">
-            {LOG_FILTERS.map((filter) => (
+          <div className="flex items-center justify-between gap-3">
+            <div className="flex items-center gap-2 flex-wrap">
+              {LOG_FILTERS.map((filter) => (
+                <button
+                  key={filter.id}
+                  type="button"
+                  onClick={() => setActiveFilter(filter.id)}
+                  className={`px-3 py-1 text-xs rounded border transition-colors ${
+                    activeFilter === filter.id
+                      ? "border-yellow-500 bg-yellow-900/40 text-yellow-200"
+                      : "border-gray-600 bg-gray-800 text-gray-300 hover:bg-gray-700"
+                  }`}
+                >
+                  {filter.label}
+                  <span className="ml-1 text-[10px] text-gray-400">
+                    {filterCounts[filter.id]}
+                  </span>
+                </button>
+              ))}
+            </div>
+            {onClearLogs && (
               <button
-                key={filter.id}
                 type="button"
-                onClick={() => setActiveFilter(filter.id)}
-                className={`px-3 py-1 text-xs rounded border transition-colors ${
-                  activeFilter === filter.id
-                    ? "border-yellow-500 bg-yellow-900/40 text-yellow-200"
-                    : "border-gray-600 bg-gray-800 text-gray-300 hover:bg-gray-700"
-                }`}
+                onClick={() => onClearLogs(activeFilter)}
+                disabled={visibleLogs.length === 0}
+                title={`Clear ${
+                  LOG_FILTERS.find((filter) => filter.id === activeFilter)?.label
+                } log`}
+                className="shrink-0 rounded border border-red-800 bg-red-950/30 px-3 py-1 text-xs font-bold text-red-200 transition-colors hover:bg-red-900/50 disabled:cursor-not-allowed disabled:opacity-40"
               >
-                {filter.label}
-                <span className="ml-1 text-[10px] text-gray-400">
-                  {filterCounts[filter.id]}
-                </span>
+                Clear Log
               </button>
-            ))}
+            )}
           </div>
         </div>
         <div className="flex-1 overflow-y-auto p-4 space-y-2 custom-scrollbar font-mono text-sm">

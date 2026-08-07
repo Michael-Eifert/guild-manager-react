@@ -495,6 +495,17 @@ export const buildCalendarEvent = ({
   completedAtDayIndex: null,
 });
 
+export const getCalendarEventStartRosterIds = (event) => {
+  const approvedRosterIds = normalizeIdList(event?.approvedRosterIds);
+  if (event?.rosterLocked !== true) return approvedRosterIds;
+  const lockedRosterIds = normalizeIdList(event?.lockedRosterIds);
+  return lockedRosterIds.length > 0 ? lockedRosterIds : approvedRosterIds;
+};
+
+export const canStartCalendarEvent = (event) =>
+  event?.status === CALENDAR_STATUS.READY &&
+  getCalendarEventStartRosterIds(event).length > 0;
+
 const getCalendarRaidReservationKey = ({ event, mission }) => {
   if (mission?.isRaid !== true || !event) return null;
   const raidKey = getRaidLockoutKey(mission);

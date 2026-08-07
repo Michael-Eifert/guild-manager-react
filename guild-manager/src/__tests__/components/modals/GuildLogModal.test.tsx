@@ -60,4 +60,27 @@ describe("GuildLogModal", () => {
     expect(html).toContain("Stored for another loadout");
     expect(html).toContain("Sold for 3g");
   });
+
+  it("shows capped counts and a clear action for the active log", () => {
+    const html = render(
+      <GuildLogModal
+        isOpen
+        variant="page"
+        onClose={noop}
+        onClearLogs={noop}
+        missionList={missionList}
+        logs={Array.from({ length: 110 }, (_, index) => ({
+          time: `Entry ${index}`,
+          type: "relations",
+          message: `General event ${index}`,
+        }))}
+      />,
+    );
+
+    expect(html).toContain("All");
+    expect(html).toContain(">100</span>");
+    expect(html).toContain("Clear Log");
+    expect(html).toContain('title="Clear All log"');
+    expect(html).not.toContain("General event 100");
+  });
 });
