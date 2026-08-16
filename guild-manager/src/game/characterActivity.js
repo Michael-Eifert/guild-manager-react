@@ -124,6 +124,7 @@ export const applyProfessionSkillAttempts = ({
   elapsedGameMs = CONFIG.TICK_RATE,
   tickRateMs = CONFIG.TICK_RATE,
   successChance = 0.7,
+  productionSuccessChance = null,
   random = Math.random,
 }) => {
   const cappedLimit = Math.min(300, Math.max(0, Number(currentLimit) || 0));
@@ -153,7 +154,14 @@ export const applyProfessionSkillAttempts = ({
     skilledProfessionName = targetProfession?.name || null;
     attempted = true;
 
-    if (roll() >= 1 - safeSuccessChance) {
+    const isGatheringProfession = ["Mining", "Herbalism", "Skinning"].includes(
+      targetProfession?.name,
+    );
+    const targetSuccessChance =
+      isGatheringProfession || productionSuccessChance === null
+        ? safeSuccessChance
+        : Math.max(0, Math.min(1, Number(productionSuccessChance) || 0));
+    if (roll() >= 1 - targetSuccessChance) {
       const currentSkill = Number(targetProfession?.skill) || 0;
       nextProfessions[targetIndex] = {
         ...targetProfession,

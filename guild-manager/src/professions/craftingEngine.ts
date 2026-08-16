@@ -13,7 +13,7 @@ import {
 } from "./professionUtils";
 import type { Character } from "../types/characterTypes";
 import type { GuildInventory } from "../types/itemTypes";
-import type { RecipeDefinition } from "./recipeDefinitions";
+import { getRecipeSkillGainChance, type RecipeDefinition } from "./recipeDefinitions";
 
 interface CraftRecipeInput {
   character: Character;
@@ -28,12 +28,29 @@ export const canCraftRecipe = ({ character, recipe, guildInventory }: CraftRecip
   if (!characterHasProfession(character, recipe.profession)) {
     return { canCraft: false, reason: `${character.name} does not know ${recipe.profession}.` };
   }
+  const profession = (character.professions || []).find(
+    (entry) => entry?.name === recipe.profession,
+  );
+  if (
+    Array.isArray(profession?.knownRecipeIds) &&
+    !profession.knownRecipeIds.includes(recipe.id)
+  ) {
+    return { canCraft: false, reason: `${character.name} has not learned ${recipe.name}.` };
+  }
   const skill = getCharacterProfessionSkill(character, recipe.profession);
   if (skill < recipe.requiredSkill) {
     return {
       canCraft: false,
       reason: `Requires ${recipe.profession} ${recipe.requiredSkill}.`,
     };
+  }
+  if (
+    recipe.binding === "bindOnCraft" &&
+    Array.isArray(recipe.classRestrictions) &&
+    recipe.classRestrictions.length > 0 &&
+    !recipe.classRestrictions.includes(String(character.charClass || ""))
+  ) {
+    return { canCraft: false, reason: `${recipe.name} is restricted to ${recipe.classRestrictions.join(", ")}.` };
   }
   const safeInventory = ensureGuildInventory(guildInventory);
   const missingMaterial = (Array.isArray(recipe.materials) ? recipe.materials : []).find(
@@ -68,18 +85,19 @@ export const craftRecipe = ({
   }
 
   let nextInventory = removeItemsFromGuildInventory(safeInventory, recipe.materials);
-  nextInventory = addItemToGuildInventory(
-    nextInventory,
-    recipe.outputItemId,
-    recipe.outputQuantity || 1,
-  );
+  if (recipe.type !== "enchant" && recipe.outputItemId) {
+    nextInventory = addItemToGuildInventory(
+      nextInventory,
+      recipe.outputItemId,
+      recipe.outputQuantity || 1,
+    );
+  }
 
   const roll = typeof random === "function" ? random : Math.random;
   const skill = getCharacterProfessionSkill(character, recipe.profession);
   const maxSkill = getSkillCap(character.level);
   const canGainSkill = skill < maxSkill && skill < 300;
-  const gainedSkill =
-    canGainSkill && roll() < Math.max(0, Math.min(1, Number(recipe.skillGainChance) || 0));
+  const gainedSkill = canGainSkill && roll() < getRecipeSkillGainChance(recipe, skill);
   const nextCharacter = gainedSkill
     ? applyProfessionSkillGain({
         character,

@@ -17,8 +17,16 @@ import {
   consumeMissionConsumables,
   getConsumableMissionModifiers,
 } from "../professions/consumableEffects";
-import { getRecipeDefinition } from "../professions/recipeDefinitions";
+import { getRecipeDefinition, getRecipeScrollItemId, RECIPE_DEFINITIONS } from "../professions/recipeDefinitions";
 import { generatePassiveProfessionMaterial } from "../professions/professionUtils";
+import {
+  applyEquipmentEnchant,
+  disenchantUnequippedItem,
+  learnDroppedRecipe,
+  learnTrainerRecipe,
+  rollRecipeDrop,
+} from "../professions/professionProgression";
+import { getItemRoleUtility } from "../equipment/equipmentLoadouts";
 
 const makeCharacter = (overrides = {}) => ({
   id: "char-1",
@@ -52,6 +60,14 @@ describe("guild inventory utilities", () => {
 });
 
 describe("crafting engine", () => {
+  it("ships a validated catalog of 35 recipes across five production professions", () => {
+    expect(RECIPE_DEFINITIONS).toHaveLength(35);
+    expect(new Set(RECIPE_DEFINITIONS.map((recipe) => recipe.profession))).toEqual(
+      new Set(["Alchemy", "Blacksmithing", "Enchanting", "Leatherworking", "Tailoring"]),
+    );
+    expect(RECIPE_DEFINITIONS.every((recipe) => recipe.materials.length > 0)).toBe(true);
+  });
+
   it("consumes materials, creates output, and can increase profession skill", () => {
     const character = makeCharacter();
     const recipe = getRecipeDefinition("recipe_apprentice_cloth_robe");
@@ -74,15 +90,100 @@ describe("crafting engine", () => {
 
   it("generates passive material from profession activity", () => {
     const result = generatePassiveProfessionMaterial({
-      character: makeCharacter({ professions: [{ name: "Tailoring", skill: 125 }] }),
-      professionName: "Tailoring",
+      character: makeCharacter({ professions: [{ name: "Skinning", skill: 125 }] }),
+      professionName: "Skinning",
       guildInventory: ensureGuildInventory(),
       random: () => 0,
     });
 
-    expect(result.material).toBe("linen_cloth");
+    expect(result.material).toBe("light_leather");
     expect(result.quantity).toBe(2);
-    expect(getItemQuantity(result.guildInventory, "linen_cloth")).toBe(2);
+    expect(getItemQuantity(result.guildInventory, "light_leather")).toBe(2);
+  });
+});
+
+describe("recipe progression and enchanting", () => {
+  it("learns trainer recipes for gold and dropped recipes from the stash", () => {
+    const tailor = makeCharacter({
+      level: 60,
+      professions: [{ name: "Tailoring", skill: 300, knownRecipeIds: ["recipe_apprentice_cloth_robe"] }],
+    });
+    const trained = learnTrainerRecipe({
+      character: tailor,
+      recipeId: "recipe_mystic_woolen_gloves",
+      guildGold: 20,
+    });
+    expect(trained.learned).toBe(true);
+    expect(trained.guildGold).toBe(15);
+
+    const recipeId = "recipe_robe_of_the_archmage";
+    const scrollId = getRecipeScrollItemId(recipeId);
+    const learned = learnDroppedRecipe({
+      character: trained.character,
+      recipeId,
+      guildInventory: ensureGuildInventory({ items: { [scrollId]: 1 } }),
+    });
+    expect(learned.learned).toBe(true);
+    expect(getItemQuantity(learned.guildInventory, scrollId)).toBe(0);
+    expect(learned.character.professions[0].knownRecipeIds).toContain(recipeId);
+  });
+
+  it("rolls boss-specific recipes independently into the guild stash", () => {
+    const drop = rollRecipeDrop({
+      context: {
+        kind: "dungeon",
+        dungeonSetId: "blackrock_depths",
+        bossName: "Pyromancer Loregrain",
+      },
+      guildInventory: ensureGuildInventory(),
+      random: () => 0,
+    });
+    expect(drop.dropped).toBe(true);
+    expect(drop.recipe?.id).toBe("recipe_enchant_fiery_weapon");
+    expect(getItemQuantity(drop.guildInventory, getRecipeScrollItemId(drop.recipe.id))).toBe(1);
+  });
+
+  it("disenchants unequipped gear and applies a persistent scored enchant", () => {
+    const enchanter = makeCharacter({
+      level: 60,
+      professions: [{ name: "Enchanting", skill: 300, knownRecipeIds: ["recipe_enchant_crusader"] }],
+      equipment: {
+        mainHand: { id: "test-sword", name: "Test Sword", slot: "mainHand", type: "Generic", equipmentKind: "weapon", weaponType: "sword1h", handedness: "oneHand", minLevel: 1, itemLevel: 40, stats: { strength: 2 } },
+      },
+    });
+    const itemOwner = makeCharacter({
+      id: "char-2",
+      name: "Borin",
+      charClass: "Warrior",
+      professions: [{ name: "Mining", skill: 200 }],
+      personalInventory: [
+        { id: "old-robe", name: "Old Robe", slot: "chest", type: "Cloth", quality: 2, itemLevel: 20 },
+      ],
+    });
+    const disenchanted = disenchantUnequippedItem({
+      character: itemOwner,
+      enchanter,
+      itemId: "old-robe",
+      guildInventory: ensureGuildInventory(),
+      random: () => 0,
+    });
+    expect(disenchanted.disenchanted).toBe(true);
+    expect(disenchanted.character.personalInventory).toHaveLength(0);
+    expect(getItemQuantity(disenchanted.guildInventory, "vision_dust")).toBe(1);
+
+    const inventory = ensureGuildInventory({ items: { large_brilliant_shard: 2, essence_of_light: 2 } });
+    const before = getItemRoleUtility(enchanter, enchanter.equipment.mainHand, "Physical DPS");
+    const enchanted = applyEquipmentEnchant({
+      enchanter,
+      target: enchanter,
+      slot: "mainHand",
+      recipeId: "recipe_enchant_crusader",
+      guildInventory: inventory,
+      random: () => 1,
+    });
+    expect(enchanted.enchanted).toBe(true);
+    expect(enchanted.target.equipment.mainHand.enchant?.recipeId).toBe("recipe_enchant_crusader");
+    expect(getItemRoleUtility(enchanted.target, enchanted.target.equipment.mainHand, "Physical DPS")).toBeGreaterThan(before);
   });
 });
 

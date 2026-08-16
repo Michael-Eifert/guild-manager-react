@@ -19,6 +19,7 @@ import {
 } from "./game/characterPersonality";
 import { createDefaultPvpData } from "./pvp/pvpCharacterUtils";
 import { canCharacterEquipItem } from "./equipment/weaponRules";
+import { getStarterRecipeIds } from "./professions/recipeDefinitions";
 
 const ARMOR_HIERARCHY = ["Plate", "Mail", "Leather", "Cloth"];
 const WOW_ICON_BASE_URL = "https://wow.zamimg.com/images/wow/icons/large";
@@ -1232,7 +1233,11 @@ export const generateCharacter = (
       : allowedRoles[Math.floor(random() * allowedRoles.length)];
 
   const starterProfs = PROF_PAIRS[charClass] || DEFAULT_PROF_PAIR;
-  const professions = starterProfs.map((p) => ({ name: p, skill: 1 }));
+  const professions = starterProfs.map((p) => ({
+    name: p,
+    skill: 1,
+    knownRecipeIds: getStarterRecipeIds(p),
+  }));
 
   return {
     id: characterIdFactory(),

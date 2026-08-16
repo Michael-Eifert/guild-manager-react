@@ -7,6 +7,7 @@ export interface CharacterProfession {
   name: string;
   skill: number;
   maxSkill?: number;
+  knownRecipeIds?: string[];
 }
 
 export interface CharacterPvpState {

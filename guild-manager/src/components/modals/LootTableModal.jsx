@@ -17,10 +17,12 @@ import {
   SOURCE_WORLD,
 } from "../../loot/lootTableHelpers";
 import BaseModal from "./BaseModal";
+import { RECIPE_DEFINITIONS } from "../../professions/recipeDefinitions";
 
 const SOURCE_ALL = "All";
 const SOURCE_PVP = "__pvp__";
 const SOURCE_SET_PIECES = "__set_pieces__";
+const SOURCE_RECIPES = "__recipes__";
 const PVP_HONOR_SET_NAME = "PvP Honor Sets";
 const PVP_GEAR_SET_NAME = "PvP Gear";
 const PVP_VIEW_HONOR_SETS = "honor_sets";
@@ -34,6 +36,7 @@ const PRIMARY_SOURCE_FILTERS = Object.freeze([
   { value: SOURCE_WORLD, label: "World" },
   { value: SOURCE_PVP, label: "PvP Gear" },
   { value: SOURCE_SET_PIECES, label: "Set Pieces" },
+  { value: SOURCE_RECIPES, label: "Recipes" },
 ]);
 const CLASS_SORT_ORDER = Object.freeze(Object.keys(DB_CLASSES));
 const SLOT_SORT_ORDER = Object.freeze([
@@ -720,7 +723,7 @@ const LootTableModal = ({
                 {source.label}
               </button>
             ))}
-            <div className="grid w-full grid-cols-[auto_minmax(0,1fr)] items-center gap-2 md:ml-auto md:w-auto md:grid-cols-[auto_12rem_auto_12rem]">
+            {sourceFilter !== SOURCE_RECIPES && <div className="grid w-full grid-cols-[auto_minmax(0,1fr)] items-center gap-2 md:ml-auto md:w-auto md:grid-cols-[auto_12rem_auto_12rem]">
               <label htmlFor="loot-dungeon-filter" className="text-xs text-gray-400 uppercase tracking-wider">
                 Dungeons
               </label>
@@ -770,7 +773,7 @@ const LootTableModal = ({
                   </option>
                 ))}
               </select>
-            </div>
+            </div>}
           </div>
           {sourceFilter === SOURCE_SET_PIECES && (
             <div className="mt-3 flex flex-wrap items-center gap-2">
@@ -820,7 +823,27 @@ const LootTableModal = ({
         </div>
 
         <div className="flex-1 overflow-y-auto p-4 md:p-6 space-y-6 custom-scrollbar">
-          {sourceSections.length === 0 ? (
+          {sourceFilter === SOURCE_RECIPES ? (
+            <div className="space-y-5">
+              {Object.values(RECIPE_DEFINITIONS.reduce((groups, recipe) => ({
+                ...groups,
+                [recipe.profession]: [...(groups[recipe.profession] || []), recipe],
+              }), {})).map((recipes) => (
+                <section key={recipes[0].profession} className="rounded border border-gray-700 bg-gray-900/40">
+                  <div className="border-b border-gray-700 bg-black/30 px-4 py-2 font-bold text-amber-100">{recipes[0].profession}</div>
+                  <div className="grid grid-cols-1 gap-2 p-3 lg:grid-cols-2">
+                    {recipes.map((recipe) => (
+                      <div key={recipe.id} className="rounded border border-gray-700 bg-gray-800/70 p-3">
+                        <div className="font-bold text-gray-100">{recipe.name}</div>
+                        <div className="text-xs text-gray-400">Skill {recipe.requiredSkill} · {recipe.acquisition.rarity}</div>
+                        <div className="mt-1 text-xs text-amber-200/80">{recipe.acquisition.label}</div>
+                      </div>
+                    ))}
+                  </div>
+                </section>
+              ))}
+            </div>
+          ) : sourceSections.length === 0 ? (
             <div className="text-center text-gray-500 italic py-10">
               No items found for this source.
             </div>

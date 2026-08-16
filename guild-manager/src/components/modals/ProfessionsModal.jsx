@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useState } from "react";
 import { canCraftRecipe } from "../../professions/craftingEngine";
-import { RECIPE_DEFINITIONS } from "../../professions/recipeDefinitions";
+import { getRecipeDifficulty, getRecipeScrollItemId, RECIPE_DEFINITIONS } from "../../professions/recipeDefinitions";
+import { SUPPLY_PRICES } from "../../professions/professionProgression";
 import {
   ensureGuildInventory,
   getItemQuantity,
@@ -15,7 +16,8 @@ import BaseModal from "./BaseModal";
 
 const TABS = Object.freeze([
   { id: "overview", label: "Overview" },
-  { id: "crafting", label: "Crafting" },
+  { id: "crafting", label: "Crafting / Enchanting" },
+  { id: "recipes", label: "Recipe Book" },
   { id: "stash", label: "Guild Stash" },
 ]);
 
@@ -23,6 +25,7 @@ const CATEGORY_LABELS = Object.freeze({
   [INVENTORY_ITEM_CATEGORY.MATERIAL]: "Materials",
   [INVENTORY_ITEM_CATEGORY.CONSUMABLE]: "Consumables",
   [INVENTORY_ITEM_CATEGORY.EQUIPMENT]: "Equipment",
+  [INVENTORY_ITEM_CATEGORY.RECIPE]: "Recipes",
   [INVENTORY_ITEM_CATEGORY.OTHER]: "Other",
 });
 
@@ -57,6 +60,7 @@ const getCategoryOrder = (category) =>
     INVENTORY_ITEM_CATEGORY.MATERIAL,
     INVENTORY_ITEM_CATEGORY.CONSUMABLE,
     INVENTORY_ITEM_CATEGORY.EQUIPMENT,
+    INVENTORY_ITEM_CATEGORY.RECIPE,
     INVENTORY_ITEM_CATEGORY.OTHER,
   ].indexOf(category);
 
@@ -69,6 +73,11 @@ const ProfessionsModal = ({
   stashPolicy = null,
   guildGold = 0,
   onCraftRecipe,
+  onTrainRecipe,
+  onLearnRecipe,
+  onBuySupply,
+  onDisenchantItem,
+  onEnchantEquipment,
   onSellStashItem,
   onCleanupGuildStash,
   onTryAutoEquipFromGuildStash,
@@ -84,6 +93,9 @@ const ProfessionsModal = ({
   const [selectedCharacterId, setSelectedCharacterId] = useState(
     professionRoster[0]?.id || "",
   );
+  const [enchantTargetId, setEnchantTargetId] = useState("");
+  const [enchantSlot, setEnchantSlot] = useState("");
+  const [supplyQuantity, setSupplyQuantity] = useState(5);
   const safeInventory = useMemo(
     () => ensureGuildInventory(guildInventory),
     [guildInventory],
@@ -96,13 +108,17 @@ const ProfessionsModal = ({
   const selectedProfessionNames = selectedProfessions.map(
     (profession) => profession.name,
   );
-  const visibleRecipes = useMemo(
-    () =>
-      RECIPE_DEFINITIONS.filter((recipe) =>
-        selectedProfessionNames.includes(recipe.profession),
-      ),
-    [selectedProfessionNames],
-  );
+  const selectedKnowsRecipe = (recipe) => {
+    const profession = selectedProfessions.find((entry) => entry.name === recipe.profession);
+    return Boolean(profession) && (!Array.isArray(profession.knownRecipeIds) || profession.knownRecipeIds.includes(recipe.id));
+  };
+  const visibleRecipes = RECIPE_DEFINITIONS.filter((recipe) =>
+    selectedProfessionNames.includes(recipe.profession),
+  ).filter((recipe) => recipe.type !== "enchant" && selectedKnowsRecipe(recipe));
+  const selectedRecipeBook = RECIPE_DEFINITIONS.filter((recipe) => selectedProfessionNames.includes(recipe.profession));
+  const selectedEnchantRecipes = selectedRecipeBook.filter((recipe) => recipe.type === "enchant" && selectedKnowsRecipe(recipe));
+  const enchantTarget = roster.find((character) => character.id === enchantTargetId) || selectedCharacter;
+  const compatibleEnchantSlots = [...new Set(selectedEnchantRecipes.flatMap((recipe) => recipe.enchant?.slots || []))].filter((slot) => enchantTarget?.equipment?.[slot]);
   const stashEntries = useMemo(() => {
     const definitionsById = new Map(
       getAllInventoryItemDefinitions().map((definition) => [
@@ -308,7 +324,7 @@ const ProfessionsModal = ({
 
             {visibleRecipes.length === 0 ? (
               <div className="text-center text-gray-500 italic py-10">
-                Select a crafter with Tailoring, Leatherworking, or Alchemy.
+                This crafter has no learned production recipes yet. Check the Recipe Book.
               </div>
             ) : (
               <div className="grid grid-cols-1 lg:grid-cols-2 gap-3">
@@ -394,11 +410,94 @@ const ProfessionsModal = ({
                 })}
               </div>
             )}
+            {selectedEnchantRecipes.length > 0 && (
+              <section className="rounded border border-violet-800 bg-violet-950/20 p-3">
+                <h3 className="font-bold text-violet-100">Enchant Equipment</h3>
+                <div className="mt-2 flex flex-wrap gap-2">
+                  <select value={enchantTarget?.id || ""} onChange={(event) => { setEnchantTargetId(event.target.value); setEnchantSlot(""); }} className="rounded border border-gray-700 bg-gray-950 px-2 py-1.5 text-xs text-gray-100">
+                    {roster.map((character) => <option key={character.id} value={character.id}>{character.name}</option>)}
+                  </select>
+                  <select value={enchantSlot} onChange={(event) => setEnchantSlot(event.target.value)} className="rounded border border-gray-700 bg-gray-950 px-2 py-1.5 text-xs text-gray-100">
+                    <option value="">Choose equipped slot</option>
+                    {compatibleEnchantSlots.map((slot) => <option key={slot} value={slot}>{slot}: {enchantTarget?.equipment?.[slot]?.name}</option>)}
+                  </select>
+                </div>
+                <div className="mt-3 grid grid-cols-1 lg:grid-cols-2 gap-2">
+                  {selectedEnchantRecipes.filter((recipe) => !enchantSlot || recipe.enchant?.slots.includes(enchantSlot)).map((recipe) => (
+                    <div key={recipe.id} className="rounded border border-violet-900 bg-gray-900 p-2 text-xs">
+                      <div className="font-bold text-violet-100">{recipe.name}</div>
+                      <div className="text-gray-400">{formatStats(recipe.enchant?.stats)}{recipe.enchant?.effectiveLevelBonus ? `, Power +${recipe.enchant.effectiveLevelBonus}` : ""}</div>
+                      <button type="button" disabled={!enchantSlot} onClick={() => onEnchantEquipment?.(selectedCharacter.id, enchantTarget.id, enchantSlot, recipe.id)} className="mt-2 rounded border border-violet-700 bg-violet-900/40 px-2 py-1 text-violet-100 disabled:opacity-40">Enchant</button>
+                    </div>
+                  ))}
+                </div>
+              </section>
+            )}
+          </div>
+        )}
+
+        {activeTab === "recipes" && (
+          <div className="space-y-3">
+            <div className="flex flex-wrap items-center gap-3 rounded border border-gray-700 bg-gray-800/70 p-3">
+              <label className="text-xs text-gray-300">Crafter
+                <select value={selectedCharacter?.id || ""} onChange={(event) => setSelectedCharacterId(event.target.value)} className="ml-2 rounded border border-gray-700 bg-gray-950 px-2 py-1.5 text-sm text-gray-100">
+                  {professionRoster.map((character) => <option key={character.id} value={character.id}>{character.name}</option>)}
+                </select>
+              </label>
+              <span className="text-xs text-gray-400">Known {selectedRecipeBook.filter(selectedKnowsRecipe).length}/{selectedRecipeBook.length}</span>
+            </div>
+            <div className="grid grid-cols-1 lg:grid-cols-2 gap-3">
+              {selectedRecipeBook.map((recipe) => {
+                const known = selectedKnowsRecipe(recipe);
+                const profession = selectedProfessions.find((entry) => entry.name === recipe.profession);
+                const hasSkill = (Number(profession?.skill) || 0) >= recipe.requiredSkill;
+                const scrollQuantity = getItemQuantity(safeInventory, getRecipeScrollItemId(recipe.id));
+                const canTrain = recipe.acquisition.kind === "trainer" && hasSkill && !known && guildGold >= (recipe.acquisition.trainerCost || 0);
+                const canLearn = ["world", "dungeon", "raid"].includes(recipe.acquisition.kind) && hasSkill && !known && scrollQuantity > 0;
+                return (
+                  <div key={recipe.id} className={`rounded border p-3 ${known ? "border-emerald-800 bg-emerald-950/20" : "border-gray-700 bg-gray-800/70"}`}>
+                    <div className="flex items-start justify-between gap-3">
+                      <div>
+                        <div className="font-bold text-amber-100">{recipe.name}</div>
+                        <div className="text-xs text-gray-400">{recipe.profession} {recipe.requiredSkill} · {known ? "Known" : recipe.acquisition.rarity}</div>
+                        <div className="mt-1 text-[11px] text-gray-500">{recipe.acquisition.label} · {getRecipeDifficulty(recipe, Number(profession?.skill) || 0)}</div>
+                        {recipe.binding && <div className="text-[11px] text-gray-500">{recipe.binding}{recipe.classRestrictions?.length ? ` · ${recipe.classRestrictions.join(", ")}` : ""}</div>}
+                      </div>
+                      {!known && recipe.acquisition.kind === "trainer" && <button type="button" disabled={!canTrain} onClick={() => onTrainRecipe?.(selectedCharacter.id, recipe.id)} className="rounded border border-amber-700 bg-amber-900/30 px-2 py-1 text-xs text-amber-100 disabled:opacity-40">Train {recipe.acquisition.trainerCost}g</button>}
+                      {!known && ["world", "dungeon", "raid"].includes(recipe.acquisition.kind) && <button type="button" disabled={!canLearn} onClick={() => onLearnRecipe?.(selectedCharacter.id, recipe.id)} className="rounded border border-emerald-700 bg-emerald-900/30 px-2 py-1 text-xs text-emerald-100 disabled:opacity-40">Learn ({scrollQuantity})</button>}
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
           </div>
         )}
 
         {activeTab === "stash" && (
           <div className="space-y-4">
+            <section className="rounded border border-amber-900 bg-amber-950/20 p-3">
+              <div className="flex flex-wrap items-center justify-between gap-2">
+                <h3 className="font-bold text-amber-100">Profession Supplies</h3>
+                <label className="flex items-center gap-2 text-xs text-gray-300">
+                  Quantity
+                  <input
+                    type="number"
+                    min="1"
+                    max="99"
+                    value={supplyQuantity}
+                    onChange={(event) => setSupplyQuantity(Math.max(1, Math.min(99, Math.floor(Number(event.target.value) || 1))))}
+                    className="w-16 rounded border border-gray-700 bg-gray-950 px-2 py-1 text-right text-gray-100"
+                  />
+                </label>
+              </div>
+              <div className="mt-2 flex flex-wrap gap-2">
+                {Object.entries(SUPPLY_PRICES).map(([itemId, price]) => (
+                  <button key={itemId} type="button" onClick={() => onBuySupply?.(itemId, supplyQuantity)} className="rounded border border-amber-800 bg-gray-900 px-2 py-1 text-[11px] text-gray-200">
+                    Buy {supplyQuantity} {getInventoryItemDefinition(itemId)?.name} · {price * supplyQuantity}g
+                  </button>
+                ))}
+              </div>
+            </section>
             <div className="flex flex-wrap items-center justify-between gap-3 rounded border border-gray-700 bg-gray-800/70 p-3">
               <div>
                 <div className="font-bold text-amber-100">Guild Stash</div>
@@ -451,6 +550,7 @@ const ProfessionsModal = ({
                             <div className="flex shrink-0 flex-wrap justify-end gap-1.5">
                               {definition.category ===
                                 INVENTORY_ITEM_CATEGORY.EQUIPMENT && (
+                                <>
                                 <button
                                   type="button"
                                   onClick={() =>
@@ -460,6 +560,14 @@ const ProfessionsModal = ({
                                 >
                                   Equip
                                 </button>
+                                {selectedProfessionNames.includes("Enchanting") && (
+                                  <button
+                                    type="button"
+                                    onClick={() => window.confirm(`Disenchant ${definition.name}? This cannot be undone.`) && onDisenchantItem?.(selectedCharacter.id, null, itemId, "stash")}
+                                    className="px-2 py-1 rounded border border-violet-700 bg-violet-950/30 text-[11px] text-violet-100 hover:bg-violet-900/40"
+                                  >Disenchant</button>
+                                )}
+                                </>
                               )}
                               <button
                                 type="button"
@@ -489,6 +597,19 @@ const ProfessionsModal = ({
                   </section>
                 );
               })
+            )}
+            {selectedProfessionNames.includes("Enchanting") && roster.some((character) => character.personalInventory?.length) && (
+              <section>
+                <h3 className="mb-2 text-sm font-bold uppercase tracking-wide text-violet-200">Unequipped Personal Gear</h3>
+                <div className="grid grid-cols-1 lg:grid-cols-2 gap-2">
+                  {roster.flatMap((owner) => (owner.personalInventory || []).map((item) => ({ owner, item }))).map(({ owner, item }) => (
+                    <div key={`${owner.id}-${item.id}`} className="flex items-center justify-between rounded border border-violet-900 bg-gray-800/70 p-2 text-xs">
+                      <span><span className={getQualityClass(item.quality)}>{item.name}</span> <span className="text-gray-500">· {owner.name}</span></span>
+                      <button type="button" onClick={() => window.confirm(`Disenchant ${item.name}? This cannot be undone.`) && onDisenchantItem?.(selectedCharacter.id, owner.id, String(item.id), "personal")} className="rounded border border-violet-700 bg-violet-950/30 px-2 py-1 text-violet-100">Disenchant</button>
+                    </div>
+                  ))}
+                </div>
+              </section>
             )}
           </div>
         )}

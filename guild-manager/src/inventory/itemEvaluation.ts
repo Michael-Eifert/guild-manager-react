@@ -116,6 +116,7 @@ export const tryAutoEquipItemFromGuildStash = ({
   guildInventory: GuildInventory;
 }) => {
   const safeInventory = ensureGuildInventory(guildInventory);
+  const definition = getInventoryItemDefinition(itemId);
   if (getItemQuantity(safeInventory, itemId) <= 0) {
     return { roster, guildInventory: safeInventory, equipped: false, log: null };
   }
@@ -129,7 +130,20 @@ export const tryAutoEquipItemFromGuildStash = ({
 
   const nextRoster = roster.map((character) => {
     if (character.id !== candidate.character.id) return character;
-    return candidate.optimizedCharacter;
+    if (definition?.binding !== "bindOnEquip") return candidate.optimizedCharacter;
+    const bindItem = (item: typeof candidate.item | null | undefined) =>
+      item && String(item.id) === String(candidate.item.id)
+        ? { ...item, boundCharacterId: character.id }
+        : item;
+    return {
+      ...candidate.optimizedCharacter,
+      equipment: Object.fromEntries(
+        Object.entries(candidate.optimizedCharacter.equipment || {}).map(([slot, item]) => [slot, bindItem(item)]),
+      ),
+      personalInventory: (candidate.optimizedCharacter.personalInventory || [])
+        .map(bindItem)
+        .filter((item): item is NonNullable<typeof item> => Boolean(item)),
+    };
   });
 
   return {

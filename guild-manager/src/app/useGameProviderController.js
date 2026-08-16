@@ -23,9 +23,14 @@ import {
 } from "../session/browserSessionPersistence";
 import {
   autoEquipGuildStashItem,
+  buyProfessionSupply,
   cleanGuildStash,
   craftInventoryRecipe,
+  disenchantProfessionItem,
+  enchantProfessionEquipment,
+  learnProfessionRecipeFromStash,
   sellGuildStashItem,
+  trainProfessionRecipe,
 } from "../inventory/providerInventoryTransitions";
 import { optimizeCharacterEquipment } from "../equipment/equipmentLoadouts";
 import {
@@ -325,6 +330,12 @@ import {
   getConsumableMissionModifiers,
 } from "../professions/consumableEffects";
 import { generatePassiveProfessionMaterial } from "../professions/professionUtils";
+import { getStarterRecipeIds } from "../professions/recipeDefinitions";
+import {
+  rollAdventureMaterial,
+  rollRecipeDrop,
+  rollSourceMaterialDrop,
+} from "../professions/professionProgression";
 import { ROUTES } from "../routes";
 
 const GUILD_FOCUS_CHANGE_COST_GOLD = 10;
@@ -1034,14 +1045,44 @@ export const useGameProviderController = () => {
   );
 
   const applyDungeonStepLootAwards = useCallback(
-    ({ activeMissions, finishedMissions, rosterSnapshot, stepLogs }) =>
-      calculateDungeonStepLootAwards({
+    ({ activeMissions, finishedMissions, rosterSnapshot, stepLogs, guildInventorySnapshot }) => {
+      const result = calculateDungeonStepLootAwards({
         activeMissions,
         finishedMissions,
         roster: rosterSnapshot,
         stepLogs,
         awardDungeonStepLoot: missionRewardProcessor.awardDungeonStepLoot,
-      }),
+      });
+      let nextInventory = ensureGuildInventory(guildInventorySnapshot);
+      const recipeLogs = [];
+      (Array.isArray(stepLogs) ? stepLogs : []).forEach((stepLog) => {
+        if (stepLog?.type !== "dungeon-step" || stepLog?.outcome !== "cleared") return;
+        const allMissions = [...activeMissions, ...finishedMissions];
+        const mission = allMissions.find((entry) =>
+          String(getMissionInstanceId(entry)) === String(stepLog?.missionInstanceId || "") ||
+          entry?.name === stepLog?.missionName,
+        );
+        if (!mission) return;
+        const bossCount = getDungeonBossCount(mission);
+        const drop = rollRecipeDrop({
+          context: {
+            kind: mission.isRaid ? "raid" : "dungeon",
+            dungeonSetId: mission.dungeonSetId || String(mission.name || "").toLowerCase().replaceAll(" ", "_"),
+            bossName: stepLog.bossName,
+            isEndboss: Number(stepLog.step) === bossCount,
+          },
+          guildInventory: nextInventory,
+          random: services.random,
+        });
+        nextInventory = drop.guildInventory;
+        if (drop.log) recipeLogs.push(drop.log);
+        const clothDrop = rollAdventureMaterial({ level: mission.level || 60, guildInventory: nextInventory, random: services.random });
+        nextInventory = clothDrop.guildInventory;
+        const sourceMaterial = rollSourceMaterialDrop({ dungeonSetId: mission.dungeonSetId || String(mission.name || "").toLowerCase().replaceAll(" ", "_"), guildInventory: nextInventory, random: services.random });
+        nextInventory = sourceMaterial.guildInventory;
+      });
+      return { ...result, guildInventory: nextInventory, logs: [...result.logs, ...recipeLogs] };
+    },
     [missionRewardProcessor],
   );
 
@@ -1574,10 +1615,12 @@ export const useGameProviderController = () => {
         finishedMissions,
         rosterSnapshot: newRoster,
         stepLogs: missionTick.stepLogs,
+        guildInventorySnapshot: nextGuildInventory,
       });
       newMissions = stepLootAwards.activeMissions;
       finishedMissions = stepLootAwards.finishedMissions;
       newRoster = stepLootAwards.roster;
+      nextGuildInventory = stepLootAwards.guildInventory;
       newLogs = [...newLogs, ...stepLootAwards.logs];
       newGold += Math.max(0, Number(stepLootAwards.soldGold) || 0);
 
@@ -2376,6 +2419,25 @@ export const useGameProviderController = () => {
               },
             });
           });
+          if (checkpointLootRewardEntries.length > 0) {
+            const materialDrop = rollAdventureMaterial({
+              level: newLevel,
+              guildInventory: nextGuildInventory,
+              random: services.random,
+            });
+            nextGuildInventory = materialDrop.guildInventory;
+            const recipeDrop = rollRecipeDrop({
+              context: {
+                kind: "world",
+                level: newLevel,
+                zoneId: activeZone?.id,
+              },
+              guildInventory: nextGuildInventory,
+              random: services.random,
+            });
+            nextGuildInventory = recipeDrop.guildInventory;
+            if (recipeDrop.log) newLogs.push(recipeDrop.log);
+          }
           return tryApplyWorldTickLoot(zoneRewardedChar, newLogs, (amount) => {
             worldLootSaleGold += amount;
           });
@@ -2402,6 +2464,7 @@ export const useGameProviderController = () => {
             currentLimit,
             elapsedGameMs,
             tickRateMs: CONFIG.TICK_RATE,
+            productionSuccessChance: 0.15,
           });
 
           if (professionSkillResult.attempted) {
@@ -3260,7 +3323,7 @@ export const useGameProviderController = () => {
       p.map((c) => {
         if (c.id !== id) return c;
         const newProfs = [...c.professions];
-        newProfs[idx] = { name: newProf, skill: 1 };
+        newProfs[idx] = { name: newProf, skill: 1, knownRecipeIds: getStarterRecipeIds(newProf) };
         return { ...c, professions: newProfs };
       }),
     );
@@ -4441,7 +4504,10 @@ export const useGameProviderController = () => {
       finishedMissions: [missionToResolve],
       rosterSnapshot: rosterRef.current,
       stepLogs: dungeonStepLogs,
+      guildInventorySnapshot: guildInventoryRef.current,
     });
+    guildInventoryRef.current = stepLootAwards.guildInventory;
+    setGuildInventory(stepLootAwards.guildInventory);
     const missionWithStepLoot =
       stepLootAwards.finishedMissions[0] || missionToResolve;
     currentGoldAfterWipes += Math.max(
@@ -5069,6 +5135,76 @@ export const useGameProviderController = () => {
       testChatProviderConnection({ settings }),
     [],
   );
+
+  const handleTrainRecipe = useCallback((characterId, recipeId) => {
+    const result = trainProfessionRecipe({ characterId, recipeId, roster: rosterRef.current, guildGold: goldRef.current });
+    if (!result.learned) {
+      pushNotification({ type: "error", title: "Training Blocked", message: result.reason });
+      return false;
+    }
+    rosterRef.current = result.roster;
+    goldRef.current = result.guildGold;
+    setRoster(result.roster);
+    setGuildGold(result.guildGold);
+    appendProfessionLogs([result.log]);
+    return true;
+  }, [appendProfessionLogs, pushNotification]);
+
+  const handleLearnRecipe = useCallback((characterId, recipeId) => {
+    const result = learnProfessionRecipeFromStash({ characterId, recipeId, roster: rosterRef.current, guildInventory: guildInventoryRef.current });
+    if (!result.learned) {
+      pushNotification({ type: "error", title: "Learning Blocked", message: result.reason });
+      return false;
+    }
+    rosterRef.current = result.roster;
+    guildInventoryRef.current = result.guildInventory;
+    setRoster(result.roster);
+    setGuildInventory(result.guildInventory);
+    appendProfessionLogs([result.log]);
+    return true;
+  }, [appendProfessionLogs, pushNotification]);
+
+  const handleBuyProfessionSupply = useCallback((itemId, quantity = 1) => {
+    const result = buyProfessionSupply({ itemId, quantity, guildInventory: guildInventoryRef.current, guildGold: goldRef.current });
+    if (!result.purchased) {
+      pushNotification({ type: "error", title: "Purchase Blocked", message: result.reason });
+      return false;
+    }
+    guildInventoryRef.current = result.guildInventory;
+    goldRef.current = result.guildGold;
+    setGuildInventory(result.guildInventory);
+    setGuildGold(result.guildGold);
+    appendProfessionLogs([result.log]);
+    return true;
+  }, [appendProfessionLogs, pushNotification]);
+
+  const handleDisenchantItem = useCallback((enchanterId, ownerId, itemId, source = "personal") => {
+    const result = disenchantProfessionItem({ enchanterId, ownerId, itemId, source, roster: rosterRef.current, guildInventory: guildInventoryRef.current });
+    if (!result.disenchanted) {
+      pushNotification({ type: "error", title: "Disenchant Blocked", message: result.reason });
+      return false;
+    }
+    rosterRef.current = result.roster;
+    guildInventoryRef.current = result.guildInventory;
+    setRoster(result.roster);
+    setGuildInventory(result.guildInventory);
+    appendProfessionLogs([result.log]);
+    return true;
+  }, [appendProfessionLogs, pushNotification]);
+
+  const handleEnchantEquipment = useCallback((enchanterId, targetId, slot, recipeId) => {
+    const result = enchantProfessionEquipment({ enchanterId, targetId, slot, recipeId, roster: rosterRef.current, guildInventory: guildInventoryRef.current });
+    if (!result.enchanted) {
+      pushNotification({ type: "error", title: "Enchanting Blocked", message: result.reason });
+      return false;
+    }
+    rosterRef.current = result.roster;
+    guildInventoryRef.current = result.guildInventory;
+    setRoster(result.roster);
+    setGuildInventory(result.guildInventory);
+    appendProfessionLogs([result.log]);
+    return true;
+  }, [appendProfessionLogs, pushNotification]);
   const handleMarkChatRead = useCallback((channel) => {
     const nextSocialState = markChatChannelRead(
       socialStateRef.current,
@@ -5553,6 +5689,11 @@ export const useGameProviderController = () => {
     handleCreateCalendarEvent,
     handleCreateCalendarSeries,
     handleCraftRecipe,
+    handleTrainRecipe,
+    handleLearnRecipe,
+    handleBuyProfessionSupply,
+    handleDisenchantItem,
+    handleEnchantEquipment,
     handleDeclineApplications,
     handleDeploy,
     handleDismiss,

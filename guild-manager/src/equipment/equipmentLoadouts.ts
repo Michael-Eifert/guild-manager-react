@@ -37,7 +37,16 @@ const itemSellValue = (item: ItemDefinition) => {
   );
 };
 
-const getStats = (item?: ItemDefinition | null) => item?.stats || {};
+const getStats = (item?: ItemDefinition | null) => {
+  const base = item?.stats || {};
+  const enchant = item?.enchant?.stats || {};
+  return Object.fromEntries(
+    [...new Set([...Object.keys(base), ...Object.keys(enchant)])].map((stat) => [
+      stat,
+      (Number(base[stat]) || 0) + (Number(enchant[stat]) || 0),
+    ]),
+  );
+};
 
 const getRoleArchetypes = (character: Character): LoadoutRole[] => {
   const roles = (
@@ -92,16 +101,18 @@ export const getItemRoleUtility = (
   const intellect = Number(stats.intellect) || 0;
   const spirit = Number(stats.spirit) || 0;
   const armor = Number(stats.armor) || 0;
-  const base = getItemEffectiveLevel(item);
+  const spellPower = Number(stats.spellPower) || 0;
+  const healingPower = Number(stats.healingPower) || 0;
+  const base = getItemEffectiveLevel(item) + (Number(item.enchant?.effectiveLevelBonus) || 0);
   const tagBonus = Array.isArray(item.roleTags) && item.roleTags.includes(role) ? 5 : 0;
   if (role === "Tank") {
     return base + stamina * 1.1 + armor * 0.04 + strength * 0.55 + agility * 0.4 + tagBonus;
   }
   if (role === "Healer") {
-    return base + intellect + spirit * 0.8 + stamina * 0.3 + tagBonus;
+    return base + intellect + spirit * 0.8 + stamina * 0.3 + healingPower * 0.45 + spellPower * 0.15 + tagBonus;
   }
   if (role === "Caster DPS") {
-    return base + intellect * 0.9 + spirit * 0.45 + stamina * 0.2 + tagBonus;
+    return base + intellect * 0.9 + spirit * 0.45 + stamina * 0.2 + spellPower * 0.45 + tagBonus;
   }
   return base + agility * 0.9 + strength * 0.8 + stamina * 0.25 + tagBonus;
 };

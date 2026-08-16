@@ -37,6 +37,7 @@ import { getSessionDownloadFilename } from "./sessionExportFilename";
 import { normalizeGuildActivityStats } from "../guild/guildActivityStats";
 import { retainGuildLogEntries } from "../guild/guildLog";
 import { normalizeGameSettings } from "../settings/gameSettings";
+import { getStarterRecipeIds } from "../professions/recipeDefinitions";
 
 export const SESSION_FORMAT = SESSION_FORMAT_VALUE;
 export const SESSION_VERSION = CURRENT_SESSION_VERSION;
@@ -86,6 +87,9 @@ const normalizeCharacterProfessions = (character) => {
         .map((profession) => ({
           ...profession,
           skill: Math.max(1, Number(profession.skill) || 1),
+          knownRecipeIds: Array.isArray(profession.knownRecipeIds)
+            ? [...new Set(profession.knownRecipeIds.map(String))]
+            : getStarterRecipeIds(profession.name),
         }))
     : rawProfessions && typeof rawProfessions === "object"
       ? Object.entries(rawProfessions)
@@ -96,13 +100,21 @@ const normalizeCharacterProfessions = (character) => {
               1,
               Number(value && typeof value === "object" ? value.skill : value) || 1,
             ),
+            knownRecipeIds:
+              value && typeof value === "object" && Array.isArray(value.knownRecipeIds)
+                ? [...new Set(value.knownRecipeIds.map(String))]
+                : getStarterRecipeIds(name),
           }))
       : [];
 
   if (normalizedProfessions.length > 0) return normalizedProfessions;
 
   const starterProfessions = PROF_PAIRS[character?.charClass] || DEFAULT_PROF_PAIR;
-  return starterProfessions.map((name) => ({ name, skill: 1 }));
+  return starterProfessions.map((name) => ({
+    name,
+    skill: 1,
+    knownRecipeIds: getStarterRecipeIds(name),
+  }));
 };
 
 export const normalizeMissionBoardState = (state) => {

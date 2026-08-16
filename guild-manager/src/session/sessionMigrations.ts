@@ -1,7 +1,7 @@
 import { z } from "zod";
 
 export const SESSION_FORMAT_VALUE = "guild-manager-session" as const;
-export const CURRENT_SESSION_VERSION = 16;
+export const CURRENT_SESSION_VERSION = 17;
 
 const dataSchema = z.record(z.string(), z.unknown());
 const recognizedKeys = new Set([
@@ -160,6 +160,40 @@ export const SESSION_MIGRATIONS: ReadonlyArray<Migration> = [
         ...gameSettings,
         officerAutonomyMode: "off",
       },
+    };
+  },
+  (data) => {
+    const legacyRecipesByProfession: Record<string, string[]> = {
+      Tailoring: ["recipe_apprentice_cloth_robe", "recipe_mystic_woolen_gloves", "recipe_runecloth_mantle"],
+      Leatherworking: ["recipe_stitched_leather_vest", "recipe_rangers_hunting_gloves", "recipe_wildhide_boots"],
+      Alchemy: ["recipe_minor_healing_potion", "recipe_healing_potion", "recipe_elixir_of_fortitude", "recipe_elixir_of_power"],
+    };
+    return {
+      ...data,
+      roster: Array.isArray(data.roster)
+        ? data.roster.map((entry) => {
+            const character = entry && typeof entry === "object"
+              ? (entry as Record<string, unknown>)
+              : {};
+            return {
+              ...character,
+              professions: Array.isArray(character.professions)
+                ? character.professions.map((rawProfession) => {
+                    const profession = rawProfession && typeof rawProfession === "object"
+                      ? (rawProfession as Record<string, unknown>)
+                      : {};
+                    const name = String(profession.name || "");
+                    return {
+                      ...profession,
+                      knownRecipeIds: Array.isArray(profession.knownRecipeIds)
+                        ? profession.knownRecipeIds
+                        : legacyRecipesByProfession[name] || [],
+                    };
+                  })
+                : character.professions,
+            };
+          })
+        : [],
     };
   },
 ];

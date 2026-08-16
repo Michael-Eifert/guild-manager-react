@@ -65,6 +65,26 @@ export const CONSUMABLE_EFFECTS = Object.freeze({
     raidSuccessBonus: 0.04,
     wipeChanceReduction: 0.02,
   },
+  major_healing_potion: {
+    dungeonSuccessBonus: 0.06,
+    raidSuccessBonus: 0.04,
+    wipeChanceReduction: 0.06,
+  },
+  flask_supreme_power: {
+    dungeonSuccessBonus: 0.04,
+    raidSuccessBonus: 0.08,
+    wipeChanceReduction: 0.02,
+  },
+  flask_of_the_titans: {
+    dungeonSuccessBonus: 0.04,
+    raidSuccessBonus: 0.06,
+    wipeChanceReduction: 0.08,
+  },
+  rough_sharpening_stone: {
+    dungeonSuccessBonus: 0.02,
+    raidSuccessBonus: 0.01,
+    wipeChanceReduction: 0,
+  },
 } satisfies Record<string, ConsumableEffect>);
 
 const EFFECTS_BY_ID: Readonly<Record<string, ConsumableEffect>> = CONSUMABLE_EFFECTS;
@@ -109,15 +129,22 @@ export const getConsumableMissionModifiers = ({
       coverageDenominator: safePartySize,
     });
   } else if (mode === CONSUMABLE_MODE.BEST) {
+    const majorHealingQuantity = takeAvailable({
+      guildInventory: safeInventory,
+      itemId: "major_healing_potion",
+      desiredQuantity: safePartySize,
+    });
     const healingPotionQuantity = takeAvailable({
       guildInventory: safeInventory,
       itemId: "healing_potion",
       desiredQuantity: safePartySize,
     });
     selected.push({
-      itemId: healingPotionQuantity > 0 ? "healing_potion" : "minor_healing_potion",
+      itemId: majorHealingQuantity > 0 ? "major_healing_potion" : healingPotionQuantity > 0 ? "healing_potion" : "minor_healing_potion",
       quantity:
-        healingPotionQuantity > 0
+        majorHealingQuantity > 0
+          ? majorHealingQuantity
+          : healingPotionQuantity > 0
           ? healingPotionQuantity
           : takeAvailable({
               guildInventory: safeInventory,
@@ -143,6 +170,21 @@ export const getConsumableMissionModifiers = ({
               itemId: fallbackElixir,
               desiredQuantity: groupCount,
             }),
+      coverageDenominator: groupCount,
+    });
+    if (isRaid) {
+      const preferredFlask = getItemQuantity(safeInventory, "flask_supreme_power") > 0
+        ? "flask_supreme_power"
+        : "flask_of_the_titans";
+      selected.push({
+        itemId: preferredFlask,
+        quantity: takeAvailable({ guildInventory: safeInventory, itemId: preferredFlask, desiredQuantity: groupCount }),
+        coverageDenominator: groupCount,
+      });
+    }
+    selected.push({
+      itemId: "rough_sharpening_stone",
+      quantity: takeAvailable({ guildInventory: safeInventory, itemId: "rough_sharpening_stone", desiredQuantity: groupCount }),
       coverageDenominator: groupCount,
     });
   }

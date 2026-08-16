@@ -113,6 +113,7 @@ export const canCharacterEquipItem = (
   targetSlot?: EquipmentSlot,
 ) => {
   if (!character || !item) return false;
+  if (item.boundCharacterId && String(item.boundCharacterId) !== String(character.id)) return false;
   if (item.legacyCompatibility && !targetSlot) return true;
   const level = getCharacterLevel(character);
   if (level < Math.max(1, Number(item.minLevel) || 1)) return false;

@@ -5,41 +5,37 @@ export interface MaterialCandidate {
 }
 
 export type MaterialProfessionName =
-  | "Tailoring"
+  | "Mining"
   | "Skinning"
-  | "Leatherworking"
   | "Herbalism"
-  | "Alchemy";
+;
 
 const MATERIAL_TABLE: Readonly<Record<MaterialProfessionName, readonly MaterialCandidate[]>> = Object.freeze({
-  Tailoring: [
-    { itemId: "linen_cloth", minSkill: 1, weight: 6 },
-    { itemId: "simple_thread", minSkill: 1, weight: 2 },
-    { itemId: "wool_cloth", minSkill: 75, weight: 4 },
-    { itemId: "coarse_thread", minSkill: 75, weight: 2 },
-    { itemId: "silk_cloth", minSkill: 150, weight: 3 },
+  Mining: [
+    { itemId: "copper_ore", minSkill: 1, weight: 8 },
+    { itemId: "iron_ore", minSkill: 75, weight: 6 },
+    { itemId: "mithril_ore", minSkill: 150, weight: 5 },
+    { itemId: "thorium_ore", minSkill: 225, weight: 4 },
+    { itemId: "dark_iron_ore", minSkill: 230, weight: 1 },
+    { itemId: "arcane_crystal", minSkill: 275, weight: 1 },
   ],
   Skinning: [
     { itemId: "light_leather", minSkill: 1, weight: 6 },
     { itemId: "medium_leather", minSkill: 75, weight: 4 },
     { itemId: "heavy_leather", minSkill: 150, weight: 3 },
-  ],
-  Leatherworking: [
-    { itemId: "light_leather", minSkill: 1, weight: 4 },
-    { itemId: "coarse_thread", minSkill: 1, weight: 2 },
-    { itemId: "medium_leather", minSkill: 75, weight: 3 },
-    { itemId: "heavy_leather", minSkill: 150, weight: 2 },
+    { itemId: "thick_leather", minSkill: 225, weight: 2 },
+    { itemId: "rugged_leather", minSkill: 275, weight: 1 },
   ],
   Herbalism: [
     { itemId: "peacebloom", minSkill: 1, weight: 5 },
     { itemId: "silverleaf", minSkill: 1, weight: 5 },
     { itemId: "briarthorn", minSkill: 75, weight: 3 },
-  ],
-  Alchemy: [
-    { itemId: "peacebloom", minSkill: 1, weight: 3 },
-    { itemId: "silverleaf", minSkill: 1, weight: 3 },
-    { itemId: "empty_vial", minSkill: 1, weight: 2 },
-    { itemId: "briarthorn", minSkill: 75, weight: 4 },
+    { itemId: "kingsblood", minSkill: 125, weight: 3 },
+    { itemId: "sungrass", minSkill: 230, weight: 2 },
+    { itemId: "dreamfoil", minSkill: 270, weight: 2 },
+    { itemId: "golden_sansam", minSkill: 275, weight: 2 },
+    { itemId: "gromsblood", minSkill: 280, weight: 1 },
+    { itemId: "black_lotus", minSkill: 300, weight: 1 },
   ],
 });
 

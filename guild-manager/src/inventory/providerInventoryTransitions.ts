@@ -5,12 +5,20 @@ import {
   shouldStoreItem,
   tryAutoEquipItemFromGuildStash,
 } from "./itemEvaluation";
-import { getInventoryItemDefinition, INVENTORY_ITEM_CATEGORY } from "./itemDefinitions";
+import { getInventoryItemDefinition, INVENTORY_ITEM_CATEGORY, toEquipmentItem } from "./itemDefinitions";
 import { getItemQuantity, removeItemFromGuildInventory } from "./guildInventoryUtils";
 import type { GuildLogEntry } from "../app/gameTypes";
 import type { Character } from "../types/characterTypes";
 import type { GuildInventory } from "../types/itemTypes";
 import type { StashPolicy } from "./itemEvaluation";
+import { optimizeCharacterEquipment } from "../equipment/equipmentLoadouts";
+import {
+  applyEquipmentEnchant,
+  disenchantUnequippedItem,
+  learnDroppedRecipe,
+  learnTrainerRecipe,
+  purchaseProfessionSupply,
+} from "../professions/professionProgression";
 
 export const craftInventoryRecipe = ({
   characterId,
@@ -42,6 +50,17 @@ export const craftInventoryRecipe = ({
   const outputDefinition = getInventoryItemDefinition(result.outputItemId);
 
   if (outputDefinition?.category === INVENTORY_ITEM_CATEGORY.EQUIPMENT) {
+    if (recipe.binding === "bindOnCraft") {
+      inventory = removeItemFromGuildInventory(inventory, result.outputItemId, 1);
+      const craftedItem = toBoundCraftedItem(outputDefinition, character.id);
+      const crafter = nextRoster.find((member) => member.id === character.id);
+      if (craftedItem && crafter) {
+        const optimized = optimizeBoundCraftedItem(crafter, craftedItem);
+        nextRoster = nextRoster.map((member) => member.id === character.id ? optimized.character : member);
+        gold += optimized.soldGold;
+        logs.push({ type: "profession", message: `${character.name} received bound ${outputDefinition.name}.` });
+      }
+    } else {
     const equipResult = tryAutoEquipItemFromGuildStash({
       itemId: result.outputItemId,
       roster: nextRoster,
@@ -74,6 +93,7 @@ export const craftInventoryRecipe = ({
         });
       }
     }
+    }
   }
 
   return {
@@ -84,6 +104,63 @@ export const craftInventoryRecipe = ({
     logs,
     message: logs[0]?.message || `${character?.name || "Crafter"} completed a recipe.`,
   };
+};
+
+const toBoundCraftedItem = (definition: ReturnType<typeof getInventoryItemDefinition>, characterId: string) => {
+  if (!definition) return null;
+  const item = toEquipmentItem(definition);
+  return item ? { ...item, boundCharacterId: characterId } : null;
+};
+
+const optimizeBoundCraftedItem = (character: Character, item: NonNullable<ReturnType<typeof toEquipmentItem>>) => {
+  const result = optimizeCharacterEquipment({ character, incomingItem: item });
+  if (result.outcome !== "sold") return result;
+  return {
+    ...result,
+    character: {
+      ...result.character,
+      personalInventory: [...(result.character.personalInventory || []), item],
+    },
+    soldGold: 0,
+    outcome: "stored" as const,
+  };
+};
+
+export const trainProfessionRecipe = ({ characterId, recipeId, roster, guildGold }: { characterId: string; recipeId: string; roster: Character[]; guildGold: number }) => {
+  const character = roster.find((member) => member.id === characterId);
+  if (!character) return { learned: false as const, reason: "Missing crafter." };
+  const result = learnTrainerRecipe({ character, recipeId, guildGold });
+  if (!result.learned) return result;
+  return { ...result, roster: roster.map((member) => member.id === characterId ? result.character : member) };
+};
+
+export const learnProfessionRecipeFromStash = ({ characterId, recipeId, roster, guildInventory }: { characterId: string; recipeId: string; roster: Character[]; guildInventory: GuildInventory }) => {
+  const character = roster.find((member) => member.id === characterId);
+  if (!character) return { learned: false as const, reason: "Missing crafter." };
+  const result = learnDroppedRecipe({ character, recipeId, guildInventory });
+  if (!result.learned) return result;
+  return { ...result, roster: roster.map((member) => member.id === characterId ? result.character : member) };
+};
+
+export const buyProfessionSupply = purchaseProfessionSupply;
+
+export const disenchantProfessionItem = ({ enchanterId, ownerId, itemId, source, roster, guildInventory }: { enchanterId: string; ownerId?: string; itemId: string; source: "personal" | "stash"; roster: Character[]; guildInventory: GuildInventory }) => {
+  const enchanter = roster.find((member) => member.id === enchanterId);
+  const owner = source === "personal" ? roster.find((member) => member.id === ownerId) : enchanter;
+  if (!enchanter || !owner) return { disenchanted: false as const, reason: "Missing enchanter or item owner." };
+  const result = disenchantUnequippedItem({ character: owner, enchanter, itemId, guildInventory, source });
+  if (!result.disenchanted) return result;
+  return { ...result, roster: roster.map((member) => member.id === owner.id ? result.character : member) };
+};
+
+export const enchantProfessionEquipment = ({ enchanterId, targetId, slot, recipeId, roster, guildInventory }: { enchanterId: string; targetId: string; slot: string; recipeId: string; roster: Character[]; guildInventory: GuildInventory }) => {
+  const enchanter = roster.find((member) => member.id === enchanterId);
+  const target = roster.find((member) => member.id === targetId);
+  if (!enchanter || !target) return { enchanted: false as const, reason: "Missing enchanter or target." };
+  const result = applyEquipmentEnchant({ enchanter, target, slot, recipeId, guildInventory });
+  if (!result.enchanted) return result;
+  const nextRoster = roster.map((member) => member.id === enchanterId ? result.enchanter : member).map((member) => member.id === targetId ? result.target : member);
+  return { ...result, roster: nextRoster };
 };
 
 export const sellGuildStashItem = ({

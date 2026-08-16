@@ -49,6 +49,15 @@ export type WeaponType =
   | "libram"
   | "totem";
 
+export type ItemBinding = "none" | "bindOnEquip" | "bindOnCraft";
+
+export interface ItemEnchant {
+  recipeId: string;
+  name: string;
+  stats?: Readonly<Record<string, number | undefined>>;
+  effectiveLevelBonus?: number;
+}
+
 export interface ItemDefinition {
   id: ItemId;
   name: string;
@@ -87,6 +96,9 @@ export interface ItemDefinition {
   requiredPvpRank?: number;
   pvpHonorRank?: number;
   faction?: string;
+  binding?: ItemBinding;
+  boundCharacterId?: string;
+  enchant?: ItemEnchant;
 }
 
 export interface GuildInventory {
@@ -99,13 +111,14 @@ export interface InventoryEntry {
   quantity?: number;
 }
 
-export type InventoryItemCategory = "material" | "consumable" | "equipment" | "other";
+export type InventoryItemCategory = "material" | "consumable" | "equipment" | "recipe" | "other";
 
 export interface InventoryItemDefinition extends ItemDefinition {
   category: InventoryItemCategory;
   professionTags?: string[];
   effect?: string;
   classRestrictions?: string[];
+  recipeId?: string;
 }
 
 export interface LootManifestEntry {

@@ -114,6 +114,11 @@ export default function HomeRoot() {
     handleCreateCalendarEvent,
     handleCreateCalendarSeries,
     handleCraftRecipe,
+    handleTrainRecipe,
+    handleLearnRecipe,
+    handleBuyProfessionSupply,
+    handleDisenchantItem,
+    handleEnchantEquipment,
     handleDeclineApplications,
     handleDeploy,
     handleDismiss,
@@ -538,6 +543,11 @@ export default function HomeRoot() {
                 stashPolicy={stashPolicy}
                 guildGold={guildGold}
                 onCraftRecipe={handleCraftRecipe}
+                onTrainRecipe={handleTrainRecipe}
+                onLearnRecipe={handleLearnRecipe}
+                onBuySupply={handleBuyProfessionSupply}
+                onDisenchantItem={handleDisenchantItem}
+                onEnchantEquipment={handleEnchantEquipment}
                 onSellStashItem={handleSellStashItem}
                 onCleanupGuildStash={handleCleanupGuildStash}
                 onTryAutoEquipFromGuildStash={handleTryAutoEquipFromGuildStash}
@@ -641,6 +651,11 @@ export default function HomeRoot() {
             stashPolicy={stashPolicy}
             guildGold={guildGold}
             onCraftRecipe={handleCraftRecipe}
+            onTrainRecipe={handleTrainRecipe}
+            onLearnRecipe={handleLearnRecipe}
+            onBuySupply={handleBuyProfessionSupply}
+            onDisenchantItem={handleDisenchantItem}
+            onEnchantEquipment={handleEnchantEquipment}
             onSellStashItem={handleSellStashItem}
             onCleanupGuildStash={handleCleanupGuildStash}
             onTryAutoEquipFromGuildStash={handleTryAutoEquipFromGuildStash}

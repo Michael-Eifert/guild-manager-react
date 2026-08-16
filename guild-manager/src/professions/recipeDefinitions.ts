@@ -1,186 +1,79 @@
+import type { ItemBinding } from "../types/itemTypes";
+
 export const CRAFTING_PROFESSIONS = Object.freeze({
-  TAILORING: "Tailoring",
-  LEATHERWORKING: "Leatherworking",
-  ALCHEMY: "Alchemy",
+  TAILORING: "Tailoring", LEATHERWORKING: "Leatherworking", BLACKSMITHING: "Blacksmithing",
+  ENCHANTING: "Enchanting", ALCHEMY: "Alchemy",
 });
-
-export type CraftingProfession =
-  typeof CRAFTING_PROFESSIONS[keyof typeof CRAFTING_PROFESSIONS];
-
-export interface RecipeMaterial {
-  itemId: string;
-  amount: number;
-}
-
+export type CraftingProfession = typeof CRAFTING_PROFESSIONS[keyof typeof CRAFTING_PROFESSIONS];
+export type RecipeAcquisitionKind = "starter" | "trainer" | "world" | "dungeon" | "raid";
+export type RecipeRarity = "Common" | "Uncommon" | "Rare" | "Very Rare";
+export interface RecipeMaterial { itemId: string; amount: number }
+export interface RecipeAcquisition { kind: RecipeAcquisitionKind; label: string; rarity: RecipeRarity; trainerCost?: number; zoneIds?: string[]; dungeonSetIds?: string[]; bossNames?: string[]; chance?: number }
+export interface RecipeEnchantEffect { slots: string[]; stats?: Readonly<Record<string, number | undefined>>; effectiveLevelBonus?: number }
 export interface RecipeDefinition {
-  id: string;
-  name: string;
-  profession: CraftingProfession;
-  requiredSkill: number;
-  type: "gear" | "consumable";
-  outputItemId: string;
-  outputQuantity: number;
-  materials: RecipeMaterial[];
-  skillGainChance: number;
-  purpose: "skillup" | "upgrade" | "consumable";
+  id: string; name: string; profession: CraftingProfession; requiredSkill: number;
+  type: "gear" | "consumable" | "enchant"; outputItemId?: string; outputQuantity: number;
+  materials: RecipeMaterial[]; purpose: "skillup" | "upgrade" | "consumable" | "enchant";
+  acquisition: RecipeAcquisition; binding?: ItemBinding; classRestrictions?: string[]; enchant?: RecipeEnchantEffect;
 }
+
+const starter = (): RecipeAcquisition => ({ kind: "starter", label: "Profession Trainer", rarity: "Common" });
+const trainer = (trainerCost: number): RecipeAcquisition => ({ kind: "trainer", label: "Profession Trainer", rarity: "Common", trainerCost });
+const world = (label: string, chance = 0.05, zoneIds?: string[]): RecipeAcquisition => ({ kind: "world", label, rarity: chance <= 0.04 ? "Very Rare" : "Rare", chance, zoneIds });
+const dungeon = (label: string, dungeonSetIds: string[], bossNames: string[], chance = 0.125): RecipeAcquisition => ({ kind: "dungeon", label, rarity: chance <= 0.04 ? "Very Rare" : "Rare", chance, dungeonSetIds, bossNames });
+const raid = (label: string, dungeonSetIds: string[], bossNames: string[] = [], chance = 0.25): RecipeAcquisition => ({ kind: "raid", label, rarity: "Very Rare", chance, dungeonSetIds, bossNames });
 
 export const RECIPE_DEFINITIONS = Object.freeze([
-  {
-    id: "recipe_apprentice_cloth_robe",
-    name: "Apprentice Cloth Robe",
-    profession: CRAFTING_PROFESSIONS.TAILORING,
-    requiredSkill: 1,
-    type: "gear",
-    outputItemId: "apprentice_cloth_robe",
-    outputQuantity: 1,
-    materials: [
-      { itemId: "linen_cloth", amount: 6 },
-      { itemId: "simple_thread", amount: 1 },
-    ],
-    skillGainChance: 0.7,
-    purpose: "skillup",
-  },
-  {
-    id: "recipe_mystic_woolen_gloves",
-    name: "Mystic Woolen Gloves",
-    profession: CRAFTING_PROFESSIONS.TAILORING,
-    requiredSkill: 75,
-    type: "gear",
-    outputItemId: "mystic_woolen_gloves",
-    outputQuantity: 1,
-    materials: [
-      { itemId: "wool_cloth", amount: 8 },
-      { itemId: "coarse_thread", amount: 2 },
-    ],
-    skillGainChance: 0.55,
-    purpose: "upgrade",
-  },
-  {
-    id: "recipe_runecloth_mantle",
-    name: "Runecloth Mantle",
-    profession: CRAFTING_PROFESSIONS.TAILORING,
-    requiredSkill: 225,
-    type: "gear",
-    outputItemId: "runecloth_mantle",
-    outputQuantity: 1,
-    materials: [
-      { itemId: "silk_cloth", amount: 12 },
-      { itemId: "coarse_thread", amount: 4 },
-    ],
-    skillGainChance: 0.35,
-    purpose: "upgrade",
-  },
-  {
-    id: "recipe_stitched_leather_vest",
-    name: "Stitched Leather Vest",
-    profession: CRAFTING_PROFESSIONS.LEATHERWORKING,
-    requiredSkill: 1,
-    type: "gear",
-    outputItemId: "stitched_leather_vest",
-    outputQuantity: 1,
-    materials: [
-      { itemId: "light_leather", amount: 6 },
-      { itemId: "coarse_thread", amount: 1 },
-    ],
-    skillGainChance: 0.7,
-    purpose: "skillup",
-  },
-  {
-    id: "recipe_rangers_hunting_gloves",
-    name: "Ranger's Hunting Gloves",
-    profession: CRAFTING_PROFESSIONS.LEATHERWORKING,
-    requiredSkill: 80,
-    type: "gear",
-    outputItemId: "rangers_hunting_gloves",
-    outputQuantity: 1,
-    materials: [
-      { itemId: "medium_leather", amount: 8 },
-      { itemId: "coarse_thread", amount: 2 },
-    ],
-    skillGainChance: 0.5,
-    purpose: "upgrade",
-  },
-  {
-    id: "recipe_wildhide_boots",
-    name: "Wildhide Boots",
-    profession: CRAFTING_PROFESSIONS.LEATHERWORKING,
-    requiredSkill: 220,
-    type: "gear",
-    outputItemId: "wildhide_boots",
-    outputQuantity: 1,
-    materials: [
-      { itemId: "heavy_leather", amount: 12 },
-      { itemId: "coarse_thread", amount: 4 },
-    ],
-    skillGainChance: 0.35,
-    purpose: "upgrade",
-  },
-  {
-    id: "recipe_minor_healing_potion",
-    name: "Minor Healing Potion",
-    profession: CRAFTING_PROFESSIONS.ALCHEMY,
-    requiredSkill: 1,
-    type: "consumable",
-    outputItemId: "minor_healing_potion",
-    outputQuantity: 2,
-    materials: [
-      { itemId: "peacebloom", amount: 2 },
-      { itemId: "empty_vial", amount: 1 },
-    ],
-    skillGainChance: 0.7,
-    purpose: "consumable",
-  },
-  {
-    id: "recipe_healing_potion",
-    name: "Healing Potion",
-    profession: CRAFTING_PROFESSIONS.ALCHEMY,
-    requiredSkill: 75,
-    type: "consumable",
-    outputItemId: "healing_potion",
-    outputQuantity: 2,
-    materials: [
-      { itemId: "briarthorn", amount: 2 },
-      { itemId: "empty_vial", amount: 1 },
-    ],
-    skillGainChance: 0.5,
-    purpose: "consumable",
-  },
-  {
-    id: "recipe_elixir_of_fortitude",
-    name: "Elixir of Fortitude",
-    profession: CRAFTING_PROFESSIONS.ALCHEMY,
-    requiredSkill: 110,
-    type: "consumable",
-    outputItemId: "elixir_of_fortitude",
-    outputQuantity: 1,
-    materials: [
-      { itemId: "silverleaf", amount: 2 },
-      { itemId: "briarthorn", amount: 1 },
-      { itemId: "empty_vial", amount: 1 },
-    ],
-    skillGainChance: 0.45,
-    purpose: "consumable",
-  },
-  {
-    id: "recipe_elixir_of_power",
-    name: "Elixir of Power",
-    profession: CRAFTING_PROFESSIONS.ALCHEMY,
-    requiredSkill: 180,
-    type: "consumable",
-    outputItemId: "elixir_of_power",
-    outputQuantity: 1,
-    materials: [
-      { itemId: "briarthorn", amount: 3 },
-      { itemId: "empty_vial", amount: 1 },
-    ],
-    skillGainChance: 0.4,
-    purpose: "consumable",
-  },
+  // Tailoring (7)
+  { id: "recipe_apprentice_cloth_robe", name: "Apprentice Cloth Robe", profession: CRAFTING_PROFESSIONS.TAILORING, requiredSkill: 1, type: "gear", outputItemId: "apprentice_cloth_robe", outputQuantity: 1, materials: [{ itemId: "linen_cloth", amount: 6 }, { itemId: "simple_thread", amount: 1 }], purpose: "skillup", acquisition: starter(), binding: "bindOnEquip" },
+  { id: "recipe_mystic_woolen_gloves", name: "Mystic Woolen Gloves", profession: CRAFTING_PROFESSIONS.TAILORING, requiredSkill: 75, type: "gear", outputItemId: "mystic_woolen_gloves", outputQuantity: 1, materials: [{ itemId: "wool_cloth", amount: 8 }, { itemId: "coarse_thread", amount: 2 }], purpose: "upgrade", acquisition: trainer(5), binding: "bindOnEquip" },
+  { id: "recipe_runecloth_mantle", name: "Runecloth Mantle", profession: CRAFTING_PROFESSIONS.TAILORING, requiredSkill: 225, type: "gear", outputItemId: "runecloth_mantle", outputQuantity: 1, materials: [{ itemId: "runecloth", amount: 12 }, { itemId: "rune_thread", amount: 4 }], purpose: "upgrade", acquisition: trainer(30), binding: "bindOnEquip" },
+  { id: "recipe_robes_of_arcana", name: "Robes of Arcana", profession: CRAFTING_PROFESSIONS.TAILORING, requiredSkill: 150, type: "gear", outputItemId: "robes_of_arcana", outputQuantity: 1, materials: [{ itemId: "silk_cloth", amount: 12 }, { itemId: "fine_thread", amount: 2 }], purpose: "upgrade", acquisition: world("High-level humanoids"), binding: "bindOnEquip" },
+  { id: "recipe_robe_of_the_archmage", name: "Robe of the Archmage", profession: CRAFTING_PROFESSIONS.TAILORING, requiredSkill: 300, type: "gear", outputItemId: "robe_of_the_archmage", outputQuantity: 1, materials: [{ itemId: "runecloth", amount: 20 }, { itemId: "essence_of_fire", amount: 4 }, { itemId: "rune_thread", amount: 2 }], purpose: "upgrade", acquisition: dungeon("Lower Blackrock Spire — Firebrand Pyromancer", ["blackrock_spire"], ["Firebrand Pyromancer"]), binding: "bindOnCraft", classRestrictions: ["Mage"] },
+  { id: "recipe_truefaith_vestments", name: "Truefaith Vestments", profession: CRAFTING_PROFESSIONS.TAILORING, requiredSkill: 300, type: "gear", outputItemId: "truefaith_vestments", outputQuantity: 1, materials: [{ itemId: "runecloth", amount: 20 }, { itemId: "illusion_dust", amount: 6 }, { itemId: "rune_thread", amount: 2 }], purpose: "upgrade", acquisition: dungeon("Stratholme — Balnazzar", ["stratholme"], ["Balnazzar"], 0.04), binding: "bindOnCraft", classRestrictions: ["Priest"] },
+  { id: "recipe_robe_of_the_void", name: "Robe of the Void", profession: CRAFTING_PROFESSIONS.TAILORING, requiredSkill: 300, type: "gear", outputItemId: "robe_of_the_void", outputQuantity: 1, materials: [{ itemId: "runecloth", amount: 20 }, { itemId: "essence_of_undeath", amount: 4 }, { itemId: "rune_thread", amount: 2 }], purpose: "upgrade", acquisition: dungeon("Scholomance — Darkmaster Gandling", ["scholomance"], ["Darkmaster Gandling"], 0.04), binding: "bindOnCraft", classRestrictions: ["Warlock"] },
+
+  // Leatherworking (7)
+  { id: "recipe_stitched_leather_vest", name: "Stitched Leather Vest", profession: CRAFTING_PROFESSIONS.LEATHERWORKING, requiredSkill: 1, type: "gear", outputItemId: "stitched_leather_vest", outputQuantity: 1, materials: [{ itemId: "light_leather", amount: 6 }, { itemId: "coarse_thread", amount: 1 }], purpose: "skillup", acquisition: starter(), binding: "bindOnEquip" },
+  { id: "recipe_rangers_hunting_gloves", name: "Ranger's Hunting Gloves", profession: CRAFTING_PROFESSIONS.LEATHERWORKING, requiredSkill: 80, type: "gear", outputItemId: "rangers_hunting_gloves", outputQuantity: 1, materials: [{ itemId: "medium_leather", amount: 8 }, { itemId: "coarse_thread", amount: 2 }], purpose: "upgrade", acquisition: trainer(5), binding: "bindOnEquip" },
+  { id: "recipe_nightscape_headband", name: "Nightscape Headband", profession: CRAFTING_PROFESSIONS.LEATHERWORKING, requiredSkill: 205, type: "gear", outputItemId: "nightscape_headband", outputQuantity: 1, materials: [{ itemId: "thick_leather", amount: 10 }, { itemId: "fine_thread", amount: 2 }], purpose: "skillup", acquisition: trainer(25), binding: "bindOnEquip" },
+  { id: "recipe_wildhide_boots", name: "Wildhide Boots", profession: CRAFTING_PROFESSIONS.LEATHERWORKING, requiredSkill: 220, type: "gear", outputItemId: "wildhide_boots", outputQuantity: 1, materials: [{ itemId: "thick_leather", amount: 12 }, { itemId: "fine_thread", amount: 4 }], purpose: "upgrade", acquisition: trainer(30), binding: "bindOnEquip" },
+  { id: "recipe_wicked_leather_pants", name: "Wicked Leather Pants", profession: CRAFTING_PROFESSIONS.LEATHERWORKING, requiredSkill: 290, type: "gear", outputItemId: "wicked_leather_pants", outputQuantity: 1, materials: [{ itemId: "rugged_leather", amount: 16 }, { itemId: "rune_thread", amount: 3 }], purpose: "upgrade", acquisition: world("Level 53–60 world drop", 0.04), binding: "bindOnEquip" },
+  { id: "recipe_hide_of_the_wild", name: "Hide of the Wild", profession: CRAFTING_PROFESSIONS.LEATHERWORKING, requiredSkill: 300, type: "gear", outputItemId: "hide_of_the_wild", outputQuantity: 1, materials: [{ itemId: "rugged_leather", amount: 20 }, { itemId: "living_essence", amount: 4 }, { itemId: "rune_thread", amount: 4 }], purpose: "upgrade", acquisition: dungeon("Dire Maul North — Knot Thimblejack's Cache", ["dire_maul"], ["King Gordok"], 0.04), binding: "bindOnEquip" },
+  { id: "recipe_corehound_belt", name: "Corehound Belt", profession: CRAFTING_PROFESSIONS.LEATHERWORKING, requiredSkill: 300, type: "gear", outputItemId: "corehound_belt", outputQuantity: 1, materials: [{ itemId: "rugged_leather", amount: 20 }, { itemId: "fiery_core", amount: 2 }, { itemId: "rune_thread", amount: 4 }], purpose: "upgrade", acquisition: raid("Molten Core bosses", ["molten_core"]), binding: "bindOnEquip" },
+
+  // Blacksmithing (7)
+  { id: "recipe_rough_sharpening_stone", name: "Rough Sharpening Stone", profession: CRAFTING_PROFESSIONS.BLACKSMITHING, requiredSkill: 1, type: "consumable", outputItemId: "rough_sharpening_stone", outputQuantity: 2, materials: [{ itemId: "copper_ore", amount: 2 }], purpose: "skillup", acquisition: starter() },
+  { id: "recipe_copper_chain_vest", name: "Copper Chain Vest", profession: CRAFTING_PROFESSIONS.BLACKSMITHING, requiredSkill: 35, type: "gear", outputItemId: "copper_chain_vest", outputQuantity: 1, materials: [{ itemId: "copper_ore", amount: 8 }, { itemId: "weak_flux", amount: 1 }], purpose: "upgrade", acquisition: trainer(2), binding: "bindOnEquip" },
+  { id: "recipe_mithril_coif", name: "Mithril Coif", profession: CRAFTING_PROFESSIONS.BLACKSMITHING, requiredSkill: 230, type: "gear", outputItemId: "mithril_coif", outputQuantity: 1, materials: [{ itemId: "mithril_ore", amount: 12 }, { itemId: "strong_flux", amount: 2 }], purpose: "skillup", acquisition: trainer(25), binding: "bindOnEquip" },
+  { id: "recipe_imperial_plate_chest", name: "Imperial Plate Chest", profession: CRAFTING_PROFESSIONS.BLACKSMITHING, requiredSkill: 265, type: "gear", outputItemId: "imperial_plate_chest", outputQuantity: 1, materials: [{ itemId: "thorium_ore", amount: 16 }, { itemId: "strong_flux", amount: 3 }], purpose: "upgrade", acquisition: trainer(40), binding: "bindOnEquip" },
+  { id: "recipe_dark_iron_pulverizer", name: "Dark Iron Pulverizer", profession: CRAFTING_PROFESSIONS.BLACKSMITHING, requiredSkill: 265, type: "gear", outputItemId: "dark_iron_pulverizer", outputQuantity: 1, materials: [{ itemId: "dark_iron_ore", amount: 12 }, { itemId: "essence_of_fire", amount: 2 }, { itemId: "strong_flux", amount: 2 }], purpose: "upgrade", acquisition: dungeon("Blackrock Depths — Grizzle", ["blackrock_depths"], ["Grizzle"]), binding: "bindOnEquip" },
+  { id: "recipe_arcanite_reaper", name: "Arcanite Reaper", profession: CRAFTING_PROFESSIONS.BLACKSMITHING, requiredSkill: 300, type: "gear", outputItemId: "arcanite_reaper", outputQuantity: 1, materials: [{ itemId: "thorium_ore", amount: 20 }, { itemId: "arcane_crystal", amount: 4 }, { itemId: "strong_flux", amount: 4 }], purpose: "upgrade", acquisition: dungeon("Lower Blackrock Spire — Bannok Grimaxe", ["blackrock_spire"], ["Bannok Grimaxe"], 0.04), binding: "bindOnEquip" },
+  { id: "recipe_lionheart_helm", name: "Lionheart Helm", profession: CRAFTING_PROFESSIONS.BLACKSMITHING, requiredSkill: 300, type: "gear", outputItemId: "lionheart_helm", outputQuantity: 1, materials: [{ itemId: "thorium_ore", amount: 20 }, { itemId: "arcane_crystal", amount: 6 }, { itemId: "fiery_core", amount: 2 }], purpose: "upgrade", acquisition: raid("Molten Core, Onyxia or Blackwing Lair bosses", ["molten_core", "onyxias_lair", "blackwing_lair"]), binding: "bindOnEquip" },
+
+  // Enchanting (7)
+  { id: "recipe_enchant_minor_health", name: "Enchant Chest — Minor Health", profession: CRAFTING_PROFESSIONS.ENCHANTING, requiredSkill: 1, type: "enchant", outputQuantity: 1, materials: [{ itemId: "strange_dust", amount: 1 }], purpose: "enchant", acquisition: starter(), enchant: { slots: ["chest"], stats: { stamina: 1 } } },
+  { id: "recipe_enchant_greater_stamina", name: "Enchant Bracer — Greater Stamina", profession: CRAFTING_PROFESSIONS.ENCHANTING, requiredSkill: 150, type: "enchant", outputQuantity: 1, materials: [{ itemId: "vision_dust", amount: 3 }], purpose: "enchant", acquisition: trainer(10), enchant: { slots: ["wrist"], stats: { stamina: 5 } } },
+  { id: "recipe_enchant_greater_agility", name: "Enchant Boots — Greater Agility", profession: CRAFTING_PROFESSIONS.ENCHANTING, requiredSkill: 235, type: "enchant", outputQuantity: 1, materials: [{ itemId: "dream_dust", amount: 4 }], purpose: "enchant", acquisition: trainer(30), enchant: { slots: ["feet"], stats: { agility: 7 } } },
+  { id: "recipe_enchant_fiery_weapon", name: "Enchant Weapon — Fiery Weapon", profession: CRAFTING_PROFESSIONS.ENCHANTING, requiredSkill: 265, type: "enchant", outputQuantity: 1, materials: [{ itemId: "small_brilliant_shard", amount: 2 }, { itemId: "essence_of_fire", amount: 1 }], purpose: "enchant", acquisition: dungeon("Blackrock Depths — Pyromancer Loregrain", ["blackrock_depths"], ["Pyromancer Loregrain"]), enchant: { slots: ["mainHand", "offHand"], effectiveLevelBonus: 7 } },
+  { id: "recipe_enchant_crusader", name: "Enchant Weapon — Crusader", profession: CRAFTING_PROFESSIONS.ENCHANTING, requiredSkill: 300, type: "enchant", outputQuantity: 1, materials: [{ itemId: "large_brilliant_shard", amount: 2 }, { itemId: "essence_of_light", amount: 2 }], purpose: "enchant", acquisition: world("Eastern Plaguelands — Scarlet Spellbinders", 0.04, ["eastern_plaguelands"]), enchant: { slots: ["mainHand", "offHand"], stats: { strength: 12 }, effectiveLevelBonus: 5 } },
+  { id: "recipe_enchant_spell_power", name: "Enchant Weapon — Spell Power", profession: CRAFTING_PROFESSIONS.ENCHANTING, requiredSkill: 300, type: "enchant", outputQuantity: 1, materials: [{ itemId: "large_brilliant_shard", amount: 4 }, { itemId: "illusion_dust", amount: 6 }], purpose: "enchant", acquisition: raid("Molten Core bosses", ["molten_core"]), enchant: { slots: ["mainHand", "offHand"], stats: { spellPower: 16 }, effectiveLevelBonus: 5 } },
+  { id: "recipe_enchant_healing_power", name: "Enchant Weapon — Healing Power", profession: CRAFTING_PROFESSIONS.ENCHANTING, requiredSkill: 300, type: "enchant", outputQuantity: 1, materials: [{ itemId: "large_brilliant_shard", amount: 4 }, { itemId: "illusion_dust", amount: 6 }], purpose: "enchant", acquisition: raid("Molten Core bosses", ["molten_core"]), enchant: { slots: ["mainHand", "offHand"], stats: { healingPower: 24 }, effectiveLevelBonus: 5 } },
+
+  // Alchemy (7)
+  { id: "recipe_minor_healing_potion", name: "Minor Healing Potion", profession: CRAFTING_PROFESSIONS.ALCHEMY, requiredSkill: 1, type: "consumable", outputItemId: "minor_healing_potion", outputQuantity: 2, materials: [{ itemId: "peacebloom", amount: 2 }, { itemId: "empty_vial", amount: 1 }], purpose: "consumable", acquisition: starter() },
+  { id: "recipe_healing_potion", name: "Healing Potion", profession: CRAFTING_PROFESSIONS.ALCHEMY, requiredSkill: 75, type: "consumable", outputItemId: "healing_potion", outputQuantity: 2, materials: [{ itemId: "briarthorn", amount: 2 }, { itemId: "empty_vial", amount: 1 }], purpose: "consumable", acquisition: trainer(5) },
+  { id: "recipe_elixir_of_fortitude", name: "Elixir of Fortitude", profession: CRAFTING_PROFESSIONS.ALCHEMY, requiredSkill: 110, type: "consumable", outputItemId: "elixir_of_fortitude", outputQuantity: 1, materials: [{ itemId: "kingsblood", amount: 2 }, { itemId: "briarthorn", amount: 1 }, { itemId: "empty_vial", amount: 1 }], purpose: "consumable", acquisition: trainer(8) },
+  { id: "recipe_elixir_of_power", name: "Elixir of Power", profession: CRAFTING_PROFESSIONS.ALCHEMY, requiredSkill: 180, type: "consumable", outputItemId: "elixir_of_power", outputQuantity: 1, materials: [{ itemId: "sungrass", amount: 2 }, { itemId: "kingsblood", amount: 1 }, { itemId: "empty_vial", amount: 1 }], purpose: "consumable", acquisition: trainer(20) },
+  { id: "recipe_major_healing_potion", name: "Major Healing Potion", profession: CRAFTING_PROFESSIONS.ALCHEMY, requiredSkill: 275, type: "consumable", outputItemId: "major_healing_potion", outputQuantity: 2, materials: [{ itemId: "dreamfoil", amount: 2 }, { itemId: "golden_sansam", amount: 1 }, { itemId: "crystal_vial", amount: 1 }], purpose: "consumable", acquisition: trainer(40) },
+  { id: "recipe_flask_supreme_power", name: "Flask of Supreme Power", profession: CRAFTING_PROFESSIONS.ALCHEMY, requiredSkill: 300, type: "consumable", outputItemId: "flask_supreme_power", outputQuantity: 1, materials: [{ itemId: "dreamfoil", amount: 8 }, { itemId: "black_lotus", amount: 1 }, { itemId: "crystal_vial", amount: 1 }], purpose: "consumable", acquisition: dungeon("Scholomance — Ras Frostwhisper", ["scholomance"], ["Ras Frostwhisper"], 0.04) },
+  { id: "recipe_flask_of_the_titans", name: "Flask of the Titans", profession: CRAFTING_PROFESSIONS.ALCHEMY, requiredSkill: 300, type: "consumable", outputItemId: "flask_of_the_titans", outputQuantity: 1, materials: [{ itemId: "gromsblood", amount: 8 }, { itemId: "black_lotus", amount: 1 }, { itemId: "crystal_vial", amount: 1 }], purpose: "consumable", acquisition: dungeon("Upper Blackrock Spire — General Drakkisath", ["blackrock_spire"], ["General Drakkisath"], 0.04) },
 ] satisfies readonly RecipeDefinition[]);
 
-export const getRecipeDefinition = (recipeId: string) =>
-  RECIPE_DEFINITIONS.find((recipe) => recipe.id === recipeId) || null;
-
-export const getRecipesForProfession = (professionName: string) =>
-  RECIPE_DEFINITIONS.filter((recipe) => recipe.profession === professionName);
+export const getRecipeDefinition = (recipeId: string) => RECIPE_DEFINITIONS.find((recipe) => recipe.id === recipeId) || null;
+export const getRecipesForProfession = (professionName: string) => RECIPE_DEFINITIONS.filter((recipe) => recipe.profession === professionName);
+export const getStarterRecipeIds = (professionName: string) => getRecipesForProfession(professionName).filter((recipe) => recipe.acquisition.kind === "starter").map((recipe) => recipe.id);
+export const getRecipeScrollItemId = (recipeId: string) => `recipe_scroll_${recipeId}`;
+export const isDroppedRecipe = (recipe: RecipeDefinition) => ["world", "dungeon", "raid"].includes(recipe.acquisition.kind);
+export const getRecipeSkillGainChance = (recipe: RecipeDefinition, skill: number) => { const delta = Math.max(0, (Number(skill) || 0) - recipe.requiredSkill); return delta >= 75 ? 0 : delta >= 50 ? 0.25 : delta >= 25 ? 0.6 : 1; };
+export const getRecipeDifficulty = (recipe: RecipeDefinition, skill: number) => { const chance = getRecipeSkillGainChance(recipe, skill); return chance === 1 ? "Orange" : chance === 0.6 ? "Yellow" : chance === 0.25 ? "Green" : "Gray"; };
