@@ -240,6 +240,7 @@ const maybeFormNpcGuildForDay = ({
     realmType,
     count: 40,
     guildDensity: density,
+    contentPhase: realmState?.contentPhase || guildSetup?.contentPhase,
   });
   const usedNames = new Set(currentGuilds.map((guild) => guild.name));
   const archetypeWeight = {
@@ -485,6 +486,7 @@ export const advanceNpcGuildStructureForDay = ({
       realmType: realmState?.type,
       count: 40,
       guildDensity,
+      contentPhase: realmState?.contentPhase,
     });
     const usedNames = new Set(guilds.map((guild) => guild.name));
     const template =

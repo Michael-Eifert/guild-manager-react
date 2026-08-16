@@ -169,7 +169,11 @@ describe("world map zone summaries", () => {
       expect(regionalMap.src).toContain(
         "wow.zamimg.com/images/wow/classic/maps/enus/original",
       );
-      expect(regionalMap.sourceUrl).toContain("wowhead.com/classic/zone=");
+      expect(regionalMap.sourceUrl).toContain(
+        zone.requiredContentPhase
+          ? "wowhead.com/tbc/zone="
+          : "wowhead.com/classic/zone=",
+      );
     });
   });
 

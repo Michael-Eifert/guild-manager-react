@@ -50,6 +50,7 @@ export const createSessionActions = ({
   normalizeRosterZones: (
     roster: SessionCharacter[],
     faction?: string,
+    contentPhase?: string,
   ) => SessionCharacter[];
   createId: () => string;
   pushNotification: (notification: NotificationInput) => unknown;

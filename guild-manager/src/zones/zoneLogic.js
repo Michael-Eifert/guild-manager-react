@@ -1,4 +1,5 @@
 import { GAMEPLAY_TUNING, GUILD_FACTION, ZONE_TUNING } from "../constants";
+import { CONTENT_PHASE } from "../content/contentRules";
 import {
   ZONE_PROGRESS_CHECKPOINTS,
   getCanonicalZoneId,
@@ -62,8 +63,11 @@ export const resolveZoneAutoTransition = ({
   zoneManualOverride,
   zoneOverlevelMoveThreshold,
   forceAdvance = false,
+  contentPhase = String(CONTENT_PHASE.CLASSIC),
 }) => {
-  const currentZone = currentZoneId ? getZoneById(currentZoneId, level) : null;
+  const currentZone = currentZoneId
+    ? getZoneById(currentZoneId, level, contentPhase)
+    : null;
   const safeThreshold =
     normalizeZoneOverlevelMoveThreshold(zoneOverlevelMoveThreshold) ??
     ZONE_OVERLEVEL_MOVE_THRESHOLD_MIN;
@@ -105,6 +109,7 @@ export const resolveZoneAutoTransition = ({
     level,
     zonesCleared,
     currentZoneId: currentZone.id,
+    contentPhase,
   });
   if (!nextZone?.id || nextZone.id === currentZone.id) {
     return {
@@ -154,7 +159,11 @@ export const resolveZoneAutoTransition = ({
   };
 };
 
-export const normalizeZoneIdList = (value, characterLevel = 1) =>
+export const normalizeZoneIdList = (
+  value,
+  characterLevel = 1,
+  contentPhase = String(CONTENT_PHASE.CLASSIC),
+) =>
   [
     ...new Set(
       (Array.isArray(value) ? value : [])
@@ -163,13 +172,19 @@ export const normalizeZoneIdList = (value, characterLevel = 1) =>
     ),
   ]
     .filter(Boolean)
-    .filter((zoneId) => Boolean(getZoneById(zoneId)));
+    .filter((zoneId) =>
+      Boolean(getZoneById(zoneId, characterLevel, contentPhase)),
+    );
 
-export const normalizeZoneProgressMap = (value, characterLevel = 1) => {
+export const normalizeZoneProgressMap = (
+  value,
+  characterLevel = 1,
+  contentPhase = String(CONTENT_PHASE.CLASSIC),
+) => {
   const source = value && typeof value === "object" ? value : {};
   return Object.entries(source).reduce((acc, [zoneId, progress]) => {
     const canonicalZoneId = getCanonicalZoneId(zoneId, characterLevel);
-    if (!getZoneById(canonicalZoneId)) return acc;
+    if (!getZoneById(canonicalZoneId, characterLevel, contentPhase)) return acc;
     acc[canonicalZoneId] = Math.max(
       getClampedZoneProgress(acc[canonicalZoneId]),
       getClampedZoneProgress(progress),
@@ -178,11 +193,15 @@ export const normalizeZoneProgressMap = (value, characterLevel = 1) => {
   }, {});
 };
 
-export const normalizeZoneCheckpointMap = (value, characterLevel = 1) => {
+export const normalizeZoneCheckpointMap = (
+  value,
+  characterLevel = 1,
+  contentPhase = String(CONTENT_PHASE.CLASSIC),
+) => {
   const source = value && typeof value === "object" ? value : {};
   return Object.entries(source).reduce((acc, [zoneId, checkpointValues]) => {
     const canonicalZoneId = getCanonicalZoneId(zoneId, characterLevel);
-    if (!getZoneById(canonicalZoneId)) return acc;
+    if (!getZoneById(canonicalZoneId, characterLevel, contentPhase)) return acc;
     const checkpoints = [
       ...new Set(
         [
@@ -205,6 +224,7 @@ export const normalizeZoneCheckpointMap = (value, characterLevel = 1) => {
 export const normalizeCharacterZoneState = (
   char,
   fallbackFaction = GUILD_FACTION.ALLIANCE,
+  contentPhase = String(CONTENT_PHASE.CLASSIC),
 ) => {
   const characterLevel = Math.max(1, Number(char?.level) || 1);
   const rawClearedZoneIds = (
@@ -215,8 +235,13 @@ export const normalizeCharacterZoneState = (
   const zoneProgressById = normalizeZoneProgressMap(
     char?.zoneProgressById,
     characterLevel,
+    contentPhase,
   );
-  const zonesCleared = normalizeZoneIdList(rawClearedZoneIds, characterLevel);
+  const zonesCleared = normalizeZoneIdList(
+    rawClearedZoneIds,
+    characterLevel,
+    contentPhase,
+  );
   if (rawClearedZoneIds.includes("stranglethorn_vale")) {
     if (!zonesCleared.includes("stranglethorn_vale_north")) {
       zonesCleared.push("stranglethorn_vale_north");
@@ -228,24 +253,39 @@ export const normalizeCharacterZoneState = (
   const zoneCheckpointRewardsClaimedByZone = normalizeZoneCheckpointMap(
     char?.zoneCheckpointRewardsClaimedByZone,
     characterLevel,
+    contentPhase,
   );
 
   const explicitCurrentZoneId = getCanonicalZoneId(
     char?.currentZoneId,
     characterLevel,
   );
-  const starterZoneId = getStarterZoneIdForRace(char?.race);
+  const starterZoneId = getStarterZoneIdForRace(char?.race, contentPhase);
+  const starterZone = getZoneById(
+    starterZoneId,
+    characterLevel,
+    contentPhase,
+  );
+  const eligibleStarterZoneId =
+    starterZone && characterLevel <= starterZone.maxLevel
+      ? starterZone.id
+      : null;
   const pickedZoneId = pickNextZoneForCharacter({
     character: char,
     faction: fallbackFaction,
     level: char?.level,
     zonesCleared,
-    currentZoneId: starterZoneId,
+    currentZoneId: eligibleStarterZoneId,
+    contentPhase,
   })?.id;
-  const currentZoneId = getZoneById(explicitCurrentZoneId)
+  const currentZoneId = getZoneById(
+    explicitCurrentZoneId,
+    characterLevel,
+    contentPhase,
+  )
     ? explicitCurrentZoneId
-    : starterZoneId || pickedZoneId || null;
-  const currentZone = getZoneById(currentZoneId);
+    : eligibleStarterZoneId || pickedZoneId || null;
+  const currentZone = getZoneById(currentZoneId, characterLevel, contentPhase);
 
   const legacyZoneProgress = getClampedZoneProgress(char?.zoneProgress);
   const currentZoneProgress = getClampedZoneProgress(
@@ -291,9 +331,10 @@ export const normalizeCharacterZoneState = (
 export const normalizeRosterZones = (
   rosterSnapshot,
   fallbackFaction = GUILD_FACTION.ALLIANCE,
+  contentPhase = String(CONTENT_PHASE.CLASSIC),
 ) =>
   (Array.isArray(rosterSnapshot) ? rosterSnapshot : []).map((member) =>
-    normalizeCharacterZoneState(member, fallbackFaction),
+    normalizeCharacterZoneState(member, fallbackFaction, contentPhase),
   );
 
 export const getZoneProgressLabel = (zone, progress) => {
@@ -306,8 +347,9 @@ export const assignZoneToRoster = ({
   memberIds,
   zoneId,
   fallbackFaction = GUILD_FACTION.ALLIANCE,
+  contentPhase = String(CONTENT_PHASE.CLASSIC),
 }) => {
-  const zone = getZoneById(zoneId);
+  const zone = getZoneById(zoneId, 1, contentPhase);
   if (!zone) return rosterSnapshot;
 
   const targetMemberIds = new Set(
@@ -319,7 +361,11 @@ export const assignZoneToRoster = ({
 
   return (Array.isArray(rosterSnapshot) ? rosterSnapshot : []).map((char) => {
     if (!targetMemberIds.has(String(char?.id || ""))) return char;
-    const normalizedChar = normalizeCharacterZoneState(char, fallbackFaction);
+    const normalizedChar = normalizeCharacterZoneState(
+      char,
+      fallbackFaction,
+      contentPhase,
+    );
     const existingProgress = getClampedZoneProgress(
       normalizedChar.zoneProgressById?.[zone.id] ?? 0,
     );
@@ -334,5 +380,10 @@ export const assignZoneToRoster = ({
   });
 };
 
-export const getMissionListWithZones = (missions) =>
-  ENABLE_ZONE_QUESTING ? mergeZoneMissionsIntoList(missions) : missions;
+export const getMissionListWithZones = (
+  missions,
+  contentPhase = String(CONTENT_PHASE.CLASSIC),
+) =>
+  ENABLE_ZONE_QUESTING
+    ? mergeZoneMissionsIntoList(missions, contentPhase)
+    : missions;

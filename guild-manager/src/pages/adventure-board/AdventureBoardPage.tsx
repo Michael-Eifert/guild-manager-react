@@ -17,6 +17,7 @@ type AdventureBoardPageProps = {
   gameTimeMs: number;
   guildFaction: string;
   realmType: string;
+  contentPhase?: "classic" | "tbc_prepatch";
   onDeploy: ForwardedCallback;
   getMissionPreview: ForwardedCallback;
 };
@@ -37,6 +38,7 @@ export default function AdventureBoardPage({
   gameTimeMs,
   guildFaction,
   realmType,
+  contentPhase,
   onDeploy,
   getMissionPreview,
 }: AdventureBoardPageProps) {
@@ -54,6 +56,7 @@ export default function AdventureBoardPage({
       gameTimeMs={gameTimeMs}
       guildFaction={guildFaction}
       realmType={realmType}
+      contentPhase={contentPhase}
       onDeploy={onDeploy}
       getMissionPreview={getMissionPreview}
     />

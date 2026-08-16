@@ -1,8 +1,6 @@
 import {
   CONFIG,
   DB_CLASSES,
-  DB_RACES,
-  FACTION_RACES,
   GUILD_FACTION,
   GUILD_SERVER_POPULATION,
 } from "../constants";
@@ -56,6 +54,12 @@ import {
   generateMatureRealmItemLevel,
   generateMatureRealmLevel,
 } from "./realmMaturity";
+import {
+  CONTENT_PHASE,
+  getFactionRacesForContent,
+  getRaceClassesForContent,
+  normalizeContentPhase,
+} from "../content/contentRules";
 
 export const hashPopulationSeed = (value) => {
   const input = String(value || "realm-population");
@@ -195,24 +199,35 @@ const makeRealmPlayerName = (random) =>
   `${pickFrom(NAME_PREFIXES, random)}${pickFrom(NAME_SUFFIXES, random)}`;
 
 const isValidRaceClassCombo = (race, charClass) =>
-  Array.isArray(DB_RACES[race]) && DB_RACES[race].includes(charClass);
+  getRaceClassesForContent(race, CONTENT_PHASE.TBC_PREPATCH).includes(charClass);
 
 const isFactionRace = (faction, race) =>
-  Array.isArray(FACTION_RACES[faction]) && FACTION_RACES[faction].includes(race);
+  getFactionRacesForContent(faction, CONTENT_PHASE.TBC_PREPATCH).includes(race);
 
 const normalizeRaceClassCombo = ({ faction, race, charClass }) => {
   if (isFactionRace(faction, race) && isValidRaceClassCombo(race, charClass)) {
     return { race, charClass };
   }
-  const factionRaces =
-    FACTION_RACES[faction] || FACTION_RACES[GUILD_FACTION.ALLIANCE] || ["Human"];
+  const factionRaces = getFactionRacesForContent(
+    faction,
+    CONTENT_PHASE.TBC_PREPATCH,
+  );
   const fallbackRace =
-    (isFactionRace(faction, race) && Array.isArray(DB_RACES[race]) ? race : null) ||
-    factionRaces.find((candidateRace) => Array.isArray(DB_RACES[candidateRace])) ||
+    (isFactionRace(faction, race) &&
+    getRaceClassesForContent(race, CONTENT_PHASE.TBC_PREPATCH).length > 0
+      ? race
+      : null) ||
+    factionRaces.find(
+      (candidateRace) =>
+        getRaceClassesForContent(candidateRace, CONTENT_PHASE.TBC_PREPATCH)
+          .length > 0,
+    ) ||
     "Human";
   return {
     race: fallbackRace,
-    charClass: DB_RACES[fallbackRace]?.[0] || "Warrior",
+    charClass:
+      getRaceClassesForContent(fallbackRace, CONTENT_PHASE.TBC_PREPATCH)[0] ||
+      "Warrior",
   };
 };
 
@@ -227,21 +242,32 @@ const normalizeRoleForClass = (role, charClass) => {
     : ROLE_BY_CLASS[charClass] || allowedRoles[0] || "DPS";
 };
 
-const getRealmPlayerZone = (player) => {
-  const currentZone = getZoneById(player?.currentZoneId, player?.level);
+const getRealmPlayerZone = (
+  player,
+  contentPhase = CONTENT_PHASE.CLASSIC,
+) => {
+  const currentZone = getZoneById(
+    player?.currentZoneId,
+    player?.level,
+    contentPhase,
+  );
   if (
     currentZone &&
-    isZoneAccessibleForFaction(currentZone, player?.faction) &&
+    isZoneAccessibleForFaction(currentZone, player?.faction, contentPhase) &&
     !normalizeZoneClears(player?.zonesCleared).includes(currentZone.id)
   ) {
     return currentZone;
   }
 
-  const starterZone = getZoneById(getStarterZoneIdForRace(player?.race));
+  const starterZone = getZoneById(
+    getStarterZoneIdForRace(player?.race, contentPhase),
+    player?.level,
+    contentPhase,
+  );
   if (
     starterZone &&
     (Number(player?.level) || 1) <= starterZone.maxLevel &&
-    isZoneAccessibleForFaction(starterZone, player?.faction)
+    isZoneAccessibleForFaction(starterZone, player?.faction, contentPhase)
   ) {
     return starterZone;
   }
@@ -252,11 +278,15 @@ const getRealmPlayerZone = (player) => {
     zonesCleared: player?.zonesCleared,
     currentZoneId: player?.currentZoneId,
     character: player,
+    contentPhase,
   });
 };
 
-const ensureRealmPlayerZone = (player) => {
-  const zone = getRealmPlayerZone(player);
+const ensureRealmPlayerZone = (
+  player,
+  contentPhase = CONTENT_PHASE.CLASSIC,
+) => {
+  const zone = getRealmPlayerZone(player, contentPhase);
   return {
     ...player,
     currentZoneId: zone?.id || null,
@@ -397,11 +427,13 @@ const generateFreeAgent = ({
   usedNameKeys,
   arrivalDayIndex = null,
   realmAgeMonths = 0,
+  contentPhase = CONTENT_PHASE.CLASSIC,
 }) => {
   const faction = random() < 0.5 ? GUILD_FACTION.ALLIANCE : GUILD_FACTION.HORDE;
   const { race, charClass } = pickValidRaceClassCombination({
     faction,
     random,
+    contentPhase,
   });
   const gender = random() > 0.5 ? "Male" : "Female";
   const strength = 0.2 + random() * 0.45;
@@ -519,8 +551,12 @@ export const normalizeRealmPopulation = ({
   serverPopulation = null,
   realmAgeMonths = 0,
   targetRealmPlayers = null,
+  contentPhase = null,
 } = {}) => {
   const safePopulation = population && typeof population === "object" ? population : {};
+  const normalizedContentPhase = normalizeContentPhase(
+    contentPhase || safePopulation.contentPhase,
+  );
   const normalizedServerPopulation = normalizeServerPopulation(
     serverPopulation || safePopulation.serverPopulation,
   );
@@ -545,7 +581,9 @@ export const normalizeRealmPopulation = ({
     byId.set(normalized.id, normalized);
   });
 
-  let players = [...byId.values()].map(ensureRealmPlayerZone);
+  let players = [...byId.values()].map((player) =>
+    ensureRealmPlayerZone(player, normalizedContentPhase),
+  );
   const usedNameKeys = new Set(
     players
       .map((player) => String(player?.name || "").trim().toLocaleLowerCase())
@@ -568,7 +606,9 @@ export const normalizeRealmPopulation = ({
           random,
           usedNameKeys,
           realmAgeMonths,
+          contentPhase: normalizedContentPhase,
         }),
+        normalizedContentPhase,
       ),
     );
   }
@@ -582,6 +622,7 @@ export const normalizeRealmPopulation = ({
   );
 
   return {
+    contentPhase: normalizedContentPhase,
     serverPopulation: normalizedServerPopulation,
     currentSoftCap: Math.round(
       (() => {
@@ -625,6 +666,123 @@ export const normalizeRealmPopulation = ({
         ? safePopulation.dailyStats
         : {},
   };
+};
+
+export const activateTbcPrepatchPopulation = ({
+  realmState,
+  currentDayIndex = 0,
+  playerRosterSize = 0,
+} = {}) => {
+  const safeRealm = realmState && typeof realmState === "object" ? realmState : {};
+  if (safeRealm?.contentTransitions?.tbc_prepatch) {
+    return { realmState: safeRealm, newcomers: [], applied: false };
+  }
+  const safeDayIndex = Math.max(0, Math.floor(Number(currentDayIndex) || 0));
+  const population = normalizeRealmPopulation({
+    population: safeRealm.population,
+    realmId: safeRealm.id,
+    npcGuilds: safeRealm.npcGuilds,
+    currentDayIndex: safeDayIndex,
+    playerRosterSize,
+    serverPopulation: safeRealm.populationLabel,
+    contentPhase: CONTENT_PHASE.TBC_PREPATCH,
+  });
+  const existingPlayers = Array.isArray(population.players)
+    ? population.players
+    : [];
+  const cohortSize = Math.max(
+    12,
+    Math.min(50, Math.round((existingPlayers.length + playerRosterSize) * 0.04)),
+  );
+  const usedNameKeys = new Set(
+    existingPlayers
+      .map((player) => String(player?.name || "").trim().toLocaleLowerCase())
+      .filter(Boolean),
+  );
+  const realmAgeMonths = Math.max(
+    0,
+    Math.floor((Number(safeRealm.ageDays) || safeDayIndex) / 30),
+  );
+  const newcomers = Array.from({ length: cohortSize }, (_, index) => {
+    const faction =
+      index % 2 === 0 ? GUILD_FACTION.ALLIANCE : GUILD_FACTION.HORDE;
+    const race = faction === GUILD_FACTION.ALLIANCE ? "Draenei" : "Blood Elf";
+    const random = createPopulationRandom(
+      hashPopulationSeed(
+        `${safeRealm.id}:${safeDayIndex}:tbc-prepatch:${race}:${index}`,
+      ),
+    );
+    const classes = getRaceClassesForContent(race, CONTENT_PHASE.TBC_PREPATCH);
+    const charClass = classes[Math.floor(random() * classes.length)] || "Warrior";
+    const gender = random() > 0.5 ? "Male" : "Female";
+    const strength = 0.2 + random() * 0.45;
+    const level = generateMatureRealmLevel({
+      realmAgeMonths,
+      random,
+      strength,
+    });
+    return ensureRealmPlayerZone(
+      createRealmPlayer({
+        id: `realm-player:${hashPopulationSeed(`${safeRealm.id}:${safeDayIndex}:prepatch:${index}`).toString(36)}`,
+        name: pickUniqueCharacterName({
+          race,
+          gender,
+          charClass,
+          curatedPool: buildCharacterNamePool({ race, gender, charClass }),
+          fallbackPool: [makeRealmPlayerName(random)],
+          usedNameKeys,
+          random,
+        }),
+        faction,
+        race,
+        gender,
+        charClass,
+        level,
+        itemLevel: generateMatureRealmItemLevel({
+          level,
+          realmAgeMonths,
+          random,
+          strength,
+        }),
+        activityLevel: 35 + Math.round(random() * 55),
+        loyalty: 30 + Math.round(random() * 45),
+        marketStatus: REALM_MARKET_STATUS.FREE_AGENT,
+        personalityTraits: rollCharacterPersonalityTraits({ random }),
+        arrivalDayIndex: safeDayIndex,
+      }),
+      CONTENT_PHASE.TBC_PREPATCH,
+    );
+  });
+  const nextRealmState = {
+    ...safeRealm,
+    contentPhase: CONTENT_PHASE.TBC_PREPATCH,
+    contentTransitions: {
+      ...(safeRealm.contentTransitions || {}),
+      tbc_prepatch: {
+        dayIndex: safeDayIndex,
+        newcomerIds: newcomers.map((player) => player.id),
+      },
+    },
+    population: {
+      ...population,
+      contentPhase: CONTENT_PHASE.TBC_PREPATCH,
+      players: [...existingPlayers, ...newcomers],
+      dailyStats: mergeDailyStats(population.dailyStats, safeDayIndex, {
+        arrivals: newcomers.length,
+      }),
+    },
+    news: capRealmNews([
+      {
+        id: `realm-news:tbc-prepatch:${safeDayIndex}`,
+        type: "content-phase",
+        dayIndex: safeDayIndex,
+        title: "The Dark Portal Stirs",
+        message: `${newcomers.length} Draenei and Blood Elf adventurers have arrived across the realm as the Burning Crusade pre-patch begins.`,
+      },
+      ...(Array.isArray(safeRealm.news) ? safeRealm.news : []),
+    ]),
+  };
+  return { realmState: nextRealmState, newcomers, applied: true };
 };
 
 const getValidApplicationPlayer = ({ player, faction }) => {
@@ -1478,7 +1636,7 @@ export const advanceRealmPopulationLifecycle = ({
         marketStatus: REALM_MARKET_STATUS.FREE_AGENT,
         loyalty: Math.max(40, Number(entry.player.loyalty) || 0),
         arrivalDayIndex: null,
-      }),
+      }, population.contentPhase),
     );
     events.push({
       type: "realm-return",
@@ -1762,7 +1920,9 @@ export const advanceRealmPopulationActivity = ({
           random: safeRandom,
           usedNameKeys,
           arrivalDayIndex: safeDayIndex,
+          contentPhase: population.contentPhase,
         }),
+        population.contentPhase,
       ),
     );
   }

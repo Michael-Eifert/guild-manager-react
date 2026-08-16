@@ -1,7 +1,7 @@
 import { z } from "zod";
 
 export const SESSION_FORMAT_VALUE = "guild-manager-session" as const;
-export const CURRENT_SESSION_VERSION = 17;
+export const CURRENT_SESSION_VERSION = 18;
 
 const dataSchema = z.record(z.string(), z.unknown());
 const recognizedKeys = new Set([
@@ -194,6 +194,21 @@ export const SESSION_MIGRATIONS: ReadonlyArray<Migration> = [
             };
           })
         : [],
+    };
+  },
+  (data) => {
+    const guildSetup =
+      data.guildSetup && typeof data.guildSetup === "object"
+        ? (data.guildSetup as Record<string, unknown>)
+        : {};
+    return {
+      ...data,
+      guildSetup: {
+        ...guildSetup,
+        contentRoute: "uncommitted",
+        contentPhase: "classic",
+        contentPhaseStartedDayIndex: 0,
+      },
     };
   },
 ];

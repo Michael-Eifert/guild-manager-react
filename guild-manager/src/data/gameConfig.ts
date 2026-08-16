@@ -320,6 +320,9 @@ export const GUILD_FOCUS = Object.freeze({
 export const GUILD_FOCUS_OPTIONS = Object.freeze(Object.values(GUILD_FOCUS));
 
 export const DEFAULT_GUILD_SETUP = Object.freeze({
+  contentRoute: "uncommitted",
+  contentPhase: "classic",
+  contentPhaseStartedDayIndex: 0,
   name: "",
   faction: GUILD_FACTION.ALLIANCE,
   server: GUILD_SERVER.EVERLOOK,

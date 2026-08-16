@@ -77,6 +77,25 @@ describe("session migrations", () => {
     expect(migrated.gameSettings.officerAutonomyMode).toBe("off");
   });
 
+  it("migrates existing saves to the uncommitted Classic route", () => {
+    const migrated = parseSessionPayload(
+      JSON.stringify({
+        format: "guild-manager-session",
+        version: 17,
+        data: {
+          roster: [{ id: "classic-member" }],
+          guildSetup: { name: "Classic Guild", hasStarted: true },
+        },
+      }),
+    );
+
+    expect(migrated.guildSetup).toMatchObject({
+      contentRoute: "uncommitted",
+      contentPhase: "classic",
+      contentPhaseStartedDayIndex: 0,
+    });
+  });
+
   it("adds the version 15 weapon slots and personal equipment inventory", () => {
     const migrated = parseSessionPayload(
       JSON.stringify({

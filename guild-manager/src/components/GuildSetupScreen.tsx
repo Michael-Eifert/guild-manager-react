@@ -47,6 +47,11 @@ import {
   STARTING_GUILD_PROGRESS_PROFILES,
 } from "../guild/startProgression";
 import { getRacePortraitUrl, getRoleIcon, getWowIconUrl } from "../utils";
+import {
+  CONTENT_ROUTE_OPTIONS,
+  getContentPhaseForRoute,
+  normalizeContentRoute,
+} from "../content/contentRules";
 
 const GUILD_FOCUS_COPY = {
   Leveling: "Leveling (+5% Guild XP)",
@@ -88,8 +93,14 @@ const GuildSetupScreen = ({
 }) => {
   const guildName = String(guildSetup?.name || "");
   const faction = guildSetup?.faction || GUILD_FACTION.ALLIANCE;
-  const founder = normalizeFounderConfig(guildSetup?.founder, faction);
-  const founderOptions = getFounderOptionsForFaction(faction);
+  const contentRoute = normalizeContentRoute(guildSetup?.contentRoute);
+  const contentPhase = getContentPhaseForRoute(contentRoute);
+  const founder = normalizeFounderConfig(
+    guildSetup?.founder,
+    faction,
+    contentPhase,
+  );
+  const founderOptions = getFounderOptionsForFaction(faction, contentPhase);
   const founderClasses =
     founderOptions.find((entry) => entry.race === founder.race)?.classes || [];
   const founderRoles =
@@ -100,7 +111,11 @@ const GuildSetupScreen = ({
   const updateFounder = (changes: Record<string, unknown>) =>
     onChange(
       "founder",
-      normalizeFounderConfig({ ...founder, ...changes }, faction),
+      normalizeFounderConfig(
+        { ...founder, ...changes },
+        faction,
+        contentPhase,
+      ),
     );
   const selectedRealm =
     GUILD_SERVER_OPTIONS.find((option) => option.value === guildSetup?.server) ||
@@ -148,6 +163,38 @@ const GuildSetupScreen = ({
           </div>
 
           <div className="p-5 md:p-8 space-y-5">
+            <fieldset className="space-y-3">
+              <legend className="text-xs font-bold uppercase tracking-wider text-gray-300">
+                Content Route
+              </legend>
+              <div className="grid gap-3 sm:grid-cols-2" role="radiogroup">
+                {CONTENT_ROUTE_OPTIONS.map((option) => {
+                  const selected = contentRoute === option.value;
+                  return (
+                    <button
+                      key={option.value}
+                      type="button"
+                      role="radio"
+                      aria-checked={selected}
+                      onClick={() => onChange("contentRoute", option.value)}
+                      className={`${choiceButtonClass(selected)} items-start text-left`}
+                    >
+                      <span className="fantasy-font text-base text-amber-100">
+                        {option.label}
+                      </span>
+                      <span className="text-xs leading-5 text-gray-400">
+                        {option.description}
+                      </span>
+                    </button>
+                  );
+                })}
+              </div>
+              <p className="text-xs text-gray-500">
+                Classic games can unlock the TBC Pre-Patch later. Activating it
+                permanently commits this save to the Burning Crusade route.
+              </p>
+            </fieldset>
+
             <div className="block space-y-2">
               <label
                 htmlFor="guild-name"

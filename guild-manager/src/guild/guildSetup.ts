@@ -15,6 +15,11 @@ import {
   normalizeRealmAgeMonths,
   normalizeStartingGuildProgress,
 } from "./startProgression";
+import {
+  getContentPhaseForRoute,
+  normalizeContentPhase,
+  normalizeContentRoute,
+} from "../content/contentRules";
 
 type GuildSetupInput = Record<string, unknown>;
 type SessionSetupPayload = {
@@ -104,6 +109,14 @@ export const normalizeGuildSetup = (
     safe.hasStarted || normalizedName || hasLegacyGameData,
   );
   const realmAgeMonths = normalizeRealmAgeMonths(safe.realmAgeMonths);
+  const selectedContentRoute = normalizeContentRoute(safe.contentRoute);
+  const contentPhase = hasStarted
+    ? normalizeContentPhase(safe.contentPhase, selectedContentRoute)
+    : getContentPhaseForRoute(selectedContentRoute);
+  const contentRoute =
+    contentPhase === "tbc_prepatch"
+      ? "burning_crusade"
+      : selectedContentRoute;
 
   return {
     ...DEFAULT_GUILD_SETUP,
@@ -136,7 +149,18 @@ export const normalizeGuildSetup = (
       safe.startingGuildProgress,
       realmAgeMonths,
     ),
-    founder: normalizeFounderConfig(safe.founder, normalizedFaction),
+    contentRoute,
+    contentPhase,
+    contentPhaseStartedDayIndex: Number.isFinite(
+      Number(safe.contentPhaseStartedDayIndex),
+    )
+      ? Math.max(0, Math.floor(Number(safe.contentPhaseStartedDayIndex)))
+      : 0,
+    founder: normalizeFounderConfig(
+      safe.founder,
+      normalizedFaction,
+      contentPhase,
+    ),
     hasStarted,
   };
 };

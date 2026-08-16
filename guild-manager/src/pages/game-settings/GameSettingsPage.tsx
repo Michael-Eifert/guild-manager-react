@@ -6,6 +6,7 @@ import {
   RefreshCcw,
   Settings2,
   Trash2,
+  WandSparkles,
 } from "lucide-react";
 import { useState } from "react";
 
@@ -25,6 +26,8 @@ import {
   type GameSettingsState,
 } from "../../settings/gameSettings";
 import type { ChatAiSettings } from "../../social/chatProviders";
+import type { GuildSetupState } from "../../app/gameTypes";
+import { getContentPhaseLabel } from "../../content/contentRules";
 
 type SettingsTab = "gameplay" | "chat" | "debug";
 
@@ -52,6 +55,8 @@ type Props = {
   onLoadBrowserSave: (slotId: BrowserSaveSlotId) => void;
   onStartNewBrowserGame: (slotId: BrowserSaveSlotId) => void;
   onDeleteBrowserSave: (slotId: BrowserSaveSlotId) => void;
+  guildSetup: GuildSetupState;
+  onActivateTbcPrepatch: () => boolean;
 };
 
 const tabs = [
@@ -71,12 +76,16 @@ export default function GameSettingsPage({
   onLoadBrowserSave,
   onStartNewBrowserGame,
   onDeleteBrowserSave,
+  guildSetup,
+  onActivateTbcPrepatch,
 }: Props) {
   const [activeTab, setActiveTab] = useState<SettingsTab>("gameplay");
   const [pendingNewSlot, setPendingNewSlot] =
     useState<BrowserSaveSlotSummary | null>(null);
   const [pendingDeleteSlot, setPendingDeleteSlot] =
     useState<BrowserSaveSlotSummary | null>(null);
+  const [showPrepatchConfirmation, setShowPrepatchConfirmation] =
+    useState(false);
   const normalizedGameSettings = normalizeGameSettings(gameSettings);
 
   const handleConfirmNewGame = () => {
@@ -208,6 +217,38 @@ export default function GameSettingsPage({
                 tone="sky"
                 className="mt-3"
               />
+            </div>
+          </div>
+
+          <div className="mt-4 rounded-lg border border-fuchsia-900/70 bg-fuchsia-950/15 p-4">
+            <div className="flex items-start gap-3">
+              <span className="rounded-lg border border-fuchsia-800 bg-fuchsia-950/45 p-2 text-fuchsia-300">
+                <WandSparkles size={18} aria-hidden="true" />
+              </span>
+              <div className="min-w-0 flex-1">
+                <h3 className="text-sm font-bold text-fuchsia-100">
+                  Content Route
+                </h3>
+                <p className="mt-1 text-xs leading-relaxed text-slate-400">
+                  Current phase: {getContentPhaseLabel(guildSetup.contentPhase)}.
+                  The TBC Pre-Patch unlocks Draenei, Blood Elves, their 1–20
+                  regions, and faction-crossed Paladins and Shamans.
+                </p>
+                {guildSetup.contentPhase !== "tbc_prepatch" ? (
+                  <GameButton
+                    size="sm"
+                    tone="primary"
+                    className="mt-3"
+                    onClick={() => setShowPrepatchConfirmation(true)}
+                  >
+                    Activate TBC Pre-Patch
+                  </GameButton>
+                ) : (
+                  <span className="mt-3 inline-flex rounded-full border border-fuchsia-700 bg-fuchsia-950/45 px-2 py-1 text-[10px] font-bold uppercase tracking-wide text-fuchsia-200">
+                    Burning Crusade route active
+                  </span>
+                )}
+              </div>
             </div>
           </div>
         </section>
@@ -354,6 +395,45 @@ export default function GameSettingsPage({
           />
         </div>
       ) : null}
+
+      <BaseModal
+        isOpen={showPrepatchConfirmation}
+        onClose={() => setShowPrepatchConfirmation(false)}
+        labelledBy="prepatch-confirmation-title"
+        overlayClassName="bg-black/80 p-4 backdrop-blur-sm"
+        panelClassName="w-full max-w-md rounded-xl border border-fuchsia-700 bg-slate-950 p-5 shadow-2xl"
+      >
+        <h2
+          id="prepatch-confirmation-title"
+          className="fantasy-font text-xl font-bold text-fuchsia-100"
+        >
+          Activate the TBC Pre-Patch?
+        </h2>
+        <p className="mt-3 text-sm leading-relaxed text-slate-300">
+          This permanently commits this save to the Burning Crusade route. A
+          deterministic first wave of Draenei and Blood Elf free agents will
+          arrive immediately; existing characters and guilds remain unchanged.
+        </p>
+        <div className="mt-5 flex flex-col-reverse gap-2 sm:flex-row sm:justify-end">
+          <GameButton
+            size="sm"
+            tone="neutral"
+            onClick={() => setShowPrepatchConfirmation(false)}
+          >
+            Cancel
+          </GameButton>
+          <GameButton
+            size="sm"
+            tone="primary"
+            onClick={() => {
+              onActivateTbcPrepatch();
+              setShowPrepatchConfirmation(false);
+            }}
+          >
+            Activate Permanently
+          </GameButton>
+        </div>
+      </BaseModal>
 
       <BaseModal
         isOpen={pendingNewSlot !== null}

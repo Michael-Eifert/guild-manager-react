@@ -101,8 +101,12 @@ export const applyLoadedSessionToApp = ({
   normalizeRosterZones: (
     roster: UnknownRecord[],
     faction?: string,
+    contentPhase?: string,
   ) => UnknownRecord[];
-  getMissionListWithZones: (missions: unknown[]) => unknown[];
+  getMissionListWithZones: (
+    missions: unknown[],
+    contentPhase?: string,
+  ) => unknown[];
   clampGameSpeed: (speed: number) => number;
   refs: SessionRefs;
   setters: SessionSetters;
@@ -135,6 +139,7 @@ export const applyLoadedSessionToApp = ({
   const zoneReadyRoster = normalizeRosterZones(
     normalizedRoster,
     loadedGuildSetup?.faction || factionFallback,
+    String(loadedGuildSetup?.contentPhase || "classic"),
   );
 
   refs.rewardedMissionIds.current = new Set();
@@ -162,7 +167,12 @@ export const applyLoadedSessionToApp = ({
 
   setters.setRoster(zoneReadyRoster);
   setters.setActiveMissions(loadedActiveMissions);
-  setters.setMissionList(getMissionListWithZones(loadedMissionList));
+  setters.setMissionList(
+    getMissionListWithZones(
+      loadedMissionList,
+      String(loadedGuildSetup?.contentPhase || "classic"),
+    ),
+  );
   setters.setGuildLog(loadedGuildLog);
   setters.setGuildGold(loadedGuildGold);
   setters.setGuildProgress(loadedGuildProgress);

@@ -209,6 +209,7 @@ export default function WorldMapModal({
   guildName = "Player Guild",
   guildFaction = GUILD_FACTION.ALLIANCE,
   realmType = GUILD_SERVER_STYLE.PVE,
+  contentPhase = "classic",
   onDeploy,
   getMissionPreview,
 }) {
@@ -228,8 +229,9 @@ export default function WorldMapModal({
         missionList,
         activeMissions,
         guildFaction,
+        contentPhase,
       }),
-    [activeMissions, guildFaction, missionList, roster],
+    [activeMissions, contentPhase, guildFaction, missionList, roster],
   );
   const normalizedWorldPvpState = useMemo(
     () => ensureWorldPvpState(worldPvpState),

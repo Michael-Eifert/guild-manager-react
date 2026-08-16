@@ -414,6 +414,30 @@ export const DB_NAMES = {
       "Kleptokaren",
     ],
   },
+  Draenei: {
+    Male: [
+      "Velen", "Maraad", "Nobundo", "Akama", "Romuul", "Tirasalan",
+      "Oros", "Exarch", "Kamuros", "Vindicator", "Aalun", "Kessel",
+      "Otonbu", "Farseer", "Amaan", "Telhamat",
+    ],
+    Female: [
+      "Yrel", "Ishanah", "Iruun", "Kurenai", "Naielle", "Vindicatora",
+      "Arechron", "Magtoor", "Saaresa", "Iridi", "Nula", "Aurelia",
+      "Eredara", "Talaara", "Velanna", "Mishka",
+    ],
+  },
+  "Blood Elf": {
+    Male: [
+      "Lor'themar", "Kael", "Rommath", "Halduron", "Aethas", "Astalor",
+      "Salanar", "Dar'Khan", "Vor'el", "Tae'thelan", "Arcanist", "Theron",
+      "Belestra", "Selin", "Kalec", "Voren'thal",
+    ],
+    Female: [
+      "Liadrin", "Valeera", "Lynessa", "Vereesa", "Sylvanas", "Salandria",
+      "Arcanista", "Sathiel", "Kelestra", "Velanna", "Aelthalyste", "Erona",
+      "Suntara", "Lyria", "Meredil", "Arielle",
+    ],
+  },
 };
 
 export const DB_CLASS_NAMES = {

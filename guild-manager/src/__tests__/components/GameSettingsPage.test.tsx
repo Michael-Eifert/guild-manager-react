@@ -10,6 +10,7 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 
 import GameSettingsPage from "../../pages/game-settings/GameSettingsPage";
 import { DEFAULT_CHAT_AI_SETTINGS } from "../../social/chatProviders";
+import { DEFAULT_GUILD_SETUP } from "../../constants";
 
 afterEach(cleanup);
 
@@ -30,6 +31,7 @@ describe("GameSettingsPage", () => {
     const onLoadBrowserSave = vi.fn();
     const onStartNewBrowserGame = vi.fn();
     const onDeleteBrowserSave = vi.fn();
+    const onActivateTbcPrepatch = vi.fn();
     render(
       <GameSettingsPage
         gameSettings={{ offlineSimulationEnabled: true }}
@@ -67,6 +69,8 @@ describe("GameSettingsPage", () => {
         onLoadBrowserSave={onLoadBrowserSave}
         onStartNewBrowserGame={onStartNewBrowserGame}
         onDeleteBrowserSave={onDeleteBrowserSave}
+        guildSetup={{ ...DEFAULT_GUILD_SETUP, hasStarted: true }}
+        onActivateTbcPrepatch={onActivateTbcPrepatch}
       />,
     );
 
@@ -88,6 +92,14 @@ describe("GameSettingsPage", () => {
     expect(onGameSettingsChange).toHaveBeenCalledWith({
       realmGuildDynamics: "high",
     });
+    fireEvent.click(
+      screen.getByRole("button", { name: "Activate TBC Pre-Patch" }),
+    );
+    expect(screen.getByText("Activate the TBC Pre-Patch?")).toBeTruthy();
+    fireEvent.click(
+      screen.getByRole("button", { name: "Activate Permanently" }),
+    );
+    expect(onActivateTbcPrepatch).toHaveBeenCalledTimes(1);
 
     expect(screen.getByText("Current Guild")).toBeTruthy();
     expect(screen.getByText("Other Guild")).toBeTruthy();

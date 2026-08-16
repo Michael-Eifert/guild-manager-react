@@ -35,6 +35,8 @@ describe("GuildSetupScreen", () => {
     expect(html).toContain('role="radio"');
     expect(html).toContain("Alliance");
     expect(html).toContain("Horde");
+    expect(html).toContain("Classic Era");
+    expect(html).toContain("TBC Pre-Patch");
     expect(html).toContain('aria-label="Randomize guild name"');
     expect(html).toContain('aria-label="Randomize character name"');
     expect(html.indexOf("Faction")).toBeLessThan(
@@ -156,5 +158,29 @@ describe("GuildSetupScreen", () => {
     expect(
       screen.getByRole("radio", { name: "Tank" }).textContent,
     ).toContain(getRoleIcon("Tank"));
+  });
+
+  it("unlocks Draenei founder choices only for the TBC pre-patch route", () => {
+    const Harness = () => {
+      const [setup, setSetup] = React.useState(guildSetup);
+      return (
+        <GuildSetupScreen
+          guildSetup={setup}
+          onChange={(field, value) =>
+            setSetup((current) => ({ ...current, [field]: value }))
+          }
+          onStart={noop}
+          onLoadSession={noop}
+        />
+      );
+    };
+
+    renderScreen(<Harness />);
+    expect(screen.queryByRole("radio", { name: "Draenei" })).toBeNull();
+    fireEvent.click(screen.getByRole("radio", { name: /TBC Pre-Patch/ }));
+    expect(screen.getByRole("radio", { name: "Draenei" })).toBeTruthy();
+    fireEvent.click(screen.getByRole("radio", { name: "Draenei" }));
+    expect(screen.getByRole("radio", { name: "Shaman" })).toBeTruthy();
+    expect(screen.getByRole("radio", { name: "Paladin" })).toBeTruthy();
   });
 });

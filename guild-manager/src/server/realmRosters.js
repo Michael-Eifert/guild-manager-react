@@ -1,7 +1,6 @@
 import {
   CONFIG,
   DB_CLASSES,
-  DB_RACES,
   GUILD_FACTION,
 } from "../constants";
 import {
@@ -15,6 +14,10 @@ import {
   rollCharacterPersonalityTraits,
 } from "../game/characterPersonality";
 import { REALM_GUILD_ROSTER_CAP } from "./realmDefinitions";
+import {
+  CONTENT_PHASE,
+  getRaceClassesForContent,
+} from "../content/contentRules";
 
 const NPC_NAME_PARTS = Object.freeze({
   prefixes: Object.freeze([
@@ -73,17 +76,22 @@ const pickFrom = (items, random) =>
   items[Math.floor(random() * items.length) % items.length];
 
 const isValidRaceClassCombo = (race, charClass) =>
-  Array.isArray(DB_RACES[race]) && DB_RACES[race].includes(charClass);
+  getRaceClassesForContent(race, CONTENT_PHASE.TBC_PREPATCH).includes(charClass);
 
 const normalizeRaceClassCombo = ({ race, charClass, fallback = {} }) => {
   if (isValidRaceClassCombo(race, charClass)) return { race, charClass };
   if (isValidRaceClassCombo(fallback.race, fallback.charClass)) {
     return { race: fallback.race, charClass: fallback.charClass };
   }
-  const fallbackRace = Array.isArray(DB_RACES[race]) ? race : "Human";
+  const fallbackRace =
+    getRaceClassesForContent(race, CONTENT_PHASE.TBC_PREPATCH).length > 0
+      ? race
+      : "Human";
   return {
     race: fallbackRace,
-    charClass: DB_RACES[fallbackRace]?.[0] || "Warrior",
+    charClass:
+      getRaceClassesForContent(fallbackRace, CONTENT_PHASE.TBC_PREPATCH)[0] ||
+      "Warrior",
   };
 };
 
@@ -122,6 +130,7 @@ export const generateNpcGuildRoster = ({
   archetype,
   random = Math.random,
   usedNameKeys = new Set(),
+  contentPhase = CONTENT_PHASE.CLASSIC,
 } = {}) => {
   const safeRandom = typeof random === "function" ? random : Math.random;
   const safeRosterSize = Math.max(
@@ -134,6 +143,7 @@ export const generateNpcGuildRoster = ({
     const { race, charClass } = pickValidRaceClassCombination({
       faction,
       random: safeRandom,
+      contentPhase,
     });
     const gender = safeRandom() > 0.5 ? "Male" : "Female";
     const levelRoll =

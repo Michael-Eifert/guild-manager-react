@@ -3,7 +3,9 @@ import {
   ZONE_DEFINITIONS,
   getZoneEliteQuestTemplates,
   isZoneAccessibleForFaction,
+  isZoneAvailableInContent,
 } from "./zoneDefinitions";
+import { CONTENT_PHASE, type ContentPhase } from "../content/contentRules";
 import type { Character } from "../types/characterTypes";
 import type { Mission } from "../types/missionTypes";
 
@@ -167,17 +169,21 @@ export const buildWorldMapZoneSummaries = ({
   missionList = [],
   activeMissions = [],
   guildFaction = GUILD_FACTION.ALLIANCE,
+  contentPhase = CONTENT_PHASE.CLASSIC,
 }: {
   roster?: Character[];
   missionList?: Mission[];
   activeMissions?: Mission[];
   guildFaction?: string;
+  contentPhase?: ContentPhase;
 } = {}): WorldMapZoneSummary[] => {
   const activeMissionIds = buildActiveMissionSet(activeMissions);
   const activeZoneEliteByMemberId = buildActiveZoneEliteMemberMap(activeMissions);
   const zoneMissionById = buildZoneMissionMap(missionList);
 
-  return ZONE_DEFINITIONS.map((zone) => {
+  return ZONE_DEFINITIONS.filter((zone) =>
+    isZoneAvailableInContent(zone, contentPhase),
+  ).map((zone) => {
     const progressRows = buildProgressRows(
       roster,
       zone.id,
@@ -195,7 +201,11 @@ export const buildWorldMapZoneSummaries = ({
               heroesInZone.length,
           )
         : 0;
-    const eliteQuests = (getZoneEliteQuestTemplates(zone.id) as Mission[]).map(
+    const eliteQuests = (getZoneEliteQuestTemplates(
+      zone.id,
+      1,
+      contentPhase,
+    ) as Mission[]).map(
       (quest) => ({
         ...quest,
         isActive: activeMissionIds.has(String(quest.id)),
@@ -205,7 +215,11 @@ export const buildWorldMapZoneSummaries = ({
     return {
       zone,
       zoneMission: zoneMissionById.get(zone.id) ?? null,
-      accessible: isZoneAccessibleForFaction(zone, guildFaction),
+      accessible: isZoneAccessibleForFaction(
+        zone,
+        guildFaction,
+        contentPhase,
+      ),
       heroCount: heroesInZone.length,
       heroesInZone,
       progressRows,

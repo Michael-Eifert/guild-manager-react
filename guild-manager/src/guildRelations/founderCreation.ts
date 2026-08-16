@@ -1,9 +1,10 @@
+import { DB_CLASSES, GUILD_FACTION } from "../constants";
 import {
-  DB_CLASSES,
-  DB_RACES,
-  GUILD_FACTION,
-  FACTION_RACES,
-} from "../constants";
+  CONTENT_PHASE,
+  getFactionRacesForContent,
+  getRaceClassesForContent,
+  type ContentPhase,
+} from "../content/contentRules";
 import { PERSONALITY_TRAIT_ID } from "../game/characterPersonality";
 import type { Character, CharacterRole } from "../types/characterTypes";
 import { generateCharacter, generateCharacters } from "../utils";
@@ -38,27 +39,27 @@ const VALID_PERSONALITY_TRAITS = new Set<string>(
   Object.values(PERSONALITY_TRAIT_ID),
 );
 
-export const getFounderOptionsForFaction = (faction: string) => {
-  const races =
-    FACTION_RACES[faction as keyof typeof FACTION_RACES] ||
-    FACTION_RACES[GUILD_FACTION.ALLIANCE];
+export const getFounderOptionsForFaction = (
+  faction: string,
+  contentPhase: ContentPhase = CONTENT_PHASE.CLASSIC,
+) => {
+  const races = getFactionRacesForContent(faction, contentPhase);
   return races.map((race) => ({
     race,
-    classes: Array.isArray(DB_RACES[race as keyof typeof DB_RACES])
-      ? DB_RACES[race as keyof typeof DB_RACES]
-      : [],
+    classes: [...getRaceClassesForContent(race, contentPhase)],
   }));
 };
 
 export const normalizeFounderConfig = (
   value: unknown,
   faction: string,
+  contentPhase: ContentPhase = CONTENT_PHASE.CLASSIC,
 ): FounderConfig => {
   const safe =
     value && typeof value === "object"
       ? (value as Partial<FounderConfig>)
       : {};
-  const factionOptions = getFounderOptionsForFaction(faction);
+  const factionOptions = getFounderOptionsForFaction(faction, contentPhase);
   const races = factionOptions.map((entry) => entry.race);
   const race = races.includes(String(safe.race))
     ? String(safe.race)
@@ -107,19 +108,31 @@ export const getRemainingStarterRolePlan = (
 export const buildFounderRoster = ({
   founder,
   faction,
+  contentPhase = CONTENT_PHASE.CLASSIC,
 }: {
   founder: FounderConfig;
   faction: typeof GUILD_FACTION[keyof typeof GUILD_FACTION];
+  contentPhase?: ContentPhase;
 }): Character[] => {
-  const normalized = normalizeFounderConfig(founder, faction);
+  const normalized = normalizeFounderConfig(founder, faction, contentPhase);
   if (!normalized.name) return [];
   const generatedFounder = (
     generateCharacter as unknown as (
       selectedFaction: string,
       preferredRole: CharacterRole,
-      options: { usedNames: string[] },
+      options: {
+        usedNames: string[];
+        contentPhase: ContentPhase;
+        race: string;
+        charClass: string;
+      },
     ) => Character
-  )(faction, normalized.role, { usedNames: [normalized.name] });
+  )(faction, normalized.role, {
+    usedNames: [normalized.name],
+    contentPhase,
+    race: normalized.race,
+    charClass: normalized.charClass,
+  });
   const founderCharacter: Character = {
     ...generatedFounder,
     name: normalized.name,
@@ -135,7 +148,7 @@ export const buildFounderRoster = ({
       4,
       faction as typeof GUILD_FACTION.ALLIANCE,
       getRemainingStarterRolePlan(normalized.role),
-      { usedNames: [normalized.name] },
+      { usedNames: [normalized.name], contentPhase },
     ) as Character[]
   ).map((character) => ({
     ...character,

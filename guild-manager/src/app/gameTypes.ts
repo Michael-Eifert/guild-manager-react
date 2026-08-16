@@ -123,6 +123,9 @@ export type GameRuntimeSnapshot = {
 
 export type GuildSetupState = {
   hasStarted?: boolean;
+  contentRoute?: "uncommitted" | "burning_crusade";
+  contentPhase?: "classic" | "tbc_prepatch";
+  contentPhaseStartedDayIndex?: number;
   name?: string;
   faction?: string;
   focus?: string;
@@ -158,6 +161,7 @@ export interface GameActions {
   updateGameSettings: (
     settings: Partial<GameSettingsState>,
   ) => GameSettingsState;
+  activateTbcPrepatch: () => boolean;
   setGuildRank: (characterId: string, rank: GuildRankId) => void;
   setGuildRankLabels: (
     labels: Record<GuildRankId, string>,

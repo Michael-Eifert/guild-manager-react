@@ -45,6 +45,7 @@ import {
   ZONE_DEFINITIONS,
   getCharacterZonePreference,
   getZoneById,
+  isZoneAvailableInContent,
 } from "../../zones/zoneDefinitions";
 import { getRaidLockoutStatus } from "../../raids/raidLockouts";
 import { getCharacterRelationshipRows } from "../../social/relationshipSystem";
@@ -103,6 +104,7 @@ const DetailModal = ({
   itemDatabase = [],
   roster = [],
   guildFaction,
+  contentPhase = "classic",
   guildRelationships = {},
   guildRelationsState = null,
   guildRelationInsights = [],
@@ -298,12 +300,16 @@ const DetailModal = ({
       ? char.zoneProgressById
       : {};
   const zoneProgressById = Object.entries(zoneProgressByIdRaw).reduce((acc, [zoneId, progress]) => {
-    const zone = getZoneById(zoneId);
+    const zone = getZoneById(zoneId, char?.level, contentPhase);
     if (!zone) return acc;
     acc[zone.id] = Math.max(0, Math.min(100, Number(progress) || 0));
     return acc;
   }, {});
-  const currentZone = getZoneById(char?.currentZoneId);
+  const currentZone = getZoneById(
+    char?.currentZoneId,
+    char?.level,
+    contentPhase,
+  );
   const currentZoneProgress = Math.max(
     0,
     Math.min(
@@ -327,6 +333,7 @@ const DetailModal = ({
       .filter(Boolean),
   );
   const zoneRows = [...ZONE_DEFINITIONS]
+    .filter((zone) => isZoneAvailableInContent(zone, contentPhase))
     .filter((zone) => {
       if (zone.id === currentZone?.id) return true;
       if (zonesClearedSet.has(zone.id)) return true;

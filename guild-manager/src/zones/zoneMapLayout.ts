@@ -10,6 +10,8 @@ export interface ZoneReference {
 
 export const ZONE_MAP_LAYOUT_BY_ZONE_ID = Object.freeze({
   teldrassil: { x: 13, y: 20, continent: "Kalimdor" },
+  azuremyst_isle: { x: 5, y: 31, continent: "Kalimdor" },
+  bloodmyst_isle: { x: 5, y: 22, continent: "Kalimdor" },
   darkshore: { x: 18, y: 30, continent: "Kalimdor" },
   moonglade: { x: 36, y: 18, continent: "Kalimdor" },
   winterspring: { x: 46, y: 18, continent: "Kalimdor" },
@@ -40,6 +42,8 @@ export const ZONE_MAP_LAYOUT_BY_ZONE_ID = Object.freeze({
   alterac_mountains: { x: 74, y: 31, continent: "Eastern Kingdoms" },
   silverpine_forest: { x: 69, y: 29, continent: "Eastern Kingdoms" },
   tirisfal_glades: { x: 73, y: 22, continent: "Eastern Kingdoms" },
+  eversong_woods: { x: 91, y: 14, continent: "Eastern Kingdoms" },
+  ghostlands: { x: 89, y: 20, continent: "Eastern Kingdoms" },
   western_plaguelands: { x: 80, y: 25, continent: "Eastern Kingdoms" },
   eastern_plaguelands: { x: 87, y: 23, continent: "Eastern Kingdoms" },
   the_hinterlands: { x: 83, y: 38, continent: "Eastern Kingdoms" },
@@ -99,11 +103,15 @@ const ZONE_CLASSIC_MAP_BY_ZONE_ID = Object.freeze({
   moonglade: { mapId: 493, slug: "moonglade" },
   deadwind_pass: { mapId: 41, slug: "deadwind-pass" },
   silithus: { mapId: 1377, slug: "silithus" },
+  azuremyst_isle: { mapId: 3524, slug: "azuremyst-isle", tbc: true },
+  bloodmyst_isle: { mapId: 3525, slug: "bloodmyst-isle", tbc: true },
+  eversong_woods: { mapId: 3430, slug: "eversong-woods", tbc: true },
+  ghostlands: { mapId: 3433, slug: "ghostlands", tbc: true },
 });
 
 const getClassicMapConfig = (zone: ZoneReference) =>
   (ZONE_CLASSIC_MAP_BY_ZONE_ID as Readonly<
-    Record<string, { mapId: number; slug: string }>
+    Record<string, { mapId: number; slug: string; tbc?: boolean }>
   >)[zone.id] ?? null;
 
 export const getZoneRegionalMap = (zone: ZoneReference) => {
@@ -112,8 +120,8 @@ export const getZoneRegionalMap = (zone: ZoneReference) => {
 
   return {
     mapId: classicMap.mapId,
-    sourceName: "Wowhead Classic",
-    sourceUrl: `https://www.wowhead.com/classic/zone=${classicMap.mapId}/${classicMap.slug}`,
+    sourceName: classicMap.tbc ? "Wowhead TBC" : "Wowhead Classic",
+    sourceUrl: `https://www.wowhead.com/${classicMap.tbc ? "tbc/" : "classic/"}zone=${classicMap.mapId}/${classicMap.slug}`,
     src: `https://wow.zamimg.com/images/wow/classic/maps/enus/original/${classicMap.mapId}.jpg`,
   };
 };

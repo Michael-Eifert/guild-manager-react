@@ -166,8 +166,10 @@ const getAvailableMembers = ({ roster, activeMissions }) => {
   });
 };
 
-const getAllZoneEliteQuestTemplates = () =>
-  ZONE_DEFINITIONS.flatMap((zone) => getZoneEliteQuestTemplates(zone.id));
+const getAllZoneEliteQuestTemplates = (contentPhase) =>
+  ZONE_DEFINITIONS.flatMap((zone) =>
+    getZoneEliteQuestTemplates(zone.id, 1, contentPhase),
+  );
 
 const resolveQueuedZoneEliteAttunementGroups = ({
   roster,
@@ -175,12 +177,16 @@ const resolveQueuedZoneEliteAttunementGroups = ({
   missionList,
   minSuccessChance,
   getSuccessPreview,
+  contentPhase,
 }) => {
   const availableMembers = getAvailableMembers({ roster, activeMissions });
   const activeQuestIds = getActiveZoneEliteQuestIds(activeMissions);
   const consumedMemberIds = new Set();
   const missionLookup = new Map(
-    [...(Array.isArray(missionList) ? missionList : []), ...getAllZoneEliteQuestTemplates()]
+    [
+      ...(Array.isArray(missionList) ? missionList : []),
+      ...getAllZoneEliteQuestTemplates(contentPhase),
+    ]
       .filter((mission) => mission?.id != null)
       .map((mission) => [String(mission.id), mission]),
   );
@@ -256,6 +262,7 @@ export const resolveAutoZoneEliteGroups = ({
   missionList = [],
   minSuccessChance = AUTO_ZONE_ELITE_MIN_SUCCESS_CHANCE,
   getSuccessPreview,
+  contentPhase,
 } = {}) => {
   const queuedGroups = resolveQueuedZoneEliteAttunementGroups({
     roster,
@@ -263,6 +270,7 @@ export const resolveAutoZoneEliteGroups = ({
     missionList,
     minSuccessChance,
     getSuccessPreview,
+    contentPhase,
   });
   if (queuedGroups.length > 0) return queuedGroups;
 
@@ -287,7 +295,7 @@ export const resolveAutoZoneEliteGroups = ({
       const availableZoneMembers = () =>
         zoneMembers.filter((member) => !consumedMemberIds.has(String(member.id)));
 
-      getZoneEliteQuestTemplates(zoneId).forEach((quest) => {
+      getZoneEliteQuestTemplates(zoneId, 1, contentPhase).forEach((quest) => {
         const questId = getMissionQuestId(quest);
         if (!questId || activeQuestIds.has(questId)) return;
         const partyResult = buildZoneEliteParty({

@@ -33,6 +33,10 @@ import {
   REALM_AGE_MONTHS,
 } from "../guild/startProgression";
 import { applyRealmMaturityToGuilds } from "./realmMaturity";
+import {
+  CONTENT_PHASE,
+  normalizeContentPhase,
+} from "../content/contentRules";
 
 export const hashRealmSeed = (value) => {
   const input = String(value || "realm");
@@ -89,6 +93,7 @@ export const generateNpcGuilds = ({
   guildDensity = "medium",
   serverPopulation = GUILD_SERVER_POPULATION.MEDIUM,
   realmAgeMonths = 0,
+  contentPhase = CONTENT_PHASE.CLASSIC,
 } = {}) => {
   const normalizedRealmAgeMonths = normalizeRealmAgeMonths(realmAgeMonths);
   const random = createRandom(
@@ -194,6 +199,7 @@ export const generateNpcGuilds = ({
       targetRosterSize,
       random,
       usedNameKeys,
+      contentPhase,
     });
     const raidProgressByRaid = createNpcRaidProgressFromScore({
       raidProgress,
@@ -334,6 +340,10 @@ export const ensureRealmState = (
   const realmName = getRealmNameFromSetup(guildSetup);
   const realmType = getRealmTypeFromSetup(guildSetup);
   const realmPopulation = getRealmPopulationFromSetup(guildSetup);
+  const contentPhase = normalizeContentPhase(
+    guildSetup?.contentPhase || existingRealmState?.contentPhase,
+    guildSetup?.contentRoute,
+  );
   const guildDensity = normalizeRealmGuildDensity(
     gameSettings?.realmGuildDensity || existingRealmState?.guildDensity,
   );
@@ -372,6 +382,7 @@ export const ensureRealmState = (
     guildDensity,
     serverPopulation: realmPopulation,
     realmAgeMonths,
+    contentPhase,
   });
   const npcGuilds = hasExistingState
     ? safe.npcGuilds
@@ -394,12 +405,18 @@ export const ensureRealmState = (
       !hasExistingState && realmAgeMonths > 0
         ? populationProfile.softCap
         : undefined,
+    contentPhase,
   });
 
   return {
     id: realmId,
     name: realmName,
     type: realmType,
+    contentPhase,
+    contentTransitions:
+      safe.contentTransitions && typeof safe.contentTransitions === "object"
+        ? safe.contentTransitions
+        : {},
     populationLabel: realmPopulation,
     guildDensity,
     guildDynamics,

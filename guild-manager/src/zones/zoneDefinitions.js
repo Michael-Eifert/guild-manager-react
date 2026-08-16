@@ -1,4 +1,8 @@
 import { GUILD_FACTION, GUILD_SERVER_STYLE } from "../constants";
+import {
+  CONTENT_PHASE,
+  isTbcPrepatchActive,
+} from "../content/contentRules";
 
 export const ZONE_FACTION = Object.freeze({
   ALLIANCE: GUILD_FACTION.ALLIANCE,
@@ -72,6 +76,8 @@ const STARTER_ZONE_BY_RACE = Object.freeze({
   Troll: "durotar",
   Tauren: "mulgore",
   Undead: "tirisfal_glades",
+  Draenei: "azuremyst_isle",
+  "Blood Elf": "eversong_woods",
 });
 const STARTER_ZONE_IDS = new Set(Object.values(STARTER_ZONE_BY_RACE));
 const LEGACY_ZONE_ID = Object.freeze({
@@ -89,12 +95,16 @@ const BASE_ZONE_DEFINITIONS = Object.freeze([
   { id: "durotar", name: "Durotar", faction: ZONE_FACTION.HORDE, minLevel: 1, maxLevel: 10, biomes: ["barren"], enemies: ["beasts", "humanoids"] },
   { id: "mulgore", name: "Mulgore", faction: ZONE_FACTION.HORDE, minLevel: 1, maxLevel: 10, biomes: ["plains"], enemies: ["beasts", "humanoids"] },
   { id: "tirisfal_glades", name: "Tirisfal Glades", faction: ZONE_FACTION.HORDE, minLevel: 1, maxLevel: 10, biomes: ["forest", "plague"], enemies: ["undead", "humanoids"] },
+  { id: "azuremyst_isle", name: "Azuremyst Isle", faction: ZONE_FACTION.ALLIANCE, minLevel: 1, maxLevel: 10, biomes: ["coast", "forest"], enemies: ["beasts", "humanoids"], requiredContentPhase: CONTENT_PHASE.TBC_PREPATCH },
+  { id: "eversong_woods", name: "Eversong Woods", faction: ZONE_FACTION.HORDE, minLevel: 1, maxLevel: 10, biomes: ["forest", "ruins"], enemies: ["beasts", "undead"], requiredContentPhase: CONTENT_PHASE.TBC_PREPATCH },
 
   { id: "darkshore", name: "Darkshore", faction: ZONE_FACTION.ALLIANCE, minLevel: 10, maxLevel: 20, biomes: ["forest", "coast"], enemies: ["naga", "beasts", "demons"] },
   { id: "loch_modan", name: "Loch Modan", faction: ZONE_FACTION.ALLIANCE, minLevel: 10, maxLevel: 20, biomes: ["mountain", "forest"], enemies: ["beasts", "humanoids"] },
   { id: "westfall", name: "Westfall", faction: ZONE_FACTION.ALLIANCE, minLevel: 10, maxLevel: 20, biomes: ["plains", "coast"], enemies: ["humanoids", "undead"] },
   { id: "silverpine_forest", name: "Silverpine Forest", faction: ZONE_FACTION.HORDE, minLevel: 10, maxLevel: 20, biomes: ["forest"], enemies: ["undead", "humanoids"] },
   { id: "the_barrens", name: "The Barrens", faction: ZONE_FACTION.HORDE, minLevel: 10, maxLevel: 25, biomes: ["barren", "plains"], enemies: ["beasts", "humanoids"] },
+  { id: "bloodmyst_isle", name: "Bloodmyst Isle", faction: ZONE_FACTION.ALLIANCE, minLevel: 10, maxLevel: 20, biomes: ["coast", "forest"], enemies: ["demons", "naga", "beasts"], requiredContentPhase: CONTENT_PHASE.TBC_PREPATCH },
+  { id: "ghostlands", name: "Ghostlands", faction: ZONE_FACTION.HORDE, minLevel: 10, maxLevel: 20, biomes: ["forest", "plague", "ruins"], enemies: ["undead", "humanoids"], requiredContentPhase: CONTENT_PHASE.TBC_PREPATCH },
   { id: "redridge_mountains", name: "Redridge Mountains", faction: ZONE_FACTION.ALLIANCE, minLevel: 15, maxLevel: 25, biomes: ["mountain", "forest"], enemies: ["dragons", "humanoids"] },
   { id: "stonetalon_mountains", name: "Stonetalon Mountains", faction: ZONE_FACTION.NEUTRAL, minLevel: 15, maxLevel: 27, biomes: ["mountain", "forest"], enemies: ["beasts", "humanoids"] },
   { id: "ashenvale", name: "Ashenvale", faction: ZONE_FACTION.NEUTRAL, minLevel: 18, maxLevel: 30, biomes: ["forest"], enemies: ["demons", "beasts", "humanoids"] },
@@ -472,13 +482,29 @@ export const isZoneMission = (mission) => mission?.type === "zone" && Boolean(mi
 export const getCanonicalZoneId = (zoneId, characterLevel = 1) =>
   resolveLegacyZoneId(zoneId, characterLevel);
 
-export const getZoneById = (zoneId, characterLevel = 1) => {
+export const isZoneAvailableInContent = (
+  zone,
+  contentPhase = String(CONTENT_PHASE.CLASSIC),
+) =>
+  Boolean(zone) &&
+  (!zone.requiredContentPhase || isTbcPrepatchActive(contentPhase));
+
+export const getZoneById = (
+  zoneId,
+  characterLevel = 1,
+  contentPhase = String(CONTENT_PHASE.CLASSIC),
+) => {
   const canonicalId = getCanonicalZoneId(zoneId, characterLevel);
-  return canonicalId ? ZONE_BY_ID.get(canonicalId) || null : null;
+  const zone = canonicalId ? ZONE_BY_ID.get(canonicalId) || null : null;
+  return isZoneAvailableInContent(zone, contentPhase) ? zone : null;
 };
 
-export const getZoneEliteQuestTemplates = (zoneId, characterLevel = 1) => {
-  const zone = getZoneById(zoneId, characterLevel);
+export const getZoneEliteQuestTemplates = (
+  zoneId,
+  characterLevel = 1,
+  contentPhase = String(CONTENT_PHASE.CLASSIC),
+) => {
+  const zone = getZoneById(zoneId, characterLevel, contentPhase);
   if (!zone) return [];
   const templates = ZONE_ELITE_QUESTS_BY_ZONE_ID.get(zone.id) || [];
   return templates.map((mission) => ({
@@ -489,8 +515,13 @@ export const getZoneEliteQuestTemplates = (zoneId, characterLevel = 1) => {
   }));
 };
 
-export const getStarterZoneIdForRace = (race) =>
-  STARTER_ZONE_BY_RACE[String(race || "").trim()] || null;
+export const getStarterZoneIdForRace = (
+  race,
+  contentPhase = String(CONTENT_PHASE.CLASSIC),
+) => {
+  const zoneId = STARTER_ZONE_BY_RACE[String(race || "").trim()] || null;
+  return getZoneById(zoneId, 1, contentPhase)?.id || null;
+};
 
 export const getZoneOverlevel = (characterLevel, zone) => {
   const safeZone = zone && typeof zone === "object" ? zone : null;
@@ -563,14 +594,25 @@ export const getZoneLootRewardCounts = (zone) => {
   return buildZoneLootRewardCounts(checkpointLootQualitiesByCheckpoint);
 };
 
-export const getZonesForFaction = (faction, includeNeutral = true) =>
+export const getZonesForFaction = (
+  faction,
+  includeNeutral = true,
+  contentPhase = String(CONTENT_PHASE.CLASSIC),
+) =>
   ZONE_DEFINITIONS.filter(
     (zone) =>
-      zone.faction === faction || (includeNeutral && zone.faction === ZONE_FACTION.NEUTRAL),
+      isZoneAvailableInContent(zone, contentPhase) &&
+      (zone.faction === faction ||
+        (includeNeutral && zone.faction === ZONE_FACTION.NEUTRAL)),
   );
 
-export const isZoneAccessibleForFaction = (zone, faction) => {
+export const isZoneAccessibleForFaction = (
+  zone,
+  faction,
+  contentPhase = String(CONTENT_PHASE.CLASSIC),
+) => {
   if (!zone || !faction) return false;
+  if (!isZoneAvailableInContent(zone, contentPhase)) return false;
   if (zone.faction === ZONE_FACTION.NEUTRAL) return true;
   return zone.faction === faction;
 };
@@ -910,6 +952,7 @@ export const pickNextZoneForCharacter = ({
   currentZoneId = null,
   character = null,
   zonePreference = null,
+  contentPhase = String(CONTENT_PHASE.CLASSIC),
 }) => {
   const clearedZoneIds = (Array.isArray(zonesCleared) ? zonesCleared : [])
     .map((zoneId) => String(zoneId || "").trim())
@@ -919,7 +962,10 @@ export const pickNextZoneForCharacter = ({
     STARTER_ZONE_IDS.has(zoneId),
   );
 
-  let candidates = sortZonesForPathing(getZonesForFaction(faction, true), faction).filter(
+  let candidates = sortZonesForPathing(
+    getZonesForFaction(faction, true, contentPhase),
+    faction,
+  ).filter(
     (zone) => !clearedSet.has(zone.id),
   );
   if (hasClearedStarterZone) {
@@ -929,9 +975,26 @@ export const pickNextZoneForCharacter = ({
     }
   }
 
-  if (candidates.length === 0) return getZoneById(currentZoneId);
+  if (candidates.length === 0) {
+    return getZoneById(currentZoneId, level, contentPhase);
+  }
 
   const safeLevel = clampLevel(level);
+  const nativeSuccessor = {
+    Draenei: ["azuremyst_isle", "bloodmyst_isle"],
+    "Blood Elf": ["eversong_woods", "ghostlands"],
+  }[character?.race];
+  if (safeLevel <= 20 && Array.isArray(nativeSuccessor)) {
+    const nativeCandidates = nativeSuccessor
+      .map((zoneId) => candidates.find((zone) => zone.id === zoneId))
+      .filter(Boolean);
+    const preferredNativeZone =
+      nativeCandidates.find(
+        (zone) => safeLevel >= zone.minLevel && safeLevel <= zone.maxLevel,
+      ) || nativeCandidates[0];
+    if (preferredNativeZone) return preferredNativeZone;
+  }
+
   const preference =
     zonePreference && typeof zonePreference === "object"
       ? zonePreference
@@ -990,15 +1053,23 @@ export const pickNextZoneForCharacter = ({
   });
 };
 
-export const mergeZoneMissionsIntoList = (missionList) => {
+export const mergeZoneMissionsIntoList = (
+  missionList,
+  contentPhase = String(CONTENT_PHASE.CLASSIC),
+) => {
   const source = (Array.isArray(missionList) ? missionList : []).filter((mission) => {
     if (mission?.type !== "zone") return true;
     const zoneId = String(mission?.zoneId || "").trim();
-    return zoneId && ZONE_BY_ID.has(zoneId);
+    return (
+      zoneId &&
+      isZoneAvailableInContent(ZONE_BY_ID.get(zoneId), contentPhase)
+    );
   });
   const existingMissionIds = new Set(source.map((mission) => String(mission?.id || "")));
 
-  ZONE_MISSION_TEMPLATES.forEach((zoneMission) => {
+  ZONE_MISSION_TEMPLATES.filter((zoneMission) =>
+    isZoneAvailableInContent(ZONE_BY_ID.get(zoneMission.zoneId), contentPhase),
+  ).forEach((zoneMission) => {
     if (existingMissionIds.has(String(zoneMission.id))) return;
     source.push({ ...zoneMission, rewardQualities: [...zoneMission.rewardQualities] });
   });

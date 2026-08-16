@@ -25,6 +25,7 @@ import {
   getRealmAgeSummary,
   getStartingGuildProgressProfile,
 } from "../../guild/startProgression";
+import { getContentPhaseLabel } from "../../content/contentRules";
 
 const formatNumber = (value) =>
   Math.round(Number(value) || 0).toLocaleString("en-US");
@@ -463,6 +464,10 @@ export default function RealmOverviewModal({
               <RealmStat
                 label="Guild Start"
                 value={startingGuildProfile.shortLabel}
+              />
+              <RealmStat
+                label="Content Phase"
+                value={getContentPhaseLabel(guildSetup?.contentPhase)}
               />
               <RealmStat
                 label="Open to Offers"

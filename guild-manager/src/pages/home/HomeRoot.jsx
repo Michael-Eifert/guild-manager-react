@@ -497,6 +497,7 @@ export default function HomeRoot() {
                 gameTimeMs={gameTimeMs}
                 guildFaction={guildSetup.faction}
                 realmType={guildSetup.serverStyle}
+                contentPhase={guildSetup.contentPhase}
                 onDeploy={handleDeploy}
                 getMissionPreview={getAdjustedMissionSuccessPreview}
               />
@@ -573,7 +574,9 @@ export default function HomeRoot() {
             element={
               <GameSettingsPage
                 gameSettings={gameSettings}
+                guildSetup={guildSetup}
                 onGameSettingsChange={actions.updateGameSettings}
+                onActivateTbcPrepatch={actions.activateTbcPrepatch}
                 chatAiSettings={chatAiSettings}
                 onChatAiSettingsChange={handleChatAiSettingsChange}
                 onTestChatProvider={handleTestChatProvider}
@@ -679,6 +682,7 @@ export default function HomeRoot() {
             itemDatabase={itemDatabase}
             roster={displayRoster}
             guildFaction={guildSetup.faction}
+            contentPhase={guildSetup.contentPhase}
             guildRelationships={guildRelationships}
             guildRelationsState={guildRelationsState}
             guildRelationInsights={guildRelationInsights}

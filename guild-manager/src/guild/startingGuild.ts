@@ -21,6 +21,10 @@ import {
   STARTING_GUILD_PROGRESS,
   type StartingGuildProgress,
 } from "./startProgression";
+import {
+  CONTENT_PHASE,
+  type ContentPhase,
+} from "../content/contentRules";
 
 const RAID_SOURCE_IDS = new Set([
   "molten_core",
@@ -56,6 +60,9 @@ const generateCharacterForRole = generateCharacter as unknown as (
     random: () => number;
     createId: () => string;
     usedNameKeys: Set<string>;
+    contentPhase?: ContentPhase;
+    race?: string;
+    charClass?: string;
   },
 ) => Character;
 
@@ -446,6 +453,7 @@ export const buildStartingGuild = ({
   realmAgeMonths,
   startingGuildProgress,
   itemDatabase = [],
+  contentPhase = CONTENT_PHASE.CLASSIC,
 }: {
   founder: FounderConfig;
   faction: string;
@@ -454,13 +462,18 @@ export const buildStartingGuild = ({
   realmAgeMonths: number;
   startingGuildProgress: unknown;
   itemDatabase?: Record<string, unknown>[];
+  contentPhase?: ContentPhase;
 }) => {
   const progress = normalizeStartingGuildProgress(
     startingGuildProgress,
     realmAgeMonths,
   );
   const profile = getStartingGuildProgressProfile(progress);
-  const normalizedFounder = normalizeFounderConfig(founder, faction);
+  const normalizedFounder = normalizeFounderConfig(
+    founder,
+    faction,
+    contentPhase,
+  );
   const seed = hashSeed(
     `${realmName}:${faction}:${guildName}:${normalizedFounder.name}:${realmAgeMonths}:${progress}`,
   );
@@ -475,6 +488,9 @@ export const buildStartingGuild = ({
     random,
     createId,
     usedNameKeys,
+    contentPhase,
+    race: normalizedFounder.race,
+    charClass: normalizedFounder.charClass,
   }) as Character;
   const founderCharacter: Character = {
     ...founderBase,
@@ -492,6 +508,7 @@ export const buildStartingGuild = ({
       random,
       createId,
       usedNameKeys,
+      contentPhase,
     }) as Character;
     return {
       ...character,

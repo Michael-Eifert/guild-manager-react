@@ -84,6 +84,10 @@ import {
 import { normalizeFounderConfig } from "../guildRelations/founderCreation";
 import { buildStartingGuild } from "../guild/startingGuild";
 import {
+  getContentPhaseForRoute,
+  normalizeContentRoute,
+} from "../content/contentRules";
+import {
   getRealmAgeStartDayIndex,
   normalizeRealmAgeMonths,
   normalizeStartingGuildProgress,
@@ -294,6 +298,7 @@ import { ensureRealmState } from "../server/realmGeneration";
 import { advanceRealmSimulation } from "../server/realmSimulation";
 import { buildPlayerGuildSnapshot } from "../server/realmRankings";
 import {
+  activateTbcPrepatchPopulation,
   declineRealmGuildApplications,
   getRealmGuildApplications,
   getRealmRecruitmentMarketStats,
@@ -642,8 +647,13 @@ export const useGameProviderController = () => {
       rosterSnapshot,
       fallbackFaction = guildSetupRef.current?.faction ||
         GUILD_FACTION.ALLIANCE,
+      contentPhase = guildSetupRef.current?.contentPhase,
     ) =>
-      normalizeRosterZonesForFaction(rosterSnapshot, fallbackFaction),
+      normalizeRosterZonesForFaction(
+        rosterSnapshot,
+        fallbackFaction,
+        contentPhase,
+      ),
     [],
   );
 
@@ -655,6 +665,7 @@ export const useGameProviderController = () => {
         zoneId,
         fallbackFaction:
           guildSetupRef.current?.faction || GUILD_FACTION.ALLIANCE,
+        contentPhase: guildSetupRef.current?.contentPhase,
       });
       if (assignedRoster !== rosterSnapshot) return assignedRoster;
 
@@ -969,6 +980,7 @@ export const useGameProviderController = () => {
         currentDayIndex: getCurrentCalendarDayIndex(),
         services,
         getSuccessPreview: getAdjustedMissionSuccessPreview,
+        contentPhase: guildSetupRef.current?.contentPhase,
       });
     },
     [getAdjustedMissionSuccessPreview, getCurrentCalendarDayIndex],
@@ -2159,6 +2171,7 @@ export const useGameProviderController = () => {
         const normalizedChar = normalizeCharacterZoneState(
           char,
           currentFaction,
+          guildSetupRef.current?.contentPhase,
         );
         if (!tickOnlineSnapshot.onlineIds.has(String(normalizedChar.id))) {
           return {
@@ -2196,7 +2209,11 @@ export const useGameProviderController = () => {
         if (gainXP || gainZoneProgress) {
           const activeZone =
             ENABLE_ZONE_QUESTING && normalizedChar.currentZoneId
-              ? getZoneById(normalizedChar.currentZoneId)
+              ? getZoneById(
+                  normalizedChar.currentZoneId,
+                  normalizedChar.level,
+                  guildSetupRef.current?.contentPhase,
+                )
               : null;
           let newExp = normalizedChar.exp;
           let newLevel = normalizedChar.level;
@@ -2353,6 +2370,7 @@ export const useGameProviderController = () => {
             zoneManualOverride,
             zoneOverlevelMoveThreshold,
             forceAdvance: forceZoneAdvance,
+            contentPhase: guildSetupRef.current?.contentPhase,
           });
           currentZoneId = transitionedZoneState.currentZoneId;
           currentZoneProgress = transitionedZoneState.currentZoneProgress;
@@ -2398,7 +2416,11 @@ export const useGameProviderController = () => {
           };
           let zoneRewardedChar = leveledChar;
           checkpointLootRewardEntries.forEach((entry) => {
-            const rewardZone = getZoneById(entry.zoneId);
+            const rewardZone = getZoneById(
+              entry.zoneId,
+              entry.member?.level,
+              guildSetupRef.current?.contentPhase,
+            );
             if (!rewardZone) return;
             const lootItem = generateZoneCheckpointLoot(
               { ...zoneRewardedChar, level: newLevel },
@@ -2455,6 +2477,7 @@ export const useGameProviderController = () => {
             normalizedChar.zoneCheckpointRewardsClaimedByZone,
           zoneManualOverride: normalizedChar.zoneManualOverride,
           zoneOverlevelMoveThreshold: normalizedChar.zoneOverlevelMoveThreshold,
+          contentPhase: guildSetupRef.current?.contentPhase,
         });
 
         if (gainSkill) {
@@ -3338,13 +3361,36 @@ export const useGameProviderController = () => {
         return {
           ...prev,
           faction,
-          founder: normalizeFounderConfig(prev.founder, faction),
+          founder: normalizeFounderConfig(
+            prev.founder,
+            faction,
+            prev.contentPhase,
+          ),
+        };
+      }
+      if (field === "contentRoute" && !prev.hasStarted) {
+        const contentRoute = normalizeContentRoute(value);
+        const contentPhase = getContentPhaseForRoute(contentRoute);
+        return {
+          ...prev,
+          contentRoute,
+          contentPhase,
+          contentPhaseStartedDayIndex: 0,
+          founder: normalizeFounderConfig(
+            prev.founder,
+            prev.faction,
+            contentPhase,
+          ),
         };
       }
       if (field === "founder" && !prev.hasStarted) {
         return {
           ...prev,
-          founder: normalizeFounderConfig(value, prev.faction),
+          founder: normalizeFounderConfig(
+            value,
+            prev.faction,
+            prev.contentPhase,
+          ),
         };
       }
       if (field === "focus") {
@@ -3425,9 +3471,12 @@ export const useGameProviderController = () => {
 
   const handleStartGuild = () => {
     const normalizedName = String(guildSetup.name || "").trim();
+    const contentRoute = normalizeContentRoute(guildSetup.contentRoute);
+    const contentPhase = getContentPhaseForRoute(contentRoute);
     const normalizedFounder = normalizeFounderConfig(
       guildSetup.founder,
       guildSetup.faction,
+      contentPhase,
     );
     if (!normalizedName) return;
     const founderForStart = {
@@ -3447,10 +3496,12 @@ export const useGameProviderController = () => {
       realmAgeMonths,
       startingGuildProgress,
       itemDatabase,
+      contentPhase,
     });
     const starterRoster = normalizeRosterZones(
       starterGuild.roster,
       guildSetup.faction,
+      contentPhase,
     );
     const starterGold = starterGuild.gold;
     const realmStartDayIndex = getRealmAgeStartDayIndex(realmAgeMonths);
@@ -3473,6 +3524,9 @@ export const useGameProviderController = () => {
       founder: founderForStart,
       realmAgeMonths,
       startingGuildProgress,
+      contentRoute,
+      contentPhase,
+      contentPhaseStartedDayIndex: realmStartDayIndex,
     };
 
     rewardedMissionIdsRef.current = new Set();
@@ -3508,7 +3562,10 @@ export const useGameProviderController = () => {
     setGuildRelationsState(starterGuildRelationsState);
     setGuildActivityStats(starterGuildActivityStats);
     setMissionList(
-      getMissionListWithZones(INITIAL_MISSIONS.map(cloneMissionTemplate)),
+      getMissionListWithZones(
+        INITIAL_MISSIONS.map(cloneMissionTemplate),
+        contentPhase,
+      ),
     );
     setGuildLog([]);
     setGuildGold(starterGold);
@@ -3520,6 +3577,9 @@ export const useGameProviderController = () => {
       founder: founderForStart,
       realmAgeMonths,
       startingGuildProgress,
+      contentRoute,
+      contentPhase,
+      contentPhaseStartedDayIndex: realmStartDayIndex,
       hasStarted: true,
     }));
     navigate(ROUTES.DASHBOARD);
@@ -3550,6 +3610,7 @@ export const useGameProviderController = () => {
         const normalizedChar = normalizeCharacterZoneState(
           char,
           guildSetupRef.current?.faction || GUILD_FACTION.ALLIANCE,
+          guildSetupRef.current?.contentPhase,
         );
         return {
           ...normalizedChar,
@@ -3633,6 +3694,7 @@ export const useGameProviderController = () => {
         const normalizedChar = normalizeCharacterZoneState(
           char,
           guildSetupRef.current?.faction || GUILD_FACTION.ALLIANCE,
+          guildSetupRef.current?.contentPhase,
         );
         return {
           ...normalizedChar,
@@ -3726,9 +3788,19 @@ export const useGameProviderController = () => {
         ? rosterRef.current
         : roster;
       if (isZoneMission(quest)) {
-        const zone = getZoneById(quest.zoneId);
+        const zone = getZoneById(
+          quest.zoneId,
+          quest.level,
+          guildSetupRef.current?.contentPhase,
+        );
         if (!zone) return false;
-        if (!isZoneAccessibleForFaction(zone, guildSetupRef.current?.faction)) {
+        if (
+          !isZoneAccessibleForFaction(
+            zone,
+            guildSetupRef.current?.faction,
+            guildSetupRef.current?.contentPhase,
+          )
+        ) {
           pushNotification({
             type: "error",
             title: "Zone Locked",
@@ -5130,6 +5202,46 @@ export const useGameProviderController = () => {
     }
     return normalized;
   }, []);
+  const handleActivateTbcPrepatch = useCallback(() => {
+    if (guildSetupRef.current?.contentPhase === "tbc_prepatch") return false;
+    const transition = activateTbcPrepatchPopulation({
+      realmState: realmStateRef.current,
+      currentDayIndex: currentCalendarDayIndex,
+      playerRosterSize: rosterRef.current.length,
+    });
+    if (!transition.applied) return false;
+    const nextSetup = {
+      ...guildSetupRef.current,
+      contentRoute: "burning_crusade",
+      contentPhase: "tbc_prepatch",
+      contentPhaseStartedDayIndex: currentCalendarDayIndex,
+    };
+    const nextMissionList = getMissionListWithZones(
+      missionListRef.current,
+      "tbc_prepatch",
+    );
+    guildSetupRef.current = nextSetup;
+    realmStateRef.current = transition.realmState;
+    missionListRef.current = nextMissionList;
+    setGuildSetup(nextSetup);
+    setRealmState(transition.realmState);
+    setMissionList(nextMissionList);
+    const message = `The TBC Pre-Patch is live. ${transition.newcomers.length} Draenei and Blood Elf adventurers have arrived on the realm.`;
+    setGuildLog((current) => [
+      {
+        time: new Date().toLocaleTimeString(),
+        type: "world",
+        message,
+      },
+      ...current,
+    ]);
+    pushNotification({
+      type: "success",
+      title: "TBC Pre-Patch Activated",
+      message,
+    });
+    return true;
+  }, [currentCalendarDayIndex]);
   const handleTestChatProvider = useCallback(
     (settings = chatAiSettingsRef.current) =>
       testChatProviderConnection({ settings }),
@@ -5579,6 +5691,7 @@ export const useGameProviderController = () => {
     castGuildElectionVote: handleCastGuildElectionVote,
     finishGuildElection: handleFinishGuildElection,
     updateGameSettings: handleGameSettingsChange,
+    activateTbcPrepatch: handleActivateTbcPrepatch,
     loadBrowserSave: handleLoadBrowserSave,
     startNewBrowserGame: handleStartNewBrowserGame,
     deleteBrowserSave: handleDeleteBrowserSave,

@@ -13,6 +13,11 @@ import {
   FACTION_RACES,
 } from "./constants";
 import {
+  CONTENT_PHASE,
+  getFactionRacesForContent,
+  getRaceClassesForContent,
+} from "./content/contentRules";
+import {
   getCharacterDungeonSuccessBonus,
   getCharacterRaidSuccessBonus,
   rollCharacterPersonalityTraits,
@@ -221,6 +226,14 @@ const RACE_GENDER_ICON_CODES = {
     Male: "achievement_character_troll_male",
     Female: "achievement_character_troll_female",
   },
+  Draenei: {
+    Male: "achievement_character_draenei_male",
+    Female: "achievement_character_draenei_female",
+  },
+  "Blood Elf": {
+    Male: "achievement_character_bloodelf_male",
+    Female: "achievement_character_bloodelf_female",
+  },
 };
 const STAT_LABELS = {
   strength: "Str",
@@ -329,7 +342,11 @@ export const getRaceIcon = (r) =>
               ? "☠️"
               : r === "Tauren"
                 ? "🐂"
-                : "🗡️";
+                : r === "Draenei"
+                  ? "💎"
+                  : r === "Blood Elf"
+                    ? "🩸"
+                    : "🗡️";
 export const getRacePortraitUrl = (race, gender) => {
   const raceIcons = RACE_GENDER_ICON_CODES[race];
   if (!raceIcons) return getWowIconUrl("inv_misc_questionmark");
@@ -743,8 +760,11 @@ export const getClassArmorTypes = (charClass, level = 1) => {
 export const getClassArmorText = (charClass, level = 1) =>
   getClassArmorTypes(charClass, level).join(", ");
 
-export const getFactionRaces = (faction = GUILD_FACTION.ALLIANCE) => {
-  const factionRaces = FACTION_RACES[faction];
+export const getFactionRaces = (
+  faction = GUILD_FACTION.ALLIANCE,
+  contentPhase = CONTENT_PHASE.CLASSIC,
+) => {
+  const factionRaces = getFactionRacesForContent(faction, contentPhase);
   if (Array.isArray(factionRaces) && factionRaces.length > 0) {
     return [...factionRaces];
   }
@@ -771,14 +791,15 @@ export const normalizeEquipmentSlots = (equipment = {}) => {
 export const getValidRaceClassCombinations = ({
   faction = GUILD_FACTION.ALLIANCE,
   preferredRole = null,
+  contentPhase = CONTENT_PHASE.CLASSIC,
 } = {}) => {
   const normalizedPreferredRole = normalizePreferredRole(preferredRole);
-  const races = getFactionRaces(faction).filter((race) =>
-    Object.prototype.hasOwnProperty.call(DB_RACES, race),
+  const races = getFactionRaces(faction, contentPhase).filter(
+    (race) => getRaceClassesForContent(race, contentPhase).length > 0,
   );
   const candidateRaces = races.length > 0 ? races : Object.keys(DB_RACES);
   return candidateRaces.flatMap((race) =>
-    (Array.isArray(DB_RACES[race]) ? DB_RACES[race] : [])
+    getRaceClassesForContent(race, contentPhase)
       .filter((charClass) => {
         if (!normalizedPreferredRole) return true;
         const classRoles = Array.isArray(DB_CLASSES?.[charClass]?.allowedRoles)
@@ -794,13 +815,21 @@ export const pickValidRaceClassCombination = ({
   faction = GUILD_FACTION.ALLIANCE,
   preferredRole = null,
   random = Math.random,
+  contentPhase = CONTENT_PHASE.CLASSIC,
 } = {}) => {
   const safeRandom = typeof random === "function" ? random : Math.random;
-  const combinations = getValidRaceClassCombinations({ faction, preferredRole });
+  const combinations = getValidRaceClassCombinations({
+    faction,
+    preferredRole,
+    contentPhase,
+  });
   const fallbackCombinations =
     combinations.length > 0
       ? combinations
-      : getValidRaceClassCombinations({ faction: GUILD_FACTION.ALLIANCE });
+      : getValidRaceClassCombinations({
+          faction: GUILD_FACTION.ALLIANCE,
+          contentPhase,
+        });
   return fallbackCombinations[
     Math.floor(safeRandom() * fallbackCombinations.length)
   ] || { race: "Human", charClass: "Warrior" };
@@ -981,6 +1010,30 @@ const RACE_NAME_SYLLABLES = Object.freeze({
       start: Object.freeze(["Hex", "Loti", "Noka", "Talan", "Yaz", "Zeka", "Zul"]),
       mid: Object.freeze(["a", "i", "ra", "li", "za"]),
       end: Object.freeze(["a", "ji", "la", "na", "ra"]),
+    }),
+  }),
+  Draenei: Object.freeze({
+    Male: Object.freeze({
+      start: Object.freeze(["Aka", "Ex", "Ka", "Maraa", "No", "Oro", "Vele"]),
+      mid: Object.freeze(["ma", "ra", "ru", "to", "un", "el"]),
+      end: Object.freeze(["ad", "an", "dor", "ros", "ul", "uun"]),
+    }),
+    Female: Object.freeze({
+      start: Object.freeze(["Are", "Iri", "Isha", "Mish", "Nai", "Saa", "Yre"]),
+      mid: Object.freeze(["ra", "la", "na", "ri", "sha", "el"]),
+      end: Object.freeze(["a", "ah", "elle", "i", "ra", "una"]),
+    }),
+  }),
+  "Blood Elf": Object.freeze({
+    Male: Object.freeze({
+      start: Object.freeze(["Aeth", "Hald", "Kael", "Lor", "Rom", "Sel", "Vor"]),
+      mid: Object.freeze(["a", "e", "ara", "the", "or", "in"]),
+      end: Object.freeze(["as", "ion", "mar", "or", "ron", "thel"]),
+    }),
+    Female: Object.freeze({
+      start: Object.freeze(["Ael", "Lia", "Lyn", "Sal", "Vale", "Vere", "Sath"]),
+      mid: Object.freeze(["ra", "la", "ri", "the", "el", "ana"]),
+      end: Object.freeze(["a", "elle", "ia", "ra", "riel", "yn"]),
     }),
   }),
 });
@@ -1193,11 +1246,23 @@ export const generateCharacter = (
   const characterIdFactory =
     typeof options?.createId === "function" ? options.createId : createId;
   const normalizedPreferredRole = normalizePreferredRole(preferredRole);
-  const selectedCombination = pickValidRaceClassCombination({
+  const validCombinations = getValidRaceClassCombinations({
     faction,
     preferredRole: normalizedPreferredRole,
-    random,
+    contentPhase: options?.contentPhase,
   });
+  const forcedCombination = validCombinations.find(
+    (entry) =>
+      entry.race === options?.race && entry.charClass === options?.charClass,
+  );
+  const selectedCombination =
+    forcedCombination ||
+    pickValidRaceClassCombination({
+      faction,
+      preferredRole: normalizedPreferredRole,
+      random,
+      contentPhase: options?.contentPhase,
+    });
   const selectedRace = selectedCombination.race;
   const charClass = selectedCombination.charClass;
   const gender = random() > 0.5 ? "Male" : "Female";
