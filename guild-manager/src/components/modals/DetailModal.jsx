@@ -180,6 +180,10 @@ const DetailModal = ({
 
   const hardCap = getSkillCap(char?.level || 1);
   const professions = Array.isArray(char?.professions) ? char.professions : [];
+  const primaryProfessions = professions
+    .map((profession, index) => ({ profession, index }))
+    .filter((entry) => entry.profession?.kind !== "secondary");
+  const secondaryProfessions = professions.filter((profession) => profession?.kind === "secondary");
   const averageItemLevel = getCharacterAverageItemLevel(char);
   const characterPower = getCharacterPowerScore(char);
   const setBonus = getCharacterSetBonus(char);
@@ -921,13 +925,13 @@ const DetailModal = ({
               </div>
 
               <div className="space-y-4">
-                {professions.map((prof, idx) => (
-                  <div key={idx} className="bg-gray-800 p-3 rounded border border-gray-700">
+                {primaryProfessions.map(({ profession: prof, index }) => (
+                  <div key={`${prof.name}-${index}`} className="bg-gray-800 p-3 rounded border border-gray-700">
                     <div className="flex justify-between items-center mb-2">
                       <div className="flex items-center gap-2">
                         <select
                           value={prof.name}
-                          onChange={(e) => onProfChange(char.id, idx, e.target.value)}
+                          onChange={(e) => onProfChange(char.id, index, e.target.value)}
                           className="bg-gray-900 text-white text-sm border border-gray-600 rounded px-2 py-1 focus:outline-none focus:border-yellow-500"
                         >
                           {PROFESSIONS_LIST.map((p) => (
@@ -962,6 +966,19 @@ const DetailModal = ({
                     </div>
                   </div>
                 ))}
+                {secondaryProfessions.length > 0 && (
+                  <div className="rounded border border-cyan-900 bg-cyan-950/20 p-3">
+                    <div className="mb-2 text-xs font-bold uppercase tracking-wide text-cyan-200">Secondary Professions</div>
+                    <div className="grid grid-cols-1 gap-2 sm:grid-cols-3">
+                      {secondaryProfessions.map((profession) => (
+                        <div key={profession.name} className="rounded border border-gray-700 bg-gray-900 px-2 py-1.5">
+                          <div className="text-xs font-bold text-gray-100">{profession.name}</div>
+                          <div className="text-[11px] text-gray-400">Skill {profession.skill} / {hardCap}</div>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                )}
               </div>
             </div>
           )}

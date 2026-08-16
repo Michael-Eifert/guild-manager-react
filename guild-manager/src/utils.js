@@ -1301,6 +1301,7 @@ export const generateCharacter = (
   const professions = starterProfs.map((p) => ({
     name: p,
     skill: 1,
+    kind: "primary",
     knownRecipeIds: getStarterRecipeIds(p),
   }));
 

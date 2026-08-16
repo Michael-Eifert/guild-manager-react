@@ -5,6 +5,7 @@ import {
   applyMissionWipeCosts,
   buildMissionRun,
   getMissionInstanceId,
+  resolveDungeonChainContinuation,
 } from "../missions/missionRuntime";
 
 describe("mission runtime", () => {
@@ -37,6 +38,56 @@ describe("mission runtime", () => {
     });
     expect(result).toMatchObject({ instanceId: "run-1", questId: "q", missionSuccess: true, finishTime: 5100 });
     expect(random).toHaveBeenCalledOnce();
+  });
+
+  it("applies run preparation to the persisted boss chance", () => {
+    const runPreparation = { successBonusPercent: 6, consumedItems: [], repairCostMultiplier: 1 };
+    const result = buildMissionRun({
+      quest: { id: "prepared", name: "Prepared Dungeon", type: "dungeon", duration: 5, rewardGold: 0 },
+      memberIds: ["hero"],
+      startTime: 100,
+      roster: [{ id: "hero" }],
+      runOptions: { runPreparation },
+      raidLockouts: {},
+      currentDayIndex: 0,
+      services: { now: () => 100, random: () => 0, createId: () => "prepared-run" },
+      getSuccessPreview: () => ({ successChance: 50, partyPower: 1, missionPower: 1 }),
+    });
+
+    expect(result.successChance).toBe(56);
+    expect(result.failChance).toBe(44);
+    expect(result.runPreparation).toBe(runPreparation);
+  });
+
+  it("carries an already-consumed preparation plan into following chain wings", () => {
+    const runPreparation = { successBonusPercent: 4, consumedItems: [{ itemId: "healing_potion", quantity: 10 }] };
+    const buildRun = vi.fn((mission, memberIds, startTime, roster, chainContext, runOptions) => ({
+      ...mission,
+      memberIds,
+      chainContext,
+      runPreparation: runOptions.runPreparation,
+    }));
+    const result = resolveDungeonChainContinuation({
+      mission: {
+        id: "wing-one",
+        name: "Wing One",
+        type: "dungeon",
+        memberIds: ["hero"],
+        runPreparation,
+        chainContext: { setName: "Chain", totalMissions: 2, currentPosition: 1, remainingMissionIds: ["wing-two"] },
+      },
+      missionSucceeded: true,
+      roster: [{ id: "hero" }],
+      startTime: 200,
+      missionList: [{ id: "wing-two", name: "Wing Two", type: "dungeon" }],
+      raidLockouts: {},
+      currentDayIndex: 0,
+      buildRun,
+    });
+
+    expect(buildRun).toHaveBeenCalledOnce();
+    expect(buildRun.mock.calls[0][5].runPreparation).toBe(runPreparation);
+    expect(result.queuedMission?.runPreparation).toBe(runPreparation);
   });
 
   it("applies failed dungeon-step morale exactly once", () => {

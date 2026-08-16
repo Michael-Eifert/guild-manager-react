@@ -163,6 +163,7 @@ describe("GameProvider integration", () => {
         realmGuildDensity: "medium",
         realmGuildDynamics: "medium",
         officerAutonomyMode: "automatic",
+        autoRunPreparationMode: "none",
       });
     });
   });

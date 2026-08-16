@@ -180,6 +180,20 @@ export default function GameSettingsPage({
             />
           </label>
 
+          <label className="mt-4 block rounded-lg border border-cyan-900/60 bg-cyan-950/15 p-4">
+            <span className="block text-sm font-bold text-cyan-100">Automatic Run Preparation</span>
+            <span className="mt-1 block text-xs leading-relaxed text-slate-400">Controls whether automatically formed dungeon groups may consume profession supplies. Existing saves default to None.</span>
+            <select
+              value={normalizedGameSettings.autoRunPreparationMode}
+              onChange={(event) => onGameSettingsChange({ autoRunPreparationMode: event.target.value as "none" | "basic" | "best" })}
+              className="mt-3 rounded border border-slate-700 bg-slate-950 px-3 py-2 text-sm text-slate-100"
+            >
+              <option value="none">None</option>
+              <option value="basic">Basic</option>
+              <option value="best">Best Available</option>
+            </select>
+          </label>
+
           <div className="mt-4 grid gap-4 lg:grid-cols-2">
             <div className="rounded-lg border border-amber-900/60 bg-amber-950/15 p-4">
               <h3 className="text-sm font-bold text-amber-100">

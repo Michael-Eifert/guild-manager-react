@@ -80,6 +80,13 @@ describe("GameSettingsPage", () => {
     expect(onGameSettingsChange).toHaveBeenCalledWith({
       offlineSimulationEnabled: false,
     });
+    fireEvent.change(
+      screen.getByLabelText(/Automatic Run Preparation/),
+      { target: { value: "best" } },
+    );
+    expect(onGameSettingsChange).toHaveBeenCalledWith({
+      autoRunPreparationMode: "best",
+    });
     fireEvent.click(
       screen.getByRole("button", { name: "Many" }),
     );

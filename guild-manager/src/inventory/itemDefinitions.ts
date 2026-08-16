@@ -1,18 +1,18 @@
 import { RECIPE_DEFINITIONS, getRecipeScrollItemId } from "../professions/recipeDefinitions";
-import type { InventoryItemDefinition, ItemDefinition } from "../types/itemTypes";
+import type { InventoryItemDefinition, ItemDefinition, RunPreparationItemMetadata } from "../types/itemTypes";
 
 export const INVENTORY_ITEM_CATEGORY = Object.freeze({ MATERIAL: "material", CONSUMABLE: "consumable", EQUIPMENT: "equipment", RECIPE: "recipe", OTHER: "other" });
 
 const material = (id: string, name: string, professionTags: string[], source: string, sellValue: number): InventoryItemDefinition => ({ id, name, category: "material", quality: 1, professionTags, source, sellValue });
-const consumable = (id: string, name: string, quality: number, sellValue: number, effect = id): InventoryItemDefinition => ({ id, name, category: "consumable", quality, effect, source: "Professions", sellValue });
+const consumable = (id: string, name: string, quality: number, sellValue: number, effect = id, runPreparation?: RunPreparationItemMetadata): InventoryItemDefinition => ({ id, name, category: "consumable", quality, effect, source: "Professions", sellValue, runPreparation });
 const gear = (id: string, name: string, options: Partial<InventoryItemDefinition>): InventoryItemDefinition => ({ id, name, category: "equipment", quality: 2, source: "Professions", sellValue: 5, ...options });
 
 const MATERIALS: Record<string, InventoryItemDefinition> = Object.fromEntries([
-  material("linen_cloth", "Linen Cloth", ["Tailoring"], "World Drop", 1),
-  material("wool_cloth", "Wool Cloth", ["Tailoring"], "World Drop", 2),
-  material("silk_cloth", "Silk Cloth", ["Tailoring"], "World Drop", 3),
-  material("mageweave_cloth", "Mageweave Cloth", ["Tailoring"], "World Drop", 4),
-  material("runecloth", "Runecloth", ["Tailoring"], "World Drop", 5),
+  material("linen_cloth", "Linen Cloth", ["Tailoring", "First Aid"], "World Drop", 1),
+  material("wool_cloth", "Wool Cloth", ["Tailoring", "First Aid"], "World Drop", 2),
+  material("silk_cloth", "Silk Cloth", ["Tailoring", "First Aid"], "World Drop", 3),
+  material("mageweave_cloth", "Mageweave Cloth", ["Tailoring", "First Aid"], "World Drop", 4),
+  material("runecloth", "Runecloth", ["Tailoring", "First Aid"], "World Drop", 5),
   material("light_leather", "Light Leather", ["Leatherworking", "Skinning"], "Skinning", 1),
   material("medium_leather", "Medium Leather", ["Leatherworking", "Skinning"], "Skinning", 2),
   material("heavy_leather", "Heavy Leather", ["Leatherworking", "Skinning"], "Skinning", 3),
@@ -24,6 +24,10 @@ const MATERIALS: Record<string, InventoryItemDefinition> = Object.fromEntries([
   material("thorium_ore", "Thorium Ore", ["Blacksmithing", "Mining"], "Mining", 5),
   material("dark_iron_ore", "Dark Iron Ore", ["Blacksmithing", "Mining"], "Blackrock Depths", 7),
   material("arcane_crystal", "Arcane Crystal", ["Blacksmithing", "Mining"], "High-level Mining", 12),
+  material("rough_stone", "Rough Stone", ["Engineering", "Mining"], "Mining", 1),
+  material("heavy_stone", "Heavy Stone", ["Engineering", "Mining"], "Mining", 2),
+  material("solid_stone", "Solid Stone", ["Engineering", "Mining"], "Mining", 3),
+  material("dense_stone", "Dense Stone", ["Engineering", "Mining"], "Mining", 5),
   material("peacebloom", "Peacebloom", ["Alchemy", "Herbalism"], "Herbalism", 1),
   material("silverleaf", "Silverleaf", ["Alchemy", "Herbalism"], "Herbalism", 1),
   material("briarthorn", "Briarthorn", ["Alchemy", "Herbalism"], "Herbalism", 2),
@@ -44,6 +48,16 @@ const MATERIALS: Record<string, InventoryItemDefinition> = Object.fromEntries([
   material("essence_of_light", "Essence of Light", ["Enchanting"], "Eastern Plaguelands", 7),
   material("living_essence", "Living Essence", ["Leatherworking"], "High-level World Drop", 7),
   material("fiery_core", "Fiery Core", ["Leatherworking", "Blacksmithing"], "Molten Core", 12),
+  material("raw_longjaw_mud_snapper", "Raw Longjaw Mud Snapper", ["Fishing", "Cooking"], "Fishing", 1),
+  material("raw_mithril_head_trout", "Raw Mithril Head Trout", ["Fishing", "Cooking"], "Fishing", 2),
+  material("winter_squid", "Winter Squid", ["Fishing", "Cooking"], "Fishing", 4),
+  material("raw_nightfin_snapper", "Raw Nightfin Snapper", ["Fishing", "Cooking"], "Fishing", 4),
+  material("stonescale_eel", "Stonescale Eel", ["Fishing", "Alchemy"], "Fishing", 6),
+  material("chunk_of_boar_meat", "Chunk of Boar Meat", ["Cooking"], "Low-level beasts", 1),
+  material("raptor_egg", "Raptor Egg", ["Cooking"], "Raptors", 2),
+  material("giant_egg", "Giant Egg", ["Cooking"], "High-level birds", 4),
+  material("runn_tum_tuber", "Runn Tum Tuber", ["Cooking"], "Dire Maul", 5),
+  material("sandworm_meat", "Sandworm Meat", ["Cooking"], "Silithus", 5),
   material("simple_thread", "Simple Thread", ["Tailoring"], "Vendor", 1),
   material("coarse_thread", "Coarse Thread", ["Tailoring", "Leatherworking"], "Vendor", 1),
   material("fine_thread", "Fine Thread", ["Tailoring", "Leatherworking"], "Vendor", 2),
@@ -52,13 +66,44 @@ const MATERIALS: Record<string, InventoryItemDefinition> = Object.fromEntries([
   material("crystal_vial", "Crystal Vial", ["Alchemy"], "Vendor", 3),
   material("weak_flux", "Weak Flux", ["Blacksmithing"], "Vendor", 1),
   material("strong_flux", "Strong Flux", ["Blacksmithing"], "Vendor", 3),
+  material("mild_spices", "Mild Spices", ["Cooking"], "Vendor", 1),
+  material("hot_spices", "Hot Spices", ["Cooking"], "Vendor", 2),
+  material("soothing_spices", "Soothing Spices", ["Cooking"], "Vendor", 3),
+  material("refreshing_spring_water", "Refreshing Spring Water", ["Cooking"], "Vendor", 2),
+  material("wooden_stock", "Wooden Stock", ["Engineering"], "Vendor", 1),
+  material("unstable_trigger", "Unstable Trigger", ["Engineering"], "Vendor", 3),
+  material("fused_wiring", "Fused Wiring", ["Engineering"], "Vendor", 8),
 ].map((entry) => [String(entry.id), entry]));
 
 const CONSUMABLES: Record<string, InventoryItemDefinition> = Object.fromEntries([
-  consumable("minor_healing_potion", "Minor Healing Potion", 1, 2), consumable("healing_potion", "Healing Potion", 2, 4),
-  consumable("elixir_of_fortitude", "Elixir of Fortitude", 2, 5), consumable("elixir_of_power", "Elixir of Power", 2, 5),
-  consumable("major_healing_potion", "Major Healing Potion", 3, 10), consumable("flask_supreme_power", "Flask of Supreme Power", 4, 25),
-  consumable("flask_of_the_titans", "Flask of the Titans", 4, 25), consumable("rough_sharpening_stone", "Rough Sharpening Stone", 1, 1),
+  consumable("minor_healing_potion", "Minor Healing Potion", 1, 2, undefined, { category: "alchemy", subtype: "potion", tier: 1, bonusPercent: 1, coverageMode: "participant", basic: true }),
+  consumable("healing_potion", "Healing Potion", 2, 4, undefined, { category: "alchemy", subtype: "potion", tier: 2, bonusPercent: 2, coverageMode: "participant", basic: true }),
+  consumable("elixir_of_fortitude", "Elixir of Fortitude", 2, 5, undefined, { category: "alchemy", subtype: "tonic", tier: 2, bonusPercent: 2, coverageMode: "participant", basic: true }),
+  consumable("elixir_of_power", "Elixir of Power", 2, 5, undefined, { category: "alchemy", subtype: "tonic", tier: 2, bonusPercent: 2, coverageMode: "participant" }),
+  consumable("major_healing_potion", "Major Healing Potion", 3, 10, undefined, { category: "alchemy", subtype: "potion", tier: 3, bonusPercent: 3, coverageMode: "participant" }),
+  consumable("flask_supreme_power", "Flask of Supreme Power", 4, 25, undefined, { category: "alchemy", subtype: "tonic", tier: 4, bonusPercent: 4, coverageMode: "participant" }),
+  consumable("flask_of_the_titans", "Flask of the Titans", 4, 25, undefined, { category: "alchemy", subtype: "tonic", tier: 4, bonusPercent: 4, coverageMode: "participant" }),
+  consumable("rough_sharpening_stone", "Rough Sharpening Stone", 1, 1, undefined, { category: "weapon", tier: 1, bonusPercent: 1, coverageMode: "eligiblePhysicalGroup", basic: true }),
+  consumable("rough_dynamite", "Rough Dynamite", 1, 2, undefined, { category: "engineering", subtype: "offense", tier: 1, bonusPercent: 1, coverageMode: "partyGroup", requiredProfession: "Engineering", requiredSkill: 1, basic: true }),
+  consumable("target_dummy", "Target Dummy", 1, 4, undefined, { category: "engineering", subtype: "safety", tier: 1, bonusPercent: 1, coverageMode: "partyGroup", requiredProfession: "Engineering", requiredSkill: 85, basic: true }),
+  consumable("iron_grenade", "Iron Grenade", 2, 6, undefined, { category: "engineering", subtype: "offense", tier: 2, bonusPercent: 2, coverageMode: "partyGroup", requiredProfession: "Engineering", requiredSkill: 175 }),
+  consumable("advanced_target_dummy", "Advanced Target Dummy", 2, 8, undefined, { category: "engineering", subtype: "safety", tier: 2, bonusPercent: 2, coverageMode: "partyGroup", requiredProfession: "Engineering", requiredSkill: 185 }),
+  consumable("goblin_sapper_charge", "Goblin Sapper Charge", 3, 12, undefined, { category: "engineering", subtype: "offense", tier: 3, bonusPercent: 3, coverageMode: "partyGroup", requiredProfession: "Engineering", requiredSkill: 205 }),
+  consumable("dense_dynamite", "Dense Dynamite", 3, 10, undefined, { category: "engineering", subtype: "offense", tier: 3, bonusPercent: 3, coverageMode: "partyGroup", requiredProfession: "Engineering", requiredSkill: 250 }),
+  consumable("field_repair_bot_74a", "Field Repair Bot 74A", 4, 20, undefined, { category: "engineering", subtype: "repair", tier: 4, bonusPercent: 0, coverageMode: "partyGroup", requiredProfession: "Engineering", requiredSkill: 300, repairCostMultiplier: 0.5 }),
+  consumable("roasted_boar_meat", "Roasted Boar Meat", 1, 2, undefined, { category: "food", tier: 1, bonusPercent: 1, coverageMode: "participant", rolePreference: "generic", basic: true }),
+  consumable("longjaw_mud_snapper", "Longjaw Mud Snapper", 1, 2, undefined, { category: "food", tier: 1, bonusPercent: 1, coverageMode: "participant", rolePreference: "generic", basic: true }),
+  consumable("curiously_tasty_omelet", "Curiously Tasty Omelet", 2, 4, undefined, { category: "food", tier: 2, bonusPercent: 2, coverageMode: "participant", rolePreference: "generic", basic: true }),
+  consumable("monster_omelet", "Monster Omelet", 2, 6, undefined, { category: "food", tier: 2, bonusPercent: 2, coverageMode: "participant", rolePreference: "generic", basic: true }),
+  consumable("grilled_squid", "Grilled Squid", 3, 8, undefined, { category: "food", tier: 3, bonusPercent: 3, coverageMode: "participant", rolePreference: "agility" }),
+  consumable("nightfin_soup", "Nightfin Soup", 3, 8, undefined, { category: "food", tier: 3, bonusPercent: 3, coverageMode: "participant", rolePreference: "caster" }),
+  consumable("runn_tum_tuber_surprise", "Runn Tum Tuber Surprise", 3, 9, undefined, { category: "food", tier: 3, bonusPercent: 3, coverageMode: "participant", rolePreference: "caster" }),
+  consumable("smoked_desert_dumplings", "Smoked Desert Dumplings", 3, 10, undefined, { category: "food", tier: 3, bonusPercent: 3, coverageMode: "participant", rolePreference: "strength" }),
+  consumable("linen_bandage", "Linen Bandage", 1, 1, undefined, { category: "firstAid", tier: 1, bonusPercent: 1, coverageMode: "eligibleParticipant", requiredProfession: "First Aid", requiredSkill: 1, basic: true }),
+  consumable("heavy_wool_bandage", "Heavy Wool Bandage", 1, 2, undefined, { category: "firstAid", tier: 1, bonusPercent: 1, coverageMode: "eligibleParticipant", requiredProfession: "First Aid", requiredSkill: 50, basic: true }),
+  consumable("heavy_silk_bandage", "Heavy Silk Bandage", 2, 3, undefined, { category: "firstAid", tier: 1, bonusPercent: 1, coverageMode: "eligibleParticipant", requiredProfession: "First Aid", requiredSkill: 100, basic: true }),
+  consumable("heavy_mageweave_bandage", "Heavy Mageweave Bandage", 2, 5, undefined, { category: "firstAid", tier: 2, bonusPercent: 2, coverageMode: "eligibleParticipant", requiredProfession: "First Aid", requiredSkill: 175 }),
+  consumable("heavy_runecloth_bandage", "Heavy Runecloth Bandage", 3, 8, undefined, { category: "firstAid", tier: 2, bonusPercent: 2, coverageMode: "eligibleParticipant", requiredProfession: "First Aid", requiredSkill: 225 }),
 ].map((entry) => [String(entry.id), entry]));
 
 const EQUIPMENT: Record<string, InventoryItemDefinition> = {

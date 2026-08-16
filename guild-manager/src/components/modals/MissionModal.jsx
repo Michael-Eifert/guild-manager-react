@@ -46,8 +46,13 @@ import { hasCompletedZoneEliteQuest } from "../../automation/zoneEliteAutomation
 import {
   CONSUMABLE_MODE,
   CONSUMABLE_MODE_OPTIONS,
+  ENGINEERING_STRATEGY,
+  RUN_PREPARATION_CATEGORIES,
+  RUN_PREPARATION_CATEGORY_LABELS,
+  createRunPreparationSelection,
   formatConsumableUseSummary,
   getConsumableMissionModifiers,
+  normalizeRunPreparationSelection,
 } from "../../professions/consumableEffects";
 import BaseModal from "./BaseModal";
 import {
@@ -456,9 +461,12 @@ const MissionModal = ({
   const [hideLowLevelDungeons, setHideLowLevelDungeons] = useState(
     Boolean(initialBoardState.hideLowLevelDungeons),
   );
-  const [consumableMode, setConsumableMode] = useState(
-    initialBoardState.consumableMode || CONSUMABLE_MODE.NONE,
+  const [runPreparationSelection, setRunPreparationSelection] = useState(() =>
+    normalizeRunPreparationSelection(
+      initialBoardState.runPreparationSelection || initialBoardState.consumableMode || CONSUMABLE_MODE.NONE,
+    ),
   );
+  const consumableMode = runPreparationSelection.mode;
   const [characterFilterMinLevel, setCharacterFilterMinLevel] = useState("");
   const [characterFilterMaxLevel, setCharacterFilterMaxLevel] = useState("");
   const [characterSortMode, setCharacterSortMode] = useState(
@@ -527,9 +535,11 @@ const MissionModal = ({
       showAvailableDungeonsOnly,
       hideLowLevelDungeons,
       consumableMode,
+      runPreparationSelection,
     });
   }, [
     consumableMode,
+    runPreparationSelection,
     hideLowLevelDungeons,
     levelFilterMax,
     levelFilterMin,
@@ -1016,8 +1026,11 @@ const MissionModal = ({
     activePrepMission?.type === "dungeon"
       ? getConsumableMissionModifiers({
           mode: consumableMode,
+          selection: runPreparationSelection,
           mission: activePrepMission,
           partySize: selectedPartyMembers.length,
+          partyMembers: selectedPartyMembers,
+          chainMultiplier: isChainEnabled ? Math.max(1, selectedChainMissions.length) : 1,
           guildInventory,
         })
       : null;
@@ -1288,6 +1301,7 @@ const MissionModal = ({
     const deployed = onDeploy(missionToDeploy, party, {
       ...(chainMissionIds ? { chainMissionIds } : {}),
       consumableMode,
+      runPreparationSelection,
     });
     if (deployed === false) return;
 
@@ -2223,14 +2237,14 @@ const MissionModal = ({
                   <div className="mt-3 rounded border border-cyan-900/70 bg-cyan-950/15 p-2">
                     <div className="flex flex-wrap items-center justify-between gap-2">
                       <span className="text-[11px] uppercase tracking-wide text-cyan-200 font-bold">
-                        Consumables
+                        Run Preparation
                       </span>
                       <div className="flex flex-wrap gap-1.5">
                         {CONSUMABLE_MODE_OPTIONS.map((option) => (
                           <button
                             key={option.value}
                             type="button"
-                            onClick={() => setConsumableMode(option.value)}
+                            onClick={() => setRunPreparationSelection(createRunPreparationSelection(option.value))}
                             className={`px-2 py-1 rounded border text-[11px] font-semibold transition-colors ${
                               consumableMode === option.value
                                 ? "border-cyan-500 bg-cyan-800/40 text-cyan-100"
@@ -2242,13 +2256,74 @@ const MissionModal = ({
                         ))}
                       </div>
                     </div>
+                    {consumableMode !== CONSUMABLE_MODE.NONE && (
+                      <div className="mt-2 rounded border border-cyan-950 bg-black/20 p-2">
+                        <div className="flex flex-wrap gap-2">
+                          {RUN_PREPARATION_CATEGORIES.map((category) => (
+                            <label key={category} className="flex items-center gap-1.5 text-[11px] text-gray-300">
+                              <input
+                                type="checkbox"
+                                checked={runPreparationSelection.enabledCategories[category] !== false}
+                                onChange={(event) => setRunPreparationSelection((current) => ({
+                                  ...current,
+                                  enabledCategories: { ...current.enabledCategories, [category]: event.target.checked },
+                                }))}
+                              />
+                              {RUN_PREPARATION_CATEGORY_LABELS[category]}
+                            </label>
+                          ))}
+                        </div>
+                        {runPreparationSelection.enabledCategories.engineering && (
+                          <div className="mt-2 flex flex-wrap items-center gap-1.5">
+                            <span className="text-[10px] uppercase tracking-wide text-gray-500">Engineering</span>
+                            {Object.values(ENGINEERING_STRATEGY).map((strategy) => (
+                              <button
+                                key={strategy}
+                                type="button"
+                                onClick={() => setRunPreparationSelection((current) => ({ ...current, engineeringStrategy: strategy }))}
+                                className={`rounded border px-1.5 py-0.5 text-[10px] capitalize ${runPreparationSelection.engineeringStrategy === strategy ? "border-cyan-600 bg-cyan-900/50 text-cyan-100" : "border-gray-700 text-gray-400"}`}
+                              >
+                                {strategy}
+                              </button>
+                            ))}
+                          </div>
+                        )}
+                      </div>
+                    )}
                     <div className="mt-2 text-[11px] text-cyan-100/80">
                       {consumableModifiers?.hasConsumables
                         ? formatConsumableUseSummary(consumableModifiers)
                         : consumableMode === CONSUMABLE_MODE.NONE
-                          ? "No consumables will be prepared."
-                          : "No matching consumables are available in the Guild Stash."}
+                          ? "No run preparation will be used."
+                          : "No matching preparation items are available in the Guild Stash."}
                     </div>
+                    {consumableModifiers && consumableMode !== CONSUMABLE_MODE.NONE && (
+                      <>
+                        <div className="mt-2 grid grid-cols-2 gap-1 text-[10px] text-gray-400 sm:grid-cols-5">
+                        {consumableModifiers.categoryBreakdown
+                          .filter((entry) => runPreparationSelection.enabledCategories[entry.category] !== false)
+                          .map((entry) => (
+                          <div key={entry.category} className="rounded border border-gray-800 bg-gray-950/60 px-1.5 py-1">
+                            <div className="font-semibold text-gray-300">{entry.label}: +{entry.bonusPercent}%</div>
+                            <div>{Math.round(entry.coverage * 100)}% · {entry.usedUnits}/{entry.requiredUnits} used</div>
+                            <div>Stash {entry.availableUnits} · Eligible {entry.eligibleParticipants}</div>
+                          </div>
+                        ))}
+                        </div>
+                        <div className="mt-2 flex flex-wrap gap-x-4 gap-y-1 text-[10px] text-cyan-100">
+                          <span>Total: +{consumableModifiers.successBonusPercent}% / +{consumableModifiers.totalCapPercent}% cap</span>
+                          {getMissionWipeCost(activePrepMission) > 0 && (
+                            <span>
+                              Expected wipe cost: {Math.ceil(getMissionWipeCost(activePrepMission) * consumableModifiers.repairCostMultiplier)}g
+                              {consumableModifiers.repairCostMultiplier < 1 ? ` (base ${getMissionWipeCost(activePrepMission)}g)` : ""}
+                            </span>
+                          )}
+                        </div>
+                      </>
+                    )}
+                    {consumableModifiers?.warnings?.map((warning) => (
+                      <div key={warning} className="mt-1 text-[10px] text-amber-300">{warning}</div>
+                    ))}
                   </div>
                 )}
                 {selectedQuest.type === "zone" && zoneEliteMissionOptions.length > 0 && (

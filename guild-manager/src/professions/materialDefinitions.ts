@@ -8,6 +8,7 @@ export type MaterialProfessionName =
   | "Mining"
   | "Skinning"
   | "Herbalism"
+  | "Fishing"
 ;
 
 const MATERIAL_TABLE: Readonly<Record<MaterialProfessionName, readonly MaterialCandidate[]>> = Object.freeze({
@@ -37,7 +38,22 @@ const MATERIAL_TABLE: Readonly<Record<MaterialProfessionName, readonly MaterialC
     { itemId: "gromsblood", minSkill: 280, weight: 1 },
     { itemId: "black_lotus", minSkill: 300, weight: 1 },
   ],
+  Fishing: [
+    { itemId: "raw_longjaw_mud_snapper", minSkill: 1, weight: 7 },
+    { itemId: "raw_mithril_head_trout", minSkill: 75, weight: 5 },
+    { itemId: "winter_squid", minSkill: 200, weight: 3 },
+    { itemId: "raw_nightfin_snapper", minSkill: 225, weight: 3 },
+    { itemId: "stonescale_eel", minSkill: 275, weight: 1 },
+  ],
 });
+
+export const getMiningStoneForSkill = (skill = 1) => {
+  const safeSkill = Number(skill) || 1;
+  if (safeSkill >= 225) return "dense_stone";
+  if (safeSkill >= 150) return "solid_stone";
+  if (safeSkill >= 75) return "heavy_stone";
+  return "rough_stone";
+};
 
 export const getMaterialCandidatesForProfession = (professionName: string, skill = 1) =>
   ((MATERIAL_TABLE as Readonly<Partial<Record<string, readonly MaterialCandidate[]>>>)[professionName] || []).filter(

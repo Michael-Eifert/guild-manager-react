@@ -30,6 +30,7 @@ import {
   enchantProfessionEquipment,
   learnProfessionRecipeFromStash,
   sellGuildStashItem,
+  trainSecondaryProfession,
   trainProfessionRecipe,
 } from "../inventory/providerInventoryTransitions";
 import { optimizeCharacterEquipment } from "../equipment/equipmentLoadouts";
@@ -338,6 +339,7 @@ import { generatePassiveProfessionMaterial } from "../professions/professionUtil
 import { getStarterRecipeIds } from "../professions/recipeDefinitions";
 import {
   rollAdventureMaterial,
+  rollCookingIngredientDrop,
   rollRecipeDrop,
   rollSourceMaterialDrop,
 } from "../professions/professionProgression";
@@ -1090,6 +1092,8 @@ export const useGameProviderController = () => {
         if (drop.log) recipeLogs.push(drop.log);
         const clothDrop = rollAdventureMaterial({ level: mission.level || 60, guildInventory: nextInventory, random: services.random });
         nextInventory = clothDrop.guildInventory;
+        const cookingDrop = rollCookingIngredientDrop({ level: mission.level || 60, dungeonSetId: mission.dungeonSetId || String(mission.name || "").toLowerCase().replaceAll(" ", "_"), guildInventory: nextInventory, random: services.random });
+        nextInventory = cookingDrop.guildInventory;
         const sourceMaterial = rollSourceMaterialDrop({ dungeonSetId: mission.dungeonSetId || String(mission.name || "").toLowerCase().replaceAll(" ", "_"), guildInventory: nextInventory, random: services.random });
         nextInventory = sourceMaterial.guildInventory;
       });
@@ -1909,12 +1913,33 @@ export const useGameProviderController = () => {
                 .map((missionEntry) => missionEntry.id),
             }
           : null;
+        const autoPreparationMode = gameSettingsRef.current.autoRunPreparationMode || CONSUMABLE_MODE.NONE;
+        const autoPartyMembers = newRoster.filter((member) => memberIds.includes(member.id));
+        const autoRunPreparation = getConsumableMissionModifiers({
+          mode: autoPreparationMode,
+          mission: openingMission,
+          partySize: memberIds.length,
+          partyMembers: autoPartyMembers,
+          chainMultiplier: hasDungeonChain ? chainMissions.length : 1,
+          guildInventory: nextGuildInventory,
+        });
+        if (autoRunPreparation.hasConsumables) {
+          nextGuildInventory = consumeMissionConsumables({ guildInventory: nextGuildInventory, modifiers: autoRunPreparation });
+        }
+        if (autoPreparationMode !== CONSUMABLE_MODE.NONE) {
+          newLogs.push({
+            type: "profession",
+            message: `Prepared automatic run supplies for ${openingMission.name}: ${formatConsumableUseSummary(autoRunPreparation)}`,
+          });
+        }
+        if (chainContext) chainContext.runPreparation = autoRunPreparation;
         const missionRun = buildMissionRun(
           openingMission,
           memberIds,
           now,
           newRoster,
           chainContext,
+          { runPreparation: autoRunPreparation, consumableModifiers: autoRunPreparation },
         );
         newRoster = newRoster.map((char) =>
           memberIds.includes(char.id)
@@ -2448,6 +2473,13 @@ export const useGameProviderController = () => {
               random: services.random,
             });
             nextGuildInventory = materialDrop.guildInventory;
+            const cookingDrop = rollCookingIngredientDrop({
+              level: newLevel,
+              zoneId: activeZone?.id,
+              guildInventory: nextGuildInventory,
+              random: services.random,
+            });
+            nextGuildInventory = cookingDrop.guildInventory;
             const recipeDrop = rollRecipeDrop({
               context: {
                 kind: "world",
@@ -3346,7 +3378,7 @@ export const useGameProviderController = () => {
       p.map((c) => {
         if (c.id !== id) return c;
         const newProfs = [...c.professions];
-        newProfs[idx] = { name: newProf, skill: 1, knownRecipeIds: getStarterRecipeIds(newProf) };
+        newProfs[idx] = { name: newProf, skill: 1, kind: "primary", knownRecipeIds: getStarterRecipeIds(newProf) };
         return { ...c, professions: newProfs };
       }),
     );
@@ -4029,23 +4061,30 @@ export const useGameProviderController = () => {
           }
         : null;
 
-      const consumableMode = options?.consumableMode || CONSUMABLE_MODE.NONE;
+      const requestedRunPreparation = options?.runPreparationSelection || missionBoardState.runPreparationSelection || null;
+      const consumableMode = options?.consumableMode || requestedRunPreparation?.mode || CONSUMABLE_MODE.NONE;
       const consumableModifiers =
         openingMission?.type === "dungeon"
           ? getConsumableMissionModifiers({
               mode: consumableMode,
+              selection: requestedRunPreparation,
               mission: openingMission,
               partySize: memberIds.length,
+              partyMembers: selectedMembersAfterPreemption,
+              chainMultiplier: hasDungeonChain ? chainMissions.length : 1,
               guildInventory: guildInventoryRef.current,
             })
           : null;
-      if (consumableModifiers?.hasConsumables) {
-        const nextInventory = consumeMissionConsumables({
-          guildInventory: guildInventoryRef.current,
-          modifiers: consumableModifiers,
-        });
-        guildInventoryRef.current = nextInventory;
-        setGuildInventory(nextInventory);
+      if (chainContext && consumableModifiers) chainContext.runPreparation = consumableModifiers;
+      if (consumableModifiers && consumableMode !== CONSUMABLE_MODE.NONE) {
+        if (consumableModifiers.hasConsumables) {
+          const nextInventory = consumeMissionConsumables({
+            guildInventory: guildInventoryRef.current,
+            modifiers: consumableModifiers,
+          });
+          guildInventoryRef.current = nextInventory;
+          setGuildInventory(nextInventory);
+        }
         const time = new Date().toLocaleTimeString();
         setGuildLog((prev) =>
           [
@@ -4066,7 +4105,7 @@ export const useGameProviderController = () => {
         startTime,
         rosterSnapshot,
         chainContext,
-        { consumableModifiers },
+        { consumableModifiers, runPreparation: consumableModifiers },
       );
       const missionRunWithCalendar = options?.calendarEventId
         ? { ...missionRun, calendarEventId: options.calendarEventId }
@@ -5262,6 +5301,20 @@ export const useGameProviderController = () => {
     return true;
   }, [appendProfessionLogs, pushNotification]);
 
+  const handleTrainSecondaryProfession = useCallback((characterId, professionName) => {
+    const result = trainSecondaryProfession({ characterId, professionName, roster: rosterRef.current, guildGold: goldRef.current });
+    if (!result.learned) {
+      pushNotification({ type: "error", title: "Training Blocked", message: result.reason });
+      return false;
+    }
+    rosterRef.current = result.roster;
+    goldRef.current = result.guildGold;
+    setRoster(result.roster);
+    setGuildGold(result.guildGold);
+    appendProfessionLogs([result.log]);
+    return true;
+  }, [appendProfessionLogs, pushNotification]);
+
   const handleLearnRecipe = useCallback((characterId, recipeId) => {
     const result = learnProfessionRecipeFromStash({ characterId, recipeId, roster: rosterRef.current, guildInventory: guildInventoryRef.current });
     if (!result.learned) {
@@ -5803,6 +5856,7 @@ export const useGameProviderController = () => {
     handleCreateCalendarSeries,
     handleCraftRecipe,
     handleTrainRecipe,
+    handleTrainSecondaryProfession,
     handleLearnRecipe,
     handleBuyProfessionSupply,
     handleDisenchantItem,

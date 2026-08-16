@@ -56,6 +56,7 @@ describe("session migrations", () => {
     expect(migrated.gameSettings).toEqual({
       offlineSimulationEnabled: true,
       officerAutonomyMode: "off",
+      autoRunPreparationMode: "none",
     });
     expect(current.gameSettings).toEqual({
       offlineSimulationEnabled: false,
@@ -94,6 +95,45 @@ describe("session migrations", () => {
       contentPhase: "classic",
       contentPhaseStartedDayIndex: 0,
     });
+  });
+
+  it("migrates version 18 professions and active consumable plans to run preparation", () => {
+    const migrated = parseSessionPayload(
+      JSON.stringify({
+        format: "guild-manager-session",
+        version: 18,
+        data: {
+          roster: [{
+            id: "prepared-member",
+            professions: [
+              { name: "Alchemy", skill: 200, maxSkill: 225 },
+              { name: "Cooking", skill: 100, maxSkill: 150 },
+            ],
+          }],
+          activeMissions: [{
+            id: "legacy-run",
+            consumableModifiers: { mode: "basic", successBonusPercent: 3 },
+          }],
+          missionBoardState: { consumableMode: "best" },
+          gameSettings: { officerAutonomyMode: "off" },
+        },
+      }),
+    );
+
+    expect(migrated.roster[0].professions).toEqual([
+      expect.objectContaining({ name: "Alchemy", kind: "primary" }),
+      expect.objectContaining({ name: "Cooking", kind: "secondary" }),
+    ]);
+    expect(migrated.activeMissions[0].runPreparation).toMatchObject({
+      mode: "basic",
+      successBonusPercent: 3,
+    });
+    expect(migrated.missionBoardState.runPreparationSelection).toMatchObject({
+      mode: "best",
+      engineeringStrategy: "auto",
+      enabledCategories: { alchemy: true, food: true, firstAid: true, engineering: true, weapon: true },
+    });
+    expect(migrated.gameSettings.autoRunPreparationMode).toBe("none");
   });
 
   it("adds the version 15 weapon slots and personal equipment inventory", () => {

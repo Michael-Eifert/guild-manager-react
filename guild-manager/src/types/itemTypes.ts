@@ -119,6 +119,33 @@ export interface InventoryItemDefinition extends ItemDefinition {
   effect?: string;
   classRestrictions?: string[];
   recipeId?: string;
+  runPreparation?: RunPreparationItemMetadata;
+}
+
+export type RunPreparationCategory =
+  | "alchemy"
+  | "food"
+  | "firstAid"
+  | "engineering"
+  | "weapon";
+
+export type RunPreparationCoverageMode =
+  | "participant"
+  | "eligibleParticipant"
+  | "partyGroup"
+  | "eligiblePhysicalGroup";
+
+export interface RunPreparationItemMetadata {
+  category: RunPreparationCategory;
+  tier: number;
+  bonusPercent: number;
+  coverageMode: RunPreparationCoverageMode;
+  subtype?: "potion" | "tonic" | "offense" | "safety" | "repair";
+  requiredProfession?: string;
+  requiredSkill?: number;
+  rolePreference?: "strength" | "agility" | "caster" | "generic";
+  basic?: boolean;
+  repairCostMultiplier?: number;
 }
 
 export interface LootManifestEntry {

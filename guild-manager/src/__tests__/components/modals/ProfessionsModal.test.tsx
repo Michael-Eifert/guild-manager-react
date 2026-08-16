@@ -39,6 +39,10 @@ describe("ProfessionsModal", () => {
     expect(html).toContain("Guild Stash");
     expect(html).toContain("Lunalis");
     expect(html).toContain("Tailoring");
+    expect(html).toContain("Secondary Trainers");
+    expect(html).toContain("Learn Cooking");
+    expect(html).toContain("Learn Fishing");
+    expect(html).toContain("Learn First Aid");
     expect(html).not.toContain('role="dialog"');
   });
 });

@@ -3,6 +3,7 @@ export type GameSettingsState = {
   realmGuildDensity: RealmGuildDensity;
   realmGuildDynamics: RealmGuildDynamics;
   officerAutonomyMode: OfficerAutonomyMode;
+  autoRunPreparationMode: "none" | "basic" | "best";
 };
 
 export const OFFICER_AUTONOMY_MODES = ["off", "proposals", "automatic"] as const;
@@ -37,6 +38,7 @@ export const DEFAULT_GAME_SETTINGS: Readonly<GameSettingsState> = Object.freeze(
   realmGuildDensity: "medium",
   realmGuildDynamics: "medium",
   officerAutonomyMode: "automatic",
+  autoRunPreparationMode: "none",
 });
 
 export const normalizeGameSettings = (
@@ -67,6 +69,9 @@ export const normalizeGameSettings = (
     )
       ? (input.officerAutonomyMode as OfficerAutonomyMode)
       : DEFAULT_GAME_SETTINGS.officerAutonomyMode,
+    autoRunPreparationMode: ["none", "basic", "best"].includes(String(input.autoRunPreparationMode || ""))
+      ? input.autoRunPreparationMode as "none" | "basic" | "best"
+      : DEFAULT_GAME_SETTINGS.autoRunPreparationMode,
   };
 };
 

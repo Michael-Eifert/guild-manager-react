@@ -42,7 +42,12 @@ export const applyMissionWipeCosts = (
   const wipeCost = getMissionWipeCost(mission);
   if (wipeCost <= 0) return { updatedGold: availableGold, wipeCostLog: null };
 
-  const totalCost = wipeCost * wipeEvents.length;
+  const repairCostMultiplier = Math.max(
+    0,
+    Math.min(1, Number(mission?.runPreparation?.repairCostMultiplier ?? mission?.consumableModifiers?.repairCostMultiplier) || 1),
+  );
+  const effectiveWipeCost = Math.ceil(wipeCost * repairCostMultiplier);
+  const totalCost = effectiveWipeCost * wipeEvents.length;
   const paidAmount = Math.max(0, Math.min(Math.floor(availableGold), totalCost));
   const unpaidAmount = Math.max(0, totalCost - paidAmount);
   return {
@@ -51,7 +56,9 @@ export const applyMissionWipeCosts = (
       type: "wipe-cost",
       missionName: mission?.name || "Dungeon",
       wipeCount: wipeEvents.length,
-      wipeCost,
+      wipeCost: effectiveWipeCost,
+      baseWipeCost: wipeCost,
+      repairCostMultiplier,
       amount: paidAmount,
       unpaidAmount,
     },
@@ -146,8 +153,8 @@ export const buildMissionRun = ({
     ? runOptions.partyMembers
     : selectedGuildMembers;
   const missionPreview = getSuccessPreview(quest, selectedMembers);
-  const consumableModifiers = runOptions?.consumableModifiers || null;
-  const consumableSuccessBonus = Number(consumableModifiers?.successBonusPercent) || 0;
+  const runPreparation = runOptions?.runPreparation || runOptions?.consumableModifiers || null;
+  const consumableSuccessBonus = Number(runPreparation?.successBonusPercent) || 0;
   const successChance = Math.min(
     100,
     Math.max(0, missionPreview.successChance + consumableSuccessBonus),
@@ -190,8 +197,9 @@ export const buildMissionRun = ({
     missionSuccess: quest.type === "dungeon" ? undefined : services.random() * 100 < successChance,
     successChance,
     failChance: Math.max(0, 100 - successChance),
-    consumableModifiers,
-    consumableSummary: formatConsumableUseSummary(consumableModifiers),
+    runPreparation,
+    consumableModifiers: runPreparation,
+    consumableSummary: formatConsumableUseSummary(runPreparation),
     moraleSuccessBonus: missionPreview.moraleSuccessBonus,
     partyPower: missionPreview.partyPower,
     missionPower: missionPreview.missionPower,
@@ -248,6 +256,7 @@ export const resolveDungeonChainContinuation = ({
     startTime: number,
     roster: Character[],
     chainContext: AnyRecord,
+    runOptions?: AnyRecord,
   ) => AnyRecord;
 }): ChainResult => {
   const chainContext = mission?.chainContext;
@@ -350,7 +359,11 @@ export const resolveDungeonChainContinuation = ({
     currentPosition: nextPosition,
     remainingMissionIds: remainingIds.slice(1),
   };
-  const queuedMission = buildRun(nextMission, mission.memberIds, startTime, roster, nextContext);
+  const continuedPreparation = chainContext?.runPreparation || mission?.runPreparation || mission?.consumableModifiers || null;
+  const queuedMission = buildRun(nextMission, mission.memberIds, startTime, roster, nextContext, {
+    runPreparation: continuedPreparation,
+    consumableModifiers: continuedPreparation,
+  });
   return {
     queuedMission: mission.calendarEventId
       ? { ...queuedMission, calendarEventId: mission.calendarEventId }

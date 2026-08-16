@@ -7,7 +7,18 @@ import type { Character } from "../types/characterTypes";
 import type { GuildInventory, ItemDefinition } from "../types/itemTypes";
 import { getSkillCap } from "../game/characterActivity";
 
-export const SUPPLY_PRICES = Object.freeze({ simple_thread: 1, coarse_thread: 1, fine_thread: 2, rune_thread: 3, empty_vial: 1, crystal_vial: 3, weak_flux: 1, strong_flux: 3 });
+export const SUPPLY_PRICES = Object.freeze({ simple_thread: 1, coarse_thread: 1, fine_thread: 2, rune_thread: 3, empty_vial: 1, crystal_vial: 3, weak_flux: 1, strong_flux: 3, mild_spices: 1, hot_spices: 2, soothing_spices: 3, refreshing_spring_water: 2, wooden_stock: 1, unstable_trigger: 3, fused_wiring: 8 });
+
+export const SECONDARY_PROFESSION_TRAINING_COST = 1;
+
+export const learnSecondaryProfession = ({ character, professionName, guildGold }: { character: Character; professionName: string; guildGold: number }) => {
+  if (!["Cooking", "Fishing", "First Aid"].includes(professionName)) return { learned: false as const, reason: "This is not a secondary profession." };
+  if (getCharacterProfession(character, professionName)) return { learned: false as const, reason: `${character.name} already knows ${professionName}.` };
+  if ((Number(guildGold) || 0) < SECONDARY_PROFESSION_TRAINING_COST) return { learned: false as const, reason: `Requires ${SECONDARY_PROFESSION_TRAINING_COST}g.` };
+  const knownRecipeIds = professionName === "Fishing" ? [] : RECIPE_DEFINITIONS.filter((recipe) => recipe.profession === professionName && recipe.acquisition.kind === "starter").map((recipe) => recipe.id);
+  const profession = { name: professionName, skill: 1, kind: "secondary" as const, knownRecipeIds };
+  return { learned: true as const, character: { ...character, professions: [...(character.professions || []), profession] }, guildGold: guildGold - SECONDARY_PROFESSION_TRAINING_COST, log: { type: "profession", message: `${character.name} learned ${professionName} for ${SECONDARY_PROFESSION_TRAINING_COST}g.` } };
+};
 
 const recipeKnown = (character: Character, recipe: RecipeDefinition) => {
   const profession = getCharacterProfession(character, recipe.profession);
@@ -118,7 +129,7 @@ export const rollRecipeDrop = ({ context, guildInventory, random = Math.random }
     if (!source.bossNames?.length) return true;
     const bossName = String(context.bossName || "").toLowerCase();
     if (source.bossNames.some((name) => bossName.includes(name.toLowerCase()) || name.toLowerCase().includes(bossName))) return true;
-    return context.isEndboss === true;
+    return source.strictBossSource !== true && context.isEndboss === true;
   });
   if (eligible.length === 0) return { dropped: false as const, guildInventory: ensureGuildInventory(guildInventory), recipe: null, log: null };
   const successful = eligible.filter((recipe) => random() < Math.max(0, Math.min(1, Number(recipe.acquisition.chance) || 0)));
@@ -133,6 +144,22 @@ export const rollAdventureMaterial = ({ level, guildInventory, random = Math.ran
   const cloth = level >= 50 ? "runecloth" : level >= 40 ? "mageweave_cloth" : level >= 30 ? "silk_cloth" : level >= 20 ? "wool_cloth" : "linen_cloth";
   const amount = 1 + Math.floor(random() * 3);
   return { dropped: true as const, guildInventory: addItemToGuildInventory(guildInventory, cloth, amount), itemId: cloth, amount };
+};
+
+export const rollCookingIngredientDrop = ({ level, zoneId, dungeonSetId, guildInventory, random = Math.random }: { level: number; zoneId?: string; dungeonSetId?: string; guildInventory: GuildInventory; random?: () => number }) => {
+  if (random() >= 0.12) return { dropped: false as const, guildInventory };
+  const source = String(dungeonSetId || zoneId || "");
+  const itemId = source === "dire_maul"
+    ? "runn_tum_tuber"
+    : source === "silithus"
+      ? "sandworm_meat"
+      : level >= 45
+        ? "giant_egg"
+        : level >= 20
+          ? "raptor_egg"
+          : "chunk_of_boar_meat";
+  const amount = 1 + Math.floor(random() * 2);
+  return { dropped: true as const, guildInventory: addItemToGuildInventory(guildInventory, itemId, amount), itemId, amount };
 };
 
 export const rollSourceMaterialDrop = ({ dungeonSetId, guildInventory, random = Math.random }: { dungeonSetId?: string; guildInventory: GuildInventory; random?: () => number }) => {

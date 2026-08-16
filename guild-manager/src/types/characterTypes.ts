@@ -6,6 +6,7 @@ export type CharacterRole = "Tank" | "Healer" | "DPS";
 export interface CharacterProfession {
   name: string;
   skill: number;
+  kind?: "primary" | "secondary";
   maxSkill?: number;
   knownRecipeIds?: string[];
 }

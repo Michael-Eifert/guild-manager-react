@@ -116,6 +116,7 @@ export default function HomeRoot() {
     handleCreateCalendarSeries,
     handleCraftRecipe,
     handleTrainRecipe,
+    handleTrainSecondaryProfession,
     handleLearnRecipe,
     handleBuyProfessionSupply,
     handleDisenchantItem,
@@ -548,6 +549,7 @@ export default function HomeRoot() {
                 guildGold={guildGold}
                 onCraftRecipe={handleCraftRecipe}
                 onTrainRecipe={handleTrainRecipe}
+                onTrainSecondaryProfession={handleTrainSecondaryProfession}
                 onLearnRecipe={handleLearnRecipe}
                 onBuySupply={handleBuyProfessionSupply}
                 onDisenchantItem={handleDisenchantItem}
@@ -658,6 +660,7 @@ export default function HomeRoot() {
             guildGold={guildGold}
             onCraftRecipe={handleCraftRecipe}
             onTrainRecipe={handleTrainRecipe}
+            onTrainSecondaryProfession={handleTrainSecondaryProfession}
             onLearnRecipe={handleLearnRecipe}
             onBuySupply={handleBuyProfessionSupply}
             onDisenchantItem={handleDisenchantItem}

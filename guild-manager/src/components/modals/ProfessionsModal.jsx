@@ -12,6 +12,7 @@ import {
   INVENTORY_ITEM_CATEGORY,
 } from "../../inventory/itemDefinitions";
 import { getQualityClass, getQualityLabel } from "../../utils";
+import { SECONDARY_PROFESSIONS_LIST } from "../../constants";
 import BaseModal from "./BaseModal";
 
 const TABS = Object.freeze([
@@ -74,6 +75,7 @@ const ProfessionsModal = ({
   guildGold = 0,
   onCraftRecipe,
   onTrainRecipe,
+  onTrainSecondaryProfession,
   onLearnRecipe,
   onBuySupply,
   onDisenchantItem,
@@ -284,11 +286,31 @@ const ProfessionsModal = ({
                           {profession.name}
                         </div>
                         <div className="text-[11px] text-gray-400">
-                          Skill {Number(profession.skill) || 1}
+                          Skill {Number(profession.skill) || 1} · {profession.kind === "secondary" ? "Secondary" : "Primary"}
                         </div>
                       </div>
                     ))}
                   </div>
+                  {SECONDARY_PROFESSIONS_LIST.some((professionName) =>
+                    !normalizeProfessions(character).some((profession) => profession.name === professionName)) && (
+                    <div className="mt-3 border-t border-gray-700 pt-2">
+                      <div className="mb-1.5 text-[10px] font-bold uppercase tracking-wide text-gray-500">Secondary Trainers · 1g each</div>
+                      <div className="flex flex-wrap gap-1.5">
+                        {SECONDARY_PROFESSIONS_LIST.filter((professionName) =>
+                          !normalizeProfessions(character).some((profession) => profession.name === professionName)).map((professionName) => (
+                          <button
+                            key={`${character.id}-${professionName}`}
+                            type="button"
+                            disabled={guildGold < 1}
+                            onClick={() => onTrainSecondaryProfession?.(character.id, professionName)}
+                            className="rounded border border-cyan-800 bg-cyan-950/30 px-2 py-1 text-[11px] text-cyan-100 disabled:opacity-40"
+                          >
+                            Learn {professionName}
+                          </button>
+                        ))}
+                      </div>
+                    </div>
+                  )}
                 </div>
               ))
             )}

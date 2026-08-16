@@ -1741,8 +1741,8 @@ describe("session persistence", () => {
     expect(result.normalizedRoster[0].pvp.unlockedPvpGearIds).toEqual(["pvp-trinket"]);
     expect(result.normalizedRoster[0].history).toEqual([]);
     expect(result.normalizedRoster[0].professions).toEqual([
-      { name: "Mining", skill: 1, knownRecipeIds: [] },
-      { name: "Blacksmithing", skill: 1, knownRecipeIds: ["recipe_rough_sharpening_stone"] },
+      { name: "Mining", skill: 1, kind: "primary", knownRecipeIds: [] },
+      { name: "Blacksmithing", skill: 1, kind: "primary", knownRecipeIds: ["recipe_rough_sharpening_stone"] },
     ]);
     expect(result.normalizedRoster[0].status).toBe("Idle");
     expect(result.loadedWorldPvpState.pvpReputation).toBe(9);
@@ -1819,8 +1819,8 @@ describe("session persistence", () => {
     });
 
     expect(result.normalizedRoster[0].professions).toEqual([
-      { name: "Tailoring", skill: 42, knownRecipeIds: ["recipe_apprentice_cloth_robe"] },
-      { name: "Enchanting", skill: 17, knownRecipeIds: ["recipe_enchant_minor_health"] },
+      { name: "Tailoring", skill: 42, kind: "primary", knownRecipeIds: ["recipe_apprentice_cloth_robe"] },
+      { name: "Enchanting", skill: 17, kind: "primary", knownRecipeIds: ["recipe_enchant_minor_health"] },
     ]);
   });
 

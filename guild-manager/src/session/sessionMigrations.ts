@@ -1,7 +1,7 @@
 import { z } from "zod";
 
 export const SESSION_FORMAT_VALUE = "guild-manager-session" as const;
-export const CURRENT_SESSION_VERSION = 18;
+export const CURRENT_SESSION_VERSION = 19;
 
 const dataSchema = z.record(z.string(), z.unknown());
 const recognizedKeys = new Set([
@@ -209,6 +209,54 @@ export const SESSION_MIGRATIONS: ReadonlyArray<Migration> = [
         contentPhase: "classic",
         contentPhaseStartedDayIndex: 0,
       },
+    };
+  },
+  (data) => {
+    const missionBoardState = data.missionBoardState && typeof data.missionBoardState === "object"
+      ? (data.missionBoardState as Record<string, unknown>)
+      : {};
+    const gameSettings = data.gameSettings && typeof data.gameSettings === "object"
+      ? (data.gameSettings as Record<string, unknown>)
+      : {};
+    const mode = ["none", "basic", "best"].includes(String(missionBoardState.consumableMode || ""))
+      ? String(missionBoardState.consumableMode)
+      : "none";
+    const enabled = mode !== "none";
+    return {
+      ...data,
+      roster: Array.isArray(data.roster)
+        ? data.roster.map((entry) => {
+            const character = entry && typeof entry === "object" ? (entry as Record<string, unknown>) : {};
+            return {
+              ...character,
+              professions: Array.isArray(character.professions)
+                ? character.professions.map((rawProfession) => {
+                    const profession = rawProfession && typeof rawProfession === "object" ? (rawProfession as Record<string, unknown>) : {};
+                    const name = String(profession.name || "");
+                    return {
+                      ...profession,
+                      kind: ["Cooking", "Fishing", "First Aid"].includes(name) ? "secondary" : "primary",
+                    };
+                  })
+                : character.professions,
+            };
+          })
+        : [],
+      activeMissions: Array.isArray(data.activeMissions)
+        ? data.activeMissions.map((entry) => {
+            const mission = entry && typeof entry === "object" ? (entry as Record<string, unknown>) : {};
+            return { ...mission, runPreparation: mission.runPreparation || mission.consumableModifiers || null };
+          })
+        : [],
+      missionBoardState: {
+        ...missionBoardState,
+        runPreparationSelection: missionBoardState.runPreparationSelection || {
+          mode,
+          enabledCategories: { alchemy: enabled, food: enabled, firstAid: enabled, engineering: enabled, weapon: enabled },
+          engineeringStrategy: "auto",
+        },
+      },
+      gameSettings: { ...gameSettings, autoRunPreparationMode: "none" },
     };
   },
 ];

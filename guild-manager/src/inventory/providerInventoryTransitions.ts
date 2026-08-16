@@ -16,6 +16,7 @@ import {
   applyEquipmentEnchant,
   disenchantUnequippedItem,
   learnDroppedRecipe,
+  learnSecondaryProfession,
   learnTrainerRecipe,
   purchaseProfessionSupply,
 } from "../professions/professionProgression";
@@ -130,6 +131,14 @@ export const trainProfessionRecipe = ({ characterId, recipeId, roster, guildGold
   const character = roster.find((member) => member.id === characterId);
   if (!character) return { learned: false as const, reason: "Missing crafter." };
   const result = learnTrainerRecipe({ character, recipeId, guildGold });
+  if (!result.learned) return result;
+  return { ...result, roster: roster.map((member) => member.id === characterId ? result.character : member) };
+};
+
+export const trainSecondaryProfession = ({ characterId, professionName, roster, guildGold }: { characterId: string; professionName: string; roster: Character[]; guildGold: number }) => {
+  const character = roster.find((member) => member.id === characterId);
+  if (!character) return { learned: false as const, reason: "Missing character." };
+  const result = learnSecondaryProfession({ character, professionName, guildGold });
   if (!result.learned) return result;
   return { ...result, roster: roster.map((member) => member.id === characterId ? result.character : member) };
 };

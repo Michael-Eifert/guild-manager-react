@@ -40,9 +40,23 @@ export const PROFESSIONS = Object.freeze({
   TAILORING: "Tailoring",
   ENCHANTING: "Enchanting",
   ALCHEMY: "Alchemy",
+  ENGINEERING: "Engineering",
+  COOKING: "Cooking",
+  FISHING: "Fishing",
+  FIRST_AID: "First Aid",
 });
 
-export const PROFESSIONS_LIST = Object.values(PROFESSIONS);
+export const SECONDARY_PROFESSIONS_LIST = Object.freeze([
+  PROFESSIONS.COOKING,
+  PROFESSIONS.FISHING,
+  PROFESSIONS.FIRST_AID,
+]);
+
+export const PROFESSIONS_LIST = Object.freeze(
+  Object.values(PROFESSIONS).filter(
+    (profession) => !(SECONDARY_PROFESSIONS_LIST as readonly string[]).includes(profession),
+  ),
+);
 
 export const DEFAULT_PROF_PAIR = [
   PROFESSIONS.MINING,
@@ -52,7 +66,7 @@ export const DEFAULT_PROF_PAIR = [
 export const PROF_PAIRS = {
   Warrior: [PROFESSIONS.MINING, PROFESSIONS.BLACKSMITHING],
   Paladin: [PROFESSIONS.MINING, PROFESSIONS.BLACKSMITHING],
-  Hunter: [PROFESSIONS.SKINNING, PROFESSIONS.LEATHERWORKING],
+  Hunter: [PROFESSIONS.MINING, PROFESSIONS.ENGINEERING],
   Rogue: [PROFESSIONS.SKINNING, PROFESSIONS.LEATHERWORKING],
   Shaman: [PROFESSIONS.HERBALISM, PROFESSIONS.ALCHEMY],
   Druid: [PROFESSIONS.HERBALISM, PROFESSIONS.ALCHEMY],
@@ -70,6 +84,10 @@ export const PROF_ACTIONS = {
   [PROFESSIONS.TAILORING]: "🧶 Weaving...",
   [PROFESSIONS.ENCHANTING]: "✨ Disenchanting...",
   [PROFESSIONS.ALCHEMY]: "⚗️ Brewing...",
+  [PROFESSIONS.ENGINEERING]: "💣 Tinkering...",
+  [PROFESSIONS.COOKING]: "🍲 Cooking...",
+  [PROFESSIONS.FISHING]: "🎣 Fishing...",
+  [PROFESSIONS.FIRST_AID]: "🩹 Making bandages...",
 };
 
 const wowItemIcon = (iconCode: string) =>

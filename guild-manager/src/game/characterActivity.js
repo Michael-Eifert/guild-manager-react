@@ -154,7 +154,7 @@ export const applyProfessionSkillAttempts = ({
     skilledProfessionName = targetProfession?.name || null;
     attempted = true;
 
-    const isGatheringProfession = ["Mining", "Herbalism", "Skinning"].includes(
+    const isGatheringProfession = ["Mining", "Herbalism", "Skinning", "Fishing"].includes(
       targetProfession?.name,
     );
     const targetSuccessChance =

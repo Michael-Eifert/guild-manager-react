@@ -37,6 +37,7 @@ describe("game settings", () => {
       realmGuildDensity: "medium",
       realmGuildDynamics: "medium",
       officerAutonomyMode: "automatic",
+      autoRunPreparationMode: "none",
     });
   });
 
@@ -46,6 +47,7 @@ describe("game settings", () => {
       realmGuildDensity: "medium",
       realmGuildDynamics: "medium",
       officerAutonomyMode: "automatic",
+      autoRunPreparationMode: "none",
     });
     expect(
       normalizeGameSettings({

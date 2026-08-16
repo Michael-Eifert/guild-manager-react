@@ -1,5 +1,5 @@
 import { addItemToGuildInventory } from "../inventory/guildInventoryUtils";
-import { pickMaterialForProfession } from "./materialDefinitions";
+import { getMiningStoneForSkill, pickMaterialForProfession } from "./materialDefinitions";
 import type { Character, CharacterProfession } from "../types/characterTypes";
 import type { GuildInventory } from "../types/itemTypes";
 
@@ -64,7 +64,7 @@ export const generatePassiveProfessionMaterial = ({
 }) => {
   const profession = getCharacterProfession(character, professionName);
   if (!profession) {
-    return { guildInventory, material: null, quantity: 0, log: null };
+    return { guildInventory, material: null, quantity: 0, byproduct: null, byproductQuantity: 0, log: null };
   }
   const materialItemId = pickMaterialForProfession({
     professionName,
@@ -72,13 +72,22 @@ export const generatePassiveProfessionMaterial = ({
     random,
   });
   if (!materialItemId) {
-    return { guildInventory, material: null, quantity: 0, log: null };
+    return { guildInventory, material: null, quantity: 0, byproduct: null, byproductQuantity: 0, log: null };
   }
   const quantity = Math.max(1, Math.floor((Number(profession.skill) || 1) / 100) + 1);
+  const byproductItemId = professionName === "Mining"
+    ? getMiningStoneForSkill(profession.skill)
+    : null;
+  const byproductQuantity = byproductItemId ? Math.max(1, Math.floor(quantity / 2)) : 0;
+  const inventoryWithMaterial = addItemToGuildInventory(guildInventory, materialItemId, quantity);
   return {
-    guildInventory: addItemToGuildInventory(guildInventory, materialItemId, quantity),
+    guildInventory: byproductItemId
+      ? addItemToGuildInventory(inventoryWithMaterial, byproductItemId, byproductQuantity)
+      : inventoryWithMaterial,
     material: materialItemId,
     quantity,
+    byproduct: byproductItemId,
+    byproductQuantity,
     log: {
       type: "profession-material",
       characterName: character?.name,

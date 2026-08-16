@@ -38,6 +38,7 @@ import { normalizeGuildActivityStats } from "../guild/guildActivityStats";
 import { retainGuildLogEntries } from "../guild/guildLog";
 import { normalizeGameSettings } from "../settings/gameSettings";
 import { getStarterRecipeIds } from "../professions/recipeDefinitions";
+import { normalizeRunPreparationSelection } from "../professions/consumableEffects";
 
 export const SESSION_FORMAT = SESSION_FORMAT_VALUE;
 export const SESSION_VERSION = CURRENT_SESSION_VERSION;
@@ -87,6 +88,9 @@ const normalizeCharacterProfessions = (character) => {
         .map((profession) => ({
           ...profession,
           skill: Math.max(1, Number(profession.skill) || 1),
+          kind: ["Cooking", "Fishing", "First Aid"].includes(profession.name)
+            ? "secondary"
+            : "primary",
           knownRecipeIds: Array.isArray(profession.knownRecipeIds)
             ? [...new Set(profession.knownRecipeIds.map(String))]
             : getStarterRecipeIds(profession.name),
@@ -100,6 +104,9 @@ const normalizeCharacterProfessions = (character) => {
               1,
               Number(value && typeof value === "object" ? value.skill : value) || 1,
             ),
+            kind: ["Cooking", "Fishing", "First Aid"].includes(name)
+              ? "secondary"
+              : "primary",
             knownRecipeIds:
               value && typeof value === "object" && Array.isArray(value.knownRecipeIds)
                 ? [...new Set(value.knownRecipeIds.map(String))]
@@ -113,6 +120,7 @@ const normalizeCharacterProfessions = (character) => {
   return starterProfessions.map((name) => ({
     name,
     skill: 1,
+    kind: "primary",
     knownRecipeIds: getStarterRecipeIds(name),
   }));
 };
@@ -139,6 +147,9 @@ export const normalizeMissionBoardState = (state) => {
       MISSION_CONSUMABLE_MODES.has(safe.consumableMode)
         ? safe.consumableMode
         : DEFAULT_MISSION_BOARD_STATE.consumableMode,
+    runPreparationSelection: normalizeRunPreparationSelection(
+      safe.runPreparationSelection || safe.consumableMode || DEFAULT_MISSION_BOARD_STATE.consumableMode,
+    ),
   };
 };
 
