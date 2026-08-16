@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 
 import {
+  clearOnlineSimulationPresentation,
   clearPersistedOfflineStatuses,
   DEFAULT_GAME_SETTINGS,
   normalizeGameSettings,
@@ -74,5 +75,23 @@ describe("game settings", () => {
       { id: "stale", status: "Idle", statusText: "Awaiting Orders" },
       { id: "mission", status: "Questing", statusText: "On Mission" },
     ]);
+  });
+
+  it("removes stale online badges when offline simulation is disabled", () => {
+    expect(
+      clearOnlineSimulationPresentation({
+        id: "legacy-online",
+        status: "Idle",
+        statusText: "Awaiting Orders",
+        onlineStatus: "Online",
+        onlineProfile: "Regular",
+        nextLoginDayIndex: 3,
+        nextLoginHour: 12,
+      }),
+    ).toEqual({
+      id: "legacy-online",
+      status: "Idle",
+      statusText: "Awaiting Orders",
+    });
   });
 });

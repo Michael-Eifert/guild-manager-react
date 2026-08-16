@@ -167,7 +167,9 @@ describe("world map zone summaries", () => {
 
       expect(regionalMap.mapId).toBeGreaterThan(0);
       expect(regionalMap.src).toContain(
-        "wow.zamimg.com/images/wow/classic/maps/enus/original",
+        zone.requiredContentPhase
+          ? "wow.zamimg.com/images/wow/tbc/maps/enus/original"
+          : "wow.zamimg.com/images/wow/classic/maps/enus/original",
       );
       expect(regionalMap.sourceUrl).toContain(
         zone.requiredContentPhase
@@ -188,6 +190,23 @@ describe("world map zone summaries", () => {
     expect(regionalMap.sourceUrl).toBe(
       "https://www.wowhead.com/classic/zone=440/tanaris",
     );
+  });
+
+  it.each([
+    ["eversong_woods", 3430, "eversong-woods"],
+    ["ghostlands", 3433, "ghostlands"],
+    ["azuremyst_isle", 3524, "azuremyst-isle"],
+    ["bloodmyst_isle", 3525, "bloodmyst-isle"],
+  ])("uses Wowhead TBC map metadata for %s", (zoneId, mapId, slug) => {
+    const zone = ZONE_DEFINITIONS.find((entry) => entry.id === zoneId);
+    const regionalMap = getZoneRegionalMap(zone);
+
+    expect(regionalMap).toEqual({
+      mapId,
+      sourceName: "Wowhead TBC",
+      sourceUrl: `https://www.wowhead.com/tbc/zone=${mapId}/${slug}`,
+      src: `https://wow.zamimg.com/images/wow/tbc/maps/enus/original/${mapId}.jpg`,
+    });
   });
 });
 

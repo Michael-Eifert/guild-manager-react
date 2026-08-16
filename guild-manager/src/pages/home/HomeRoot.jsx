@@ -18,6 +18,7 @@ import {
 } from "../../guild/guildSetup";
 import { getActiveDungeonRunCount } from "../../dungeons/dungeonBoardUtils";
 import { ROUTES } from "../../routes";
+import { clearOnlineSimulationPresentation } from "../../settings/gameSettings";
 
 const AdventureBoardPage = lazy(() => import("../adventure-board/AdventureBoardPage"));
 const BattlefieldsPage = lazy(() => import("../battlefields/BattlefieldsPage"));
@@ -219,7 +220,9 @@ export default function HomeRoot() {
   const showOnlineStatus =
     gameSettings?.offlineSimulationEnabled !== false;
   const displayRoster = roster.map((character) => {
-    if (!showOnlineStatus) return character;
+    if (!showOnlineStatus) {
+      return clearOnlineSimulationPresentation(character);
+    }
     const online = guildOnlineSnapshot.byId[String(character.id)];
     if (!online) return character;
     return {

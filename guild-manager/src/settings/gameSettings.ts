@@ -70,18 +70,37 @@ export const normalizeGameSettings = (
   };
 };
 
+export const clearOnlineSimulationPresentation = <T extends object>(
+  character: T,
+): T => {
+  const sanitized = { ...character } as T & {
+    onlineStatus?: unknown;
+    onlineProfile?: unknown;
+    nextLoginDayIndex?: unknown;
+    nextLoginHour?: unknown;
+  };
+
+  delete sanitized.onlineStatus;
+  delete sanitized.onlineProfile;
+  delete sanitized.nextLoginDayIndex;
+  delete sanitized.nextLoginHour;
+
+  return sanitized;
+};
+
 export const clearPersistedOfflineStatuses = <
   T extends { status?: unknown; statusText?: unknown },
 >(
   characters: T[],
 ): T[] =>
   characters.map((character) => {
-    if (character.status !== "Offline") return character;
+    const sanitized = clearOnlineSimulationPresentation(character);
+    if (sanitized.status !== "Offline") return sanitized;
     const staleScheduleText = String(character.statusText || "").startsWith(
       "Next login:",
     );
     return {
-      ...character,
+      ...sanitized,
       status: "Idle",
       ...(staleScheduleText ? { statusText: "Awaiting Orders" } : {}),
     };

@@ -118,10 +118,12 @@ export const getZoneRegionalMap = (zone: ZoneReference) => {
   const classicMap = getClassicMapConfig(zone);
   if (!classicMap) return null;
 
+  const gameVersion = classicMap.tbc ? "tbc" : "classic";
+
   return {
     mapId: classicMap.mapId,
     sourceName: classicMap.tbc ? "Wowhead TBC" : "Wowhead Classic",
-    sourceUrl: `https://www.wowhead.com/${classicMap.tbc ? "tbc/" : "classic/"}zone=${classicMap.mapId}/${classicMap.slug}`,
-    src: `https://wow.zamimg.com/images/wow/classic/maps/enus/original/${classicMap.mapId}.jpg`,
+    sourceUrl: `https://www.wowhead.com/${gameVersion}/zone=${classicMap.mapId}/${classicMap.slug}`,
+    src: `https://wow.zamimg.com/images/wow/${gameVersion}/maps/enus/original/${classicMap.mapId}.jpg`,
   };
 };
