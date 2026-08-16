@@ -13,7 +13,10 @@ import type {
   GuildRankId,
   RelationsManagementMode,
 } from "../guildRelations/guildRelations";
-import type { GameSettingsState } from "../settings/gameSettings";
+import type {
+  GameSettingsState,
+  OfficerAutonomyMode,
+} from "../settings/gameSettings";
 import type {
   BrowserSaveSlotId,
   BrowserSaveSlotSummary,
@@ -160,6 +163,11 @@ export interface GameActions {
     labels: Record<GuildRankId, string>,
   ) => boolean;
   setRelationsManagementMode: (mode: RelationsManagementMode) => void;
+  setOfficerAutonomyMode: (mode: OfficerAutonomyMode) => void;
+  resolveOfficerAction: (
+    actionId: string,
+    decision: "accept" | "decline",
+  ) => boolean;
   resolveGuildIncident: (incidentId: string, choiceId: string) => void;
   castGuildElectionVote: (candidateId: string) => void;
   finishGuildElection: () => void;

@@ -2,7 +2,17 @@ export type GameSettingsState = {
   offlineSimulationEnabled: boolean;
   realmGuildDensity: RealmGuildDensity;
   realmGuildDynamics: RealmGuildDynamics;
+  officerAutonomyMode: OfficerAutonomyMode;
 };
+
+export const OFFICER_AUTONOMY_MODES = ["off", "proposals", "automatic"] as const;
+export type OfficerAutonomyMode = typeof OFFICER_AUTONOMY_MODES[number];
+
+export const OFFICER_AUTONOMY_MODE_OPTIONS = Object.freeze([
+  Object.freeze({ value: "off" as const, label: "Off" }),
+  Object.freeze({ value: "proposals" as const, label: "Proposals" }),
+  Object.freeze({ value: "automatic" as const, label: "Automatic" }),
+]);
 
 export const REALM_GUILD_DENSITIES = ["few", "medium", "many"] as const;
 export type RealmGuildDensity = typeof REALM_GUILD_DENSITIES[number];
@@ -26,6 +36,7 @@ export const DEFAULT_GAME_SETTINGS: Readonly<GameSettingsState> = Object.freeze(
   offlineSimulationEnabled: false,
   realmGuildDensity: "medium",
   realmGuildDynamics: "medium",
+  officerAutonomyMode: "automatic",
 });
 
 export const normalizeGameSettings = (
@@ -51,6 +62,11 @@ export const normalizeGameSettings = (
     )
       ? (input.realmGuildDynamics as RealmGuildDynamics)
       : DEFAULT_GAME_SETTINGS.realmGuildDynamics,
+    officerAutonomyMode: OFFICER_AUTONOMY_MODES.includes(
+      input.officerAutonomyMode as OfficerAutonomyMode,
+    )
+      ? (input.officerAutonomyMode as OfficerAutonomyMode)
+      : DEFAULT_GAME_SETTINGS.officerAutonomyMode,
   };
 };
 

@@ -29,6 +29,7 @@ import {
   buildRecruitmentEquipment,
   getRecruitmentCapacity,
   getRecruitmentTierOptions,
+  resolveApplicationRecruitmentResult,
   resolveRecruitmentResult,
 } from "../recruitment/recruitmentLogic";
 import { RECRUITMENT_SCOUT_FOCUS } from "../recruitment/scoutingFocus";
@@ -753,6 +754,23 @@ describe("recruitment", () => {
     expect(secondRecruitment.skippedDuplicateCount).toBe(1);
     expect(secondRecruitment.updatedRoster).toHaveLength(1);
     expect(secondRecruitment.spentGold).toBe(0);
+  });
+
+  it("accepts free applications without a gold calculation and respects capacity", () => {
+    const result = resolveApplicationRecruitmentResult({
+      currentRoster: [{ id: "existing" }],
+      selectedCandidates: [
+        { id: "a", name: "A" },
+        { id: "b", name: "B" },
+        { id: "b-copy", name: "B" },
+      ],
+      maxRoster: 3,
+    });
+
+    expect(result.recruits.map((recruit) => recruit.id)).toEqual(["a", "b"]);
+    expect(result.updatedRoster).toHaveLength(3);
+    expect(result.skippedDuplicateCount).toBe(1);
+    expect(result).not.toHaveProperty("spentGold");
   });
 
   it("unlocks recruitment tiers from level achievements and raid attunement", () => {

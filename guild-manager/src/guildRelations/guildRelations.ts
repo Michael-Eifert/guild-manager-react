@@ -86,6 +86,27 @@ export const LEADERSHIP_TRAIT_DEFINITIONS: Readonly<
 export type RelationsManagementMode = "automatic" | "manual";
 export type GuildIncidentStatus = "pending" | "resolved";
 
+export type OfficerActionKind = "recruitment" | "rank_change";
+export type OfficerActionStatus = "pending" | "applied" | "declined" | "expired";
+
+export type OfficerAction = {
+  id: string;
+  kind: OfficerActionKind;
+  status: OfficerActionStatus;
+  actorId: string;
+  actorName: string;
+  targetId: string;
+  targetName: string;
+  applicationId?: string;
+  fromRank?: GuildRankId;
+  toRank?: GuildRankId;
+  reasons: string[];
+  score: number;
+  createdDayIndex: number;
+  expiresDayIndex: number;
+  resolvedDayIndex?: number;
+};
+
 export type GuildIncidentChoice = {
   id: string;
   label: string;
@@ -132,6 +153,9 @@ export type GuildRelationsState = {
   lastIncidentDayIndex: number;
   sequence: number;
   election: GuildElection | null;
+  officerActions: OfficerAction[];
+  lastOfficerActionDayIndex: number;
+  rankChangedDayByMemberId: Record<string, number>;
 };
 
 type RelationshipEntry = {
@@ -207,6 +231,9 @@ export const createInitialGuildRelationsState = (
     lastIncidentDayIndex: -1,
     sequence: 0,
     election: null,
+    officerActions: [],
+    lastOfficerActionDayIndex: -1,
+    rankChangedDayByMemberId: {},
   };
 };
 
@@ -251,6 +278,19 @@ export const normalizeGuildRelationsState = (
   existingMasters.slice(1).forEach((id) => {
     assignments[id] = GUILD_RANK.LEADERSHIP;
   });
+  const ledClasses = new Set<string>();
+  roster.forEach((member) => {
+    const memberId = String(member?.id || "");
+    if (assignments[memberId] !== GUILD_RANK.CLASS_LEADER) return;
+    const memberClass = String(
+      member?.charClass || member?.className || member?.class || "",
+    );
+    if (!memberClass || ledClasses.has(memberClass)) {
+      assignments[memberId] = GUILD_RANK.MEMBER;
+      return;
+    }
+    ledClasses.add(memberClass);
+  });
 
   const incidents = (Array.isArray(safe.incidents) ? safe.incidents : [])
     .filter((incident): incident is GuildIncident =>
@@ -277,6 +317,52 @@ export const normalizeGuildRelationsState = (
         } as GuildElection)
       : null;
 
+  const officerActions = (Array.isArray(safe.officerActions)
+    ? safe.officerActions
+    : []
+  )
+    .filter(
+      (action): action is OfficerAction =>
+        Boolean(
+          action &&
+            typeof action === "object" &&
+            String(action.id || "").trim() &&
+            (action.kind === "recruitment" || action.kind === "rank_change") &&
+            ["pending", "applied", "declined", "expired"].includes(
+              action.status,
+            ),
+        ),
+    )
+    .map((action) => ({
+      ...action,
+      actorId: String(action.actorId || ""),
+      targetId: String(action.targetId || ""),
+      reasons: Array.isArray(action.reasons)
+        ? action.reasons.map(String).filter(Boolean).slice(0, 4)
+        : [],
+      score: Math.max(0, Math.round(Number(action.score) || 0)),
+      createdDayIndex: Math.max(
+        0,
+        Math.floor(Number(action.createdDayIndex) || 0),
+      ),
+      expiresDayIndex: Math.max(
+        0,
+        Math.floor(Number(action.expiresDayIndex) || 0),
+      ),
+    }))
+    .slice(0, 100);
+
+  const rankChangedDayByMemberId = Object.fromEntries(
+    Object.entries(safe.rankChangedDayByMemberId || {})
+      .filter(([memberId, dayIndex]) =>
+        rosterIds.includes(memberId) && Number.isFinite(Number(dayIndex)),
+      )
+      .map(([memberId, dayIndex]) => [
+        memberId,
+        Math.floor(Number(dayIndex)),
+      ]),
+  );
+
   return {
     rankLabels: labels,
     assignments,
@@ -289,6 +375,13 @@ export const normalizeGuildRelationsState = (
     sequence: Math.max(0, Math.floor(Number(safe.sequence) || 0)),
     election:
       election && election.candidateIds.length > 0 ? election : null,
+    officerActions,
+    lastOfficerActionDayIndex: Number.isFinite(
+      Number(safe.lastOfficerActionDayIndex),
+    )
+      ? Math.floor(Number(safe.lastOfficerActionDayIndex))
+      : -1,
+    rankChangedDayByMemberId,
   };
 };
 
@@ -329,6 +422,26 @@ export const assignGuildRank = ({
     });
   } else if (assignments[memberId] === GUILD_RANK.GUILD_MASTER) {
     return normalized;
+  }
+  if (rank === GUILD_RANK.CLASS_LEADER) {
+    const target = roster.find(
+      (member) => String(member.id) === String(memberId),
+    );
+    const targetClass = String(
+      target?.charClass || target?.className || target?.class || "",
+    );
+    const classAlreadyLed = roster.some((member) => {
+      const id = String(member.id);
+      const memberClass = String(
+        member.charClass || member.className || member.class || "",
+      );
+      return (
+        id !== memberId &&
+        memberClass === targetClass &&
+        assignments[id] === GUILD_RANK.CLASS_LEADER
+      );
+    });
+    if (targetClass && classAlreadyLed) return normalized;
   }
   assignments[memberId] = rank;
   return { ...normalized, assignments };

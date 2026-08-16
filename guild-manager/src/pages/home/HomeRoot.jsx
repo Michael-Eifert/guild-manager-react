@@ -391,6 +391,9 @@ export default function HomeRoot() {
                 onSetRankLabels={actions.setGuildRankLabels}
                 onSetManagementMode={actions.setRelationsManagementMode}
                 onResolveIncident={actions.resolveGuildIncident}
+                officerAutonomyMode={gameSettings.officerAutonomyMode}
+                onSetOfficerAutonomyMode={actions.setOfficerAutonomyMode}
+                onResolveOfficerAction={actions.resolveOfficerAction}
               />
             }
           />

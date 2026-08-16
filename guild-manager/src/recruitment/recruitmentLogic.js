@@ -532,6 +532,49 @@ export const filterUniqueRecruitmentCandidates = ({
   });
 };
 
+const normalizeNewRecruit = (candidate) => ({
+  ...candidate,
+  status: candidate?.status || "Idle",
+  statusText: candidate?.statusText || "Waiting for orders...",
+  activityMode: candidate?.activityMode || "Auto",
+  morale: getCharacterMorale(candidate),
+  history: Array.isArray(candidate?.history) ? candidate.history : [],
+  keys: Array.isArray(candidate?.keys) ? candidate.keys : [],
+  adventureGoalQueue: Array.isArray(candidate?.adventureGoalQueue)
+    ? candidate.adventureGoalQueue
+    : [],
+  clearedMissionIds: Array.isArray(candidate?.clearedMissionIds)
+    ? candidate.clearedMissionIds
+    : [],
+});
+
+export const resolveApplicationRecruitmentResult = ({
+  currentRoster,
+  selectedCandidates,
+  maxRoster,
+}) => {
+  const rosterList = Array.isArray(currentRoster) ? currentRoster : [];
+  const candidateList = Array.isArray(selectedCandidates)
+    ? selectedCandidates
+    : [];
+  const uniqueCandidateList = filterUniqueRecruitmentCandidates({
+    currentRoster: rosterList,
+    selectedCandidates: candidateList,
+  });
+  const openSlots = Math.max(
+    0,
+    Math.floor(Number(maxRoster) || 0) - rosterList.length,
+  );
+  const recruits = uniqueCandidateList
+    .slice(0, openSlots)
+    .map(normalizeNewRecruit);
+  return {
+    recruits,
+    updatedRoster: [...rosterList, ...recruits],
+    skippedDuplicateCount: candidateList.length - uniqueCandidateList.length,
+  };
+};
+
 export const resolveRecruitmentResult = ({
   currentRoster,
   currentGold,
@@ -555,21 +598,9 @@ export const resolveRecruitmentResult = ({
     recruitCostGold: safeRecruitCost,
   });
 
-  const recruits = uniqueCandidateList.slice(0, availableSlots).map((candidate) => ({
-    ...candidate,
-    status: candidate?.status || "Idle",
-    statusText: candidate?.statusText || "Waiting for orders...",
-    activityMode: candidate?.activityMode || "Auto",
-    morale: getCharacterMorale(candidate),
-    history: Array.isArray(candidate?.history) ? candidate.history : [],
-    keys: Array.isArray(candidate?.keys) ? candidate.keys : [],
-    adventureGoalQueue: Array.isArray(candidate?.adventureGoalQueue)
-      ? candidate.adventureGoalQueue
-      : [],
-    clearedMissionIds: Array.isArray(candidate?.clearedMissionIds)
-      ? candidate.clearedMissionIds
-      : [],
-  }));
+  const recruits = uniqueCandidateList
+    .slice(0, availableSlots)
+    .map(normalizeNewRecruit);
   const spentGold = Math.max(0, recruits.length - 1) * safeRecruitCost;
   const updatedGold = Math.max(0, safeGold - spentGold);
   const updatedRoster = [...rosterList, ...recruits];

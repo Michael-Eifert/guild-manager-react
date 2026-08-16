@@ -595,6 +595,39 @@ const GuildSetupScreen = ({
               />
             </label>
 
+            <label className="flex cursor-pointer items-start justify-between gap-4 rounded-lg border border-amber-900/70 bg-amber-950/15 p-4 transition-colors hover:border-amber-700">
+              <span>
+                <span className="block text-sm font-bold text-amber-100">
+                  Officer Autonomy
+                </span>
+                <span className="mt-1 block text-xs leading-relaxed text-slate-400">
+                  Appointed officers may accept free applications and manage
+                  lower guild ranks. Detailed proposal controls remain available
+                  in Guild Relations.
+                </span>
+              </span>
+              <span className="flex shrink-0 items-center gap-2 text-xs font-bold text-slate-300">
+                {normalizedGameSettings.officerAutonomyMode === "off"
+                  ? "Off"
+                  : "On"}
+                <input
+                  aria-label="Officer Autonomy"
+                  type="checkbox"
+                  checked={
+                    normalizedGameSettings.officerAutonomyMode !== "off"
+                  }
+                  onChange={(event) =>
+                    onGameSettingsChange?.({
+                      officerAutonomyMode: event.target.checked
+                        ? "automatic"
+                        : "off",
+                    })
+                  }
+                  className="h-5 w-5 rounded border-slate-600 bg-slate-950 accent-amber-500"
+                />
+              </span>
+            </label>
+
             <div className="grid gap-3 md:grid-cols-2">
               <div className="rounded-lg border border-amber-900/60 bg-amber-950/15 p-4">
                 <span className="block text-sm font-bold text-amber-100">

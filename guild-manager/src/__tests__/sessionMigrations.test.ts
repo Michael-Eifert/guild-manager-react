@@ -55,10 +55,26 @@ describe("session migrations", () => {
 
     expect(migrated.gameSettings).toEqual({
       offlineSimulationEnabled: true,
+      officerAutonomyMode: "off",
     });
     expect(current.gameSettings).toEqual({
       offlineSimulationEnabled: false,
     });
+  });
+
+  it("keeps officer autonomy off for old saves", () => {
+    const migrated = parseSessionPayload(
+      JSON.stringify({
+        format: "guild-manager-session",
+        version: 15,
+        data: {
+          roster: [{ id: "legacy-officer" }],
+          gameSettings: { officerAutonomyMode: "automatic" },
+        },
+      }),
+    );
+
+    expect(migrated.gameSettings.officerAutonomyMode).toBe("off");
   });
 
   it("adds the version 15 weapon slots and personal equipment inventory", () => {

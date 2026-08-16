@@ -248,4 +248,65 @@ describe("GuildRelationsPage", () => {
       }),
     ).toBeNull();
   });
+
+  it("shows officer powers and resolves proposals from the Officer Desk", () => {
+    const initialState = createInitialGuildRelationsState(roster);
+    const state = {
+      ...initialState,
+      assignments: {
+        ...initialState.assignments,
+        member: GUILD_RANK.OFFICER,
+        recruit: GUILD_RANK.RECRUIT,
+      },
+      officerActions: [
+        {
+          id: "proposal",
+          kind: "rank_change" as const,
+          status: "pending" as const,
+          actorId: "member",
+          actorName: "Member",
+          targetId: "recruit",
+          targetName: "Recruit",
+          fromRank: GUILD_RANK.RECRUIT,
+          toRank: GUILD_RANK.MEMBER,
+          reasons: ["completed probation"],
+          score: 75,
+          createdDayIndex: 3,
+          expiresDayIndex: 6,
+        },
+      ],
+    };
+    const onSetMode = vi.fn();
+    const onResolveAction = vi.fn(() => true);
+    render(
+      <GuildRelationsPage
+        roster={roster}
+        relationships={relationships}
+        state={state}
+        insights={buildGuildRelationInsights({
+          roster,
+          relationships,
+          relationsState: state,
+        })}
+        currentDayIndex={4}
+        onSelectCharacter={vi.fn()}
+        onSetRank={vi.fn()}
+        onSetRankLabels={() => true}
+        onSetManagementMode={vi.fn()}
+        onResolveIncident={vi.fn()}
+        officerAutonomyMode="proposals"
+        onSetOfficerAutonomyMode={onSetMode}
+        onResolveOfficerAction={onResolveAction}
+      />,
+    );
+
+    expect(screen.getByRole("heading", { name: "Officer Desk" })).toBeTruthy();
+    expect(screen.queryByText(/Accept Recruit's free application/i)).toBeNull();
+    expect(screen.getByText(/Move Recruit from Recruit to Member/i)).toBeTruthy();
+    expect(screen.getByText(/manage Recruit and Member ranks/i)).toBeTruthy();
+    fireEvent.click(screen.getByRole("button", { name: "Automatic" }));
+    expect(onSetMode).toHaveBeenCalledWith("automatic");
+    fireEvent.click(screen.getByRole("button", { name: "Accept" }));
+    expect(onResolveAction).toHaveBeenCalledWith("proposal", "accept");
+  });
 });

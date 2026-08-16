@@ -35,6 +35,7 @@ describe("game settings", () => {
       offlineSimulationEnabled: false,
       realmGuildDensity: "medium",
       realmGuildDynamics: "medium",
+      officerAutonomyMode: "automatic",
     });
   });
 
@@ -43,6 +44,7 @@ describe("game settings", () => {
       offlineSimulationEnabled: true,
       realmGuildDensity: "medium",
       realmGuildDynamics: "medium",
+      officerAutonomyMode: "automatic",
     });
     expect(
       normalizeGameSettings({
@@ -53,6 +55,9 @@ describe("game settings", () => {
       realmGuildDensity: "many",
       realmGuildDynamics: "high",
     });
+    expect(
+      normalizeGameSettings({ officerAutonomyMode: "proposals" }),
+    ).toMatchObject({ officerAutonomyMode: "proposals" });
   });
 
   it("clears stale display-only offline statuses without touching activities", () => {

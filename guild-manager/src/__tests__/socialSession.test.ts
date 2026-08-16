@@ -1,6 +1,9 @@
 import { describe, expect, it } from "vitest";
 
-import { migrateSessionPayload } from "../session/sessionMigrations";
+import {
+  CURRENT_SESSION_VERSION,
+  migrateSessionPayload,
+} from "../session/sessionMigrations";
 import { normalizePersistedSocialState } from "../session/sessionPersistence";
 import { createInitialSocialState } from "../social/socialSimulation";
 
@@ -11,7 +14,7 @@ describe("social session persistence", () => {
       version: 8,
       data: { roster: [] },
     });
-    expect(migrated.version).toBe(15);
+    expect(migrated.version).toBe(CURRENT_SESSION_VERSION);
     expect(migrated.data).toHaveProperty("guildActivityStats", null);
     expect(migrated.data.socialState).toMatchObject({
       rpScenes: [],

@@ -1,5 +1,7 @@
 import {
   AlertTriangle,
+  Check,
+  Clock3,
   Crown,
   GitBranch,
   HeartHandshake,
@@ -7,7 +9,9 @@ import {
   Pencil,
   Shield,
   Sparkles,
+  UserCog,
   Users,
+  X,
 } from "lucide-react";
 import { useMemo, useState } from "react";
 
@@ -25,6 +29,14 @@ import {
   type GuildRelationsState,
   type RelationsManagementMode,
 } from "../../guildRelations/guildRelations";
+import {
+  getEligibleOfficerActors,
+  getOfficerPermission,
+} from "../../guildRelations/officerAuthority";
+import {
+  OFFICER_AUTONOMY_MODE_OPTIONS,
+  type OfficerAutonomyMode,
+} from "../../settings/gameSettings";
 import {
   getCharacterRelationshipRows,
   normalizeGuildRelationships,
@@ -47,6 +59,12 @@ type Props = {
   onSetRankLabels: (labels: Record<GuildRankId, string>) => boolean;
   onSetManagementMode: (mode: RelationsManagementMode) => void;
   onResolveIncident: (incidentId: string, choiceId: string) => void;
+  officerAutonomyMode?: OfficerAutonomyMode;
+  onSetOfficerAutonomyMode?: (mode: OfficerAutonomyMode) => void;
+  onResolveOfficerAction?: (
+    actionId: string,
+    decision: "accept" | "decline",
+  ) => boolean;
 };
 
 type GraphMode = "whole" | "focus";
@@ -183,6 +201,205 @@ function LeadershipPyramid({
             </div>
           );
         })}
+      </div>
+    </section>
+  );
+}
+
+function OfficerDesk({
+  roster,
+  state,
+  currentDayIndex,
+  mode,
+  onSetMode,
+  onResolveAction,
+}: {
+  roster: Character[];
+  state: GuildRelationsState;
+  currentDayIndex: number;
+  mode: OfficerAutonomyMode;
+  onSetMode: (mode: OfficerAutonomyMode) => void;
+  onResolveAction: (
+    actionId: string,
+    decision: "accept" | "decline",
+  ) => boolean;
+}) {
+  const officers = getEligibleOfficerActors({ roster, state });
+  const pending = state.officerActions.filter(
+    (action) => action.status === "pending",
+  );
+  const history = state.officerActions
+    .filter((action) => action.status !== "pending")
+    .slice(0, 8);
+  const describeAction = (action: GuildRelationsState["officerActions"][number]) =>
+    action.kind === "recruitment"
+      ? `Accept ${action.targetName}'s free application`
+      : `Move ${action.targetName} from ${
+          action.fromRank ? state.rankLabels[action.fromRank] : "their rank"
+        } to ${action.toRank ? state.rankLabels[action.toRank] : "a new rank"}`;
+
+  return (
+    <section className={`${panel} overflow-hidden`} aria-labelledby="officer-desk-heading">
+      <div className="flex flex-col gap-3 border-b border-slate-800 p-4 lg:flex-row lg:items-center lg:justify-between">
+        <div className="flex items-start gap-3">
+          <UserCog size={20} className="mt-0.5 text-amber-300" aria-hidden="true" />
+          <div>
+            <h2
+              id="officer-desk-heading"
+              className="fantasy-font text-lg font-bold text-amber-100"
+            >
+              Officer Desk
+            </h2>
+            <p className="mt-1 text-xs text-slate-500">
+              Officers make at most one new personnel decision per guild day.
+              Player rank changes remain protected for three days.
+            </p>
+          </div>
+        </div>
+        <SegmentedControl
+          ariaLabel="Officer Autonomy"
+          value={mode}
+          onChange={onSetMode}
+          options={OFFICER_AUTONOMY_MODE_OPTIONS}
+          className="lg:w-[360px]"
+        />
+      </div>
+      <div className="border-b border-slate-800 bg-slate-900/35 px-4 py-2 text-[11px] text-slate-500">
+        {mode === "off"
+          ? "Off: officers create no new personnel decisions. Existing proposals can still be reviewed."
+          : mode === "proposals"
+            ? "Proposals: officers recommend actions for you to accept or decline within three guild days."
+            : "Automatic: newly selected officer actions are validated and applied immediately."}
+      </div>
+
+      <div className="grid gap-4 p-4 xl:grid-cols-[minmax(260px,0.8fr)_minmax(0,1.2fr)]">
+        <div>
+          <h3 className="text-[10px] font-bold uppercase tracking-wider text-slate-500">
+            Authorized Leaders
+          </h3>
+          <div className="mt-2 space-y-2">
+            {officers.length > 0 ? (
+              officers.map((officer) => {
+                const rank = state.assignments[String(officer.id)];
+                const permission = getOfficerPermission(rank);
+                return (
+                  <article
+                    key={officer.id}
+                    className="rounded-lg border border-slate-800 bg-slate-900/60 p-3"
+                  >
+                    <div className="flex items-center justify-between gap-2">
+                      <span className="text-sm font-bold text-slate-100">
+                        {officer.name}
+                      </span>
+                      <RankBadge rank={rank} state={state} />
+                    </div>
+                    <p className="mt-1 text-[11px] leading-relaxed text-slate-500">
+                      {permission?.summary}
+                    </p>
+                  </article>
+                );
+              })
+            ) : (
+              <div className="rounded-lg border border-dashed border-slate-700 p-4 text-xs text-slate-500">
+                Appoint Leadership, an Officer, or a Class Leader to enable
+                personnel decisions. The Guild Master does not generate actions.
+              </div>
+            )}
+          </div>
+        </div>
+
+        <div className="space-y-4">
+          <div>
+            <div className="flex items-center justify-between gap-2">
+              <h3 className="text-[10px] font-bold uppercase tracking-wider text-slate-500">
+                Open Proposals
+              </h3>
+              <Badge tone={pending.length > 0 ? "amber" : "neutral"}>
+                {pending.length}
+              </Badge>
+            </div>
+            <div className="mt-2 space-y-2">
+              {pending.length > 0 ? (
+                pending.map((action) => (
+                  <article
+                    key={action.id}
+                    className="rounded-lg border border-amber-900/60 bg-amber-950/15 p-3"
+                  >
+                    <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
+                      <div className="min-w-0">
+                        <div className="text-sm font-bold text-amber-100">
+                          {describeAction(action)}
+                        </div>
+                        <div className="mt-1 text-[11px] text-slate-400">
+                          Proposed by {action.actorName} · expires in {Math.max(
+                            0,
+                            action.expiresDayIndex - currentDayIndex,
+                          )} guild day(s)
+                        </div>
+                        <ul className="mt-2 list-disc space-y-1 pl-4 text-[11px] text-slate-500">
+                          {action.reasons.map((reason) => (
+                            <li key={reason}>{reason}</li>
+                          ))}
+                        </ul>
+                      </div>
+                      <div className="flex shrink-0 gap-2">
+                        <GameButton
+                          size="sm"
+                          tone="success"
+                          icon={<Check size={14} aria-hidden="true" />}
+                          onClick={() => onResolveAction(action.id, "accept")}
+                        >
+                          Accept
+                        </GameButton>
+                        <GameButton
+                          size="sm"
+                          tone="danger"
+                          icon={<X size={14} aria-hidden="true" />}
+                          onClick={() => onResolveAction(action.id, "decline")}
+                        >
+                          Decline
+                        </GameButton>
+                      </div>
+                    </div>
+                  </article>
+                ))
+              ) : (
+                <div className="rounded-lg border border-dashed border-slate-700 p-4 text-xs text-slate-500">
+                  No open officer proposals. Automatic decisions appear in the
+                  history after they are applied.
+                </div>
+              )}
+            </div>
+          </div>
+
+          <div>
+            <h3 className="text-[10px] font-bold uppercase tracking-wider text-slate-500">
+              Recent Decisions
+            </h3>
+            <div className="mt-2 space-y-1.5">
+              {history.length > 0 ? (
+                history.map((action) => (
+                  <div
+                    key={action.id}
+                    className="flex items-start gap-2 rounded-lg border border-slate-800 bg-slate-900/45 px-3 py-2"
+                  >
+                    <Clock3 size={14} className="mt-0.5 shrink-0 text-slate-500" aria-hidden="true" />
+                    <div className="min-w-0 flex-1">
+                      <div className="text-xs text-slate-300">
+                        {describeAction(action)}
+                      </div>
+                      <div className="mt-0.5 text-[10px] text-slate-600">
+                        {action.actorName} · {action.status} · day {action.resolvedDayIndex ?? action.createdDayIndex}
+                      </div>
+                    </div>
+                  </div>
+                ))
+              ) : (
+                <p className="text-xs text-slate-600">No decisions recorded yet.</p>
+              )}
+            </div>
+          </div>
+        </div>
       </div>
     </section>
   );
@@ -541,6 +758,9 @@ export default function GuildRelationsPage({
   onSetRankLabels,
   onSetManagementMode,
   onResolveIncident,
+  officerAutonomyMode = "off",
+  onSetOfficerAutonomyMode = () => undefined,
+  onResolveOfficerAction = () => false,
 }: Props) {
   const [selectedId, setSelectedId] = useState(
     String(insights[0]?.character.id || ""),
@@ -816,6 +1036,15 @@ export default function GuildRelationsPage({
           onSelectCharacter={selectMember}
         />
       </div>
+
+      <OfficerDesk
+        roster={roster}
+        state={state}
+        currentDayIndex={currentDayIndex}
+        mode={officerAutonomyMode}
+        onSetMode={onSetOfficerAutonomyMode}
+        onResolveAction={onResolveOfficerAction}
+      />
 
       <div className="grid gap-4 lg:grid-cols-3">
         {rankingSections.map(

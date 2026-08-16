@@ -99,6 +99,14 @@ import {
   validateGuildRankLabels,
 } from "../guildRelations/guildRelations";
 import {
+  applyOfficerRankAction,
+  expireOfficerActions,
+  proposeOfficerAction,
+  recordPlayerRankChange,
+  resolveOfficerActionStatus,
+  validateOfficerAction,
+} from "../guildRelations/officerAuthority";
+import {
   createInitialGuildActivityStats,
   recordCompletedGuildRun,
   registerStartedGuildRuns,
@@ -221,7 +229,7 @@ import {
 } from "../zones/zoneLogic";
 import {
   buildRecruitmentEquipment,
-  filterUniqueRecruitmentCandidates,
+  resolveApplicationRecruitmentResult,
   resolveRecruitmentResult,
 } from "../recruitment/recruitmentLogic";
 import {
@@ -1256,6 +1264,197 @@ export const useGameProviderController = () => {
             currentGuildRelationsState,
             currentRoster,
           );
+        }
+      }
+
+      currentGuildRelationsState = expireOfficerActions({
+        state: currentGuildRelationsState,
+        roster: currentRoster,
+        currentDayIndex: calendarDayIndex,
+      });
+      const officerAutonomyMode =
+        gameSettingsRef.current.officerAutonomyMode || "off";
+      if (officerAutonomyMode !== "off") {
+        const usedNames = new Set(
+          currentRoster
+            .map((member) => String(member?.name || "").trim().toLowerCase())
+            .filter(Boolean),
+        );
+        const reservedRealmPlayerIds = new Set(
+          ensureSocialState(currentSocialState).reservedRealmPlayerIds,
+        );
+        const applicationEntries = getRealmGuildApplications({
+          realmState: realmStateRef.current,
+          faction: currentFaction,
+        }).filter(
+          ({ player }) =>
+            !usedNames.has(
+              String(player?.name || "").trim().toLowerCase(),
+            ) &&
+            !reservedRealmPlayerIds.has(String(player?.id || "")),
+        );
+        const officerApplications = applicationEntries.map(
+          ({ player, application }) => ({
+            ...player,
+            realmPlayerId: player.id,
+            realmApplicationId: application.id,
+            realmApplicationDayIndex: application.dayIndex,
+          }),
+        );
+        const proposal = proposeOfficerAction({
+          state: currentGuildRelationsState,
+          roster: currentRoster,
+          relationships: guildRelationshipsRef.current,
+          applications: officerApplications,
+          guildFocus: guildSetupRef.current?.focus,
+          guildId: guildSetupRef.current?.name,
+          maxRoster: currentGuildStats.maxRoster,
+          currentDayIndex: calendarDayIndex,
+        });
+        currentGuildRelationsState = proposal.state;
+
+        if (proposal.action) {
+          const action = proposal.action;
+          const reasonText = action.reasons.join(", ");
+          const rankLabel = action.toRank
+            ? currentGuildRelationsState.rankLabels[action.toRank]
+            : null;
+          const actionMessage =
+            action.kind === "recruitment"
+              ? `${action.actorName} wants to accept ${action.targetName}'s free application because the candidate ${reasonText}.`
+              : `${action.actorName} wants to move ${action.targetName} to ${rankLabel}: ${reasonText}.`;
+
+          if (officerAutonomyMode === "proposals") {
+            newLogs.push({ type: "relations", message: actionMessage });
+            pushNotification({
+              type: "info",
+              title: "Officer Proposal",
+              message: actionMessage,
+              durationMs: 6500,
+            });
+          } else {
+            const valid = validateOfficerAction({
+              state: currentGuildRelationsState,
+              roster: currentRoster,
+              applications: officerApplications,
+              action,
+              maxRoster: currentGuildStats.maxRoster,
+              currentDayIndex: calendarDayIndex,
+            });
+            let applied = false;
+
+            if (valid && action.kind === "rank_change") {
+              currentGuildRelationsState = applyOfficerRankAction({
+                state: currentGuildRelationsState,
+                roster: currentRoster,
+                action,
+                currentDayIndex: calendarDayIndex,
+              });
+              applied = true;
+            } else if (valid && action.kind === "recruitment") {
+              const applicationEntry = applicationEntries.find(
+                ({ player, application }) =>
+                  String(player?.id || "") === action.targetId &&
+                  String(application?.id || "") === action.applicationId,
+              );
+              if (applicationEntry) {
+                const player = applicationEntry.player;
+                const level = Math.max(
+                  1,
+                  Math.min(CONFIG.LEVEL_CAP, Number(player?.level) || 1),
+                );
+                const candidate = {
+                  ...player,
+                  id: player.id,
+                  realmPlayerId: player.id,
+                  realmApplicationId: applicationEntry.application.id,
+                  realmSourceGuildId: player.guildId || null,
+                  realmRecruitmentSource: player.guildId
+                    ? `From ${player.sourceGuildName || "another guild"}`
+                    : "Free Agent",
+                  realmApplicationDayIndex:
+                    applicationEntry.application.dayIndex,
+                  level,
+                  exp: Math.max(0, Number(player.exp) || 0),
+                  maxExp:
+                    CONFIG.XP_TABLE[level] || CONFIG.XP_TABLE[1],
+                  morale: getCharacterMorale(player),
+                  guildJoinedDayIndex: calendarDayIndex,
+                  equipment:
+                    player?.equipment &&
+                    Object.keys(player.equipment).length > 0
+                      ? player.equipment
+                      : buildRecruitmentEquipment({
+                          character: player,
+                          itemDatabase,
+                        }),
+                  personalInventory: Array.isArray(player?.personalInventory)
+                    ? player.personalInventory
+                    : [],
+                };
+                const applicationResult = resolveApplicationRecruitmentResult({
+                  currentRoster,
+                  selectedCandidates: [candidate],
+                  maxRoster: currentGuildStats.maxRoster,
+                });
+                const [recruit] = applicationResult.recruits;
+                if (recruit) {
+                  const updatedRealmState = markRealmPlayersRecruited({
+                    realmState: realmStateRef.current,
+                    playerIds: [recruit.realmPlayerId],
+                  });
+                  realmStateRef.current = updatedRealmState;
+                  setRealmState(updatedRealmState);
+                  currentRoster = normalizeRosterZones(
+                    applicationResult.updatedRoster,
+                  ).map((member) => ({
+                    ...member,
+                    leadershipTrait:
+                      member.leadershipTrait ||
+                      getLeadershipTraitForCharacter(member.id),
+                  }));
+                  newRoster = [...currentRoster];
+                  currentGuildRelationsState = normalizeGuildRelationsState(
+                    currentGuildRelationsState,
+                    currentRoster,
+                  );
+                  currentGuildRelationsState.assignments[
+                    String(recruit.id)
+                  ] = GUILD_RANK.RECRUIT;
+                  currentGuildRelationsState = resolveOfficerActionStatus({
+                    state: currentGuildRelationsState,
+                    roster: currentRoster,
+                    actionId: action.id,
+                    status: "applied",
+                    currentDayIndex: calendarDayIndex,
+                  });
+                  applied = true;
+                }
+              }
+            }
+
+            if (!applied) {
+              currentGuildRelationsState = resolveOfficerActionStatus({
+                state: currentGuildRelationsState,
+                roster: currentRoster,
+                actionId: action.id,
+                status: "expired",
+                currentDayIndex: calendarDayIndex,
+              });
+            } else {
+              const appliedMessage =
+                action.kind === "recruitment"
+                  ? `${action.actorName} accepted ${action.targetName}'s free application. ${action.targetName} joined as a Recruit.`
+                  : `${action.actorName} moved ${action.targetName} to ${rankLabel}.`;
+              newLogs.push({ type: "relations", message: appliedMessage });
+              pushNotification({
+                type: "success",
+                title: "Officer Decision",
+                message: appliedMessage,
+                durationMs: 6500,
+              });
+            }
+          }
         }
       }
 
@@ -2690,8 +2889,12 @@ export const useGameProviderController = () => {
     }
 
     const recruitedIdSet = new Set(recruits.map((member) => String(member.id)));
+    const joinedDayIndex = getCurrentCalendarDayIndex();
     const zoneReadyRoster = normalizeRosterZones(updatedRoster).map((member) => ({
       ...member,
+      guildJoinedDayIndex: recruitedIdSet.has(String(member.id))
+        ? joinedDayIndex
+        : member.guildJoinedDayIndex,
       leadershipTrait:
         member.leadershipTrait || getLeadershipTraitForCharacter(member.id),
     }));
@@ -2725,19 +2928,15 @@ export const useGameProviderController = () => {
     const reservedRealmPlayerIds = new Set(
       ensureSocialState(socialStateRef.current).reservedRealmPlayerIds,
     );
-    const uniqueCandidates = filterUniqueRecruitmentCandidates({
+    const applicationResult = resolveApplicationRecruitmentResult({
       currentRoster: rosterRef.current,
       selectedCandidates: (Array.isArray(chars) ? chars : []).filter(
         (candidate) =>
           !reservedRealmPlayerIds.has(String(candidate?.realmPlayerId || "")),
       ),
+      maxRoster: guildDerivedStats.maxRoster,
     });
-    const recruits = uniqueCandidates
-      .slice(0, openSlots)
-      .map((candidate) => ({
-        ...candidate,
-        morale: getCharacterMorale(candidate),
-      }));
+    const recruits = applicationResult.recruits.slice(0, openSlots);
 
     if (recruits.length === 0) {
       pushNotification({
@@ -2761,11 +2960,14 @@ export const useGameProviderController = () => {
     }
 
     const recruitedIdSet = new Set(recruits.map((member) => String(member.id)));
-    const zoneReadyRoster = normalizeRosterZones([
-      ...rosterRef.current,
-      ...recruits,
-    ]).map((member) => ({
+    const joinedDayIndex = getCurrentCalendarDayIndex();
+    const zoneReadyRoster = normalizeRosterZones(
+      applicationResult.updatedRoster,
+    ).map((member) => ({
       ...member,
+      guildJoinedDayIndex: recruitedIdSet.has(String(member.id))
+        ? joinedDayIndex
+        : member.guildJoinedDayIndex,
       leadershipTrait:
         member.leadershipTrait || getLeadershipTraitForCharacter(member.id),
     }));
@@ -4891,12 +5093,24 @@ export const useGameProviderController = () => {
     ],
   );
   const handleSetGuildRank = useCallback((memberId, rank) => {
-    const nextState = assignGuildRank({
+    const normalizedMemberId = String(memberId);
+    const previousRank =
+      guildRelationsStateRef.current.assignments[normalizedMemberId];
+    const rankedState = assignGuildRank({
       state: guildRelationsStateRef.current,
       roster: rosterRef.current,
-      memberId: String(memberId),
+      memberId: normalizedMemberId,
       rank,
     });
+    const nextState =
+      rankedState.assignments[normalizedMemberId] !== previousRank
+        ? recordPlayerRankChange({
+            state: rankedState,
+            roster: rosterRef.current,
+            memberId: normalizedMemberId,
+            currentDayIndex: getCurrentCalendarDayIndex(),
+          })
+        : rankedState;
     guildRelationsStateRef.current = nextState;
     setGuildRelationsState(nextState);
   }, []);
@@ -4975,6 +5189,133 @@ export const useGameProviderController = () => {
     setGuildRelationsState(nextState);
     setRoster(nextRoster);
     setGuildRelationships(nextRelationships);
+  }, []);
+  const handleSetOfficerAutonomyMode = useCallback((mode) => {
+    handleGameSettingsChange({ officerAutonomyMode: mode });
+  }, []);
+  const handleResolveOfficerAction = useCallback((actionId, decision) => {
+    const currentDayIndex = getCurrentCalendarDayIndex();
+    let nextState = expireOfficerActions({
+      state: guildRelationsStateRef.current,
+      roster: rosterRef.current,
+      currentDayIndex,
+    });
+    const action = nextState.officerActions.find(
+      (candidate) => candidate.id === String(actionId),
+    );
+    if (!action || action.status !== "pending") {
+      guildRelationsStateRef.current = nextState;
+      setGuildRelationsState(nextState);
+      return false;
+    }
+
+    if (decision === "decline") {
+      nextState = resolveOfficerActionStatus({
+        state: nextState,
+        roster: rosterRef.current,
+        actionId: action.id,
+        status: "declined",
+        currentDayIndex,
+      });
+      guildRelationsStateRef.current = nextState;
+      setGuildRelationsState(nextState);
+      const message = `${action.actorName}'s proposal concerning ${action.targetName} was declined.`;
+      setGuildLog((current) => [
+        {
+          time: new Date().toLocaleTimeString(),
+          type: "relations",
+          message,
+        },
+        ...current,
+      ]);
+      pushNotification({
+        type: "info",
+        title: "Officer Proposal Declined",
+        message,
+      });
+      return true;
+    }
+
+    const applicationCandidates = getRealmGuildApplications({
+      realmState: realmStateRef.current,
+      faction:
+        guildSetupRef.current?.faction || GUILD_FACTION.ALLIANCE,
+    }).map(buildRealmRecruitmentCandidate);
+    const valid = validateOfficerAction({
+      state: nextState,
+      roster: rosterRef.current,
+      applications: applicationCandidates,
+      action,
+      maxRoster: getGuildDerivedStats(guildProgressRef.current).maxRoster,
+      currentDayIndex,
+    });
+    if (!valid) {
+      nextState = resolveOfficerActionStatus({
+        state: nextState,
+        roster: rosterRef.current,
+        actionId: action.id,
+        status: "expired",
+        currentDayIndex,
+      });
+      guildRelationsStateRef.current = nextState;
+      setGuildRelationsState(nextState);
+      pushNotification({
+        type: "warning",
+        title: "Proposal No Longer Valid",
+        message:
+          "The application, rank, roster slot, or officer authority changed before approval.",
+      });
+      return false;
+    }
+
+    if (action.kind === "rank_change") {
+      nextState = applyOfficerRankAction({
+        state: nextState,
+        roster: rosterRef.current,
+        action,
+        currentDayIndex,
+      });
+    } else {
+      guildRelationsStateRef.current = nextState;
+      const candidate = applicationCandidates.find(
+        (entry) =>
+          String(entry.realmApplicationId || "") === action.applicationId &&
+          String(entry.id || "") === action.targetId,
+      );
+      const recruits = candidate ? handleRecruitApplications([candidate]) : [];
+      if (recruits.length === 0) return false;
+      nextState = resolveOfficerActionStatus({
+        state: guildRelationsStateRef.current,
+        roster: rosterRef.current,
+        actionId: action.id,
+        status: "applied",
+        currentDayIndex,
+      });
+    }
+
+    guildRelationsStateRef.current = nextState;
+    setGuildRelationsState(nextState);
+    const rankLabel = action.toRank
+      ? nextState.rankLabels[action.toRank]
+      : "Recruit";
+    const message =
+      action.kind === "recruitment"
+        ? `${action.actorName}'s proposal was approved. ${action.targetName} joined as a Recruit.`
+        : `${action.actorName}'s proposal was approved. ${action.targetName} is now ${rankLabel}.`;
+    setGuildLog((current) => [
+      {
+        time: new Date().toLocaleTimeString(),
+        type: "relations",
+        message,
+      },
+      ...current,
+    ]);
+    pushNotification({
+      type: "success",
+      title: "Officer Proposal Accepted",
+      message,
+    });
+    return true;
   }, []);
   const handleResolveGuildIncident = useCallback((incidentId, choiceId) => {
     const result = resolveGuildIncident({
@@ -5096,6 +5437,8 @@ export const useGameProviderController = () => {
     setGuildRank: handleSetGuildRank,
     setGuildRankLabels: handleSetGuildRankLabels,
     setRelationsManagementMode: handleSetRelationsManagementMode,
+    setOfficerAutonomyMode: handleSetOfficerAutonomyMode,
+    resolveOfficerAction: handleResolveOfficerAction,
     resolveGuildIncident: handleResolveGuildIncident,
     castGuildElectionVote: handleCastGuildElectionVote,
     finishGuildElection: handleFinishGuildElection,

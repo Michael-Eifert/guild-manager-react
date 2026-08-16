@@ -36,6 +36,8 @@ export interface Character {
   status?: string;
   statusText?: string;
   activityMode?: string;
+  activityLevel?: number;
+  history?: Array<Record<string, unknown>>;
   professions?: CharacterProfession[];
   equipment?: Record<string, ItemDefinition | null | undefined>;
   personalInventory?: ItemDefinition[];
@@ -44,6 +46,7 @@ export interface Character {
   personalityTrait?: string | { id?: string };
   personalityTraits?: Array<string | { id?: string }>;
   leadershipTrait?: string;
+  guildJoinedDayIndex?: number;
   faction?: string;
   currentZoneId?: string;
   currentZoneProgress?: number;

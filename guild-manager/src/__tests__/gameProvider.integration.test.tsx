@@ -162,6 +162,7 @@ describe("GameProvider integration", () => {
         offlineSimulationEnabled: false,
         realmGuildDensity: "medium",
         realmGuildDynamics: "medium",
+        officerAutonomyMode: "automatic",
       });
     });
   });

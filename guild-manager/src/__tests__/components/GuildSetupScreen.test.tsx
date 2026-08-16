@@ -42,11 +42,13 @@ describe("GuildSetupScreen", () => {
     );
     expect(html).toContain("Starting Activity");
     expect(html).toContain("Play with Offline Simulation");
+    expect(html).toContain("Officer Autonomy");
     expect(html).toContain("Guild Density");
     expect(html).toContain("Guild Dynamics");
     expect(html).toContain("Realm Age");
     expect(html).toContain("Starting Guild Progress");
-    expect(html).not.toContain('checked=""');
+    expect(html).toContain('aria-label="Officer Autonomy"');
+    expect(html).toContain('checked=""');
     expect(html).toContain("Dungeon Groups");
     expect(html).toContain("PvP Activity");
     expect(html).toContain("Realm Competition");
