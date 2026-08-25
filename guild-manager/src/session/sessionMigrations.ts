@@ -1,14 +1,14 @@
 import { z } from "zod";
 
 export const SESSION_FORMAT_VALUE = "guild-manager-session" as const;
-export const CURRENT_SESSION_VERSION = 19;
+export const CURRENT_SESSION_VERSION = 22;
 
 const dataSchema = z.record(z.string(), z.unknown());
 const recognizedKeys = new Set([
   "roster", "activeMissions", "missionList", "guildSetup", "guildProgress", "progression",
   "milestones", "achievements", "gameSpeed",
   "guildRelationsState", "guildActivityStats",
-  "gameSettings",
+  "gameSettings", "contentState", "activityHistory",
 ]);
 const hasRecognizedSessionData = (data: Record<string, unknown>) =>
   Object.keys(data).some((key) => recognizedKeys.has(key));
@@ -257,6 +257,234 @@ export const SESSION_MIGRATIONS: ReadonlyArray<Migration> = [
         },
       },
       gameSettings: { ...gameSettings, autoRunPreparationMode: "none" },
+    };
+  },
+  (data) => {
+    const realmState =
+      data.realmState && typeof data.realmState === "object"
+        ? (data.realmState as Record<string, unknown>)
+        : null;
+    if (!realmState) return data;
+    const population =
+      realmState.population && typeof realmState.population === "object"
+        ? (realmState.population as Record<string, unknown>)
+        : {};
+    const usedIds = new Set<string>();
+    const players: Record<string, unknown>[] = (Array.isArray(population.players)
+      ? population.players
+      : []
+    ).map((entry, index) => {
+      const player =
+        entry && typeof entry === "object"
+          ? (entry as Record<string, unknown>)
+          : {};
+      const baseId =
+        String(player.id || "").trim() || `realm-player:legacy:${index + 1}`;
+      let id = baseId;
+      let duplicateIndex = 1;
+      while (usedIds.has(id)) {
+        id = `${baseId}:duplicate:${duplicateIndex}`;
+        duplicateIndex += 1;
+      }
+      usedIds.add(id);
+      return { ...player, id };
+    });
+    const npcGuilds = Array.isArray(realmState.npcGuilds)
+      ? realmState.npcGuilds
+      : [];
+    npcGuilds.forEach((entry, guildIndex) => {
+      const guild =
+        entry && typeof entry === "object"
+          ? (entry as Record<string, unknown>)
+          : {};
+      const guildId = String(guild.id || `legacy-guild:${guildIndex + 1}`);
+      (Array.isArray(guild.roster) ? guild.roster : []).forEach(
+        (rawMember, memberIndex) => {
+          const member =
+            rawMember && typeof rawMember === "object"
+              ? (rawMember as Record<string, unknown>)
+              : {};
+          const memberId = String(member.id || "").trim();
+          if (memberId && usedIds.has(memberId)) return;
+          const baseId =
+            memberId || `realm-player:legacy:${guildId}:${memberIndex + 1}`;
+          let id = baseId;
+          let duplicateIndex = 1;
+          while (usedIds.has(id)) {
+            id = `${baseId}:duplicate:${duplicateIndex}`;
+            duplicateIndex += 1;
+          }
+          usedIds.add(id);
+          players.push({
+            ...member,
+            id,
+            guildId,
+            faction: member.faction || guild.faction,
+            sourceGuildName: member.sourceGuildName || guild.name,
+          });
+        },
+      );
+    });
+    const memberIdsByGuildId = new Map<string, string[]>();
+    players.forEach((player) => {
+      const guildId = String(player.guildId || "");
+      if (!guildId) return;
+      const memberIds = memberIdsByGuildId.get(guildId) || [];
+      memberIds.push(String(player.id));
+      memberIdsByGuildId.set(guildId, memberIds);
+    });
+    return {
+      ...data,
+      realmState: {
+        ...realmState,
+        population: {
+          ...population,
+          players,
+          nextPlayerSequence: Math.max(
+            players.length,
+            Math.floor(Number(population.nextPlayerSequence) || 0),
+          ),
+        },
+        npcGuilds: npcGuilds.map((entry) => {
+          const guild =
+            entry && typeof entry === "object"
+              ? (entry as Record<string, unknown>)
+              : {};
+          const { roster: legacyRoster, ...summary } = guild;
+          void legacyRoster;
+          return {
+            ...summary,
+            memberIds:
+              memberIdsByGuildId.get(String(guild.id || "")) || [],
+          };
+        }),
+      },
+    };
+  },
+  (data) => {
+    const guildSetup =
+      data.guildSetup && typeof data.guildSetup === "object"
+        ? (data.guildSetup as Record<string, unknown>)
+        : {};
+    const route = ["burning_crusade", "classic_plus"].includes(
+      String(guildSetup.contentRoute || ""),
+    )
+      ? String(guildSetup.contentRoute)
+      : "uncommitted";
+    const phase =
+      route === "burning_crusade"
+        ? "tbc_prepatch"
+        : route === "classic_plus"
+          ? "classic_plus"
+          : "classic";
+    return {
+      ...data,
+      contentState:
+        data.contentState && typeof data.contentState === "object"
+          ? data.contentState
+          : {
+              route,
+              phase,
+              activatedAtDayIndex: Math.max(
+                0,
+                Math.floor(Number(guildSetup.contentPhaseStartedDayIndex) || 0),
+              ),
+              schemaVersion: 1,
+            },
+    };
+  },
+  (data) => {
+    const contentState =
+      data.contentState && typeof data.contentState === "object"
+        ? (data.contentState as Record<string, unknown>)
+        : {};
+    const battlefieldState =
+      data.battlefieldState && typeof data.battlefieldState === "object"
+        ? (data.battlefieldState as Record<string, unknown>)
+        : {};
+    const legacyHistory = Array.isArray(battlefieldState.history)
+      ? battlefieldState.history
+      : [];
+    const records = legacyHistory.slice(0, 30).map((entry, runIndex) => {
+      const battle =
+        entry && typeof entry === "object"
+          ? (entry as Record<string, unknown>)
+          : {};
+      const reward =
+        battle.reward && typeof battle.reward === "object"
+          ? (battle.reward as Record<string, unknown>)
+          : {};
+      const result = String(battle.result || "draw");
+      return {
+        id: String(battle.id || `legacy-battleground:${runIndex + 1}`),
+        kind: "battleground",
+        definitionId: String(battle.battlefieldId || "unknown"),
+        name: String(battle.name || "Battleground"),
+        contentRoute: String(contentState.route || "uncommitted"),
+        contentPhase: String(contentState.phase || "classic"),
+        source: battle.runSource === "automation" ? "automation" : "manual",
+        startedAtGameTimeMs: Math.max(0, Number(battle.startTime) || 0),
+        completedAtGameTimeMs: Math.max(
+          0,
+          Number(battle.completedAt) || Number(battle.finishTime) || 0,
+        ),
+        dayIndex: Math.max(0, Math.floor(Number(battle.startDay) || 0)),
+        outcome:
+          result === "victory"
+            ? "success"
+            : result === "defeat"
+              ? "failure"
+              : "draw",
+        participants: (Array.isArray(battle.participantIds)
+          ? battle.participantIds
+          : []
+        ).map((id) => ({
+          id: String(id),
+          name: String(id),
+          charClass: null,
+          role: null,
+          level: null,
+          itemLevel: null,
+        })),
+        events: (Array.isArray(battle.events) ? battle.events : [])
+          .slice(-100)
+          .map((rawEvent, eventIndex) => {
+            const event =
+              rawEvent && typeof rawEvent === "object"
+                ? (rawEvent as Record<string, unknown>)
+                : {};
+            return {
+              sequence: eventIndex + 1,
+              atGameTimeMs: null,
+              type: "score",
+              label: String(event.summary || event.type || "Battleground event"),
+              playerScore: Math.max(0, Number(event.playerScore) || 0),
+              enemyScore: Math.max(0, Number(event.enemyScore) || 0),
+            };
+          }),
+        rewardGold: 0,
+        rewardItemIds: [],
+        details: {
+          kind: "battleground",
+          playerScore: Math.max(0, Number(battle.playerScore) || 0),
+          enemyScore: Math.max(0, Number(battle.enemyScore) || 0),
+          honorPerParticipant: Math.max(
+            0,
+            Number(reward.honorPerParticipant) || 0,
+          ),
+          bracketLabel: battle.bracketLabel
+            ? String(battle.bracketLabel)
+            : null,
+        },
+      };
+    });
+    return {
+      ...data,
+      activityHistory:
+        data.activityHistory && typeof data.activityHistory === "object"
+          ? data.activityHistory
+          : { records },
+      battlefieldState: { ...battlefieldState, history: [] },
     };
   },
 ];

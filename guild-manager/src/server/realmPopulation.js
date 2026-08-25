@@ -423,6 +423,7 @@ export const createRealmPlayer = ({
 const generateFreeAgent = ({
   realmId,
   index,
+  sequence = index,
   random,
   usedNameKeys,
   arrivalDayIndex = null,
@@ -452,7 +453,7 @@ const generateFreeAgent = ({
     strength,
   });
   return createRealmPlayer({
-    id: `realm-player:${hashPopulationSeed(`${realmId}:free:${index}`).toString(36)}`,
+    id: `realm-player:${hashPopulationSeed(String(realmId || "realm")).toString(36)}:${Math.max(0, Math.floor(Number(sequence) || 0)).toString(36)}`,
     name: pickUniqueCharacterName({
       race,
       gender,
@@ -584,6 +585,12 @@ export const normalizeRealmPopulation = ({
   let players = [...byId.values()].map((player) =>
     ensureRealmPlayerZone(player, normalizedContentPhase),
   );
+  let nextPlayerSequence = Number.isFinite(Number(safePopulation.nextPlayerSequence))
+    ? Math.max(
+        sourcePlayers.length,
+        Math.floor(Number(safePopulation.nextPlayerSequence)),
+      )
+    : sourcePlayers.length;
   const usedNameKeys = new Set(
     players
       .map((player) => String(player?.name || "").trim().toLocaleLowerCase())
@@ -603,6 +610,7 @@ export const normalizeRealmPopulation = ({
         generateFreeAgent({
           realmId,
           index,
+          sequence: nextPlayerSequence,
           random,
           usedNameKeys,
           realmAgeMonths,
@@ -611,6 +619,7 @@ export const normalizeRealmPopulation = ({
         normalizedContentPhase,
       ),
     );
+    nextPlayerSequence += 1;
   }
   const applications = normalizeRealmApplications(
     safePopulation.applications,
@@ -641,6 +650,7 @@ export const normalizeRealmPopulation = ({
       Number(safePopulation.startedAt) || REALM_POPULATION_START,
     ),
     players,
+    nextPlayerSequence,
     applications,
     departedPlayers,
     lastArrivalDayIndex: Number.isFinite(Number(safePopulation.lastArrivalDayIndex))
@@ -703,6 +713,10 @@ export const activateTbcPrepatchPopulation = ({
     0,
     Math.floor((Number(safeRealm.ageDays) || safeDayIndex) / 30),
   );
+  let nextPlayerSequence = Math.max(
+    existingPlayers.length,
+    Math.floor(Number(population.nextPlayerSequence) || 0),
+  );
   const newcomers = Array.from({ length: cohortSize }, (_, index) => {
     const faction =
       index % 2 === 0 ? GUILD_FACTION.ALLIANCE : GUILD_FACTION.HORDE;
@@ -723,7 +737,7 @@ export const activateTbcPrepatchPopulation = ({
     });
     return ensureRealmPlayerZone(
       createRealmPlayer({
-        id: `realm-player:${hashPopulationSeed(`${safeRealm.id}:${safeDayIndex}:prepatch:${index}`).toString(36)}`,
+        id: `realm-player:${hashPopulationSeed(String(safeRealm.id || "realm")).toString(36)}:${(nextPlayerSequence + index).toString(36)}`,
         name: pickUniqueCharacterName({
           race,
           gender,
@@ -767,6 +781,7 @@ export const activateTbcPrepatchPopulation = ({
       ...population,
       contentPhase: CONTENT_PHASE.TBC_PREPATCH,
       players: [...existingPlayers, ...newcomers],
+      nextPlayerSequence: nextPlayerSequence + newcomers.length,
       dailyStats: mergeDailyStats(population.dailyStats, safeDayIndex, {
         arrivals: newcomers.length,
       }),
@@ -1031,15 +1046,38 @@ const advanceRealmPlayerForDay = ({
   };
 };
 
-const syncGuildRostersFromPopulation = (npcGuilds, players) =>
+export const buildRealmPopulationIndex = (players) => {
+  const byId = new Map();
+  const byGuildId = new Map();
+  const freeAgentsByFaction = new Map();
+  (Array.isArray(players) ? players : []).forEach((player, index) => {
+    const playerId = String(player?.id || "");
+    if (playerId) byId.set(playerId, player);
+    const guildId = String(player?.guildId || "");
+    if (guildId) {
+      const members = byGuildId.get(guildId) || [];
+      members.push(player);
+      byGuildId.set(guildId, members);
+    }
+    if (
+      !guildId &&
+      player?.marketStatus === REALM_MARKET_STATUS.FREE_AGENT
+    ) {
+      const faction = String(player?.faction || "");
+      const candidates = freeAgentsByFaction.get(faction) || [];
+      candidates.push({ player, index });
+      freeAgentsByFaction.set(faction, candidates);
+    }
+  });
+  return { byId, byGuildId, freeAgentsByFaction };
+};
+
+export const syncGuildRostersFromPopulation = (npcGuilds, players) =>
   (() => {
+    const { byGuildId } = buildRealmPopulationIndex(players);
     const rosterByGuildId = new Map();
-    (Array.isArray(players) ? players : []).forEach((player) => {
-      const guildId = String(player?.guildId || "");
-      if (!guildId) return;
-      const roster = rosterByGuildId.get(guildId) || [];
-      if (roster.length >= REALM_GUILD_ROSTER_CAP) return;
-      roster.push({
+    byGuildId.forEach((members, guildId) => {
+      const roster = members.slice(0, REALM_GUILD_ROSTER_CAP).map((player) => ({
         id: player.id,
         name: player.name,
         level: player.level,
@@ -1049,7 +1087,7 @@ const syncGuildRostersFromPopulation = (npcGuilds, players) =>
         charClass: player.charClass,
         role: player.role,
         personalityTraits: player.personalityTraits,
-      });
+      }));
       rosterByGuildId.set(guildId, roster);
     });
 
@@ -1066,6 +1104,7 @@ const syncGuildRostersFromPopulation = (npcGuilds, players) =>
           : guild.averageGearScore;
       return {
         ...guild,
+        memberIds: roster.map((member) => String(member.id)),
         roster,
         rosterSize: roster.length,
         maxLevelCount: getRealmMaxLevelCount(roster),
@@ -1178,9 +1217,31 @@ const recruitNpcGuilds = ({
   const nextPlayers = [...players];
   const safeDayIndex = Math.max(0, Math.floor(Number(dayIndex) || 0));
   const safeDayFraction = clampNumber(dayFraction, 0.05, 1);
+  const populationIndex = buildRealmPopulationIndex(nextPlayers);
+  const guildMembersById = new Map(
+    [...populationIndex.byGuildId.entries()].map(([guildId, members]) => [
+      guildId,
+      [...members],
+    ]),
+  );
+  const freeCandidatesByFaction = new Map();
+  populationIndex.freeAgentsByFaction.forEach((entries, faction) => {
+    freeCandidatesByFaction.set(
+      faction,
+      entries.filter(
+        ({ player }) =>
+          player.arrivalDayIndex == null ||
+          Number(player.arrivalDayIndex) < safeDayIndex,
+      ),
+    );
+  });
   const freeAgentRatio =
     nextPlayers.length > 0
-      ? nextPlayers.filter((player) => !player.guildId).length /
+      ? (nextPlayers.length -
+          [...populationIndex.byGuildId.values()].reduce(
+            (total, members) => total + members.length,
+            0,
+          )) /
         nextPlayers.length
       : 0;
   const guilds = [...npcGuilds]
@@ -1198,7 +1259,9 @@ const recruitNpcGuilds = ({
     });
 
   guilds.forEach((guild) => {
-    const currentSize = nextPlayers.filter((player) => player.guildId === guild.id).length;
+    const guildId = String(guild.id || "");
+    const guildMembers = guildMembersById.get(guildId) || [];
+    const currentSize = guildMembers.length;
     const targetRosterSize = Math.min(
       REALM_GUILD_ROSTER_CAP,
       Math.max(1, Number(guild.targetRosterSize) || REALM_GUILD_ROSTER_CAP),
@@ -1228,19 +1291,9 @@ const recruitNpcGuilds = ({
       ? Math.min(openSlots, foundingOpenings)
       : Math.min(openSlots, scaledAttempts);
     for (let attempt = 0; attempt < attempts; attempt += 1) {
-      const guildMembers = nextPlayers.filter(
-        (candidate) => candidate.guildId === guild.id,
-      );
-      const candidates = nextPlayers
-        .map((player, index) => ({ player, index }))
-        .filter(({ player }) =>
-          !player.guildId &&
-          player.faction === guild.faction &&
-          player.marketStatus === REALM_MARKET_STATUS.FREE_AGENT &&
-          (player.arrivalDayIndex == null ||
-            Number(player.arrivalDayIndex) < safeDayIndex),
-        )
-        .sort((left, right) => {
+      const candidates = freeCandidatesByFaction.get(String(guild.faction || "")) || [];
+      const rankedCandidates = isFoundingDay
+        ? [...candidates].sort((left, right) => {
           const scoreDifference =
             getRealmGuildFitScore({
               player: right.player,
@@ -1258,19 +1311,30 @@ const recruitNpcGuilds = ({
               String(right.player.id || ""),
             )
           );
-        });
-      const candidateWindow = isFoundingDay
-        ? candidates.slice(0, Math.max(foundedRosterSize * 2, attempts))
+        })
         : candidates;
+      const candidateWindow = isFoundingDay
+        ? rankedCandidates.slice(0, Math.max(foundedRosterSize * 2, attempts))
+        : rankedCandidates;
       if (candidateWindow.length === 0) break;
-      const { index } = candidateWindow[Math.floor(random() * candidateWindow.length)];
-      nextPlayers[index] = {
-        ...nextPlayers[index],
+      const selected = candidateWindow[Math.floor(random() * candidateWindow.length)];
+      const updatedPlayer = {
+        ...nextPlayers[selected.index],
         guildId: guild.id,
         marketStatus: REALM_MARKET_STATUS.GUILDED,
         sourceGuildName: guild.name,
-        loyalty: Math.max(nextPlayers[index].loyalty, 45 + Math.round(random() * 30)),
+        loyalty: Math.max(
+          selected.player.loyalty,
+          45 + Math.round(random() * 30),
+        ),
       };
+      nextPlayers[selected.index] = updatedPlayer;
+      const sourceIndex = candidates.findIndex(
+        (candidate) => candidate.index === selected.index,
+      );
+      if (sourceIndex >= 0) candidates.splice(sourceIndex, 1);
+      guildMembers.push(updatedPlayer);
+      guildMembersById.set(guildId, guildMembers);
       recruited += 1;
     }
   });
@@ -1286,6 +1350,17 @@ const poachNpcGuildMembers = ({
   random,
 }) => {
   const nextPlayers = [...players];
+  const guildById = new Map(
+    (Array.isArray(npcGuilds) ? npcGuilds : []).map((guild) => [
+      String(guild.id || ""),
+      guild,
+    ]),
+  );
+  const membersByGuildId = new Map(
+    [...buildRealmPopulationIndex(nextPlayers).byGuildId.entries()].map(
+      ([guildId, members]) => [guildId, [...members]],
+    ),
+  );
   let poached = 0;
   const dynamicsProfile = getRealmGuildDynamicsProfile(guildDynamics);
   if (
@@ -1310,23 +1385,20 @@ const poachNpcGuildMembers = ({
     if (candidates.length === 0) break;
     const { player, index } =
       candidates[Math.floor(random() * candidates.length)];
-    const currentGuild = npcGuilds.find(
-      (guild) => guild.id === player.guildId,
-    );
-    const currentMembers = nextPlayers.filter(
-      (candidate) => candidate.guildId === currentGuild?.id,
-    );
+    const currentGuild = guildById.get(String(player.guildId || ""));
+    const currentMembers =
+      membersByGuildId.get(String(currentGuild?.id || "")) || [];
     const currentScore = getRealmGuildFitScore({
       player,
       guild: currentGuild,
       guildMembers: currentMembers,
     });
     const targets = npcGuilds
-      .filter((guild) => {
-        const members = nextPlayers.filter(
-          (candidate) => candidate.guildId === guild.id,
-        );
-        return (
+      .map((guild) => {
+        const members = membersByGuildId.get(String(guild.id || "")) || [];
+        return { guild, members, score: getRealmGuildFitScore({ player, guild, guildMembers: members }) };
+      })
+      .filter(({ guild, members, score }) =>
           guild.id !== player.guildId &&
           guild.faction === player.faction &&
           members.length <
@@ -1334,39 +1406,26 @@ const poachNpcGuildMembers = ({
               REALM_GUILD_ROSTER_CAP,
               Number(guild.targetRosterSize) || REALM_GUILD_ROSTER_CAP,
             ) &&
-          getRealmGuildFitScore({ player, guild, guildMembers: members }) >=
-            currentScore + 15
-        );
-      })
-      .sort((left, right) => {
-        const leftMembers = nextPlayers.filter(
-          (candidate) => candidate.guildId === left.id,
-        );
-        const rightMembers = nextPlayers.filter(
-          (candidate) => candidate.guildId === right.id,
-        );
-        return (
-          getRealmGuildFitScore({
-            player,
-            guild: right,
-            guildMembers: rightMembers,
-          }) -
-          getRealmGuildFitScore({
-            player,
-            guild: left,
-            guildMembers: leftMembers,
-          })
-        );
-      });
-    const target = targets[0];
+          score >= currentScore + 15,
+      )
+      .sort((left, right) => right.score - left.score);
+    const target = targets[0]?.guild;
     if (!target) continue;
-    nextPlayers[index] = {
+    const updatedPlayer = {
       ...player,
       guildId: target.id,
       sourceGuildName: target.name,
       marketStatus: REALM_MARKET_STATUS.GUILDED,
       loyalty: Math.max(45, player.loyalty + 20),
     };
+    nextPlayers[index] = updatedPlayer;
+    membersByGuildId.set(
+      String(currentGuild?.id || ""),
+      currentMembers.filter((member) => String(member.id) !== String(player.id)),
+    );
+    const targetMembers = membersByGuildId.get(String(target.id || "")) || [];
+    targetMembers.push(updatedPlayer);
+    membersByGuildId.set(String(target.id || ""), targetMembers);
     poached += 1;
   }
   return { players: nextPlayers, poached };
@@ -1420,6 +1479,9 @@ export const advanceRealmPopulationLifecycle = ({
       guild,
     ]),
   );
+  const membersByGuildId = buildRealmPopulationIndex(
+    population.players,
+  ).byGuildId;
   let players = population.players.map((player) => {
     if (!player.guildId) {
       return {
@@ -1429,9 +1491,8 @@ export const advanceRealmPopulationLifecycle = ({
     }
     const guild = guildById.get(String(player.guildId));
     const stability = getLifecycleGuildStability(guild);
-    const guildMembers = population.players.filter(
-      (candidate) => String(candidate.guildId || "") === String(guild?.id),
-    );
+    const guildMembers =
+      membersByGuildId.get(String(guild?.id || "")) || [];
     const guildFit = getRealmGuildFitScore({
       player,
       guild,
@@ -1911,12 +1972,17 @@ export const advanceRealmPopulationActivity = ({
       .map((player) => String(player?.name || "").trim().toLocaleLowerCase())
       .filter(Boolean),
   );
+  let nextPlayerSequence = Math.max(
+    players.length,
+    Math.floor(Number(population.nextPlayerSequence) || 0),
+  );
   for (let index = 0; index < arrivals; index += 1) {
     players.push(
       ensureRealmPlayerZone(
         generateFreeAgent({
           realmId: realmState?.id,
-          index: players.length + index + safeDayIndex * 1000,
+          index: nextPlayerSequence,
+          sequence: nextPlayerSequence,
           random: safeRandom,
           usedNameKeys,
           arrivalDayIndex: safeDayIndex,
@@ -1925,6 +1991,7 @@ export const advanceRealmPopulationActivity = ({
         population.contentPhase,
       ),
     );
+    nextPlayerSequence += 1;
   }
 
   const recruitedResult = recruitNpcGuilds({
@@ -1982,6 +2049,7 @@ export const advanceRealmPopulationActivity = ({
     population: {
       ...population,
       players,
+      nextPlayerSequence,
       applications: applicationResult.applications,
       lastArrivalDayIndex: safeDayIndex,
       lastApplicationDayIndex: shouldGenerateApplications

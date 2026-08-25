@@ -20,6 +20,7 @@ import { buildRealmNewsForDay, capRealmNews } from "./realmNews";
 import {
   advanceRealmPopulationActivity,
   advanceRealmPopulationProgression,
+  buildRealmPopulationIndex,
 } from "./realmPopulation";
 import {
   advanceNpcRaidProgressForDay,
@@ -360,10 +361,10 @@ export const advanceNpcGuildStructureForDay = ({
   const players = Array.isArray(population?.players)
     ? population.players
     : [];
+  const membersByGuildId = buildRealmPopulationIndex(players).byGuildId;
   let guilds = (Array.isArray(npcGuilds) ? npcGuilds : []).map((guild) => {
-    const rosterSize = players.filter(
-      (player) => String(player.guildId || "") === String(guild.id),
-    ).length;
+    const rosterSize =
+      membersByGuildId.get(String(guild.id || ""))?.length || 0;
     const targetSize = Math.max(1, Number(guild.targetRosterSize) || 1);
     const isWeak =
       getGuildStructureStability({ ...guild, rosterSize }) < 40 &&
@@ -407,18 +408,15 @@ export const advanceNpcGuildStructureForDay = ({
   const weakGuild = eligible[0];
   if (!weakGuild) return { npcGuilds: guilds, population, event: null };
 
-  const weakMembers = players.filter(
-    (player) => String(player.guildId || "") === String(weakGuild.id),
-  );
+  const weakMembers = membersByGuildId.get(String(weakGuild.id || "")) || [];
   const takeover = guilds
     .filter((candidate) => {
       if (
         candidate.id === weakGuild.id ||
         candidate.faction !== weakGuild.faction
       ) return false;
-      const candidateMembers = players.filter(
-        (player) => String(player.guildId || "") === String(candidate.id),
-      );
+      const candidateMembers =
+        membersByGuildId.get(String(candidate.id || "")) || [];
       return (
         candidateMembers.length >= weakMembers.length * 1.5 &&
         getGuildStructureStability(candidate) >=
@@ -462,9 +460,8 @@ export const advanceNpcGuildStructureForDay = ({
       candidate.id === weakGuild.id ||
       candidate.faction !== weakGuild.faction
     ) return false;
-    const candidateMembers = players.filter(
-      (player) => String(player.guildId || "") === String(candidate.id),
-    );
+    const candidateMembers =
+      membersByGuildId.get(String(candidate.id || "")) || [];
     return (
       candidateMembers.length <
         Math.max(1, Number(candidate.targetRosterSize)) * 0.6 &&
@@ -476,9 +473,8 @@ export const advanceNpcGuildStructureForDay = ({
     );
   });
   if (mergerPartner) {
-    const partnerMembers = players.filter(
-      (player) => String(player.guildId || "") === String(mergerPartner.id),
-    );
+    const partnerMembers =
+      membersByGuildId.get(String(mergerPartner.id || "")) || [];
     const combinedMembers = [...weakMembers, ...partnerMembers];
     const archetype = getMergedGuildArchetype(combinedMembers);
     const generated = generateNpcGuilds({
@@ -691,15 +687,25 @@ export const advanceRealmSimulation = ({
         Math.max(0, Number(playerGuildSnapshot?.rosterSize) || 0),
         { realmGuildDensity: guildDensity, realmGuildDynamics: guildDynamics },
       );
-  nextRealm = {
-    ...nextRealm,
-    guildDensity,
-    guildDynamics,
-    npcGuilds: nextRealm.npcGuilds.map((guild) => ({
-      ...guild,
-      targetRosterSize: getNpcGuildTargetRosterSize(guild, guildDensity),
-    })),
-  };
+  let guildTargetsChanged = false;
+  const normalizedNpcGuilds = nextRealm.npcGuilds.map((guild) => {
+    const targetRosterSize = getNpcGuildTargetRosterSize(guild, guildDensity);
+    if (Number(guild.targetRosterSize) === targetRosterSize) return guild;
+    guildTargetsChanged = true;
+    return { ...guild, targetRosterSize };
+  });
+  if (
+    nextRealm.guildDensity !== guildDensity ||
+    nextRealm.guildDynamics !== guildDynamics ||
+    guildTargetsChanged
+  ) {
+    nextRealm = {
+      ...nextRealm,
+      guildDensity,
+      guildDynamics,
+      npcGuilds: normalizedNpcGuilds,
+    };
+  }
   const fallbackLastStep = Math.max(
     0,
     Math.floor(Number(nextRealm.lastSimulatedDayIndex) || 0) *
@@ -720,6 +726,12 @@ export const advanceRealmSimulation = ({
   );
 
   if (safeCurrentStep <= lastSimulatedStep) {
+    if (
+      nextRealm.lastSimulatedStepIndex === lastSimulatedStep &&
+      nextRealm.simulationStepsPerDay === REALM_SIMULATION_STEPS_PER_DAY
+    ) {
+      return nextRealm;
+    }
     return {
       ...nextRealm,
       lastSimulatedStepIndex: lastSimulatedStep,
@@ -824,11 +836,13 @@ export const advanceRealmSimulation = ({
           };
         }
       }
+      const activityMembersByGuildId = buildRealmPopulationIndex(
+        nextPopulation.players,
+      ).byGuildId;
       const npcGuildsWithEvents = activeNpcGuilds.map((guild) =>
         {
-          const guildPlayers = nextPopulation.players.filter(
-            (player) => String(player.guildId || "") === String(guild.id),
-          );
+          const guildPlayers =
+            activityMembersByGuildId.get(String(guild.id || "")) || [];
           const onlineCount = guildPlayers.filter((player) =>
             realmOnlineSnapshot.onlineIds.has(String(player.id)),
           ).length;

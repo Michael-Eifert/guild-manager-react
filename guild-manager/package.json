@@ -5,10 +5,11 @@
   "type": "module",
   "scripts": {
     "generate:items": "tsx scripts/generate-item-catalog.ts",
+    "generate:content-packs": "tsx scripts/generate-content-packs.ts",
     "sync:item-icons": "tsx scripts/sync-item-icons.ts",
-    "predev": "npm run generate:items",
+    "predev": "npm run generate:items && npm run generate:content-packs",
     "dev": "vite",
-    "prebuild": "npm run generate:items",
+    "prebuild": "npm run generate:items && npm run generate:content-packs",
     "build": "vite build && tsx scripts/create-spa-404.ts",
     "lint": "eslint .",
     "typecheck": "npm run typecheck:app && npm run typecheck:test && npm run typecheck:node",

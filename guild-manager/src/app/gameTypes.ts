@@ -21,6 +21,8 @@ import type {
   BrowserSaveSlotId,
   BrowserSaveSlotSummary,
 } from "../session/browserSessionPersistence";
+import type { ActivityHistoryState } from "../activity/activityHistory";
+import type { ContentState } from "../content/contentState";
 
 export type { Character, CharacterId, Mission, MissionId };
 
@@ -123,8 +125,8 @@ export type GameRuntimeSnapshot = {
 
 export type GuildSetupState = {
   hasStarted?: boolean;
-  contentRoute?: "uncommitted" | "burning_crusade";
-  contentPhase?: "classic" | "tbc_prepatch";
+  contentRoute?: "uncommitted" | "burning_crusade" | "classic_plus";
+  contentPhase?: "classic" | "tbc_prepatch" | "classic_plus";
   contentPhaseStartedDayIndex?: number;
   name?: string;
   faction?: string;
@@ -191,6 +193,8 @@ export type GameProviderSnapshot = {
   gameTimeMs: number;
   gameSpeed: number;
   isPaused: boolean;
+  contentState: ContentState;
+  activityHistory: ActivityHistoryState;
 };
 
 export type TransitionResult = {

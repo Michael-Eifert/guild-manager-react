@@ -215,6 +215,7 @@ export const buildMissionRun = ({
         }))
       : undefined,
     lfgSearchId: runOptions?.lfgSearchId || undefined,
+    runSource: runOptions?.runSource || undefined,
     chainContext: chainContext
       ? {
           ...chainContext,

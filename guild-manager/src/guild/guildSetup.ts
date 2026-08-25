@@ -116,7 +116,9 @@ export const normalizeGuildSetup = (
   const contentRoute =
     contentPhase === "tbc_prepatch"
       ? "burning_crusade"
-      : selectedContentRoute;
+      : contentPhase === "classic_plus"
+        ? "classic_plus"
+        : selectedContentRoute;
 
   return {
     ...DEFAULT_GUILD_SETUP,

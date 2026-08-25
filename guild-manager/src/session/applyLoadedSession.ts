@@ -4,6 +4,8 @@ import type { SocialState } from "../social/chatTypes";
 import type { GuildRelationsState } from "../guildRelations/guildRelations";
 import type { GuildActivityStats } from "../guild/guildActivityStats";
 import type { GameSettingsState } from "../settings/gameSettings";
+import type { ContentState } from "../content/contentState";
+import type { ActivityHistoryState } from "../activity/activityHistory";
 
 type StateRef<T> = { current: T };
 type UnknownRecord = Record<string, unknown>;
@@ -15,6 +17,8 @@ export type LoadedSession = {
   loadedGuildProgress: Record<string, unknown>;
   loadedGuildGold: number;
   loadedGuildSetup: UnknownRecord & { faction?: string };
+  loadedContentState: ContentState;
+  loadedActivityHistory: ActivityHistoryState;
   loadedGuildRelationships: Record<string, unknown>;
   loadedRealmState: Record<string, unknown> | null;
   loadedWorldPvpState: Record<string, unknown>;
@@ -41,6 +45,8 @@ export type SessionRefs = {
   gold: StateRef<number>;
   guildProgress: StateRef<Record<string, unknown>>;
   guildSetup: StateRef<Record<string, unknown>>;
+  contentState?: StateRef<ContentState>;
+  activityHistory?: StateRef<ActivityHistoryState>;
   guildRelationships?: StateRef<Record<string, unknown>>;
   realmState?: StateRef<Record<string, unknown> | null>;
   worldPvpState?: StateRef<Record<string, unknown>>;
@@ -66,6 +72,8 @@ export type SessionSetters = {
   setGuildGold: StateSetter;
   setGuildProgress: StateSetter;
   setGuildSetup: StateSetter;
+  setContentState?: StateSetter;
+  setActivityHistory?: StateSetter;
   setGuildRelationships?: StateSetter;
   setRealmState?: StateSetter;
   setWorldPvpState?: StateSetter;
@@ -121,6 +129,8 @@ export const applyLoadedSessionToApp = ({
     loadedGuildProgress,
     loadedGuildGold,
     loadedGuildSetup,
+    loadedContentState,
+    loadedActivityHistory,
     loadedGuildRelationships,
     loadedRealmState,
     loadedWorldPvpState,
@@ -148,6 +158,8 @@ export const applyLoadedSessionToApp = ({
   refs.gold.current = loadedGuildGold;
   refs.guildProgress.current = loadedGuildProgress;
   refs.guildSetup.current = loadedGuildSetup;
+  if (refs.contentState) refs.contentState.current = loadedContentState;
+  if (refs.activityHistory) refs.activityHistory.current = loadedActivityHistory;
   if (refs.guildRelationships) refs.guildRelationships.current = loadedGuildRelationships || {};
   if (refs.realmState) refs.realmState.current = loadedRealmState || null;
   if (refs.worldPvpState) refs.worldPvpState.current = loadedWorldPvpState || {};
@@ -177,6 +189,8 @@ export const applyLoadedSessionToApp = ({
   setters.setGuildGold(loadedGuildGold);
   setters.setGuildProgress(loadedGuildProgress);
   setters.setGuildSetup(loadedGuildSetup);
+  if (setters.setContentState) setters.setContentState(loadedContentState);
+  if (setters.setActivityHistory) setters.setActivityHistory(loadedActivityHistory);
   if (setters.setGuildRelationships) {
     setters.setGuildRelationships(loadedGuildRelationships || {});
   }

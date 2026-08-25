@@ -61,7 +61,7 @@ test("@mobile exposes default quick access and a scrollable More drawer", async 
     mobileNavigation.getByRole("link", { name: "Guild", exact: true }),
   ).toBeVisible();
   await expect(
-    mobileNavigation.getByRole("link", { name: "Realm", exact: true }),
+    mobileNavigation.getByRole("link", { name: "Guild Relations", exact: true }),
   ).toBeVisible();
   await expect(
     mobileNavigation.getByRole("link", { name: "Recruit", exact: true }),
@@ -83,7 +83,7 @@ test("@mobile exposes default quick access and a scrollable More drawer", async 
     shortcuts.getByRole("button", { name: "Guild", exact: true }),
   ).toHaveAttribute("aria-pressed", "true");
   await expect(
-    shortcuts.getByRole("button", { name: "Realm", exact: true }),
+    shortcuts.getByRole("button", { name: "Guild Relations", exact: true }),
   ).toHaveAttribute("aria-pressed", "true");
   await expect(
     shortcuts.getByRole("button", { name: "Recruit", exact: true }),

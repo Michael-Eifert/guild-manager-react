@@ -23,18 +23,7 @@ import {
 } from "../../pvp/worldPvpUtils";
 import { getZoneById, ZONE_DEFINITIONS } from "../../zones/zoneDefinitions";
 import { getRacePortraitUrl, getWowIconUrl } from "../../utils";
-
-const getBattleResultLabel = (result) => {
-  if (result === "victory") return "Victory";
-  if (result === "defeat") return "Defeat";
-  return "Draw";
-};
-
-const getBattleResultClass = (result) => {
-  if (result === "victory") return "text-emerald-300";
-  if (result === "defeat") return "text-red-300";
-  return "text-amber-200";
-};
+import RecentActivityRuns from "../../components/activity/RecentActivityRuns";
 
 const formatTimeRemaining = (battle, gameTimeMs) => {
   const remainingMs = Math.max(
@@ -108,10 +97,10 @@ export default function BattlefieldsPage({
   worldPvpState,
   guildLog = [],
   guildSetup = {},
-  currentDayIndex = 0,
   gameTimeMs = 0,
   onQueueWarsongGulch,
   onPvpActivityFocusChange,
+  activityHistory = { records: [] },
 }) {
   const state = useMemo(
     () => ensureBattlefieldState(battlefieldState),
@@ -447,38 +436,11 @@ export default function BattlefieldsPage({
             </div>
           </div>
 
-          <div className="rounded border border-slate-700 bg-slate-900/70 p-4">
-            <h3 className="fantasy-font text-xl text-amber-100">Battle History</h3>
-            <div className="mt-3 space-y-2">
-              {state.history.length === 0 && (
-                <div className="rounded border border-slate-700 bg-slate-950/70 p-4 text-sm text-slate-400">
-                  No completed battlegrounds yet.
-                </div>
-              )}
-              {state.history.slice(0, 8).map((battle) => (
-                <div
-                  key={battle.id}
-                  className="rounded border border-slate-800 bg-slate-950/70 p-3"
-                >
-                  <div className="flex items-center justify-between gap-3">
-                    <div>
-                      <div className={`font-bold ${getBattleResultClass(battle.result)}`}>
-                        {getBattleResultLabel(battle.result)} {battle.playerScore}-
-                        {battle.enemyScore}
-                      </div>
-                      <div className="text-xs text-slate-400">
-                        Day {Number(battle.startDay ?? currentDayIndex) + 1} -{" "}
-                        {battle.bracketLabel}
-                      </div>
-                    </div>
-                    <div className="text-right text-xs text-yellow-200">
-                      +{battle.reward?.honorPerParticipant || 0} Honor
-                    </div>
-                  </div>
-                </div>
-              ))}
-            </div>
-          </div>
+          <RecentActivityRuns
+            records={activityHistory.records}
+            kinds={["battleground"]}
+            title="Battle History"
+          />
         </div>
       </div>
 

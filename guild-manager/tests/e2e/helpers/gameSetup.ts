@@ -9,6 +9,9 @@ export const createGuild = async (
     page.getByRole("heading", { name: "Found Your Guild" }),
   ).toBeVisible();
   await page.getByRole("textbox", { name: "Name of Guild" }).fill(name);
+  await page
+    .getByRole("textbox", { name: "Character Name" })
+    .fill("Testfounder");
   await page.getByRole("button", { name: "Start Game" }).click();
   await expect(page).toHaveURL(/\/home$/);
   await expect(page.getByRole("heading", { name })).toBeVisible();

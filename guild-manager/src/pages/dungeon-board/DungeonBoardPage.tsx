@@ -4,6 +4,8 @@ import DungeonBoardPanel from "../../components/DungeonBoardPanel";
 import type { Character } from "../../types/characterTypes";
 import type { Mission } from "../../types/missionTypes";
 import type { SocialState } from "../../social/chatTypes";
+import type { ActivityHistoryState } from "../../activity/activityHistory";
+import RecentActivityRuns from "../../components/activity/RecentActivityRuns";
 
 type ForwardedCallback = (...args: never[]) => unknown;
 
@@ -16,10 +18,13 @@ type DungeonBoardPageProps = {
   onManualFinish: ForwardedCallback;
   onQueueAdventureGoal: ForwardedCallback;
   onClearAdventureGoal: ForwardedCallback;
+  activityHistory: ActivityHistoryState;
 };
 
 // Temporary adapter until DungeonBoardPanel itself is migrated from JSX.
-const TypedDungeonBoardPanel = DungeonBoardPanel as ComponentType<DungeonBoardPageProps>;
+const TypedDungeonBoardPanel = DungeonBoardPanel as unknown as ComponentType<
+  Omit<DungeonBoardPageProps, "activityHistory">
+>;
 
 export default function DungeonBoardPage({
   roster,
@@ -30,6 +35,7 @@ export default function DungeonBoardPage({
   onManualFinish,
   onQueueAdventureGoal,
   onClearAdventureGoal,
+  activityHistory,
 }: DungeonBoardPageProps) {
   return (
     <section className="wow-modal-panel min-h-[calc(100vh-220px)] overflow-hidden rounded-lg border-2 border-cyan-900 bg-gray-950 shadow-2xl">
@@ -52,6 +58,12 @@ export default function DungeonBoardPage({
           onQueueAdventureGoal={onQueueAdventureGoal}
           onClearAdventureGoal={onClearAdventureGoal}
         />
+        <div className="mt-4">
+          <RecentActivityRuns
+            records={activityHistory.records}
+            kinds={["dungeon", "raid"]}
+          />
+        </div>
       </div>
     </section>
   );

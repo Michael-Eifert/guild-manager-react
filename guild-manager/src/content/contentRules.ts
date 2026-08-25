@@ -4,11 +4,13 @@ import { FACTION_RACES, GUILD_FACTION } from "../data/gameConfig";
 export const CONTENT_ROUTE = Object.freeze({
   UNCOMMITTED: "uncommitted",
   BURNING_CRUSADE: "burning_crusade",
+  CLASSIC_PLUS: "classic_plus",
 } as const);
 
 export const CONTENT_PHASE = Object.freeze({
   CLASSIC: "classic",
   TBC_PREPATCH: "tbc_prepatch",
+  CLASSIC_PLUS: "classic_plus",
 } as const);
 
 export type ContentRoute = typeof CONTENT_ROUTE[keyof typeof CONTENT_ROUTE];
@@ -33,23 +35,29 @@ const PREPATCH_RACE_CLASSES = Object.freeze({
 });
 
 export const normalizeContentRoute = (value: unknown): ContentRoute =>
-  value === CONTENT_ROUTE.BURNING_CRUSADE
-    ? CONTENT_ROUTE.BURNING_CRUSADE
+  value === CONTENT_ROUTE.BURNING_CRUSADE ||
+  value === CONTENT_ROUTE.CLASSIC_PLUS
+    ? value
     : CONTENT_ROUTE.UNCOMMITTED;
 
 export const normalizeContentPhase = (
   value: unknown,
   route: unknown = CONTENT_ROUTE.UNCOMMITTED,
 ): ContentPhase =>
-  value === CONTENT_PHASE.TBC_PREPATCH ||
-  normalizeContentRoute(route) === CONTENT_ROUTE.BURNING_CRUSADE
-    ? CONTENT_PHASE.TBC_PREPATCH
-    : CONTENT_PHASE.CLASSIC;
+  normalizeContentRoute(route) === CONTENT_ROUTE.CLASSIC_PLUS ||
+  value === CONTENT_PHASE.CLASSIC_PLUS
+    ? CONTENT_PHASE.CLASSIC_PLUS
+    : value === CONTENT_PHASE.TBC_PREPATCH ||
+        normalizeContentRoute(route) === CONTENT_ROUTE.BURNING_CRUSADE
+      ? CONTENT_PHASE.TBC_PREPATCH
+      : CONTENT_PHASE.CLASSIC;
 
 export const getContentPhaseForRoute = (route: unknown): ContentPhase =>
   normalizeContentRoute(route) === CONTENT_ROUTE.BURNING_CRUSADE
     ? CONTENT_PHASE.TBC_PREPATCH
-    : CONTENT_PHASE.CLASSIC;
+    : normalizeContentRoute(route) === CONTENT_ROUTE.CLASSIC_PLUS
+      ? CONTENT_PHASE.CLASSIC_PLUS
+      : CONTENT_PHASE.CLASSIC;
 
 export const isTbcPrepatchActive = (phase: unknown) =>
   normalizeContentPhase(phase) === CONTENT_PHASE.TBC_PREPATCH;
@@ -93,4 +101,8 @@ export const isRaceClassAvailableInContent = ({
   getRaceClassesForContent(race, phase).includes(String(charClass || ""));
 
 export const getContentPhaseLabel = (phase: unknown) =>
-  isTbcPrepatchActive(phase) ? "TBC Pre-Patch" : "Classic Era";
+  isTbcPrepatchActive(phase)
+    ? "TBC Pre-Patch"
+    : normalizeContentPhase(phase) === CONTENT_PHASE.CLASSIC_PLUS
+      ? "Classic+"
+      : "Classic Era";

@@ -15,7 +15,10 @@ import {
   createNpcRaidProgressFromScore,
   normalizeRealmRaidProgress,
 } from "./realmRaidProgress";
-import { normalizeRealmPopulation } from "./realmPopulation";
+import {
+  normalizeRealmPopulation,
+  syncGuildRostersFromPopulation,
+} from "./realmPopulation";
 import {
   generateNpcGuildRoster,
   getRealmMaxLevelCount,
@@ -407,6 +410,10 @@ export const ensureRealmState = (
         : undefined,
     contentPhase,
   });
+  const hydratedNpcGuilds = syncGuildRostersFromPopulation(
+    npcGuilds,
+    population.players,
+  );
 
   return {
     id: realmId,
@@ -432,12 +439,12 @@ export const ensureRealmState = (
               : safeCurrentDay,
       ),
     ),
-    npcGuilds,
+    npcGuilds: hydratedNpcGuilds,
     population,
     news: capRealmNews(safe.news),
     desiredGuildCount: Number.isFinite(Number(safe.desiredGuildCount))
       ? Math.max(1, Math.floor(Number(safe.desiredGuildCount)))
-      : npcGuilds.length,
+      : hydratedNpcGuilds.length,
     lastGuildFoundingDayIndex:
       safe.lastGuildFoundingDayIndex != null &&
       Number.isFinite(Number(safe.lastGuildFoundingDayIndex))

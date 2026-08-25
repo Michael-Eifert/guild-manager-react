@@ -39,6 +39,8 @@ import { retainGuildLogEntries } from "../guild/guildLog";
 import { normalizeGameSettings } from "../settings/gameSettings";
 import { getStarterRecipeIds } from "../professions/recipeDefinitions";
 import { normalizeRunPreparationSelection } from "../professions/consumableEffects";
+import { normalizeContentState } from "../content/contentState";
+import { ensureActivityHistory } from "../activity/activityHistory";
 
 export const SESSION_FORMAT = SESSION_FORMAT_VALUE;
 export const SESSION_VERSION = CURRENT_SESSION_VERSION;
@@ -73,6 +75,42 @@ export const normalizePersistedSocialState = (socialState) => {
 
 const toObject = (value) =>
   value && typeof value === "object" ? value : {};
+
+const serializeRealmState = (realmState) => {
+  if (!realmState || typeof realmState !== "object") return null;
+  const players = Array.isArray(realmState?.population?.players)
+    ? realmState.population.players
+    : [];
+  const memberIdsByGuildId = new Map();
+  players.forEach((player) => {
+    const guildId = String(player?.guildId || "");
+    if (!guildId) return;
+    const memberIds = memberIdsByGuildId.get(guildId) || [];
+    memberIds.push(String(player.id));
+    memberIdsByGuildId.set(guildId, memberIds);
+  });
+  return {
+    ...realmState,
+    npcGuilds: (Array.isArray(realmState.npcGuilds)
+      ? realmState.npcGuilds
+      : []
+    ).map((guild) => {
+      const { roster: legacyRoster, ...summary } = guild;
+      void legacyRoster;
+      return {
+        ...summary,
+        memberIds:
+          memberIdsByGuildId.get(String(guild?.id || "")) ||
+          (Array.isArray(guild?.memberIds) ? guild.memberIds.map(String) : []),
+      };
+    }),
+  };
+};
+
+const serializeBattlefieldState = (battlefieldState) => {
+  const normalized = ensureBattlefieldState(battlefieldState);
+  return { ...normalized, history: [] };
+};
 
 const clampNonNegativeNumber = (value, fallback = 0) => {
   const numeric = Number(value);
@@ -275,6 +313,8 @@ export const buildSessionPayload = ({
   guildGold,
   guildProgress,
   guildSetup,
+  contentState,
+  activityHistory,
   guildRelationships,
   realmState,
   worldPvpState,
@@ -316,10 +356,12 @@ export const buildSessionPayload = ({
       guildGold: clampNonNegativeNumber(guildGold, 0),
       guildProgress: toObject(guildProgress),
       guildSetup: toObject(guildSetup),
+      contentState: normalizeContentState(contentState, toObject(guildSetup)),
+      activityHistory: ensureActivityHistory(activityHistory),
       guildRelationships: normalizeGuildRelationships(guildRelationships),
-      realmState: realmState ? toObject(realmState) : null,
+      realmState: serializeRealmState(realmState),
       worldPvpState: ensureWorldPvpState(worldPvpState),
-      battlefieldState: ensureBattlefieldState(battlefieldState),
+      battlefieldState: serializeBattlefieldState(battlefieldState),
       guildInventory: ensureGuildInventory(guildInventory),
       stashPolicy: ensureStashPolicy(stashPolicy),
       calendarState: normalizeCalendarState(
@@ -419,10 +461,20 @@ export const hydrateSessionData = ({
     typeof safePayload.guildGold === "number"
       ? Math.max(0, Math.min(loadedGuildStats.goldCap, safePayload.guildGold))
       : 0;
-  const loadedGuildSetup = normalizeGuildSetup(
+  const normalizedLoadedGuildSetup = normalizeGuildSetup(
     safePayload.guildSetup || defaultGuildSetup,
     safePayload,
   );
+  const loadedContentState = normalizeContentState(
+    safePayload.contentState,
+    normalizedLoadedGuildSetup,
+  );
+  const loadedGuildSetup = {
+    ...normalizedLoadedGuildSetup,
+    contentRoute: loadedContentState.route,
+    contentPhase: loadedContentState.phase,
+    contentPhaseStartedDayIndex: loadedContentState.activatedAtDayIndex,
+  };
   const loadedGuildRelationships = normalizeGuildRelationships(
     safePayload.guildRelationships,
   );
@@ -463,6 +515,9 @@ export const hydrateSessionData = ({
   );
   const loadedBattlefieldState = ensureBattlefieldState(
     safePayload.battlefieldState,
+  );
+  const loadedActivityHistory = ensureActivityHistory(
+    safePayload.activityHistory,
   );
   const loadedGuildInventory = ensureGuildInventory(
     safePayload.guildInventory,
@@ -659,10 +714,12 @@ export const hydrateSessionData = ({
     loadedGuildProgress,
     loadedGuildGold,
     loadedGuildSetup,
+    loadedContentState,
     loadedGuildRelationships,
     loadedRealmState,
     loadedWorldPvpState,
     loadedBattlefieldState,
+    loadedActivityHistory,
     loadedGuildInventory,
     loadedStashPolicy,
     loadedMissionBoardState,

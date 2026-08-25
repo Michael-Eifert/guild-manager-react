@@ -13,6 +13,7 @@ export const ROUTES = Object.freeze({
   DUNGEON_BOARD_ALIAS: "/dungeon-board",
   BATTLEFIELDS: "/home/battlefields",
   BATTLEFIELDS_ALIAS: "/battlefields",
+  RUN_DETAIL: "/home/runs/:runId",
   PROFESSIONS: "/home/professions",
   DATABASE: "/home/database",
   GUILD_LOG: "/home/guild-log",

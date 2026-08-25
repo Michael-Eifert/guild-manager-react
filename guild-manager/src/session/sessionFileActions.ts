@@ -4,6 +4,8 @@ import type { SocialState } from "../social/chatTypes";
 import type { GuildRelationsState } from "../guildRelations/guildRelations";
 import type { GuildActivityStats } from "../guild/guildActivityStats";
 import type { GameSettingsState } from "../settings/gameSettings";
+import type { ContentState } from "../content/contentState";
+import type { ActivityHistoryState } from "../activity/activityHistory";
 
 import {
   buildSessionPayload,
@@ -20,6 +22,8 @@ export type SessionState = {
   guildGold: number;
   guildProgress: Record<string, unknown>;
   guildSetup: Record<string, unknown>;
+  contentState: ContentState;
+  activityHistory: ActivityHistoryState;
   guildRelationships: Record<string, unknown>;
   realmState: Record<string, unknown> | null;
   worldPvpState: Record<string, unknown>;

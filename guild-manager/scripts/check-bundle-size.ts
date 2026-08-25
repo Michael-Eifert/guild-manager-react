@@ -6,7 +6,10 @@ type BundleMetrics = {
 };
 
 type BundleBaseline = BundleMetrics & { allowedIncreasePercent: number };
-type DataAssetBaseline = { maxDataAssetBytes?: number };
+type DataAssetBaseline = {
+  maxDataAssetBytes?: number;
+  maxContentPackBytes?: number;
+};
 
 const baseline = JSON.parse(
   await readFile(new URL("./bundle-size-baseline.json", import.meta.url), "utf8"),
@@ -51,4 +54,30 @@ if (
     `itemCatalogBytes is ${itemCatalogBytes} bytes; allowed maximum is ${baseline.maxDataAssetBytes} bytes.`,
   );
   process.exitCode = 1;
+}
+
+const contentPackDirectory = new URL(
+  "../dist/generated/content-packs/",
+  import.meta.url,
+);
+const contentPackFiles = (await readdir(contentPackDirectory)).filter((file) =>
+  file.endsWith(".json"),
+);
+const contentPackSizes: Record<string, number> = Object.fromEntries(
+  await Promise.all(
+    contentPackFiles.map(async (file) => [
+      file,
+      (await stat(new URL(file, contentPackDirectory))).size,
+    ]),
+  ),
+);
+console.log(JSON.stringify({ contentPackSizes }, null, 2));
+if (Number.isFinite(baseline.maxContentPackBytes)) {
+  Object.entries(contentPackSizes).forEach(([file, bytes]) => {
+    if (bytes <= Number(baseline.maxContentPackBytes)) return;
+    console.error(
+      `${file} is ${bytes} bytes; allowed maximum is ${baseline.maxContentPackBytes} bytes.`,
+    );
+    process.exitCode = 1;
+  });
 }

@@ -1,4 +1,3 @@
-/* eslint-disable react-hooks/exhaustive-deps -- synchronized commit refs and setters are stable by contract during the provider migration */
 // Transitional JavaScript composition controller: extracted domain modules are strictly typed.
 import {
   useState,
@@ -88,6 +87,16 @@ import {
   getContentPhaseForRoute,
   normalizeContentRoute,
 } from "../content/contentRules";
+import {
+  normalizeContentState,
+  transitionContentRoute,
+} from "../content/contentState";
+import {
+  appendActivityRun,
+  createBattlegroundActivityRun,
+  createMissionActivityRun,
+  ensureActivityHistory,
+} from "../activity/activityHistory";
 import {
   getRealmAgeStartDayIndex,
   normalizeRealmAgeMonths,
@@ -370,6 +379,19 @@ const {
 } = WORLD_DROP_CONFIG;
 const BROWSER_AUTOSAVE_INTERVAL_MS = 30_000;
 
+const areShallowEqual = (left, right) => {
+  if (Object.is(left, right)) return true;
+  if (!left || !right || typeof left !== "object" || typeof right !== "object") {
+    return false;
+  }
+  const leftKeys = Object.keys(left);
+  const rightKeys = Object.keys(right);
+  return (
+    leftKeys.length === rightKeys.length &&
+    leftKeys.every((key) => Object.is(left[key], right[key]))
+  );
+};
+
 const buildMissionSocialParticipants = (mission, roster, faction) => {
   if (
     Array.isArray(mission?.partyParticipants) &&
@@ -403,6 +425,12 @@ export const useGameProviderController = () => {
   const [guildSetup, setGuildSetup, guildSetupRef] = useSynchronizedState(() =>
     normalizeGuildSetup(DEFAULT_GUILD_SETUP),
   );
+  const [contentState, setContentState, contentStateRef] =
+    useSynchronizedState(() =>
+      normalizeContentState(null, normalizeGuildSetup(DEFAULT_GUILD_SETUP)),
+    );
+  const [activityHistory, setActivityHistory, activityHistoryRef] =
+    useSynchronizedState(() => ensureActivityHistory(null));
   const [roster, setRoster, rosterRef] = useSynchronizedState([]);
   const [activeMissions, setActiveMissions, missionsRef] = useSynchronizedState([]);
   const [missionList, setMissionList, missionListRef] = useSynchronizedState(() =>
@@ -518,6 +546,9 @@ export const useGameProviderController = () => {
   const browserSessionReadyRef = useRef(false);
   const browserAutosaveWarningShownRef = useRef(false);
   const persistBrowserSessionRef = useRef(() => false);
+  const browserAutosaveIdleRef = useRef(null);
+  const browserStateRevisionRef = useRef(0);
+  const lastBrowserAutosaveRevisionRef = useRef(-1);
 
   useEffect(() => {
     let isMounted = true;
@@ -1214,9 +1245,7 @@ export const useGameProviderController = () => {
           gameSettingsRef.current.offlineSimulationEnabled,
         gameSettings: gameSettingsRef.current,
       });
-      if (
-        JSON.stringify(nextRealmState) !== JSON.stringify(realmStateRef.current)
-      ) {
+      if (!areShallowEqual(nextRealmState, realmStateRef.current)) {
         realmStateRef.current = nextRealmState;
         setRealmState(nextRealmState);
       }
@@ -1224,10 +1253,7 @@ export const useGameProviderController = () => {
         raidLockoutsRef.current,
         calendarDayIndex,
       );
-      if (
-        JSON.stringify(normalizedRaidLockouts) !==
-        JSON.stringify(raidLockoutsRef.current)
-      ) {
+      if (!areShallowEqual(normalizedRaidLockouts, raidLockoutsRef.current)) {
         raidLockoutsRef.current = normalizedRaidLockouts;
         setRaidLockouts(normalizedRaidLockouts);
       }
@@ -1250,6 +1276,7 @@ export const useGameProviderController = () => {
         guildActivityStatsRef.current,
         currentMissions,
       );
+      let currentActivityHistory = activityHistoryRef.current;
       let relationsMissionCandidate = null;
       let nextGuildInventory = ensureGuildInventory(guildInventoryRef.current);
 
@@ -1532,10 +1559,7 @@ export const useGameProviderController = () => {
             memberIds,
           }),
       });
-      if (
-        JSON.stringify(refreshedCalendar.state) !==
-        JSON.stringify(calendarStateRef.current)
-      ) {
+      if (!areShallowEqual(refreshedCalendar.state, calendarStateRef.current)) {
         calendarStateRef.current = refreshedCalendar.state;
         setCalendarState(refreshedCalendar.state);
       }
@@ -1647,6 +1671,23 @@ export const useGameProviderController = () => {
         rewardedMissionIdsRef.current.add(missionInstanceId);
 
         const result = processMissionRewards(m, newRoster);
+        const rewardItemIds = result.missionLogs
+          .filter((log) => log?.type === "loot")
+          .map((log) => String(log?.item?.id || log?.itemId || ""))
+          .filter(Boolean);
+        currentActivityHistory = appendActivityRun(
+          currentActivityHistory,
+          createMissionActivityRun({
+            mission: m,
+            roster: newRoster,
+            succeeded: result.missionSucceeded,
+            completedAtGameTimeMs: now,
+            dayIndex: calendarDayIndex,
+            contentState: contentStateRef.current,
+            rewardGold: result.missionGold,
+            rewardItemIds,
+          }),
+        );
         currentGuildActivityStats = recordCompletedGuildRun({
           stats: currentGuildActivityStats,
           mission: m,
@@ -1779,6 +1820,15 @@ export const useGameProviderController = () => {
       newRoster = battlefieldAdvance.roster;
       newLogs = [...newLogs, ...battlefieldAdvance.logs];
       battlefieldAdvance.completedBattles.forEach((battle) => {
+        currentActivityHistory = appendActivityRun(
+          currentActivityHistory,
+          createBattlegroundActivityRun({
+            battle,
+            roster: newRoster,
+            contentState: contentStateRef.current,
+            dayIndex: calendarDayIndex,
+          }),
+        );
         pushNotification({
           type: battle.result === "victory" ? "achievement" : "info",
           title:
@@ -1939,7 +1989,11 @@ export const useGameProviderController = () => {
           now,
           newRoster,
           chainContext,
-          { runPreparation: autoRunPreparation, consumableModifiers: autoRunPreparation },
+          {
+            runPreparation: autoRunPreparation,
+            consumableModifiers: autoRunPreparation,
+            runSource: "automation",
+          },
         );
         newRoster = newRoster.map((char) =>
           memberIds.includes(char.id)
@@ -2732,6 +2786,10 @@ export const useGameProviderController = () => {
       socialStateRef.current = currentSocialState;
       guildRelationsStateRef.current = currentGuildRelationsState;
       guildActivityStatsRef.current = currentGuildActivityStats;
+      if (currentActivityHistory !== activityHistoryRef.current) {
+        activityHistoryRef.current = currentActivityHistory;
+        setActivityHistory(currentActivityHistory);
+      }
       setRoster(newRoster);
       setActiveMissions(newMissions);
       setSocialState(currentSocialState);
@@ -2740,10 +2798,7 @@ export const useGameProviderController = () => {
       setGuildRelationships(guildRelationshipsRef.current);
       setWorldPvpState(nextWorldPvpState);
       setBattlefieldState(currentBattlefieldState);
-      if (
-        JSON.stringify(nextGuildInventory) !==
-        JSON.stringify(guildInventoryRef.current)
-      ) {
+      if (!areShallowEqual(nextGuildInventory, guildInventoryRef.current)) {
         guildInventoryRef.current = nextGuildInventory;
         setGuildInventory(nextGuildInventory);
       }
@@ -3560,6 +3615,14 @@ export const useGameProviderController = () => {
       contentPhase,
       contentPhaseStartedDayIndex: realmStartDayIndex,
     };
+    const starterContentState = normalizeContentState(
+      {
+        route: contentRoute,
+        phase: contentPhase,
+        activatedAtDayIndex: realmStartDayIndex,
+      },
+      starterSetup,
+    );
 
     rewardedMissionIdsRef.current = new Set();
     autoDungeonStateRef.current = { nextAttemptAt: 0 };
@@ -3575,6 +3638,8 @@ export const useGameProviderController = () => {
     socialStateRef.current = starterSocialState;
     guildRelationsStateRef.current = starterGuildRelationsState;
     guildActivityStatsRef.current = starterGuildActivityStats;
+    contentStateRef.current = starterContentState;
+    activityHistoryRef.current = ensureActivityHistory(null);
     const starterRealmState = ensureRealmState(
       null,
       starterSetup,
@@ -3593,6 +3658,8 @@ export const useGameProviderController = () => {
     setSocialState(starterSocialState);
     setGuildRelationsState(starterGuildRelationsState);
     setGuildActivityStats(starterGuildActivityStats);
+    setContentState(starterContentState);
+    setActivityHistory(ensureActivityHistory(null));
     setMissionList(
       getMissionListWithZones(
         INITIAL_MISSIONS.map(cloneMissionTemplate),
@@ -4966,7 +5033,7 @@ export const useGameProviderController = () => {
     itemCatalog,
     state: {
       roster, activeMissions, missionList, guildLog, guildGold, guildProgress,
-      guildSetup, guildRelationships, realmState, worldPvpState, battlefieldState,
+      guildSetup, contentState, activityHistory, guildRelationships, realmState, worldPvpState, battlefieldState,
       guildInventory, stashPolicy, calendarState, raidLockouts, missionBoardState,
       socialState, gameSpeed, isPaused,
       guildRelationsState,
@@ -4977,7 +5044,9 @@ export const useGameProviderController = () => {
     refs: {
       rewardedMissionIds: rewardedMissionIdsRef, roster: rosterRef,
       missions: missionsRef, gold: goldRef, guildProgress: guildProgressRef,
-      guildSetup: guildSetupRef, guildRelationships: guildRelationshipsRef,
+      guildSetup: guildSetupRef, contentState: contentStateRef,
+      activityHistory: activityHistoryRef,
+      guildRelationships: guildRelationshipsRef,
       realmState: realmStateRef, worldPvpState: worldPvpStateRef,
       battlefieldState: battlefieldStateRef, guildInventory: guildInventoryRef,
       stashPolicy: stashPolicyRef, calendarState: calendarStateRef,
@@ -4990,7 +5059,8 @@ export const useGameProviderController = () => {
     },
     setters: {
       setRoster, setActiveMissions, setMissionList, setGuildLog, setGuildGold,
-      setGuildProgress, setGuildSetup, setGuildRelationships, setRealmState,
+      setGuildProgress, setGuildSetup, setContentState, setActivityHistory,
+      setGuildRelationships, setRealmState,
       setWorldPvpState, setBattlefieldState, setGuildInventory, setStashPolicy,
       setMissionBoardState, setCalendarState, setRaidLockouts, setIsPaused,
       setSocialState, setGameSpeed, setGameTimeMs, setDetailCharId,
@@ -5013,17 +5083,56 @@ export const useGameProviderController = () => {
 
   persistBrowserSessionRef.current = persistBrowserSession;
 
-  const runBrowserAutosave = useCallback(() => {
+  useEffect(() => {
+    browserStateRevisionRef.current += 1;
+  }, [
+    activeMissions,
+    activityHistory,
+    battlefieldState,
+    calendarState,
+    contentState,
+    gameSettings,
+    gameSpeed,
+    gameTimeMs,
+    guildActivityStats,
+    guildGold,
+    guildInventory,
+    guildLog,
+    guildProgress,
+    guildRelationsState,
+    guildRelationships,
+    guildSetup,
+    isPaused,
+    missionBoardState,
+    missionList,
+    raidLockouts,
+    realmState,
+    roster,
+    socialState,
+    stashPolicy,
+    worldPvpState,
+  ]);
+
+  const runBrowserAutosave = useCallback((force = false) => {
     if (
       !browserSessionReadyRef.current ||
       !guildSetupRef.current?.hasStarted
     ) {
       return false;
     }
+    if (
+      !force &&
+      lastBrowserAutosaveRevisionRef.current === browserStateRevisionRef.current
+    ) {
+      return true;
+    }
 
     try {
       const saved = persistBrowserSessionRef.current();
-      if (saved) browserAutosaveWarningShownRef.current = false;
+      if (saved) {
+        browserAutosaveWarningShownRef.current = false;
+        lastBrowserAutosaveRevisionRef.current = browserStateRevisionRef.current;
+      }
       return saved;
     } catch (error) {
       console.error("Failed to update browser autosave:", error);
@@ -5039,6 +5148,34 @@ export const useGameProviderController = () => {
       return false;
     }
   }, [pushNotification]);
+  const cancelScheduledBrowserAutosave = useCallback(() => {
+    const pending = browserAutosaveIdleRef.current;
+    if (!pending) return;
+    if (pending.kind === "idle" && typeof window.cancelIdleCallback === "function") {
+      window.cancelIdleCallback(pending.id);
+    } else {
+      window.clearTimeout(pending.id);
+    }
+    browserAutosaveIdleRef.current = null;
+  }, []);
+  const scheduleBrowserAutosave = useCallback(() => {
+    if (browserAutosaveIdleRef.current) return;
+    const save = () => {
+      browserAutosaveIdleRef.current = null;
+      runBrowserAutosave();
+    };
+    if (typeof window.requestIdleCallback === "function") {
+      browserAutosaveIdleRef.current = {
+        kind: "idle",
+        id: window.requestIdleCallback(save, { timeout: 2000 }),
+      };
+    } else {
+      browserAutosaveIdleRef.current = {
+        kind: "timeout",
+        id: window.setTimeout(save, 0),
+      };
+    }
+  }, [runBrowserAutosave]);
 
   useEffect(() => {
     if (browserSessionReadyRef.current) return;
@@ -5072,18 +5209,19 @@ export const useGameProviderController = () => {
 
   useEffect(() => {
     if (!guildSetup.hasStarted) return;
-    runBrowserAutosave();
-  }, [currentCalendarDayIndex, guildSetup.hasStarted, runBrowserAutosave]);
+    scheduleBrowserAutosave();
+  }, [currentCalendarDayIndex, guildSetup.hasStarted, scheduleBrowserAutosave]);
 
   useEffect(() => {
     const saveBeforeLeaving = () => {
-      runBrowserAutosave();
+      cancelScheduledBrowserAutosave();
+      runBrowserAutosave(true);
     };
     const saveWhenHidden = () => {
-      if (document.visibilityState === "hidden") runBrowserAutosave();
+      if (document.visibilityState === "hidden") saveBeforeLeaving();
     };
     const intervalId = window.setInterval(
-      runBrowserAutosave,
+      scheduleBrowserAutosave,
       BROWSER_AUTOSAVE_INTERVAL_MS,
     );
 
@@ -5091,10 +5229,11 @@ export const useGameProviderController = () => {
     document.addEventListener("visibilitychange", saveWhenHidden);
     return () => {
       window.clearInterval(intervalId);
+      cancelScheduledBrowserAutosave();
       window.removeEventListener("pagehide", saveBeforeLeaving);
       document.removeEventListener("visibilitychange", saveWhenHidden);
     };
-  }, [runBrowserAutosave]);
+  }, [cancelScheduledBrowserAutosave, runBrowserAutosave, scheduleBrowserAutosave]);
 
   const browserSaveSlots = listBrowserSaveSlots();
   const handleLoadBrowserSave = (slotId) => {
@@ -5243,6 +5382,12 @@ export const useGameProviderController = () => {
   }, []);
   const handleActivateTbcPrepatch = useCallback(() => {
     if (guildSetupRef.current?.contentPhase === "tbc_prepatch") return false;
+    const contentTransition = transitionContentRoute(
+      contentStateRef.current,
+      "burning_crusade",
+      currentCalendarDayIndex,
+    );
+    if (!contentTransition.applied) return false;
     const transition = activateTbcPrepatchPopulation({
       realmState: realmStateRef.current,
       currentDayIndex: currentCalendarDayIndex,
@@ -5260,9 +5405,11 @@ export const useGameProviderController = () => {
       "tbc_prepatch",
     );
     guildSetupRef.current = nextSetup;
+    contentStateRef.current = contentTransition.state;
     realmStateRef.current = transition.realmState;
     missionListRef.current = nextMissionList;
     setGuildSetup(nextSetup);
+    setContentState(contentTransition.state);
     setRealmState(transition.realmState);
     setMissionList(nextMissionList);
     const message = `The TBC Pre-Patch is live. ${transition.newcomers.length} Draenei and Blood Elf adventurers have arrived on the realm.`;
@@ -5847,6 +5994,8 @@ export const useGameProviderController = () => {
     guildRelationInsights,
     guildRoleSummary,
     guildSetup,
+    contentState,
+    activityHistory,
     handleCleanupGuildStash,
     handleCancelCalendarEvent,
     handleCancelCalendarSeries,

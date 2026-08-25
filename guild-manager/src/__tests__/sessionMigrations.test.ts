@@ -136,6 +136,112 @@ describe("session migrations", () => {
     expect(migrated.gameSettings.autoRunPreparationMode).toBe("none");
   });
 
+  it("normalizes realm players and guild membership in version 20", () => {
+    const migrated = parseSessionPayload(
+      JSON.stringify({
+        format: "guild-manager-session",
+        version: 19,
+        data: {
+          roster: [{ id: "guild-member" }],
+          realmState: {
+            id: "realm:test",
+            population: {
+              players: [
+                { id: "duplicate", name: "First", guildId: "npc:one" },
+                { id: "duplicate", name: "Second", guildId: "npc:one" },
+              ],
+            },
+            npcGuilds: [
+              {
+                id: "npc:one",
+                name: "One",
+                roster: [{ id: "legacy-only", name: "Legacy" }],
+              },
+            ],
+          },
+        },
+      }),
+    );
+
+    const players = migrated.realmState.population.players;
+    expect(new Set(players.map((player: { id: string }) => player.id)).size).toBe(
+      players.length,
+    );
+    expect(migrated.realmState.population.nextPlayerSequence).toBe(
+      players.length,
+    );
+    expect(migrated.realmState.npcGuilds[0].roster).toBeUndefined();
+    expect(migrated.realmState.npcGuilds[0].memberIds).toEqual(
+      expect.arrayContaining(["duplicate", "duplicate:duplicate:1", "legacy-only"]),
+    );
+  });
+
+  it("creates an independent content state in version 21", () => {
+    const migrated = parseSessionPayload(
+      JSON.stringify({
+        format: "guild-manager-session",
+        version: 20,
+        data: {
+          roster: [{ id: "classic-plus-member" }],
+          guildSetup: {
+            contentRoute: "classic_plus",
+            contentPhase: "classic_plus",
+            contentPhaseStartedDayIndex: 75,
+          },
+        },
+      }),
+    );
+
+    expect(migrated.contentState).toEqual({
+      route: "classic_plus",
+      phase: "classic_plus",
+      activatedAtDayIndex: 75,
+      schemaVersion: 1,
+    });
+  });
+
+  it("moves legacy battleground history into the version 22 activity archive", () => {
+    const migrated = parseSessionPayload(
+      JSON.stringify({
+        format: "guild-manager-session",
+        version: 21,
+        data: {
+          roster: [{ id: "fighter" }],
+          contentState: {
+            route: "uncommitted",
+            phase: "classic",
+            activatedAtDayIndex: 0,
+            schemaVersion: 1,
+          },
+          battlefieldState: {
+            activeBattles: [],
+            history: [
+              {
+                id: "legacy-wsg",
+                battlefieldId: "warsong_gulch",
+                name: "Warsong Gulch",
+                participantIds: ["fighter"],
+                result: "victory",
+                playerScore: 3,
+                enemyScore: 1,
+                completedAt: 1000,
+                reward: { honorPerParticipant: 125 },
+              },
+            ],
+          },
+        },
+      }),
+    );
+
+    expect(migrated.battlefieldState.history).toEqual([]);
+    expect(migrated.activityHistory.records[0]).toMatchObject({
+      id: "legacy-wsg",
+      kind: "battleground",
+      outcome: "success",
+      details: { playerScore: 3, enemyScore: 1, honorPerParticipant: 125 },
+    });
+  });
+
   it("adds the version 15 weapon slots and personal equipment inventory", () => {
     const migrated = parseSessionPayload(
       JSON.stringify({

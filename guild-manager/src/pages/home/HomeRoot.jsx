@@ -20,21 +20,23 @@ import { getActiveDungeonRunCount } from "../../dungeons/dungeonBoardUtils";
 import { ROUTES } from "../../routes";
 import { clearOnlineSimulationPresentation } from "../../settings/gameSettings";
 
-const AdventureBoardPage = lazy(() => import("../adventure-board/AdventureBoardPage"));
-const BattlefieldsPage = lazy(() => import("../battlefields/BattlefieldsPage"));
-const CalendarPage = lazy(() => import("../calendar/CalendarPage"));
-const ChatPage = lazy(() => import("../chat/ChatPage"));
-const DatabasePage = lazy(() => import("../database/DatabasePage"));
-const DashboardPage = lazy(() => import("../dashboard/DashboardPage"));
-const DungeonBoardPage = lazy(() => import("../dungeon-board/DungeonBoardPage"));
-const GuildLogPage = lazy(() => import("../guild-log/GuildLogPage"));
-const GuildPage = lazy(() => import("../guild/GuildPage"));
-const GuildRelationsPage = lazy(() => import("../guild-relations/GuildRelationsPage"));
-const GameSettingsPage = lazy(() => import("../game-settings/GameSettingsPage"));
-const MissionBoardPage = lazy(() => import("../mission-board/MissionBoardPage"));
-const ProfessionsPage = lazy(() => import("../professions/ProfessionsPage"));
-const RealmPage = lazy(() => import("../realm/RealmPage"));
-const RecruitPage = lazy(() => import("../recruit/RecruitPage"));
+const lazyMemo = (loader) => React.memo(lazy(loader));
+const AdventureBoardPage = lazyMemo(() => import("../adventure-board/AdventureBoardPage"));
+const BattlefieldsPage = lazyMemo(() => import("../battlefields/BattlefieldsPage"));
+const ActivityRunDetailPage = lazyMemo(() => import("../activity-runs/ActivityRunDetailPage"));
+const CalendarPage = lazyMemo(() => import("../calendar/CalendarPage"));
+const ChatPage = lazyMemo(() => import("../chat/ChatPage"));
+const DatabasePage = lazyMemo(() => import("../database/DatabasePage"));
+const DashboardPage = lazyMemo(() => import("../dashboard/DashboardPage"));
+const DungeonBoardPage = lazyMemo(() => import("../dungeon-board/DungeonBoardPage"));
+const GuildLogPage = lazyMemo(() => import("../guild-log/GuildLogPage"));
+const GuildPage = lazyMemo(() => import("../guild/GuildPage"));
+const GuildRelationsPage = lazyMemo(() => import("../guild-relations/GuildRelationsPage"));
+const GameSettingsPage = lazyMemo(() => import("../game-settings/GameSettingsPage"));
+const MissionBoardPage = lazyMemo(() => import("../mission-board/MissionBoardPage"));
+const ProfessionsPage = lazyMemo(() => import("../professions/ProfessionsPage"));
+const RealmPage = lazyMemo(() => import("../realm/RealmPage"));
+const RecruitPage = lazyMemo(() => import("../recruit/RecruitPage"));
 
 const RecruitModal = lazy(() => import("../../components/modals/RecruitModal"));
 const DetailModal = lazy(() => import("../../components/modals/DetailModal"));
@@ -56,6 +58,7 @@ const HOME_ROUTE_PATHS = Object.freeze({
   ADVENTURE_BOARD: "adventure-board",
   DUNGEON_BOARD: "dungeon-board",
   BATTLEFIELDS: "battlefields",
+  RUN_DETAIL: "runs/:runId",
   PROFESSIONS: "professions",
   DATABASE: "database",
   GUILD_LOG: "guild-log",
@@ -68,6 +71,7 @@ export default function HomeRoot() {
   const {
     actions,
     activeMissions,
+    activityHistory,
     battlefieldState,
     bestGuildMemberSearchMatchId,
     browserSaveSlots,
@@ -202,6 +206,43 @@ export default function HomeRoot() {
     updateMissionBoardState,
   } = actions || {};
 
+  const showOnlineStatus = gameSettings?.offlineSimulationEnabled !== false;
+  const { displayRoster, displayRankedRoster } = React.useMemo(() => {
+    const safeRoster = Array.isArray(roster) ? roster : [];
+    const safeRankedRoster = Array.isArray(rankedRoster) ? rankedRoster : [];
+    const onlineById = guildOnlineSnapshot?.byId || {};
+    const nextDisplayRoster = safeRoster.map((character) => {
+      if (!showOnlineStatus) {
+        return clearOnlineSimulationPresentation(character);
+      }
+      const online = onlineById[String(character.id)];
+      if (!online) return character;
+      return {
+        ...character,
+        onlineStatus: online.status,
+        onlineProfile: online.profileLabel,
+        nextLoginDayIndex: online.nextLoginDayIndex,
+        nextLoginHour: online.nextLoginHour,
+        ...(online.status === "Offline"
+          ? {
+              statusText: `Next login: Day ${online.nextLoginDayIndex + 1}, ${String(
+                Math.floor(online.nextLoginHour),
+              ).padStart(2, "0")}:00 · ${online.profileLabel}`,
+            }
+          : {}),
+      };
+    });
+    const byId = new Map(
+      nextDisplayRoster.map((character) => [String(character.id), character]),
+    );
+    return {
+      displayRoster: nextDisplayRoster,
+      displayRankedRoster: safeRankedRoster.map(
+        (character) => byId.get(String(character.id)) || character,
+      ),
+    };
+  }, [guildOnlineSnapshot, rankedRoster, roster, showOnlineStatus]);
+
   if (!guildSetup.hasStarted) {
     return <Navigate to={ROUTES.START} replace />;
   }
@@ -218,36 +259,6 @@ export default function HomeRoot() {
   });
   const guildName =
     guildSetup.name || getFactionFallbackManagerName(guildSetup.faction);
-  const showOnlineStatus =
-    gameSettings?.offlineSimulationEnabled !== false;
-  const displayRoster = roster.map((character) => {
-    if (!showOnlineStatus) {
-      return clearOnlineSimulationPresentation(character);
-    }
-    const online = guildOnlineSnapshot.byId[String(character.id)];
-    if (!online) return character;
-    return {
-      ...character,
-      onlineStatus: online.status,
-      onlineProfile: online.profileLabel,
-      nextLoginDayIndex: online.nextLoginDayIndex,
-      nextLoginHour: online.nextLoginHour,
-      ...(online.status === "Offline"
-        ? {
-            statusText: `Next login: Day ${online.nextLoginDayIndex + 1}, ${String(
-              Math.floor(online.nextLoginHour),
-            ).padStart(2, "0")}:00 · ${online.profileLabel}`,
-          }
-        : {}),
-    };
-  });
-  const displayRosterById = new Map(
-    displayRoster.map((character) => [String(character.id), character]),
-  );
-  const displayRankedRoster = rankedRoster.map(
-    (character) =>
-      displayRosterById.get(String(character.id)) || character,
-  );
   const calendarLabel = `${currentCalendarDate.weekdayName}, ${currentCalendarDate.monthName} ${currentCalendarDate.dayOfMonth}, Year ${currentCalendarDate.year}`;
 
   return (
@@ -519,6 +530,7 @@ export default function HomeRoot() {
                 onManualFinish={handleManualFinish}
                 onQueueAdventureGoal={handleQueueAdventureGoal}
                 onClearAdventureGoal={handleClearAdventureGoal}
+                activityHistory={activityHistory}
               />
             }
           />
@@ -536,8 +548,13 @@ export default function HomeRoot() {
                 gameTimeMs={gameTimeMs}
                 onQueueWarsongGulch={handleQueueWarsongGulch}
                 onPvpActivityFocusChange={handlePvpActivityFocusChange}
+                activityHistory={activityHistory}
               />
             }
+          />
+          <Route
+            path={HOME_ROUTE_PATHS.RUN_DETAIL}
+            element={<ActivityRunDetailPage />}
           />
           <Route
             path={HOME_ROUTE_PATHS.PROFESSIONS}

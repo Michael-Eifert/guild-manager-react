@@ -161,6 +161,40 @@ describe("configurable realm guild landscape", () => {
     expect(changed.guildDynamics).toBe("low");
   });
 
+  it("preserves the realm reference when no simulation step changed", () => {
+    const setup = {
+      server: "Lordaeron",
+      serverStyle: GUILD_SERVER_STYLE.PVE,
+      faction: GUILD_FACTION.ALLIANCE,
+    };
+    const realm = ensureRealmState(null, setup, 0, 0, {
+      realmGuildDensity: "medium",
+      realmGuildDynamics: "medium",
+    });
+    const normalized = advanceRealmSimulation({
+      realmState: realm,
+      currentDayIndex: 0,
+      currentDayProgress: 0,
+      guildSetup: setup,
+      gameSettings: {
+        realmGuildDensity: "medium",
+        realmGuildDynamics: "medium",
+      },
+    });
+    const unchanged = advanceRealmSimulation({
+      realmState: normalized,
+      currentDayIndex: 0,
+      currentDayProgress: 0,
+      guildSetup: setup,
+      gameSettings: {
+        realmGuildDensity: "medium",
+        realmGuildDynamics: "medium",
+      },
+    });
+
+    expect(unchanged).toBe(normalized);
+  });
+
   it("scores character traits toward matching guild archetypes", () => {
     const player = createRealmPlayer({
       id: "raider",

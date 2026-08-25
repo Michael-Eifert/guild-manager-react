@@ -2,6 +2,34 @@ import { CONFIG } from "../constants";
 import { normalizeRealmAgeMonths } from "../guild/startProgression";
 import { normalizeRealmRaidProgress } from "./realmRaidProgress";
 
+type RandomSource = () => number;
+type RealmRosterMember = {
+  level?: number;
+  itemLevel?: number;
+  [key: string]: unknown;
+};
+type RealmGuild = {
+  id?: string;
+  archetype?: string;
+  activityLevel?: number;
+  reputation?: number;
+  roster?: RealmRosterMember[];
+  [key: string]: unknown;
+};
+type RealmMaturityOptions = {
+  realmAgeMonths?: unknown;
+  random?: RandomSource;
+  strength?: number;
+};
+type RealmItemLevelOptions = RealmMaturityOptions & { level?: number };
+type RealmRaidProgress = {
+  totalBosses: number;
+  clearedBosses?: number;
+  completed?: boolean;
+  lastClearDayIndex?: number | null;
+  [key: string]: unknown;
+};
+
 const RAID_SEQUENCE = Object.freeze([
   "zul_gurub",
   "ahn_qiraj_ruins",
@@ -28,11 +56,11 @@ const MONTHLY_PROFILES = Object.freeze([
   { averageLevel: 58, levelCap: 60, maxLevelShare: 0.8, gear: 87, raidBosses: 58 },
 ]);
 
-export const getRealmMaturityProfile = (realmAgeMonths) => {
+export const getRealmMaturityProfile = (realmAgeMonths: unknown) => {
   const months = normalizeRealmAgeMonths(realmAgeMonths);
   return {
     months,
-    ...MONTHLY_PROFILES[months],
+    ...MONTHLY_PROFILES[months]!,
   };
 };
 
@@ -40,7 +68,7 @@ export const generateMatureRealmLevel = ({
   realmAgeMonths,
   random = Math.random,
   strength = 0.5,
-} = {}) => {
+}: RealmMaturityOptions = {}) => {
   const profile = getRealmMaturityProfile(realmAgeMonths);
   if (profile.levelCap <= 1) return 1;
   const safeRandom = typeof random === "function" ? random : Math.random;
@@ -65,7 +93,7 @@ export const generateMatureRealmItemLevel = ({
   realmAgeMonths,
   random = Math.random,
   strength = 0.5,
-} = {}) => {
+}: RealmItemLevelOptions = {}) => {
   const profile = getRealmMaturityProfile(realmAgeMonths);
   const safeRandom = typeof random === "function" ? random : Math.random;
   const safeLevel = Math.max(1, Math.min(60, Math.round(Number(level) || 1)));
@@ -77,8 +105,11 @@ export const generateMatureRealmItemLevel = ({
   return Math.max(1, Math.min(100, levelBound, Math.round(maturityGear)));
 };
 
-const fillRaidBossBudget = (bossBudget, lastClearDayIndex) => {
-  const progress = normalizeRealmRaidProgress({});
+const fillRaidBossBudget = (bossBudget: number, lastClearDayIndex: number) => {
+  const progress = normalizeRealmRaidProgress({}) as Record<
+    string,
+    RealmRaidProgress
+  >;
   let remaining = Math.max(0, Math.floor(Number(bossBudget) || 0));
   RAID_SEQUENCE.forEach((raidId) => {
     if (remaining <= 0) return;
@@ -95,7 +126,7 @@ const fillRaidBossBudget = (bossBudget, lastClearDayIndex) => {
   return progress;
 };
 
-const getGuildMaturityStrength = (guild, index) => {
+const getGuildMaturityStrength = (guild: RealmGuild, index: number) => {
   const archetypeBonus =
     guild?.archetype === "Hardcore Raiders"
       ? 0.2
@@ -125,6 +156,12 @@ const getBossBudgetForRank = ({
   rank,
   guildCount,
   naxxClearCount,
+}: {
+  months: number;
+  raidBosses: number;
+  rank: number;
+  guildCount: number;
+  naxxClearCount: number;
 }) => {
   if (months < 3 || raidBosses <= 0) return 0;
   if (months === 3) {
@@ -148,6 +185,11 @@ export const applyRealmMaturityToGuilds = ({
   realmAgeMonths,
   realmAgeDays,
   seed = 0,
+}: {
+  guilds?: RealmGuild[];
+  realmAgeMonths?: unknown;
+  realmAgeDays?: number;
+  seed?: number;
 } = {}) => {
   const source = Array.isArray(guilds) ? guilds : [];
   const profile = getRealmMaturityProfile(realmAgeMonths);
@@ -217,7 +259,7 @@ export const applyRealmMaturityToGuilds = ({
       ...guild,
       roster,
       rosterSize: roster.length,
-      maxLevelCount: roster.filter((member) => member.level >= 60).length,
+      maxLevelCount: roster.filter((member) => Number(member.level) >= 60).length,
       averageLevel,
       averageGearScore,
       raidProgress: bossBudget * 4,
