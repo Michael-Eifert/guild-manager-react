@@ -1,6 +1,7 @@
 import React from "react";
 import type { FormEvent } from "react";
-import { Dices, Mars, Venus } from "lucide-react";
+import { Dices, HardDrive, Mars, Venus } from "lucide-react";
+import IconButton from "./ui/IconButton";
 import {
   DEFAULT_GUILD_SETUP,
   DB_CLASSES,
@@ -81,6 +82,7 @@ const GuildSetupScreen = ({
   onGameSettingsChange,
   onStart,
   onLoadSession,
+  onOpenBrowserSaves,
 }: {
   guildSetup: GuildSetupState;
   gameSettings?: GameSettingsState;
@@ -90,6 +92,7 @@ const GuildSetupScreen = ({
   ) => void;
   onStart: () => void;
   onLoadSession: () => void;
+  onOpenBrowserSaves?: () => void;
 }) => {
   const guildName = String(guildSetup?.name || "");
   const faction = guildSetup?.faction || GUILD_FACTION.ALLIANCE;
@@ -153,13 +156,23 @@ const GuildSetupScreen = ({
           onSubmit={handleSubmit}
           className="wow-modal-panel bg-gray-900/95 border border-amber-800 rounded-lg shadow-2xl"
         >
-          <div className="p-5 md:p-8 border-b border-gray-700">
-            <h1 className="fantasy-font text-2xl md:text-4xl text-amber-200">
-              Found Your Guild
-            </h1>
-            <p className="text-sm md:text-base text-amber-100/80 mt-2">
-              Set your guild identity before entering Azeroth.
-            </p>
+          <div className="flex items-start justify-between gap-4 border-b border-gray-700 p-5 md:p-8">
+            <div>
+              <h1 className="fantasy-font text-2xl md:text-4xl text-amber-200">
+                Found Your Guild
+              </h1>
+              <p className="text-sm md:text-base text-amber-100/80 mt-2">
+                Set your guild identity before entering Azeroth.
+              </p>
+            </div>
+            {onOpenBrowserSaves ? (
+              <IconButton
+                label="Load browser save"
+                icon={<HardDrive size={20} aria-hidden="true" />}
+                onClick={onOpenBrowserSaves}
+                className="border-amber-700/80 bg-amber-950/35 text-amber-200 hover:border-amber-400 hover:bg-amber-900/50"
+              />
+            ) : null}
           </div>
 
           <div className="p-5 md:p-8 space-y-5">

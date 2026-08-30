@@ -71,6 +71,11 @@ export default function ChatPanel({
   const pointerInsideRef = useRef(false);
   const messageListFocusedRef = useRef(false);
   const previousChannelRef = useRef<ChatChannel | null>(null);
+  const previousLatestMessageRef = useRef<{
+    channel: ChatChannel;
+    id?: string;
+    sequence?: number;
+  } | null>(null);
   const messages = useMemo(
     () =>
       state.messages
@@ -90,13 +95,29 @@ export default function ChatPanel({
 
   useLayoutEffect(() => {
     const channelChanged = previousChannelRef.current !== channel;
+    const latestMessage = messages[messages.length - 1];
+    const previousLatestMessage = previousLatestMessageRef.current;
+    const newMessageArrived =
+      Boolean(latestMessage) &&
+      (!previousLatestMessage ||
+        previousLatestMessage.channel !== channel ||
+        previousLatestMessage.id !== latestMessage?.id ||
+        previousLatestMessage.sequence !== latestMessage?.sequence);
+
     if (
       channelChanged ||
-      (!pointerInsideRef.current && !messageListFocusedRef.current)
+      (newMessageArrived &&
+        !pointerInsideRef.current &&
+        !messageListFocusedRef.current)
     ) {
       scrollToLatest();
     }
     previousChannelRef.current = channel;
+    previousLatestMessageRef.current = {
+      channel,
+      id: latestMessage?.id,
+      sequence: latestMessage?.sequence,
+    };
   }, [channel, messages, scrollToLatest]);
 
   const getUnreadCount = (targetChannel: ChatChannel) =>
@@ -118,7 +139,6 @@ export default function ChatPanel({
       }}
       onPointerLeave={() => {
         pointerInsideRef.current = false;
-        if (!messageListFocusedRef.current) scrollToLatest();
       }}
     >
       <header
@@ -199,7 +219,6 @@ export default function ChatPanel({
         }}
         onBlur={() => {
           messageListFocusedRef.current = false;
-          if (!pointerInsideRef.current) scrollToLatest();
         }}
         className={`min-h-0 flex-1 space-y-2 overflow-y-auto focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-amber-300 ${
           compact ? "p-2" : "p-3"

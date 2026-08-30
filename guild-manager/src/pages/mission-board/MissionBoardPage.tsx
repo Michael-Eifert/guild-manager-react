@@ -14,6 +14,7 @@ type MissionBoardPageProps = {
   activeMissions: Mission[];
   showLegacyQuests: boolean;
   guildFaction: string;
+  contentPhase: string;
   dungeonSuccessBonus: number;
   guildExpMultiplier: number;
   isRaidUnlocked: boolean;
@@ -39,6 +40,7 @@ export default function MissionBoardPage({
   activeMissions,
   showLegacyQuests,
   guildFaction,
+  contentPhase,
   dungeonSuccessBonus,
   guildExpMultiplier,
   isRaidUnlocked,
@@ -61,6 +63,7 @@ export default function MissionBoardPage({
       activeMissions={activeMissions}
       showLegacyQuests={showLegacyQuests}
       guildFaction={guildFaction}
+      contentPhase={contentPhase}
       dungeonSuccessBonus={dungeonSuccessBonus}
       guildExpMultiplier={guildExpMultiplier}
       isRaidUnlocked={isRaidUnlocked}

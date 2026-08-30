@@ -1,7 +1,7 @@
 import type { ChangeEvent } from "react";
 
-import { DEFAULT_GUILD_SETUP, GUILD_FACTION, INITIAL_MISSIONS } from "../constants";
-import { getMissionListWithZones } from "../zones/zoneLogic";
+import { DEFAULT_GUILD_SETUP, GUILD_FACTION } from "../constants";
+import { getMissionListForContent } from "../missions/missionCatalog";
 import { normalizeGuildProgress, getGuildDerivedStats } from "../guildProgression";
 import { normalizeGuildSetup } from "../guild/guildSetup";
 import { clampGameSpeed, DEFAULT_GAME_SPEED, normalizeProgressionState } from "../progression";
@@ -11,6 +11,7 @@ import type {
   SessionRefs,
   SessionSetters,
 } from "../session/applyLoadedSession";
+import type { Mission } from "../types/missionTypes";
 import {
   loadSessionFile,
   openSessionFilePicker,
@@ -59,7 +60,7 @@ export const createSessionActions = ({
   } | null;
 }) => {
   const hydrateOptions = {
-    initialMissions: getMissionListWithZones(INITIAL_MISSIONS),
+    initialMissions: getMissionListForContent(),
     normalizeGuildProgress,
     normalizeGuildSetup,
     getGuildDerivedStats,
@@ -78,7 +79,8 @@ export const createSessionActions = ({
       loadedSession,
       factionFallback: GUILD_FACTION.ALLIANCE,
       normalizeRosterZones,
-      getMissionListWithZones,
+      getMissionListWithZones: (missions, contentPhase) =>
+        getMissionListForContent(missions as Mission[], contentPhase),
       clampGameSpeed,
       refs,
       setters,

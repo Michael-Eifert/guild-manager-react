@@ -1,9 +1,6 @@
 import {
-  FolderOpen,
   Gamepad2,
   HardDrive,
-  Plus,
-  RefreshCcw,
   Settings2,
   Trash2,
   WandSparkles,
@@ -15,6 +12,7 @@ import ChatAiSettingsPanel from "../../components/settings/ChatAiSettingsPanel";
 import DebugSettingsPanel from "../../components/settings/DebugSettingsPanel";
 import GameButton from "../../components/ui/GameButton";
 import SegmentedControl from "../../components/ui/SegmentedControl";
+import BrowserSaveSlots from "../../components/session/BrowserSaveSlots";
 import type {
   BrowserSaveSlotId,
   BrowserSaveSlotSummary,
@@ -99,6 +97,14 @@ export default function GameSettingsPage({
     const slotId = pendingDeleteSlot.id;
     setPendingDeleteSlot(null);
     onDeleteBrowserSave(slotId);
+  };
+  const handleRequestNewGame = (slotId: BrowserSaveSlotId) => {
+    const slot = browserSaveSlots.find((entry) => entry.id === slotId);
+    if (slot) setPendingNewSlot(slot);
+  };
+  const handleRequestDeleteSave = (slotId: BrowserSaveSlotId) => {
+    const slot = browserSaveSlots.find((entry) => entry.id === slotId);
+    if (slot) setPendingDeleteSlot(slot);
   };
 
   return (
@@ -283,94 +289,12 @@ export default function GameSettingsPage({
             </div>
           </div>
 
-          <div className="mt-4 grid gap-3 lg:grid-cols-3">
-            {browserSaveSlots.map((slot) => (
-              <article
-                key={slot.id}
-                className={`rounded-lg border p-4 ${
-                  slot.active
-                    ? "border-amber-600 bg-amber-950/20"
-                    : "border-slate-700 bg-slate-950/55"
-                }`}
-              >
-                <div className="flex items-start justify-between gap-3">
-                  <div className="min-w-0">
-                    <p className="text-[10px] font-bold uppercase tracking-[0.18em] text-slate-500">
-                      Save Slot {slot.id}
-                    </p>
-                    <h3 className="mt-1 truncate font-bold text-slate-100">
-                      {slot.guildName || "Empty Slot"}
-                    </h3>
-                  </div>
-                  {slot.active ? (
-                    <span className="shrink-0 rounded-full border border-amber-700 bg-amber-950/55 px-2 py-1 text-[10px] font-bold uppercase tracking-wide text-amber-200">
-                      Active
-                    </span>
-                  ) : null}
-                </div>
-
-                <div className="mt-3 min-h-10 text-xs text-slate-400">
-                  {slot.hasSave ? (
-                    <>
-                      {slot.gameDay ? <p>Game Day {slot.gameDay}</p> : null}
-                      <p>
-                        {slot.savedAt
-                          ? `Saved ${new Date(slot.savedAt).toLocaleString()}`
-                          : "Save date unavailable"}
-                      </p>
-                    </>
-                  ) : (
-                    <p>Ready for a new guild.</p>
-                  )}
-                </div>
-
-                <div
-                  className={`mt-4 grid gap-2 ${
-                    slot.hasSave ? "grid-cols-2" : ""
-                  }`}
-                >
-                  {slot.hasSave && !slot.active ? (
-                    <GameButton
-                      size="sm"
-                      tone="quest"
-                      fullWidth
-                      className="col-span-2"
-                      icon={<FolderOpen size={16} aria-hidden="true" />}
-                      onClick={() => onLoadBrowserSave(slot.id)}
-                    >
-                      Load Save
-                    </GameButton>
-                  ) : null}
-                  <GameButton
-                    size="sm"
-                    tone={slot.hasSave ? "neutral" : "success"}
-                    fullWidth
-                    icon={
-                      slot.hasSave ? (
-                        <RefreshCcw size={16} aria-hidden="true" />
-                      ) : (
-                        <Plus size={16} aria-hidden="true" />
-                      )
-                    }
-                    onClick={() => setPendingNewSlot(slot)}
-                  >
-                    {slot.hasSave ? "Restart Slot" : "Start New Game"}
-                  </GameButton>
-                  {slot.hasSave ? (
-                    <GameButton
-                      size="sm"
-                      tone="danger"
-                      fullWidth
-                      icon={<Trash2 size={16} aria-hidden="true" />}
-                      onClick={() => setPendingDeleteSlot(slot)}
-                    >
-                      Delete Save
-                    </GameButton>
-                  ) : null}
-                </div>
-              </article>
-            ))}
-          </div>
+          <BrowserSaveSlots
+            slots={browserSaveSlots}
+            onLoadBrowserSave={onLoadBrowserSave}
+            onStartNewBrowserGame={handleRequestNewGame}
+            onDeleteBrowserSave={handleRequestDeleteSave}
+          />
 
         </section>
         </div>

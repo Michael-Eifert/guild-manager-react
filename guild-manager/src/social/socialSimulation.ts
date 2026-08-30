@@ -36,6 +36,7 @@ import type {
   ReadyLfgGroup,
   SocialState,
 } from "./chatTypes";
+import { isMissionAccessibleForGuild } from "../missions/missionAvailability";
 
 export const MAX_CHAT_MESSAGES = 300;
 export const MAX_LFG_SEARCH_HISTORY = 20;
@@ -514,6 +515,7 @@ const createSearch = ({
   missionList,
   activeMissions,
   guildFaction,
+  contentPhase,
   deferText,
   itemDatabase,
 }: {
@@ -523,6 +525,7 @@ const createSearch = ({
   missionList: Mission[];
   activeMissions: Mission[];
   guildFaction: string;
+  contentPhase?: string;
   deferText: boolean;
   itemDatabase: readonly ItemDefinition[];
 }) => {
@@ -545,6 +548,9 @@ const createSearch = ({
   );
   const missions = missionList
     .filter(isSupportedLfgMission)
+    .filter((mission) =>
+      isMissionAccessibleForGuild(mission, guildFaction, contentPhase),
+    )
     .sort((left, right) => (Number(left.level) || 1) - (Number(right.level) || 1));
   const missionContexts = missions
     .map((mission) => {
@@ -936,6 +942,7 @@ export const advanceSocialSimulation = ({
       missionList,
       activeMissions,
       guildFaction: guildSetup.faction,
+      contentPhase: guildSetup.contentPhase,
       deferText,
       itemDatabase,
     });

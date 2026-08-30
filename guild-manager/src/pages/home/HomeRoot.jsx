@@ -482,6 +482,7 @@ export default function HomeRoot() {
                 activeMissions={activeMissions}
                 showLegacyQuests={SHOW_LEGACY_QUESTS}
                 guildFaction={guildSetup.faction}
+                contentPhase={guildSetup.contentPhase}
                 dungeonSuccessBonus={guildFocusBonuses.dungeonSuccessBonus}
                 guildExpMultiplier={
                   guildDerivedStats.expMultiplier * guildFocusBonuses.expMultiplier

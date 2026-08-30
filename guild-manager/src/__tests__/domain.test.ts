@@ -84,7 +84,9 @@ import {
   INITIAL_MISSIONS,
   KEY_DEFINITIONS,
   REALM_DIFFICULTY,
+  DB_CLASS_NAMES,
   DB_FUNNY_NAMES,
+  DB_NAMES,
   DB_RACES,
 } from "../constants";
 import {
@@ -428,6 +430,81 @@ describe("character name generation", () => {
         charClass: "Mage",
       }),
     ).not.toContain("Paladin");
+  });
+
+  it("adds curated Classic guild names to their intended race and class pools", () => {
+    expect(DB_NAMES.Human.Male).toEqual(
+      expect.arrayContaining(["Danzethor", "Cronos"]),
+    );
+    expect(DB_NAMES["Night Elf"].Female).toEqual(
+      expect.arrayContaining(["Leynura", "Naery"]),
+    );
+    expect(DB_NAMES.Dwarf.Male).toEqual(
+      expect.arrayContaining(["Dwaruf", "Wolfsbart"]),
+    );
+    expect(DB_NAMES.Gnome.Female).toEqual(
+      expect.arrayContaining(["Gnomilia", "Lunavis"]),
+    );
+    expect(DB_CLASS_NAMES.Paladin).toEqual(
+      expect.arrayContaining(["Holyiron", "Holykiste"]),
+    );
+    expect(DB_CLASS_NAMES.Mage).toEqual(
+      expect.arrayContaining(["Zauberklaus", "Magicpingu"]),
+    );
+    expect(DB_CLASS_NAMES.Mage).not.toContain("Heilserum");
+    expect(DB_CLASS_NAMES.Priest).not.toContain("Palajack");
+  });
+
+  it("only offers curated guild joke names when funny names are enabled", () => {
+    const baseOptions = {
+      race: "Human",
+      gender: "Male",
+      charClass: "Mage",
+    };
+
+    expect(buildCharacterNamePool(baseOptions)).not.toContain("Dpsdieter");
+    expect(
+      buildCharacterNamePool({ ...baseOptions, includeFunnyName: true }),
+    ).toEqual(expect.arrayContaining(["Dpsdieter", "Papiertiger"]));
+  });
+
+  it("keeps all curated Classic guild additions unique across name databases", () => {
+    const curatedGuildNames = `
+      Danzethor Mordric Tamor Caladian Halrid Galy Florentiene Edletrauth Mayesta Betaris
+      Dantyrion Ismorder Ryuken Asturarix Gyradil Eareldin Leynura Elyne Liryssia Zarena Kaleya
+      Grizlo Brofrum Dwaruf Ebrithil Frauke Emerita Verica Katha Irma
+      Kley Velves Zahyde Fizzlefizz Arcion Nyxes Neheleia Xylaria Gnomilia
+      Cronos Ascharon Thorvall Lumira Illumina Opalie Hasakii Kariudo Naery Lunira Lunalis
+      Brug Kamdor Magurtus Wolfsbart Hjalka Bersia Mylindra Kawu Eugler Hexis
+      Szaquia Lunavis Aleyne Ulanah
+      Holyiron Palajack Heilserum Zauberklaus Holykiste Holydps Pinguheiler
+      Magigutten Stramage Magicpingu Strahunt Jägerpingu Lulatschdrui Baumknutsch
+      Tarioswar Jhonnysins Strahexen
+      Lebowsky Pfirsichlein Killerbiene Dpsdieter Citrusfrisch Monsteratze Superpopel
+      Arrowinsknie Azubiente Justsomeguy Thesolution Zackdiebohne Anagramm Zapzarapp
+      Pipiploxberg Heiligerkurt Yoloshatter Schnurrberdt Zickyzacky Nachtsnack Papiertiger Hustensaft
+    `.trim().split(/\s+/);
+    const allConfiguredNames = [
+      ...Object.values(DB_NAMES).flatMap((genderNames) =>
+        Object.values(genderNames).flat(),
+      ),
+      ...Object.values(DB_CLASS_NAMES).flat(),
+      ...DB_FUNNY_NAMES,
+    ];
+    const normalizedCounts = allConfiguredNames.reduce((counts, name) => {
+      const key = name.normalize("NFC").toLocaleLowerCase();
+      counts.set(key, (counts.get(key) || 0) + 1);
+      return counts;
+    }, new Map<string, number>());
+    const normalizedGuildNames = curatedGuildNames.map((name) =>
+      name.normalize("NFC").toLocaleLowerCase(),
+    );
+
+    expect(curatedGuildNames).toHaveLength(103);
+    expect(new Set(normalizedGuildNames).size).toBe(curatedGuildNames.length);
+    normalizedGuildNames.forEach((name) => {
+      expect(normalizedCounts.get(name), name).toBe(1);
+    });
   });
 
   it("can generate over one thousand unique player names", () => {

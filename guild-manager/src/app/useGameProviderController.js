@@ -51,7 +51,6 @@ import {
 } from "../missions/missionRuntime";
 import {
   CONFIG,
-  INITIAL_MISSIONS,
   DB_CLASSES,
   PROF_ACTIONS,
   GUILD_FACTION,
@@ -173,7 +172,8 @@ import {
   isMissionMemberGroupAvailable,
   pruneOverlappingActiveMissions,
 } from "../missions/missionRosterGuards";
-import { cloneMissionTemplate } from "../missions/missionTemplates";
+import { getMissionListForContent } from "../missions/missionCatalog";
+import { isMissionAccessibleForGuild } from "../missions/missionAvailability";
 import {
   getDungeonStepLootConfig,
   getDungeonStepQualityPriority,
@@ -240,7 +240,6 @@ import {
 import {
   assignZoneToRoster as assignZoneToRosterMembers,
   getClampedZoneProgress,
-  getMissionListWithZones,
   getZoneProgressLabel,
   normalizeCharacterZoneState,
   normalizeRosterZones as normalizeRosterZonesForFaction,
@@ -434,7 +433,7 @@ export const useGameProviderController = () => {
   const [roster, setRoster, rosterRef] = useSynchronizedState([]);
   const [activeMissions, setActiveMissions, missionsRef] = useSynchronizedState([]);
   const [missionList, setMissionList, missionListRef] = useSynchronizedState(() =>
-    getMissionListWithZones(INITIAL_MISSIONS.map(cloneMissionTemplate)),
+    getMissionListForContent(),
   );
   const [guildLog, setGuildLogState] = useState([]);
   const [guildGold, setGuildGold, goldRef] = useSynchronizedState(0);
@@ -3661,10 +3660,7 @@ export const useGameProviderController = () => {
     setContentState(starterContentState);
     setActivityHistory(ensureActivityHistory(null));
     setMissionList(
-      getMissionListWithZones(
-        INITIAL_MISSIONS.map(cloneMissionTemplate),
-        contentPhase,
-      ),
+      getMissionListForContent(null, contentPhase),
     );
     setGuildLog([]);
     setGuildGold(starterGold);
@@ -3886,6 +3882,29 @@ export const useGameProviderController = () => {
       let rosterSnapshot = Array.isArray(rosterRef.current)
         ? rosterRef.current
         : roster;
+      if (
+        !isMissionAccessibleForGuild(
+          quest,
+          guildSetupRef.current?.faction,
+          guildSetupRef.current?.contentPhase,
+        )
+      ) {
+        const zone = quest?.zoneId
+          ? getZoneById(
+              quest.zoneId,
+              quest.level,
+              guildSetupRef.current?.contentPhase,
+            )
+          : null;
+        pushNotification({
+          type: "error",
+          title: "Mission Locked",
+          message: zone
+            ? `${zone.name} is restricted to ${zone.faction}.`
+            : `${quest?.name || "This mission"} is restricted to another faction or content phase.`,
+        });
+        return false;
+      }
       if (isZoneMission(quest)) {
         const zone = getZoneById(
           quest.zoneId,
@@ -5400,7 +5419,7 @@ export const useGameProviderController = () => {
       contentPhase: "tbc_prepatch",
       contentPhaseStartedDayIndex: currentCalendarDayIndex,
     };
-    const nextMissionList = getMissionListWithZones(
+    const nextMissionList = getMissionListForContent(
       missionListRef.current,
       "tbc_prepatch",
     );

@@ -125,6 +125,51 @@ const advance = (
   });
 
 describe("social LFG simulation", () => {
+  it("does not create a Horde search for the Alliance Hogger quest", () => {
+    const allianceHogger: Mission = {
+      id: 4,
+      name: "Elite: Defeat Hogger",
+      type: "quest",
+      level: 10,
+      minLevel: 6,
+      recommended: "8-12",
+      requiredPartySize: 3,
+      duration: 55,
+      elite: true,
+      zoneId: "elwynn_forest",
+      requiredFaction: "Alliance",
+    };
+    const hordeEversong: Mission = {
+      ...allianceHogger,
+      id: "horde:legacy:4",
+      name: "Elite: Defend the Eversong Outpost",
+      zoneId: "eversong_woods",
+      requiredFaction: "Horde",
+    };
+
+    const result = advanceSocialSimulation({
+      socialState: createInitialSocialState(),
+      now: 0,
+      roster: [
+        { ...member("horde-tank", "Tank", "Horde"), level: 10 },
+        { ...member("horde-dps", "DPS", "Horde"), level: 10 },
+      ],
+      realmState,
+      activeMissions: [],
+      missionList: [allianceHogger, hordeEversong],
+      guildSetup: {
+        ...guildSetup,
+        faction: "Horde",
+        contentPhase: "tbc_prepatch",
+      },
+    });
+
+    expect(result.socialState.searches[0]).toMatchObject({
+      missionId: "horde:legacy:4",
+    });
+    expect(result.socialState.searches[0]?.missionId).not.toBe(4);
+  });
+
   it("starts Shadowfang Keep searches at level 20, not its level 15 entry requirement", () => {
     const tooLow = advanceSocialSimulation({
       socialState: createInitialSocialState(),

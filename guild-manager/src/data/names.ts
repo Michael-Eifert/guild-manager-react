@@ -1,3 +1,86 @@
+const SCHWARZER_DRACHENSCHWARM_NAMES = {
+  raceGender: {
+    Human: {
+      Male: ["Danzethor", "Mordric", "Tamor", "Caladian", "Halrid"],
+      Female: ["Galy", "Florentiene", "Edletrauth", "Mayesta", "Betaris"],
+    },
+    "Night Elf": {
+      Male: ["Dantyrion", "Ismorder", "Ryuken", "Asturarix", "Gyradil", "Eareldin"],
+      Female: ["Leynura", "Elyne", "Liryssia", "Zarena", "Kaleya"],
+    },
+    Dwarf: {
+      Male: ["Grizlo", "Brofrum", "Dwaruf", "Ebrithil"],
+      Female: ["Frauke", "Emerita", "Verica", "Katha", "Irma"],
+    },
+    Gnome: {
+      Male: ["Kley", "Velves", "Zahyde", "Fizzlefizz", "Arcion"],
+      Female: ["Nyxes", "Neheleia", "Xylaria", "Gnomilia"],
+    },
+  },
+  class: {
+    Paladin: ["Holyiron", "Palajack"],
+    Priest: ["Heilserum"],
+    Mage: ["Zauberklaus"],
+  },
+  funny: [
+    "Lebowsky",
+    "Pfirsichlein",
+    "Killerbiene",
+    "Dpsdieter",
+    "Citrusfrisch",
+    "Monsteratze",
+    "Superpopel",
+    "Arrowinsknie",
+    "Azubiente",
+  ],
+};
+
+const VANILLA_OATH_NAMES = {
+  raceGender: {
+    Human: {
+      Male: ["Cronos", "Ascharon", "Thorvall"],
+      Female: ["Lumira", "Illumina", "Opalie"],
+    },
+    "Night Elf": {
+      Male: ["Hasakii", "Kariudo"],
+      Female: ["Naery", "Lunira", "Lunalis"],
+    },
+    Dwarf: {
+      Male: ["Brug", "Kamdor", "Magurtus", "Wolfsbart"],
+      Female: ["Hjalka", "Bersia", "Mylindra"],
+    },
+    Gnome: {
+      Male: ["Kawu", "Eugler", "Hexis"],
+      Female: ["Szaquia", "Lunavis", "Aleyne", "Ulanah"],
+    },
+  },
+  class: {
+    Paladin: ["Holykiste", "Holydps"],
+    Priest: ["Pinguheiler"],
+    Mage: ["Magigutten", "Stramage", "Magicpingu"],
+    Hunter: ["Strahunt", "Jägerpingu"],
+    Druid: ["Lulatschdrui", "Baumknutsch"],
+    Warrior: ["Tarioswar"],
+    Rogue: ["Jhonnysins"],
+    Warlock: ["Strahexen"],
+  },
+  funny: [
+    "Justsomeguy",
+    "Thesolution",
+    "Zackdiebohne",
+    "Anagramm",
+    "Zapzarapp",
+    "Pipiploxberg",
+    "Heiligerkurt",
+    "Yoloshatter",
+    "Schnurrberdt",
+    "Zickyzacky",
+    "Nachtsnack",
+    "Papiertiger",
+    "Hustensaft",
+  ],
+};
+
 export const DB_NAMES = {
   Human: {
     Male: [
@@ -30,6 +113,8 @@ export const DB_NAMES = {
       "Lenwin",
       "Rheliat",
       "Vhaidro",
+      ...SCHWARZER_DRACHENSCHWARM_NAMES.raceGender.Human.Male,
+      ...VANILLA_OATH_NAMES.raceGender.Human.Male,
     ],
     Female: [
       "Jaina",
@@ -56,6 +141,8 @@ export const DB_NAMES = {
       "Empiyah",
       "Finkey",
       "Perdita",
+      ...SCHWARZER_DRACHENSCHWARM_NAMES.raceGender.Human.Female,
+      ...VANILLA_OATH_NAMES.raceGender.Human.Female,
     ],
   },
   "Night Elf": {
@@ -83,6 +170,8 @@ export const DB_NAMES = {
       "Dregmore",
       "Robiscool",
       "Troks",
+      ...SCHWARZER_DRACHENSCHWARM_NAMES.raceGender["Night Elf"].Male,
+      ...VANILLA_OATH_NAMES.raceGender["Night Elf"].Male,
     ],
     Female: [
       "Tyrande",
@@ -108,6 +197,8 @@ export const DB_NAMES = {
       "Oide",
       "Squisi",
       "Vhaidra",
+      ...SCHWARZER_DRACHENSCHWARM_NAMES.raceGender["Night Elf"].Female,
+      ...VANILLA_OATH_NAMES.raceGender["Night Elf"].Female,
     ],
   },
   Dwarf: {
@@ -135,6 +226,8 @@ export const DB_NAMES = {
       "Berneck",
       "Buchenzweig",
       "Kraeuteruschi",
+      ...SCHWARZER_DRACHENSCHWARM_NAMES.raceGender.Dwarf.Male,
+      ...VANILLA_OATH_NAMES.raceGender.Dwarf.Male,
     ],
     Female: [
       "Moira",
@@ -159,6 +252,8 @@ export const DB_NAMES = {
       "Lausibear",
       "Schmusi",
       "Kleptokaren",
+      ...SCHWARZER_DRACHENSCHWARM_NAMES.raceGender.Dwarf.Female,
+      ...VANILLA_OATH_NAMES.raceGender.Dwarf.Female,
     ],
   },
   Gnome: {
@@ -187,6 +282,8 @@ export const DB_NAMES = {
       "Palimpalim",
       "Phirocko",
       "Rizz",
+      ...SCHWARZER_DRACHENSCHWARM_NAMES.raceGender.Gnome.Male,
+      ...VANILLA_OATH_NAMES.raceGender.Gnome.Male,
     ],
     Female: [
       "Kinndy",
@@ -212,6 +309,8 @@ export const DB_NAMES = {
       "Stabbantha",
       "Bubbletina",
       "Finkey",
+      ...SCHWARZER_DRACHENSCHWARM_NAMES.raceGender.Gnome.Female,
+      ...VANILLA_OATH_NAMES.raceGender.Gnome.Female,
     ],
   },
   Orc: {
@@ -457,6 +556,7 @@ export const DB_CLASS_NAMES = {
     "Platebank",
     "Threatlord",
     "Deepwounds",
+    ...VANILLA_OATH_NAMES.class.Warrior,
   ],
   Paladin: [
     "Paladin",
@@ -474,6 +574,8 @@ export const DB_CLASS_NAMES = {
     "LayHands",
     "Auramaster",
     "Pinkplate",
+    ...SCHWARZER_DRACHENSCHWARM_NAMES.class.Paladin,
+    ...VANILLA_OATH_NAMES.class.Paladin,
   ],
   Hunter: [
     "Autoshot",
@@ -491,6 +593,7 @@ export const DB_CLASS_NAMES = {
     "Beastcaller",
     "Eagleeye",
     "Pulltimer",
+    ...VANILLA_OATH_NAMES.class.Hunter,
   ],
   Rogue: [
     "Backstabby",
@@ -508,6 +611,7 @@ export const DB_CLASS_NAMES = {
     "Shadowstep",
     "Lockpicker",
     "Daggerdance",
+    ...VANILLA_OATH_NAMES.class.Rogue,
   ],
   Shaman: [
     "Windfury",
@@ -542,6 +646,8 @@ export const DB_CLASS_NAMES = {
     "Flashheal",
     "Fadeout",
     "Innerfire",
+    ...SCHWARZER_DRACHENSCHWARM_NAMES.class.Priest,
+    ...VANILLA_OATH_NAMES.class.Priest,
   ],
   Mage: [
     "Frostbolt",
@@ -559,6 +665,8 @@ export const DB_CLASS_NAMES = {
     "Evocate",
     "Wandfinish",
     "Counterspell",
+    ...SCHWARZER_DRACHENSCHWARM_NAMES.class.Mage,
+    ...VANILLA_OATH_NAMES.class.Mage,
   ],
   Warlock: [
     "Soulshard",
@@ -576,6 +684,7 @@ export const DB_CLASS_NAMES = {
     "Soulstoned",
     "Banishpls",
     "Voidwalker",
+    ...VANILLA_OATH_NAMES.class.Warlock,
   ],
   Druid: [
     "Moonfire",
@@ -593,6 +702,7 @@ export const DB_CLASS_NAMES = {
     "Regrowth",
     "Prowlmore",
     "Markwild",
+    ...VANILLA_OATH_NAMES.class.Druid,
   ],
 };
 
@@ -715,4 +825,6 @@ export const DB_FUNNY_NAMES = [
   "Yoda",
   "Bowser",
   "Zelda",
+  ...SCHWARZER_DRACHENSCHWARM_NAMES.funny,
+  ...VANILLA_OATH_NAMES.funny,
 ];

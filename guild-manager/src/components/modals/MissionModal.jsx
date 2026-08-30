@@ -43,6 +43,7 @@ import {
 import { getRelationshipSuccessModifier } from "../../social/relationshipSystem";
 import { getPartyMoraleSuccessBonus } from "../../game/characterMorale";
 import { hasCompletedZoneEliteQuest } from "../../automation/zoneEliteAutomation";
+import { isMissionAccessibleForGuild } from "../../missions/missionAvailability";
 import {
   CONSUMABLE_MODE,
   CONSUMABLE_MODE_OPTIONS,
@@ -63,7 +64,6 @@ import {
   getZoneById,
   getZoneEliteQuestTemplates,
   getZoneLootRewardCounts,
-  isZoneAccessibleForFaction,
   ZONE_FACTION,
 } from "../../zones/zoneDefinitions";
 
@@ -416,6 +416,7 @@ const MissionModal = ({
   activeMissions = [],
   showLegacyQuests = true,
   guildFaction = GUILD_FACTION.ALLIANCE,
+  contentPhase = "classic",
   dungeonSuccessBonus = 0,
   guildExpMultiplier = 1,
   isRaidUnlocked = false,
@@ -495,9 +496,8 @@ const MissionModal = ({
     () =>
       Array.isArray(missionList)
         ? missionList.filter((mission) => {
-            if (mission?.type === "zone") {
-              const zone = getZoneById(mission?.zoneId);
-              return Boolean(zone) && isZoneAccessibleForFaction(zone, guildFaction);
+            if (!isMissionAccessibleForGuild(mission, guildFaction, contentPhase)) {
+              return false;
             }
             if (!isRaidUnlocked && mission?.isRaid === true) return false;
             if (showLegacyQuests) return true;
@@ -505,7 +505,7 @@ const MissionModal = ({
             return category !== "legacy";
           })
         : [],
-    [guildFaction, isRaidUnlocked, missionList, showLegacyQuests],
+    [contentPhase, guildFaction, isRaidUnlocked, missionList, showLegacyQuests],
   );
 
   useEffect(() => {
@@ -587,19 +587,21 @@ const MissionModal = ({
   }, [isRaidUnlocked, selectedQuest]);
 
   const handleSelectQuest = (quest) => {
-    if (quest?.type === "zone") {
-      const zone = getZoneById(quest?.zoneId);
-      if (zone && !isZoneAccessibleForFaction(zone, guildFaction)) {
-        if (typeof onNotify === "function") {
-          onNotify({
-            type: "error",
-            title: "Zone Locked",
-            message: `${zone.name} is restricted to ${zone.faction}.`,
-            durationMs: 3200,
-          });
-        }
-        return;
+    if (!isMissionAccessibleForGuild(quest, guildFaction, contentPhase)) {
+      if (typeof onNotify === "function") {
+        const zone = quest?.zoneId
+          ? getZoneById(quest.zoneId, quest.level, contentPhase)
+          : null;
+        onNotify({
+          type: "error",
+          title: "Mission Locked",
+          message: zone
+            ? `${zone.name} is restricted to ${zone.faction}.`
+            : `${quest?.name || "This mission"} is restricted to ${quest?.requiredFaction || "another faction"}.`,
+          durationMs: 3200,
+        });
       }
+      return;
     }
     if (quest?.isRaid && !isRaidUnlocked) {
       if (typeof onNotify === "function") {
@@ -1319,7 +1321,9 @@ const MissionModal = ({
 
   const renderMissionCard = (mission, showSetName = true) => {
     const isZoneMissionCard = mission?.type === "zone";
-    const zone = isZoneMissionCard ? getZoneById(mission?.zoneId) : null;
+    const zone = isZoneMissionCard
+      ? getZoneById(mission?.zoneId, mission?.level, contentPhase)
+      : null;
     const zoneLootEntries = isZoneMissionCard ? getZoneLootCountEntries(zone) : [];
     const zoneKeyRewardLabels = isZoneMissionCard
       ? getZoneEliteKeyRewardLabels(zone?.id)
@@ -2536,7 +2540,11 @@ const MissionModal = ({
                     );
                     const expLabel = `${formatXpRewardText(inRangeMissionExpPerHero)} / hero`;
                     if (rewardMission?.type === "zone") {
-                      const rewardZone = getZoneById(rewardMission?.zoneId);
+                      const rewardZone = getZoneById(
+                        rewardMission?.zoneId,
+                        rewardMission?.level,
+                        contentPhase,
+                      );
                       const zoneLootEntries = getZoneLootCountEntries(rewardZone);
                       const zoneKeyRewardLabels = getZoneEliteKeyRewardLabels(
                         rewardMission?.zoneId,

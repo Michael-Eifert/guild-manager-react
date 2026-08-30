@@ -66,6 +66,7 @@ export interface Mission {
   missionId?: MissionId;
   quest?: { id?: MissionId };
   zoneId?: string;
+  requiredFaction?: string;
   isZoneElite?: boolean;
   elite?: boolean;
   gold?: number;

@@ -141,11 +141,45 @@ describe("ChatPanel", () => {
     );
     expect(messageList.scrollTop).toBe(120);
 
+    fireEvent.pointerLeave(chat);
+    expect(messageList.scrollTop).toBe(120);
+
     fireEvent.click(screen.getByRole("tab", { name: /General/ }));
     expect(messageList.scrollTop).toBe(720);
+  });
 
-    fireEvent.pointerLeave(chat);
-    expect(messageList.scrollTop).toBe(720);
+  it("keeps its scroll position when the chat state rerenders without a new message", () => {
+    let scrollHeight = 720;
+    vi.spyOn(HTMLElement.prototype, "scrollHeight", "get").mockImplementation(
+      () => scrollHeight,
+    );
+    const view = render(
+      <ChatPanel
+        socialState={socialState}
+        guildName="Test Guild"
+        onMarkRead={vi.fn()}
+        compact
+      />,
+    );
+    const messageList = screen.getByRole("log");
+    messageList.scrollTop = 180;
+    scrollHeight = 960;
+
+    view.rerender(
+      <ChatPanel
+        socialState={{
+          ...socialState,
+          nextSequence: 4,
+          // Simulates a paused-game update that keeps the chat history intact.
+          messages: [...socialState.messages],
+        }}
+        guildName="Test Guild"
+        onMarkRead={vi.fn()}
+        compact
+      />,
+    );
+
+    expect(messageList.scrollTop).toBe(180);
   });
 
   it("keeps the message position while the log has keyboard focus", () => {
@@ -185,7 +219,7 @@ describe("ChatPanel", () => {
 
     expect(messageList.scrollTop).toBe(90);
     fireEvent.blur(messageList);
-    expect(messageList.scrollTop).toBe(600);
+    expect(messageList.scrollTop).toBe(90);
   });
 
   it("switches channels and clearly distinguishes guild and realm speakers", () => {

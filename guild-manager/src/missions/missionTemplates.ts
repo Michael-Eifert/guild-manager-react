@@ -23,3 +23,34 @@ export const cloneMissionTemplate = <T extends Mission>(mission: T): T => ({
       ? { ...mission.raidRoleRequirement }
       : mission.raidRoleRequirement,
 }) as T;
+
+export const mergeCanonicalMissionTemplates = (
+  missionList: readonly Mission[] | null | undefined,
+  canonicalMissionList: readonly Mission[],
+) => {
+  const canonicalById = new Map(
+    canonicalMissionList.map((mission) => [String(mission.id), mission]),
+  );
+  const merged = (Array.isArray(missionList) ? missionList : []).map((mission) => {
+    const canonical = canonicalById.get(String(mission.id));
+    if (!canonical) return cloneMissionTemplate(mission);
+
+    return {
+      ...cloneMissionTemplate(canonical),
+      ...cloneMissionTemplate(mission),
+      ...(canonical.requiredFaction
+        ? { requiredFaction: canonical.requiredFaction }
+        : {}),
+      ...(canonical.zoneId ? { zoneId: canonical.zoneId } : {}),
+    };
+  });
+  const presentIds = new Set(merged.map((mission) => String(mission.id)));
+
+  canonicalMissionList.forEach((mission) => {
+    if (!presentIds.has(String(mission.id))) {
+      merged.push(cloneMissionTemplate(mission));
+    }
+  });
+
+  return merged;
+};
