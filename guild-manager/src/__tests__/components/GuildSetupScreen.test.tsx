@@ -5,8 +5,9 @@ import {
   fireEvent,
   render as renderScreen,
   screen,
+  within,
 } from "@testing-library/react";
-import { afterEach, describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 
 import GuildSetupScreen from "../../components/GuildSetupScreen";
 import { getRoleIcon } from "../../utils";
@@ -19,7 +20,7 @@ import {
 afterEach(cleanup);
 
 describe("GuildSetupScreen", () => {
-  it("renders defaults and start gating", () => {
+  it("renders the destiny page, stepper, and persistent summary", () => {
     const html = renderHtml(
       <GuildSetupScreen
         guildSetup={guildSetup}
@@ -30,6 +31,8 @@ describe("GuildSetupScreen", () => {
     );
 
     expect(html).toContain("Found Your Guild");
+    expect(html).toContain("Choose the Destiny of Your Guild");
+    expect(html).toContain("What Experience Do You Choose?");
     expect(html).toContain("Test Guild");
     expect(html).toContain('role="radiogroup"');
     expect(html).toContain('role="radio"');
@@ -38,26 +41,13 @@ describe("GuildSetupScreen", () => {
     expect(html).toContain("Classic Era");
     expect(html).toContain("TBC Pre-Patch");
     expect(html).toContain('aria-label="Randomize guild name"');
-    expect(html).toContain('aria-label="Randomize character name"');
-    expect(html.indexOf("Faction")).toBeLessThan(
-      html.indexOf("Founding Guild Master"),
-    );
-    expect(html).toContain("Starting Activity");
-    expect(html).toContain("Play with Offline Simulation");
-    expect(html).toContain("Officer Autonomy");
-    expect(html).toContain("Guild Density");
-    expect(html).toContain("Guild Dynamics");
-    expect(html).toContain("Realm Age");
-    expect(html).toContain("Starting Guild Progress");
-    expect(html).toContain('aria-label="Officer Autonomy"');
-    expect(html).toContain('checked=""');
-    expect(html).toContain("Dungeon Groups");
-    expect(html).toContain("PvP Activity");
-    expect(html).toContain("Realm Competition");
-    expect(html).toContain("Easy");
-    expect(html).toContain("Normal");
-    expect(html).toContain("Hard");
-    expect(html).toContain("Start Game");
+    expect(html).toContain("Guild Focus");
+    expect(html).toContain("Your Chronicle So Far");
+    expect(html).toContain("Not chosen yet");
+    expect(html).toContain("Continue");
+    expect(html).not.toContain('aria-label="Randomize character name"');
+    expect(html).not.toContain("Starting Activity");
+    expect(html).not.toContain("Realm Age");
   });
 
   it("unlocks stronger guild starts only when the realm is old enough", () => {
@@ -76,6 +66,10 @@ describe("GuildSetupScreen", () => {
     };
 
     renderScreen(<Harness />);
+
+    fireEvent.click(
+      screen.getByRole("button", { name: /Realm: Not visited/ }),
+    );
 
     const bwlReady = screen.getByRole("button", { name: /BWL Ready/ });
     expect((bwlReady as HTMLButtonElement).disabled).toBe(true);
@@ -113,6 +107,10 @@ describe("GuildSetupScreen", () => {
     };
 
     renderScreen(<Harness />);
+
+    fireEvent.click(
+      screen.getByRole("button", { name: /Guild Master: Not visited/ }),
+    );
 
     const raceGroup = screen.getByRole("radiogroup", {
       name: "Guild master race",
@@ -178,9 +176,113 @@ describe("GuildSetupScreen", () => {
     renderScreen(<Harness />);
     expect(screen.queryByRole("radio", { name: "Draenei" })).toBeNull();
     fireEvent.click(screen.getByRole("radio", { name: /TBC Pre-Patch/ }));
+    fireEvent.click(
+      screen.getByRole("button", { name: /Guild Master: Not visited/ }),
+    );
     expect(screen.getByRole("radio", { name: "Draenei" })).toBeTruthy();
     fireEvent.click(screen.getByRole("radio", { name: "Draenei" }));
     expect(screen.getByRole("radio", { name: "Shaman" })).toBeTruthy();
     expect(screen.getByRole("radio", { name: "Paladin" })).toBeTruthy();
+  });
+
+  it("supports guided and direct navigation with visited completion states", () => {
+    const Harness = () => {
+      const [setup, setSetup] = React.useState({ ...guildSetup, name: "" });
+      return (
+        <GuildSetupScreen
+          guildSetup={setup}
+          onChange={(field, value) =>
+            setSetup((current) => ({ ...current, [field]: value }))
+          }
+          onStart={noop}
+          onLoadSession={noop}
+        />
+      );
+    };
+
+    renderScreen(<Harness />);
+
+    expect(
+      screen
+        .getByRole("button", { name: "Guild Destiny: Needs attention" })
+        .getAttribute("data-step-status"),
+    ).toBe("incomplete");
+    expect(
+      screen
+        .getByRole("button", { name: "Realm: Not visited" })
+        .getAttribute("data-step-status"),
+    ).toBe("unvisited");
+
+    fireEvent.click(
+      screen.getByRole("button", { name: "Guild Master: Not visited" }),
+    );
+    expect(screen.getByText("Founding Guild Master")).toBeTruthy();
+    expect(
+      screen
+        .getByRole("button", { name: "Guild Master: Needs attention" })
+        .getAttribute("data-step-status"),
+    ).toBe("incomplete");
+
+    fireEvent.change(screen.getByLabelText("Character Name"), {
+      target: { value: "Aegwynn" },
+    });
+    expect(
+      screen
+        .getByRole("button", { name: "Guild Master: Complete" })
+        .getAttribute("data-step-status"),
+    ).toBe("complete");
+
+    fireEvent.click(screen.getByRole("button", { name: "Continue" }));
+    expect(screen.getByText("Choose Your Realm")).toBeTruthy();
+    fireEvent.click(screen.getByRole("button", { name: "Back" }));
+    expect(screen.getByText("Founding Guild Master")).toBeTruthy();
+  });
+
+  it("updates the chronicle and only founds the guild from the final page", () => {
+    const onStart = vi.fn();
+    const Harness = () => {
+      const [setup, setSetup] = React.useState({ ...guildSetup, name: "" });
+      return (
+        <GuildSetupScreen
+          guildSetup={setup}
+          onChange={(field, value) =>
+            setSetup((current) => ({ ...current, [field]: value }))
+          }
+          onStart={onStart}
+          onLoadSession={noop}
+        />
+      );
+    };
+
+    renderScreen(<Harness />);
+    const summary = screen.getByRole("region", {
+      name: "Your Chronicle So Far",
+    });
+    expect(within(summary).getAllByText("Not chosen yet")).toHaveLength(2);
+
+    fireEvent.change(screen.getByLabelText("Name of Guild"), {
+      target: { value: "Moonwatch" },
+    });
+    expect(within(summary).getByText("Moonwatch")).toBeTruthy();
+
+    fireEvent.submit(screen.getByRole("button", { name: "Continue" }).closest("form")!);
+    expect(screen.getByText("Founding Guild Master")).toBeTruthy();
+    fireEvent.change(screen.getByLabelText("Character Name"), {
+      target: { value: "Elowen" },
+    });
+    expect(within(summary).getByText("Elowen")).toBeTruthy();
+
+    fireEvent.click(
+      screen.getByRole("button", { name: "Gameplay: Not visited" }),
+    );
+    expect(screen.getByText("Gameplay Settings")).toBeTruthy();
+    expect(screen.getByText("Starting Activity")).toBeTruthy();
+    expect(screen.getByText("Play with Offline Simulation")).toBeTruthy();
+    expect(
+      (screen.getByRole("button", { name: "Found Guild" }) as HTMLButtonElement)
+        .disabled,
+    ).toBe(false);
+    fireEvent.click(screen.getByRole("button", { name: "Found Guild" }));
+    expect(onStart).toHaveBeenCalledTimes(1);
   });
 });

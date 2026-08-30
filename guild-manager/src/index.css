@@ -345,6 +345,28 @@ body::after {
     0 24px 48px rgb(0 0 0 / 56%) !important;
 }
 
+@keyframes setupWizardPageIn {
+  from {
+    opacity: 0;
+    transform: translateY(8px);
+  }
+
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+.setup-wizard-page {
+  animation: setupWizardPageIn 220ms ease-out;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .setup-wizard-page {
+    animation: none;
+  }
+}
+
 @keyframes levelUp {
   0% {
     box-shadow: 0 0 5px #ffd100;

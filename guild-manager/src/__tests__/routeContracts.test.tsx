@@ -95,7 +95,8 @@ describe("route contracts", () => {
     });
 
     expect(html).toContain("Found Your Guild");
-    expect(html).toContain("Start Game");
+    expect(html).toContain("Choose the Destiny of Your Guild");
+    expect(html).toContain("Continue");
   });
 
   it("redirects /start to /home after a guild exists", () => {
