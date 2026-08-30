@@ -178,8 +178,12 @@ npm run proxy:ai
 
 The API key exists only in the proxy process and is never sent to or stored by
 the browser. Production deployments must set `NODE_ENV=production` and an
-explicit comma-separated `ALLOWED_ORIGINS` value. A GitHub Pages deployment
-needs this proxy hosted separately.
+explicit comma-separated `ALLOWED_ORIGINS` value. Production rejects requests
+without an Origin header by default. `RATE_LIMIT_REQUESTS` and
+`RATE_LIMIT_WINDOW_MS` configure the per-client request limit. Set
+`TRUST_PROXY=true` only when the proxy is reachable exclusively through
+Cloudflare or another trusted reverse proxy, so forwarded client IP headers
+cannot be forged. A GitHub Pages deployment needs this proxy hosted separately.
 
 Only variables prefixed with `VITE_` are exposed to the browser bundle. Keep
 API keys in the unprefixed `AI_API_KEY` variable. Local

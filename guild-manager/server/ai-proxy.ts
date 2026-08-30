@@ -16,6 +16,11 @@ const parseOrigins = (value: unknown, isProduction: boolean) => {
   return new Set(isProduction ? [] : ["http://localhost:5173"]);
 };
 
+const parseBoolean = (value: unknown, fallback: boolean) => {
+  if (value === undefined || value === null || value === "") return fallback;
+  return String(value).trim().toLowerCase() === "true";
+};
+
 export const createAiProxyConfig = (
   environment: NodeJS.ProcessEnv = process.env,
 ) => {
@@ -31,6 +36,7 @@ export const createAiProxyConfig = (
       environment.ALLOWED_ORIGINS || environment.ALLOWED_ORIGIN,
       isProduction,
     ),
+    requireOrigin: parseBoolean(environment.REQUIRE_ORIGIN, isProduction),
     bodyLimitBytes: 24 * 1024,
     promptLimitCharacters: 8 * 1024,
     requestTimeoutMs: 10_000,
@@ -38,6 +44,15 @@ export const createAiProxyConfig = (
       1,
       Number(environment.MAX_CONCURRENT_REQUESTS) || 6,
     ),
+    rateLimitRequests: Math.max(
+      1,
+      Number(environment.RATE_LIMIT_REQUESTS) || 20,
+    ),
+    rateLimitWindowMs: Math.max(
+      1_000,
+      Number(environment.RATE_LIMIT_WINDOW_MS) || 60_000,
+    ),
+    trustProxy: parseBoolean(environment.TRUST_PROXY, false),
   };
 };
 
@@ -48,11 +63,13 @@ const writeJson = (
   status: number,
   payload: unknown,
   origin?: string | null,
+  extraHeaders: OutgoingHttpHeaders = {},
 ) => {
   const headers: OutgoingHttpHeaders = {
     "Content-Type": "application/json; charset=utf-8",
     "Cache-Control": "no-store",
     "X-Content-Type-Options": "nosniff",
+    ...extraHeaders,
   };
   if (origin) {
     headers["Access-Control-Allow-Origin"] = origin;
@@ -108,9 +125,60 @@ export const createAiProxyServer = ({
   logger?: Pick<Console, "error" | "info">;
 } = {}) => {
   let activeRequests = 0;
+  let rateLimitChecks = 0;
+  const rateLimits = new Map<
+    string,
+    { requests: number; windowStartedAt: number }
+  >();
   const resolveOrigin = (request: IncomingMessage) => {
     const origin = String(request.headers.origin || "");
     return config.allowedOrigins.has(origin) ? origin : null;
+  };
+
+  const resolveClientAddress = (request: IncomingMessage) => {
+    if (config.trustProxy) {
+      const cloudflareAddress = request.headers["cf-connecting-ip"];
+      if (typeof cloudflareAddress === "string" && cloudflareAddress.trim()) {
+        return cloudflareAddress.trim();
+      }
+      const forwardedFor = request.headers["x-forwarded-for"];
+      const firstForwardedAddress = Array.isArray(forwardedFor)
+        ? forwardedFor[0]
+        : forwardedFor?.split(",")[0];
+      if (firstForwardedAddress?.trim()) return firstForwardedAddress.trim();
+    }
+    return request.socket.remoteAddress || "unknown";
+  };
+
+  const consumeRateLimit = (request: IncomingMessage) => {
+    const now = Date.now();
+    rateLimitChecks += 1;
+    if (rateLimitChecks % 100 === 0) {
+      for (const [address, entry] of rateLimits) {
+        if (now - entry.windowStartedAt >= config.rateLimitWindowMs) {
+          rateLimits.delete(address);
+        }
+      }
+    }
+
+    const address = resolveClientAddress(request);
+    let entry = rateLimits.get(address);
+    if (!entry || now - entry.windowStartedAt >= config.rateLimitWindowMs) {
+      entry = { requests: 0, windowStartedAt: now };
+      rateLimits.set(address, entry);
+    }
+
+    const resetAt = entry.windowStartedAt + config.rateLimitWindowMs;
+    const resetSeconds = Math.max(1, Math.ceil((resetAt - now) / 1_000));
+    if (entry.requests >= config.rateLimitRequests) {
+      return { allowed: false, remaining: 0, resetSeconds };
+    }
+    entry.requests += 1;
+    return {
+      allowed: true,
+      remaining: Math.max(0, config.rateLimitRequests - entry.requests),
+      resetSeconds,
+    };
   };
 
   return http.createServer(async (request, response) => {
@@ -133,6 +201,10 @@ export const createAiProxyServer = ({
       writeJson(response, 404, { error: "Not found", requestId }, origin);
       return;
     }
+    if (config.requireOrigin && !request.headers.origin) {
+      writeJson(response, 403, { error: "Origin required", requestId });
+      return;
+    }
     if (
       !String(request.headers["content-type"] || "")
         .toLowerCase()
@@ -146,12 +218,29 @@ export const createAiProxyServer = ({
       );
       return;
     }
+    const rateLimit = consumeRateLimit(request);
+    const rateLimitHeaders: OutgoingHttpHeaders = {
+      "RateLimit-Limit": config.rateLimitRequests,
+      "RateLimit-Remaining": rateLimit.remaining,
+      "RateLimit-Reset": rateLimit.resetSeconds,
+    };
+    if (!rateLimit.allowed) {
+      writeJson(
+        response,
+        429,
+        { error: "Too many requests", requestId },
+        origin,
+        { ...rateLimitHeaders, "Retry-After": rateLimit.resetSeconds },
+      );
+      return;
+    }
     if (!config.apiKey) {
       writeJson(
         response,
         503,
         { error: "Text generation is not configured", requestId },
         origin,
+        rateLimitHeaders,
       );
       return;
     }
